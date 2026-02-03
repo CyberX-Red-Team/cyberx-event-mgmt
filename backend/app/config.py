@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     # Application
     SECRET_KEY: str
     CSRF_SECRET_KEY: str = ""  # If empty, uses SECRET_KEY
+    ENCRYPTION_KEY: str = ""  # Field-level encryption key (Fernet), if empty uses SECRET_KEY
     DEBUG: bool = False
     ALLOWED_HOSTS: str = "localhost,127.0.0.1"
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8000"]

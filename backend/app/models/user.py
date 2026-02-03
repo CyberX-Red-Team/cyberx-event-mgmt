@@ -2,7 +2,9 @@
 from sqlalchemy import Column, Integer, String, Boolean, BigInteger, TIMESTAMP, Index, ForeignKey, Enum
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_property
 import enum
+from typing import Optional
 from app.database import Base
 
 
@@ -68,9 +70,9 @@ class User(Base):
 
     # Credentials
     pandas_username = Column(String(255), unique=True, nullable=True, index=True)
-    pandas_password = Column(String(255), nullable=True)
+    _pandas_password_encrypted = Column('pandas_password', String(500), nullable=True)  # Encrypted storage (Fernet)
     password_phonetic = Column(String(500), nullable=True)
-    password_hash = Column(String(255), nullable=True)  # For web portal login
+    password_hash = Column(String(255), nullable=True)  # For web portal login (bcrypt)
 
     # Password Reset
     password_reset_token = Column(String(100), unique=True, nullable=True, index=True)
@@ -218,6 +220,52 @@ class User(Base):
         if self.is_sponsor_role and invitee.sponsor_id == self.id:
             return True
         return False
+
+    # Encrypted pandas_password property
+    @hybrid_property
+    def pandas_password(self) -> Optional[str]:
+        """
+        Get decrypted pandas password.
+
+        Returns:
+            Decrypted password or None
+        """
+        if self._pandas_password_encrypted is None:
+            return None
+
+        try:
+            from app.utils.encryption import decrypt_field
+            return decrypt_field(self._pandas_password_encrypted)
+        except Exception as e:
+            # If decryption fails, assume it's plaintext (for backward compatibility during migration)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to decrypt pandas_password for user {self.id}: {e}")
+            # Return the raw value (likely plaintext from before encryption)
+            return self._pandas_password_encrypted
+
+    @pandas_password.setter
+    def pandas_password(self, value: Optional[str]) -> None:
+        """
+        Set pandas password (automatically encrypts).
+
+        Args:
+            value: Plaintext password to encrypt and store
+        """
+        if value is None:
+            self._pandas_password_encrypted = None
+            return
+
+        try:
+            from app.utils.encryption import encrypt_field
+            self._pandas_password_encrypted = encrypt_field(value)
+        except Exception as e:
+            # If encryption fails (e.g., encryptor not initialized during migration),
+            # store as plaintext temporarily
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to encrypt pandas_password for user {self.id}: {e}")
+            self._pandas_password_encrypted = value
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, role={self.role}, name={self.full_name})>"

@@ -6,11 +6,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from starlette_csrf import CSRFMiddleware
 
 from app.config import get_settings
+from app.middleware.csrf import CSRFMiddleware
 from app.api.routes import auth, admin, vpn, email, webhooks, views, event, public, sponsor
 from app.tasks import start_scheduler, stop_scheduler, list_jobs
+from app.utils.encryption import init_encryptor, generate_encryption_key
+from cryptography.fernet import Fernet
+import base64
 
 
 # Configure logging - force INFO level even if uvicorn configured it already
@@ -42,6 +45,23 @@ async def lifespan(app: FastAPI):
     logger.info("  Database: %s", settings.DATABASE_URL.split('@')[1] if '@' in settings.DATABASE_URL else 'configured')
     logger.info("  Session expiry: %d hours", settings.SESSION_EXPIRY_HOURS)
     logger.info("  Bulk email interval: %d minutes", settings.BULK_EMAIL_INTERVAL_MINUTES)
+
+    # Initialize field encryptor
+    encryption_key = settings.ENCRYPTION_KEY or settings.SECRET_KEY
+    # Ensure key is valid Fernet format (32 URL-safe base64 bytes)
+    try:
+        # Try to use key as-is first
+        init_encryptor(encryption_key)
+        logger.info("  Field encryption: Initialized with provided key")
+    except Exception:
+        # If key is not valid Fernet format, derive one from SECRET_KEY
+        logger.warning("  Field encryption: Invalid ENCRYPTION_KEY format, deriving from SECRET_KEY")
+        # Derive a Fernet key from SECRET_KEY (hash and encode as base64)
+        import hashlib
+        key_material = hashlib.sha256(encryption_key.encode()).digest()
+        fernet_key = base64.urlsafe_b64encode(key_material)
+        init_encryptor(fernet_key.decode())
+        logger.info("  Field encryption: Initialized with derived key")
 
     # Start the background scheduler
     await start_scheduler()
