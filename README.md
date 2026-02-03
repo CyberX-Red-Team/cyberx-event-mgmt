@@ -1,234 +1,473 @@
-# CyberX Event Management Platform
+# CyberX Event Management System
 
-A comprehensive web application to manage CyberX events, replacing SharePoint + Power Automate workflows with a modern Python FastAPI backend and PostgreSQL database.
+**Status**: 🔒 Private Repository - Pre-Production Beta Testing
 
-## Features
+A comprehensive event management system designed for CyberX Red Team cybersecurity events, handling participant invitations, VPN credential management, email workflows, and event lifecycle coordination.
 
-- **Admin Portal**: Manage participants, VPN assignments, credentials, and communications
-- **Participant Portal**: Self-service VPN key requests and account management
-- **Backend API**: FastAPI + PostgreSQL replacing all Power Automate functionality
-- **Email Integration**: SendGrid for templated emails with event tracking
-- **VPN Management**: On-demand WireGuard config generation from database
-- **Webhook Support**: SendGrid, Discord, Keycloak integrations
-- **Background Jobs**: Automated bulk email tasks (every 45 minutes)
+---
 
-## Tech Stack
+## 🎯 Overview
 
-- **Backend**: Python 3.13+, FastAPI, SQLAlchemy (async), Alembic
-- **Database**: PostgreSQL 15+
-- **Authentication**: Session-based custom auth with bcrypt
-- **Email**: SendGrid API with dynamic templates
-- **Frontend**: Jinja2 templates (converted from SB Admin Pro)
-- **Deployment**: Docker, Docker Compose
+The CyberX Event Management System provides a complete solution for managing cybersecurity training events, including:
 
-## Project Structure
+- **Participant Management**: Invite, track, and manage participants with sponsor relationships
+- **Event Lifecycle**: Create and manage events from planning through execution to archive
+- **VPN Credentials**: Automated WireGuard VPN credential assignment and configuration
+- **Email Automation**: Queue-based email system with templates and workflows
+- **Role-Based Access**: Three-tier permission system (Admin, Sponsor, Invitee)
+- **Audit Trail**: Comprehensive logging of all security-relevant actions
+
+---
+
+## 🏗️ Architecture
+
+### Backend (FastAPI)
+- **Framework**: FastAPI 0.104+ with async/await
+- **Database**: PostgreSQL with SQLAlchemy 2.0 (async)
+- **Authentication**: Session-based with bcrypt password hashing
+- **Email**: SendGrid integration with queue-based delivery
+- **Background Jobs**: APScheduler for automated tasks
+- **API Documentation**: OpenAPI/Swagger (available in debug mode)
+
+### Frontend
+- Placeholder structure ready for React/Next.js implementation
+- Jinja2 templates for initial prototyping
+
+### Infrastructure
+- Docker Compose for local development
+- Alembic for database migrations
+- Environment-based configuration
+
+---
+
+## 📋 Features
+
+### Core Functionality
+
+#### User Management
+- Create and manage users with role-based permissions
+- Sponsor-invitee relationship tracking
+- Participation history and analytics
+- Password management and security
+
+#### Event Management
+- Event lifecycle: Planning → Active → Archived
+- Registration periods and participant limits
+- Test mode for safe email testing
+- Event-specific terms and conditions
+- Automated invitation workflows
+
+#### VPN Management
+- WireGuard credential generation and assignment
+- Bulk VPN operations
+- CSV import support
+- Configuration file generation
+- Usage tracking and analytics
+
+#### Email System
+- Queue-based delivery with retry logic
+- SendGrid dynamic templates
+- Workflow automation (invitations, reminders, notifications)
+- Batch processing with rate limiting
+- SendGrid webhook integration for delivery tracking
+
+#### Administration
+- Dashboard with key metrics
+- Audit log viewer
+- Email queue management
+- Participant analytics and filtering
+- Bulk operations support
+
+### API Endpoints
+
+**131 Total Endpoints** organized into:
+
+- **Auth** (6): Login, logout, password management, session handling
+- **Admin** (40+): Participant management, dashboard, audit logs, settings
+- **Events** (10): CRUD operations, participation management
+- **VPN** (15+): Assignment, import, configuration generation
+- **Email** (20+): Templates, workflows, queue management, analytics
+- **Sponsor** (8): Manage sponsored invitees, view statistics
+- **Public** (4): Confirmation, terms acceptance, public resources
+- **Webhooks** (2+): SendGrid events, Discord integration
+
+---
+
+## 🚀 Setup Instructions
+
+### Prerequisites
+
+- Python 3.11+
+- PostgreSQL 13+
+- SendGrid account (for email)
+- Git
+
+### Local Development Setup
+
+1. **Clone the repository** (private access required)
+   ```bash
+   git clone git@github.com:your-org/cyberx-event-mgmt.git
+   cd cyberx-event-mgmt
+   ```
+
+2. **Set up the backend**
+   ```bash
+   cd backend
+   
+   # Create virtual environment
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
+
+3. **Configure environment variables**
+   ```bash
+   # Copy example environment file
+   cp .env.example .env
+   
+   # Edit .env with your credentials
+   # Required: DATABASE_URL, SECRET_KEY, SENDGRID_API_KEY
+   nano .env
+   ```
+
+4. **Initialize the database**
+   ```bash
+   # Run migrations
+   alembic upgrade head
+   
+   # Create initial admin user
+   python scripts/create_admin.py
+   ```
+
+5. **Start the development server**
+   ```bash
+   # From backend directory
+   python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+6. **Access the API**
+   - API: http://localhost:8000
+   - Docs: http://localhost:8000/api/docs (debug mode only)
+   - Health: http://localhost:8000/health
+
+### Docker Setup (Alternative)
+
+```bash
+# From project root
+docker-compose up -d
+
+# Access at http://localhost:8000
+```
+
+---
+
+## 🔐 Security
+
+### Current Status
+
+This codebase is in **pre-production beta** and requires security hardening before public deployment.
+
+#### Implemented Security Features ✅
+
+- ✅ Session-based authentication with secure cookies
+- ✅ bcrypt password hashing
+- ✅ Role-based access control (RBAC)
+- ✅ SQL injection prevention (SQLAlchemy ORM)
+- ✅ Input validation (Pydantic schemas)
+- ✅ Comprehensive audit logging
+- ✅ Rate limiting on VPN endpoints
+- ✅ Secrets excluded from version control
+
+#### Known Security Gaps ⚠️
+
+- ⚠️ **CSRF Protection**: Not implemented (critical for production)
+- ⚠️ **Password Reset**: Email workflow incomplete
+- ⚠️ **Rate Limiting**: In-memory implementation (single-instance only)
+- ⚠️ **Plaintext Passwords**: `pandas_password` field stores plaintext (legacy)
+- ⚠️ **CORS**: Currently permissive (needs tightening for production)
+
+**Do not deploy to production without addressing these issues.**
+
+---
+
+## 📊 Database Schema
+
+### Core Models
+
+- **User**: Participant/admin accounts with roles and sponsor relationships
+- **Event**: Event definitions with lifecycle management
+- **EventParticipation**: Historical participation tracking
+- **Session**: Authentication sessions
+- **VPNCredential**: WireGuard VPN configurations
+- **EmailQueue**: Queued emails with retry logic
+- **EmailTemplate**: SendGrid template configurations
+- **EmailWorkflow**: Automated email workflows
+- **AuditLog**: Security event logging
+
+### Migrations
+
+Managed with Alembic. Current migrations: 21 files
+
+```bash
+# Create new migration
+alembic revision --autogenerate -m "description"
+
+# Apply migrations
+alembic upgrade head
+
+# Rollback
+alembic downgrade -1
+```
+
+---
+
+## 🧪 Testing
+
+### Current Status
+
+⚠️ **Testing infrastructure in development**
+
+Currently available:
+- 5 manual test scripts in `backend/scripts/`
+- No automated test suite (pytest not configured)
+
+**Planned**:
+- pytest framework setup
+- Unit tests for services
+- Integration tests for endpoints
+- CI/CD pipeline integration
+
+---
+
+## 🔧 Development
+
+### Project Structure
 
 ```
 cyberx-event-mgmt/
 ├── backend/
 │   ├── app/
-│   │   ├── models/          # SQLAlchemy models
-│   │   ├── schemas/         # Pydantic schemas
-│   │   ├── api/routes/      # API endpoints
-│   │   ├── services/        # Business logic
-│   │   ├── tasks/           # Background jobs
-│   │   └── utils/           # Utilities
-│   ├── migrations/          # Alembic migrations
-│   ├── scripts/             # Helper scripts
-│   └── tests/               # Test suite
-├── frontend/
-│   ├── static/              # CSS, JS, assets
-│   └── templates/           # Jinja2 templates
-└── docker-compose.yml       # PostgreSQL + Redis
-```
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.13 or newer
-- Docker Desktop (for PostgreSQL)
-- SendGrid API key
-- PowerDNS credentials (optional)
-
-### 1. Clone and Setup
-
-```bash
-cd ~/projects/cyberx/website-nextgen/cyberx-event-mgmt
-```
-
-### 2. Install Backend Dependencies
-
-```bash
-cd backend
-pyenv local 3.13.2  # or your Python 3.13+ version
-pip install -r requirements.txt
-```
-
-### 3. Start PostgreSQL
-
-```bash
-# From project root
-docker compose up -d postgres
-
-# Verify it's running
-docker compose ps
-```
-
-### 4. Configure Environment
-
-```bash
-cd backend
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-**Required environment variables:**
-- `DATABASE_URL`: PostgreSQL connection string
-- `SECRET_KEY`: Random secret key for sessions
-- `SENDGRID_API_KEY`: Your SendGrid API key
-- `VPN_SERVER_PUBLIC_KEY`: VPN server public key
-
-### 5. Run Database Migrations
-
-```bash
-cd backend
-alembic upgrade head
-```
-
-### 6. Import CSV Data
-
-```bash
-cd backend
-python scripts/import_csv.py
-```
-
-###7. Start the Application
-
-```bash
-cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Access the application at [http://localhost:8000](http://localhost:8000)
-
-## Database Schema
-
-### Core Tables
-
-- **users**: Participants and admins (269 participants from CSV)
-- **vpn_credentials**: VPN configs (2001 from CSV)
-- **sessions**: User authentication sessions
-- **audit_logs**: System activity tracking
-- **email_events**: SendGrid webhook events
-- **vpn_requests**: VPN allocation requests
-
-## API Endpoints
-
-### Authentication
-- `POST /api/auth/login` - Login
-- `POST /api/auth/logout` - Logout
-- `GET /api/auth/me` - Current user info
-
-### Admin
-- `GET /api/admin/dashboard` - Dashboard stats
-- `GET /api/admin/participants` - List participants
-- `POST /api/admin/participants` - Add participant
-- `PUT /api/admin/participants/{id}` - Update participant
-- `POST /api/admin/participants/{id}/reset-password` - Reset password
-- `POST /api/admin/vpn/assign` - Assign VPN key
-
-### Participant
-- `GET /api/participant/dashboard` - User dashboard
-- `POST /api/participant/vpn-request` - Request VPN
-- `GET /api/participant/vpn-download` - Download WireGuard config
-
-### Webhooks
-- `POST /api/webhooks/sendgrid` - SendGrid events
-- `POST /api/webhooks/discord-username` - Discord updates
-- `POST /api/webhooks/keycloak` - Keycloak SSO events
-
-## Development
-
-### Running Tests
-
-```bash
-cd backend
-pytest
-```
-
-### Creating New Migrations
-
-```bash
-cd backend
-alembic revision --autogenerate -m "Description of changes"
-alembic upgrade head
+│   │   ├── api/              # Route handlers and API utilities
+│   │   │   ├── routes/       # Endpoint definitions
+│   │   │   └── utils/        # Request handling, validation, pagination
+│   │   ├── models/           # SQLAlchemy models
+│   │   ├── schemas/          # Pydantic schemas
+│   │   ├── services/         # Business logic layer
+│   │   ├── tasks/            # Background jobs
+│   │   └── utils/            # Shared utilities
+│   ├── migrations/           # Alembic migrations
+│   └── scripts/              # Utility scripts
+├── frontend/                 # Frontend (placeholder)
+├── docker-compose.yml        # Docker configuration
+└── README.md                 # This file
 ```
 
 ### Code Style
 
-```bash
-# Format code
-black app/
+- **Python**: Follow PEP 8, use type hints
+- **API Routes**: Use dependency injection
+- **Services**: Keep business logic in service layer
+- **Error Handling**: Use standardized exceptions from `app.api.exceptions`
 
-# Type checking
-mypy app/
-```
+### Recent Refactoring
 
-## Deployment
+The codebase has undergone significant consolidation:
+- Centralized request metadata extraction
+- Standardized HTTP exceptions
+- Unified response builders
+- Shared service dependencies
+- Common pagination utilities
 
-### Production Setup
+See: Code consolidation completed on 2026-02-03
 
-1. Update `.env` with production values
-2. Set `DEBUG=False`
-3. Use strong `SECRET_KEY`
-4. Configure HTTPS reverse proxy (nginx)
-5. Set up database backups
-6. Configure monitoring and logging
+---
 
-### Docker Production
+## 📝 API Usage Examples
 
-```bash
-docker compose -f docker-compose.prod.yml up -d
-```
-
-## Power Automate Workflows Replaced
-
-| Workflow | Replacement |
-|----------|-------------|
-| Discord VPN Request | `POST /api/webhooks/discord-vpn-request` |
-| Bulk Password Email | APScheduler job (every 45 min) |
-| SendGrid Event Webhook | `POST /api/webhooks/sendgrid` |
-| DNS/PowerDNS Integration | `POST /api/webhooks/keycloak` |
-| Discord Username Update | `POST /api/webhooks/discord-username` |
-
-## Data Migration
-
-The application includes a CSV import script to migrate data from SharePoint:
-
-- **Participants**: `/Users/wes/projects/cyberx/website-nextgen/data/CyberX Master Invite.csv`
-- **VPN Configs**: `/Users/wes/projects/cyberx/website-nextgen/data/VPN Configs V2.csv`
-
-Run the import script after setting up the database:
+### Authentication
 
 ```bash
-cd backend
-python scripts/import_csv.py
+# Login
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin@example.com", "password": "yourpassword"}'
+
+# Get current user
+curl http://localhost:8000/api/auth/me \
+  -H "Cookie: session_token=YOUR_SESSION_TOKEN"
 ```
 
-## Security
+### Participant Management (Admin)
 
-- **Password Storage**: Bcrypt hashing for web portal passwords
-- **Session Management**: 32-byte secure random tokens, 24-hour expiration
-- **HTTPS Only**: Enforce HTTPS in production
-- **Input Validation**: Pydantic schemas for all API inputs
-- **Rate Limiting**: Auth endpoints limited to 10 requests/minute
-- **VPN Key Protection**: Admins can view keys, participants only get generated configs
+```bash
+# List participants
+curl http://localhost:8000/api/admin/participants?page=1&page_size=50 \
+  -H "Cookie: session_token=YOUR_SESSION_TOKEN"
 
-## Support
+# Create participant
+curl -X POST http://localhost:8000/api/admin/participants \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session_token=YOUR_SESSION_TOKEN" \
+  -d '{
+    "email": "participant@example.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "country": "USA"
+  }'
+```
 
-For issues or questions, contact the CyberX Red Team at [hello@cyberxredteam.org](mailto:hello@cyberxredteam.org).
+### VPN Management
 
-## License
+```bash
+# Get available VPN credentials
+curl http://localhost:8000/api/vpn/available \
+  -H "Cookie: session_token=YOUR_SESSION_TOKEN"
 
-Proprietary - CyberX Red Team © 2025
+# Assign VPN to user
+curl -X POST http://localhost:8000/api/vpn/assign \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session_token=YOUR_SESSION_TOKEN" \
+  -d '{"user_id": 123, "vpn_credential_id": 456}'
+```
+
+---
+
+## 🚦 Current Status & Roadmap
+
+### Beta Readiness: NEEDS ATTENTION
+
+**Ready for Beta** (under controlled conditions):
+- ✅ Core features complete (131 endpoints)
+- ✅ Database schema stable
+- ✅ Email system functional
+- ✅ Audit logging comprehensive
+- ✅ Version control established
+
+**Blockers for Production**:
+- ❌ CSRF protection required
+- ❌ Password reset workflow incomplete
+- ❌ No automated tests
+- ❌ Rate limiting needs Redis for distributed deployment
+
+### Roadmap
+
+**Phase 1: Security Hardening** (2 weeks)
+- [ ] Implement CSRF middleware
+- [ ] Complete password reset email workflow
+- [ ] Remove plaintext password storage
+- [ ] Tighten CORS configuration
+- [ ] Add login rate limiting
+
+**Phase 2: Testing Infrastructure** (2 weeks)
+- [ ] Set up pytest framework
+- [ ] Create unit test suite (70% coverage target)
+- [ ] Add integration tests
+- [ ] Set up CI/CD pipeline
+
+**Phase 3: Production Prep** (ongoing)
+- [ ] Implement Redis-based rate limiting
+- [ ] Add Prometheus metrics
+- [ ] Complete Discord/Keycloak integration
+- [ ] Load testing and optimization
+- [ ] Security audit
+
+---
+
+## 🤝 Contributing
+
+This is a private repository under active development.
+
+**Current Contributors**:
+- Core development team
+- Beta testers (by invitation)
+
+**Development Workflow**:
+1. Create feature branch from `main`
+2. Make changes with clear commit messages
+3. Test locally
+4. Submit pull request for review
+5. Address feedback
+6. Merge after approval
+
+**Commit Message Format**:
+```
+Add feature: brief description
+
+- Detailed change 1
+- Detailed change 2
+- Related documentation updates
+
+Co-Authored-By: Name <email>
+```
+
+---
+
+## 📚 Documentation
+
+Additional documentation available:
+
+- [SETUP.md](SETUP.md) - Detailed setup instructions
+- [EVENT_MANAGEMENT.md](EVENT_MANAGEMENT.md) - Event lifecycle guide
+- [TESTING_EMAIL_GUIDE.md](TESTING_EMAIL_GUIDE.md) - Email testing procedures
+- [GIT_SETUP.md](GIT_SETUP.md) - Git repository guidelines
+- [backend/docs/](backend/docs/) - Technical design documents
+
+---
+
+## 🐛 Known Issues
+
+See production readiness analysis for comprehensive list.
+
+**Critical**:
+- Password reset email not sent (TODO in auth.py:301)
+- CSRF protection not implemented
+- In-memory rate limiting (not distributed-safe)
+
+**Medium Priority**:
+- Discord integration incomplete (webhooks.py TODOs)
+- Keycloak sync not implemented (participant_service.py:494)
+- Large seed file in repo (19MB seed_hacker_invite_template.py)
+
+**Low Priority**:
+- Event template config hardcoded (email_service.py:267)
+- Inbound email processing placeholder (webhooks.py:87)
+
+---
+
+## 📧 Support & Contact
+
+For questions or issues:
+- **Internal Team**: Contact project lead
+- **Beta Testers**: Use designated communication channel
+- **Security Issues**: Report privately to security team
+
+---
+
+## 📄 License
+
+**All Rights Reserved** - Private Repository
+
+This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
+
+Copyright © 2026 CyberX Red Team
+
+---
+
+## 🙏 Acknowledgments
+
+Built with:
+- FastAPI - Modern Python web framework
+- SQLAlchemy - Python SQL toolkit
+- SendGrid - Email delivery platform
+- PostgreSQL - Relational database
+- Alembic - Database migration tool
+- APScheduler - Background job scheduling
+
+Development assisted by Claude Code (Anthropic).
+
+---
+
+**Last Updated**: 2026-02-03  
+**Version**: 0.1.0-beta (Pre-Production)
