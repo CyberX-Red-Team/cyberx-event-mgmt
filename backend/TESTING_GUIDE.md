@@ -43,8 +43,11 @@ pytest -ra
 ### Installation
 
 ```bash
-# Install test dependencies
+# Install production dependencies
 pip install -r requirements.txt
+
+# Install development and testing dependencies
+pip install -r requirements-dev.txt
 
 # Verify pytest is installed
 pytest --version

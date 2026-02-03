@@ -67,12 +67,16 @@ tests/
 
 ### 5. Dependencies ✅
 
-Added to [requirements.txt](requirements.txt):
+Created [requirements-dev.txt](requirements-dev.txt) for development/testing:
 ```
+# -r requirements.txt (includes production dependencies)
 pytest==8.3.4
 pytest-asyncio==0.24.0
-pytest-cov==6.0.0  # NEW
+pytest-cov==6.0.0
+aiosqlite==0.22.1  # For in-memory test database
 ```
+
+Production dependencies remain in [requirements.txt](requirements.txt) (no testing packages).
 
 ---
 
