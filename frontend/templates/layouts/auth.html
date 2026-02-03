@@ -1,0 +1,42 @@
+{% extends "layouts/base.html" %}
+
+{% block body_class %}bg-primary{% endblock %}
+
+{% block body %}
+<div id="layoutAuthentication">
+    <div id="layoutAuthentication_content">
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    <div id="layoutAuthentication_footer">
+        <footer class="py-4 mt-auto bg-dark">
+            <div class="container-fluid px-4">
+                <div class="d-flex align-items-center justify-content-between small text-white-50">
+                    <div>Copyright &copy; CyberX Red Team {{ now.year if now else '2024' }}</div>
+                </div>
+            </div>
+        </footer>
+    </div>
+</div>
+
+<style>
+    #layoutAuthentication {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+    }
+
+    #layoutAuthentication #layoutAuthentication_content {
+        min-height: calc(100vh - 60px);
+    }
+
+    #layoutAuthentication #layoutAuthentication_footer {
+        min-height: 60px;
+    }
+
+    .bg-primary {
+        background: linear-gradient(135deg, #0061f2 0%, #6900c7 100%) !important;
+    }
+</style>
+{% endblock %}

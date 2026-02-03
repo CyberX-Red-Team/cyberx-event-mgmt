@@ -1,0 +1,582 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="activity"></i></div>
+                        Dashboard
+                    </h1>
+                    <div class="page-header-subtitle">CyberX Event Management Overview</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+    <!-- Event Status Card -->
+    <div class="card mb-4" id="eventStatusCard">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <i data-feather="calendar" class="me-2"></i>
+                <strong>Event Status</strong>
+            </div>
+            <div id="eventStatusBadge"></div>
+        </div>
+        <div class="card-body">
+            <div id="eventLoadingState" class="text-center py-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2 text-muted">Loading event status...</span>
+            </div>
+
+            <div id="eventDetailsState" class="d-none">
+                <!-- Test Mode Warning Banner -->
+                <div id="testModeWarning" class="d-none">
+                    <div class="alert alert-warning mb-3">
+                        <div class="d-flex align-items-center">
+                            <i data-feather="zap" class="me-2"></i>
+                            <div>
+                                <strong>Test Mode Active</strong>
+                                <p class="mb-0 small mt-1">Sponsors can request VPNs and test Keycloak sync. Mass emails to non-sponsors are restricted.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <div class="row">
+                            <div class="col-md-6 mb-3 mb-md-0">
+                                <div class="small text-muted mb-1">Event Name</div>
+                                <div class="fw-bold" id="eventName">--</div>
+                            </div>
+                            <div class="col-md-3 mb-3 mb-md-0">
+                                <div class="small text-muted mb-1">Year</div>
+                                <div class="fw-bold" id="eventYear">--</div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="small text-muted mb-1">Terms Version</div>
+                                <div class="fw-bold" id="eventTermsVersion">--</div>
+                            </div>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <div class="small text-muted mb-1">Registration Status</div>
+                                <div id="registrationStatus">--</div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="small text-muted mb-1">Max Participants</div>
+                                <div id="eventMaxParticipants">--</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                        <div class="mb-2">
+                            <small class="text-muted">Event Activation</small>
+                        </div>
+                        <button
+                            id="toggleEventBtn"
+                            class="btn btn-lg w-100"
+                            onclick="toggleEventStatus()"
+                            disabled
+                        >
+                            <i data-feather="power" class="me-2"></i>
+                            <span id="toggleEventBtnText">Toggle Event</span>
+                        </button>
+                        <div class="mt-2">
+                            <small class="text-muted" id="toggleEventHelpText">
+                                Invitations will only be sent when the event is active
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="eventErrorState" class="d-none">
+                <div class="alert alert-warning mb-0">
+                    <i data-feather="alert-circle" class="me-2"></i>
+                    <span id="eventErrorMessage">No event configured</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row">
+        <div class="col-lg-6 col-xl-3 mb-4">
+            <div class="card bg-primary text-white h-100 stats-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Total Invitees</div>
+                            <div class="text-lg fw-bold" id="totalInvitees">--</div>
+                        </div>
+                        <i data-feather="users" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer d-flex align-items-center justify-content-between small">
+                    <a class="text-white stretched-link" href="/admin/participants">View All</a>
+                    <div class="text-white"><i class="fas fa-angle-right"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 col-xl-3 mb-4">
+            <div class="card bg-success text-white h-100 stats-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Confirmed</div>
+                            <div class="text-lg fw-bold" id="confirmedCount">--</div>
+                        </div>
+                        <i data-feather="check-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer d-flex align-items-center justify-content-between small">
+                    <a class="text-white stretched-link" href="/admin/participants?confirmed=YES">View Confirmed</a>
+                    <div class="text-white"><i class="fas fa-angle-right"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 col-xl-3 mb-4">
+            <div class="card bg-info text-white h-100 stats-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">VPN Assigned</div>
+                            <div class="text-lg fw-bold" id="vpnAssigned">--</div>
+                        </div>
+                        <i data-feather="shield" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer d-flex align-items-center justify-content-between small">
+                    <a class="text-white stretched-link" href="/admin/vpn">Manage VPN</a>
+                    <div class="text-white"><i class="fas fa-angle-right"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 col-xl-3 mb-4">
+            <div class="card bg-warning text-white h-100 stats-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">VPN Available</div>
+                            <div class="text-lg fw-bold" id="vpnAvailable">--</div>
+                        </div>
+                        <i data-feather="key" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer d-flex align-items-center justify-content-between small">
+                    <a class="text-white stretched-link" href="/admin/vpn">View All Keys</a>
+                    <div class="text-white"><i class="fas fa-angle-right"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Second Row - VPN Stats -->
+    <div class="row">
+        <div class="col-xl-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <i data-feather="pie-chart" class="me-2"></i>
+                    Invitee Status
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <div class="h2 text-success" id="confirmedPercent">--%</div>
+                            <div class="small text-muted">Confirmed</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="h2 text-warning" id="unconfirmedPercent">--%</div>
+                            <div class="small text-muted">Unconfirmed</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="h2 text-info" id="withVpnPercent">--%</div>
+                            <div class="small text-muted">With VPN</div>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="small">Active Invitees</span>
+                                <span class="badge bg-success" id="activeCount">--</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="small">Inactive Invitees</span>
+                                <span class="badge bg-secondary" id="inactiveCount">--</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="small">Chronic Non-Participants</span>
+                                <span class="badge bg-danger" id="chronicNonParticipantCount">--</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="small">With VPN</span>
+                                <span class="badge bg-info" id="withVpnCount">--</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="small">Without VPN</span>
+                                <span class="badge bg-warning" id="withoutVpnCount">--</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="small">Recommend Removal</span>
+                                <span class="badge bg-danger" id="recommendedRemovalCount">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <i data-feather="shield" class="me-2"></i>
+                    VPN Credentials
+                </div>
+                <div class="card-body">
+                    <div class="row text-center mb-4">
+                        <div class="col-6">
+                            <div class="h2 text-primary" id="vpnTotal">--</div>
+                            <div class="small text-muted">Total Credentials</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="h2 text-success" id="vpnAvailableTotal">--</div>
+                            <div class="small text-muted">Available</div>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row">
+                        <div class="col-6">
+                            <h6 class="small fw-bold">Cyber Keys</h6>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="small text-muted">Total</span>
+                                <span id="cyberTotal">--</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span class="small text-muted">Available</span>
+                                <span class="text-success" id="cyberAvailable">--</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <h6 class="small fw-bold">Kinetic Keys</h6>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="small text-muted">Total</span>
+                                <span id="kineticTotal">--</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span class="small text-muted">Available</span>
+                                <span class="text-success" id="kineticAvailable">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="zap" class="me-2"></i>
+            Quick Actions
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3 mb-3 mb-md-0">
+                    <a href="/admin/participants/add" class="btn btn-outline-primary w-100">
+                        <i data-feather="user-plus" class="me-2"></i>
+                        Add Invitee
+                    </a>
+                </div>
+                <div class="col-md-3 mb-3 mb-md-0">
+                    <a href="/admin/email" class="btn btn-outline-success w-100">
+                        <i data-feather="mail" class="me-2"></i>
+                        Send Emails
+                    </a>
+                </div>
+                <div class="col-md-3 mb-3 mb-md-0">
+                    <a href="/admin/vpn" class="btn btn-outline-info w-100">
+                        <i data-feather="shield" class="me-2"></i>
+                        Assign VPN
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <a href="/admin/participants?confirmed=UNKNOWN" class="btn btn-outline-warning w-100">
+                        <i data-feather="alert-circle" class="me-2"></i>
+                        Review Pending
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+// Event status management (wrapped in IIFE to avoid global scope conflicts)
+(function() {
+    let currentEventData = null;
+
+    window.loadEventStatus = async function() {
+    const loadingState = document.getElementById('eventLoadingState');
+    const detailsState = document.getElementById('eventDetailsState');
+    const errorState = document.getElementById('eventErrorState');
+    const statusBadge = document.getElementById('eventStatusBadge');
+
+    try {
+        const response = await fetch('/api/admin/event/current', {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            throw new Error('Failed to load event status');
+        }
+
+        const data = await response.json();
+
+        if (!data.event) {
+            // No event configured
+            loadingState.classList.add('d-none');
+            detailsState.classList.add('d-none');
+            errorState.classList.remove('d-none');
+            document.getElementById('eventErrorMessage').textContent = 'No event configured';
+            return;
+        }
+
+        currentEventData = data.event;
+
+        // Update UI with event data
+        document.getElementById('eventName').textContent = data.event.name;
+        document.getElementById('eventYear').textContent = data.event.year;
+        document.getElementById('eventTermsVersion').textContent = data.event.terms_version || 'N/A';
+        document.getElementById('eventMaxParticipants').textContent = data.event.max_participants || 'Unlimited';
+
+        // Update registration status
+        const regStatus = document.getElementById('registrationStatus');
+        if (data.event.registration_open) {
+            regStatus.innerHTML = '<span class="badge bg-success">Open</span>';
+        } else {
+            regStatus.innerHTML = '<span class="badge bg-secondary">Closed</span>';
+        }
+
+        // Update status badge with test mode and VPN indicators
+        let badgeHTML = '';
+        if (data.event.is_active) {
+            badgeHTML = '<span class="badge bg-success">Active</span>';
+        } else {
+            badgeHTML = '<span class="badge bg-danger">Inactive</span>';
+        }
+
+        // Add test mode indicator
+        if (data.event.test_mode) {
+            badgeHTML += ' <span class="badge bg-warning text-dark"><i data-feather="zap" style="width:12px;height:12px;"></i> Test Mode</span>';
+        }
+
+        // Add VPN availability indicator
+        if (data.event.vpn_available) {
+            badgeHTML += ' <span class="badge bg-info"><i data-feather="shield" style="width:12px;height:12px;"></i> VPN Available</span>';
+        }
+
+        statusBadge.innerHTML = badgeHTML;
+
+        // Show/hide test mode warning banner
+        const testModeWarning = document.getElementById('testModeWarning');
+        if (data.event.test_mode) {
+            testModeWarning.classList.remove('d-none');
+        } else {
+            testModeWarning.classList.add('d-none');
+        }
+
+        // Update toggle button
+        const toggleBtn = document.getElementById('toggleEventBtn');
+        const toggleBtnText = document.getElementById('toggleEventBtnText');
+        const toggleHelpText = document.getElementById('toggleEventHelpText');
+
+        if (data.event.is_active) {
+            toggleBtn.classList.remove('btn-success');
+            toggleBtn.classList.add('btn-danger');
+            toggleBtnText.textContent = 'Deactivate Event';
+            toggleHelpText.textContent = 'Deactivating will stop sending new invitations';
+        } else {
+            toggleBtn.classList.remove('btn-danger');
+            toggleBtn.classList.add('btn-success');
+            toggleBtnText.textContent = 'Activate Event';
+            toggleHelpText.textContent = 'Activating will enable invitation sending';
+        }
+
+        toggleBtn.disabled = false;
+
+        // Show details state
+        loadingState.classList.add('d-none');
+        errorState.classList.add('d-none');
+        detailsState.classList.remove('d-none');
+
+        // Refresh feather icons
+        if (typeof feather !== 'undefined') {
+            feather.replace();
+        }
+
+    } catch (error) {
+        console.error('Error loading event status:', error);
+        loadingState.classList.add('d-none');
+        detailsState.classList.add('d-none');
+        errorState.classList.remove('d-none');
+        document.getElementById('eventErrorMessage').textContent = 'Failed to load event status';
+    }
+    };
+
+    window.toggleEventStatus = async function() {
+    const toggleBtn = document.getElementById('toggleEventBtn');
+    const originalText = toggleBtn.innerHTML;
+
+    // Confirm action
+    if (!currentEventData) {
+        alert('No event data available');
+        return;
+    }
+
+    const action = currentEventData.is_active ? 'deactivate' : 'activate';
+    const confirmMsg = currentEventData.is_active
+        ? 'Are you sure you want to deactivate the event? New invitations will not be sent.'
+        : 'Are you sure you want to activate the event? New invitations will be sent to new participants.';
+
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
+    // Disable button and show loading
+    toggleBtn.disabled = true;
+    toggleBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+
+    try {
+        const response = await fetch('/api/admin/event/toggle-active', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.detail || 'Failed to toggle event status');
+        }
+
+        const data = await response.json();
+
+        // Show success message
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-success alert-dismissible fade show mt-3';
+        alertDiv.innerHTML = `
+            <i data-feather="check-circle" class="me-2"></i>
+            ${data.message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.getElementById('eventStatusCard').querySelector('.card-body').prepend(alertDiv);
+
+        // Reload event status
+        await loadEventStatus();
+
+        // Remove alert after 5 seconds
+        setTimeout(() => {
+            alertDiv.remove();
+        }, 5000);
+
+    } catch (error) {
+        console.error('Error toggling event status:', error);
+        alert(error.message || 'Failed to toggle event status');
+        toggleBtn.disabled = false;
+        toggleBtn.innerHTML = originalText;
+    }
+    };
+})();
+
+async function loadDashboardStats() {
+    try {
+        const response = await fetch('/api/admin/dashboard', {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            throw new Error('Failed to load dashboard stats');
+        }
+
+        const data = await response.json();
+        const p = data.stats.participants;
+        const v = data.stats.vpn;
+
+        // Update invitee stats
+        document.getElementById('totalInvitees').textContent = p.total_invitees;
+        document.getElementById('confirmedCount').textContent = p.confirmed_count;
+        document.getElementById('activeCount').textContent = p.active_count;
+        document.getElementById('inactiveCount').textContent = p.inactive_count;
+        document.getElementById('withVpnCount').textContent = p.with_vpn_count;
+        document.getElementById('withoutVpnCount').textContent = p.without_vpn_count;
+        document.getElementById('chronicNonParticipantCount').textContent = p.chronic_non_participant_count || 0;
+        document.getElementById('recommendedRemovalCount').textContent = p.recommended_removal_count || 0;
+
+        // Calculate percentages
+        const total = p.total_invitees || 1;
+        document.getElementById('confirmedPercent').textContent =
+            Math.round((p.confirmed_count / total) * 100) + '%';
+        document.getElementById('unconfirmedPercent').textContent =
+            Math.round((p.unconfirmed_count / total) * 100) + '%';
+        document.getElementById('withVpnPercent').textContent =
+            Math.round((p.with_vpn_count / total) * 100) + '%';
+
+        // Update VPN stats
+        document.getElementById('vpnAssigned').textContent = v.assigned_count;
+        document.getElementById('vpnAvailable').textContent = v.available_count;
+        document.getElementById('vpnTotal').textContent = v.total_credentials;
+        document.getElementById('vpnAvailableTotal').textContent = v.available_count;
+        document.getElementById('cyberTotal').textContent = v.cyber_total;
+        document.getElementById('cyberAvailable').textContent = v.cyber_available;
+        document.getElementById('kineticTotal').textContent = v.kinetic_total;
+        document.getElementById('kineticAvailable').textContent = v.kinetic_available;
+
+        // Refresh icons after content loads
+        if (typeof refreshFeatherIcons === 'function') {
+            refreshFeatherIcons();
+        }
+
+    } catch (error) {
+        console.error('Error loading dashboard:', error);
+    }
+}
+
+// Load stats on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadEventStatus();
+    loadDashboardStats();
+    // Refresh icons after a short delay to ensure they render
+    setTimeout(function() {
+        if (typeof refreshFeatherIcons === 'function') {
+            refreshFeatherIcons();
+        }
+    }, 100);
+});
+</script>
+{% endblock %}

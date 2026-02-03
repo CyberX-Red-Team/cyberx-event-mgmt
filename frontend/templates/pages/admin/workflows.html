@@ -1,0 +1,537 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Email Workflows{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="zap"></i></div>
+                        Email Workflows
+                    </h1>
+                    <div class="page-header-subtitle">Configure automated email triggers and templates</div>
+                </div>
+                <div class="col-12 col-xl-auto mt-4">
+                    <button class="btn btn-sm btn-light" onclick="openCreateWorkflowModal()">
+                        <i data-feather="plus" class="me-1"></i>
+                        Create Workflow
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+    <!-- Workflows Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <i data-feather="list" class="me-2"></i>
+                Configured Workflows
+            </div>
+            <div>
+                <select class="form-select form-select-sm" id="filterEnabled" onchange="loadWorkflows()" style="width: 150px;">
+                    <option value="">All Workflows</option>
+                    <option value="true">Enabled Only</option>
+                    <option value="false">Disabled Only</option>
+                </select>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Workflow Name</th>
+                            <th>Trigger Event</th>
+                            <th>Email Template</th>
+                            <th>Priority</th>
+                            <th>Type</th>
+                            <th width="220">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="workflowsTableBody">
+                        <tr>
+                            <td colspan="7" class="text-center py-4">
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                                Loading workflows...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Workflow Editor Modal -->
+<div class="modal fade" id="workflowModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="workflowModalTitle">Create Workflow</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="workflowId">
+
+                <!-- Basic Info -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Workflow Name (ID) <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="workflowName" placeholder="e.g., user_welcome">
+                        <div class="form-text">Unique identifier, lowercase with underscores</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Display Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="workflowDisplayName" placeholder="e.g., Welcome Email">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" id="workflowDescription" rows="2" placeholder="What does this workflow do?"></textarea>
+                </div>
+
+                <!-- Trigger Configuration -->
+                <div class="card bg-light mb-3">
+                    <div class="card-body">
+                        <h6 class="mb-3"><i data-feather="zap" class="me-2"></i>Trigger Configuration</h6>
+
+                        <div class="mb-3">
+                            <label class="form-label">Trigger Event <span class="text-danger">*</span></label>
+                            <select class="form-select" id="workflowTriggerEvent" onchange="onTriggerEventChange()">
+                                <option value="">Select trigger event...</option>
+                            </select>
+                            <div class="form-text" id="triggerEventDescription"></div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label">Delay (minutes)</label>
+                                <input type="number" class="form-control" id="workflowDelay" min="0" placeholder="0">
+                                <div class="form-text">Optional delay before sending (0 = immediate)</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Priority <span class="text-danger">*</span></label>
+                                <select class="form-select" id="workflowPriority">
+                                    <option value="1">1 - Highest</option>
+                                    <option value="2">2 - High</option>
+                                    <option value="3">3 - Above Normal</option>
+                                    <option value="4">4 - Normal</option>
+                                    <option value="5" selected>5 - Normal</option>
+                                    <option value="6">6 - Below Normal</option>
+                                    <option value="7">7 - Low</option>
+                                    <option value="8">8 - Lower</option>
+                                    <option value="9">9 - Very Low</option>
+                                    <option value="10">10 - Lowest</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Email Configuration -->
+                <div class="card bg-light mb-3">
+                    <div class="card-body">
+                        <h6 class="mb-3"><i data-feather="mail" class="me-2"></i>Email Configuration</h6>
+
+                        <div class="mb-3">
+                            <label class="form-label">Email Template <span class="text-danger">*</span></label>
+                            <select class="form-select" id="workflowTemplate">
+                                <option value="">Select template...</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Custom Variables (JSON)</label>
+                            <textarea class="form-control font-monospace" id="workflowCustomVars" rows="3" placeholder='{"login_url": "https://portal.example.com"}'></textarea>
+                            <div class="form-text">Additional template variables as JSON</div>
+                            <div id="availableVarsInfo" class="small text-muted mt-1"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status -->
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="workflowEnabled" checked>
+                    <label class="form-check-label" for="workflowEnabled">
+                        <strong>Workflow Enabled</strong>
+                        <div class="small text-muted">Disabled workflows will not trigger automatically</div>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveWorkflow()">
+                    <i data-feather="save" class="me-1"></i> Save Workflow
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+// Wrap in IIFE to prevent global scope conflicts
+(function() {
+'use strict';
+
+// =============================================================================
+// State
+// =============================================================================
+let workflows = [];
+let templates = [];
+let triggerEvents = [];
+
+// =============================================================================
+// Initialization
+// =============================================================================
+document.addEventListener('DOMContentLoaded', () => {
+    loadWorkflows();
+    loadTemplates();
+    loadTriggerEvents();
+    feather.replace();
+});
+
+// =============================================================================
+// Data Loading Functions
+// =============================================================================
+async function loadWorkflows() {
+    const enabledFilter = document.getElementById('filterEnabled').value;
+    let url = '/api/admin/email-workflows?page_size=100';
+    if (enabledFilter) url += `&enabled_only=${enabledFilter}`;
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to load workflows');
+
+        const data = await response.json();
+        workflows = data.items;
+        renderWorkflowsTable();
+    } catch (error) {
+        console.error('Error loading workflows:', error);
+        document.getElementById('workflowsTableBody').innerHTML =
+            '<tr><td colspan="7" class="text-center text-danger py-4">Failed to load workflows</td></tr>';
+    }
+}
+
+async function loadTemplates() {
+    try {
+        const response = await fetch('/api/email/templates?active_only=true', { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to load templates');
+
+        templates = await response.json();
+        populateTemplateSelect();
+    } catch (error) {
+        console.error('Error loading templates:', error);
+    }
+}
+
+async function loadTriggerEvents() {
+    try {
+        const response = await fetch('/api/admin/email-workflows/trigger-events', { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to load trigger events');
+
+        const data = await response.json();
+        triggerEvents = data.events;
+        populateTriggerEventSelect();
+    } catch (error) {
+        console.error('Error loading trigger events:', error);
+    }
+}
+
+// =============================================================================
+// Rendering Functions
+// =============================================================================
+function renderWorkflowsTable() {
+    const tbody = document.getElementById('workflowsTableBody');
+
+    if (workflows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No workflows found</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = workflows.map(wf => {
+        const statusBadge = wf.is_enabled
+            ? '<span class="badge bg-success">Enabled</span>'
+            : '<span class="badge bg-secondary">Disabled</span>';
+
+        const typeBadge = wf.is_system
+            ? '<span class="badge bg-info">System</span>'
+            : '<span class="badge bg-light text-dark">Custom</span>';
+
+        const priorityColor = wf.priority <= 2 ? 'danger' : wf.priority <= 5 ? 'warning' : 'secondary';
+
+        return `
+            <tr>
+                <td>${statusBadge}</td>
+                <td>
+                    <div><strong>${escapeHtml(wf.display_name)}</strong></div>
+                    <small class="text-muted">${escapeHtml(wf.name)}</small>
+                </td>
+                <td>
+                    <code class="small">${escapeHtml(wf.trigger_event)}</code>
+                    ${wf.delay_minutes ? `<br><small class="text-muted">Delay: ${wf.delay_minutes}m</small>` : ''}
+                </td>
+                <td><code class="small">${escapeHtml(wf.template_name)}</code></td>
+                <td><span class="badge bg-${priorityColor}">${wf.priority}</span></td>
+                <td>${typeBadge}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary" onclick="editWorkflow(${wf.id})" title="Edit">
+                            <i data-feather="edit-2"></i>
+                        </button>
+                        <button class="btn btn-outline-${wf.is_enabled ? 'warning' : 'success'}"
+                                onclick="toggleWorkflow(${wf.id}, ${!wf.is_enabled})"
+                                title="${wf.is_enabled ? 'Disable' : 'Enable'}">
+                            <i data-feather="${wf.is_enabled ? 'pause' : 'play'}"></i>
+                        </button>
+                        ${!wf.is_system ? `
+                            <button class="btn btn-outline-danger" onclick="deleteWorkflow(${wf.id})" title="Delete">
+                                <i data-feather="trash-2"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    feather.replace();
+}
+
+function populateTemplateSelect() {
+    const select = document.getElementById('workflowTemplate');
+    select.innerHTML = '<option value="">Select template...</option>' +
+        templates.map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.display_name)}</option>`).join('');
+}
+
+function populateTriggerEventSelect() {
+    const select = document.getElementById('workflowTriggerEvent');
+    select.innerHTML = '<option value="">Select trigger event...</option>' +
+        triggerEvents.map(e => {
+            const varsJson = JSON.stringify(e.available_variables || []);
+            // Escape only for HTML attribute context (replace quotes)
+            const varsEscaped = varsJson.replace(/"/g, '&quot;');
+            return `<option value="${escapeHtml(e.event)}" data-description="${escapeHtml(e.description)}" data-vars="${varsEscaped}">${escapeHtml(e.display_name)}</option>`;
+        }).join('');
+}
+
+function onTriggerEventChange() {
+    const select = document.getElementById('workflowTriggerEvent');
+    const option = select.options[select.selectedIndex];
+
+    if (option && option.value) {
+        const description = option.getAttribute('data-description') || '';
+        const varsAttr = option.getAttribute('data-vars');
+        let vars = [];
+
+        if (varsAttr) {
+            try {
+                vars = JSON.parse(varsAttr);
+            } catch (e) {
+                console.error('Failed to parse data-vars:', e);
+                vars = [];
+            }
+        }
+
+        document.getElementById('triggerEventDescription').textContent = description;
+        document.getElementById('availableVarsInfo').textContent =
+            vars.length > 0 ? `Available variables: ${vars.join(', ')}` : '';
+    } else {
+        document.getElementById('triggerEventDescription').textContent = '';
+        document.getElementById('availableVarsInfo').textContent = '';
+    }
+}
+
+// =============================================================================
+// CRUD Operations
+// =============================================================================
+function openCreateWorkflowModal() {
+    document.getElementById('workflowModalTitle').textContent = 'Create Workflow';
+    document.getElementById('workflowId').value = '';
+    document.getElementById('workflowName').value = '';
+    document.getElementById('workflowName').disabled = false;
+    document.getElementById('workflowDisplayName').value = '';
+    document.getElementById('workflowDescription').value = '';
+    document.getElementById('workflowTriggerEvent').value = '';
+    document.getElementById('workflowTemplate').value = '';
+    document.getElementById('workflowPriority').value = '5';
+    document.getElementById('workflowDelay').value = '';
+    document.getElementById('workflowCustomVars').value = '';
+    document.getElementById('workflowEnabled').checked = true;
+    document.getElementById('triggerEventDescription').textContent = '';
+    document.getElementById('availableVarsInfo').textContent = '';
+
+    new bootstrap.Modal(document.getElementById('workflowModal')).show();
+    feather.replace();
+}
+
+async function editWorkflow(id) {
+    try {
+        const response = await fetch(`/api/admin/email-workflows/${id}`, { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to load workflow');
+
+        const workflow = await response.json();
+
+        document.getElementById('workflowModalTitle').textContent = 'Edit Workflow';
+        document.getElementById('workflowId').value = workflow.id;
+        document.getElementById('workflowName').value = workflow.name;
+        document.getElementById('workflowName').disabled = true;
+        document.getElementById('workflowDisplayName').value = workflow.display_name;
+        document.getElementById('workflowDescription').value = workflow.description || '';
+        document.getElementById('workflowTriggerEvent').value = workflow.trigger_event;
+        document.getElementById('workflowTemplate').value = workflow.template_name;
+        document.getElementById('workflowPriority').value = workflow.priority;
+        document.getElementById('workflowDelay').value = workflow.delay_minutes || '';
+        document.getElementById('workflowCustomVars').value = workflow.custom_vars ? JSON.stringify(workflow.custom_vars, null, 2) : '';
+        document.getElementById('workflowEnabled').checked = workflow.is_enabled;
+
+        onTriggerEventChange();
+
+        new bootstrap.Modal(document.getElementById('workflowModal')).show();
+        feather.replace();
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to load workflow');
+    }
+}
+
+async function saveWorkflow() {
+    const id = document.getElementById('workflowId').value;
+    const customVarsText = document.getElementById('workflowCustomVars').value.trim();
+
+    let customVars = null;
+    if (customVarsText) {
+        try {
+            customVars = JSON.parse(customVarsText);
+        } catch (e) {
+            alert('Invalid JSON in Custom Variables');
+            return;
+        }
+    }
+
+    // Build data object - only include 'name' when creating (not editing)
+    const data = {
+        display_name: document.getElementById('workflowDisplayName').value,
+        description: document.getElementById('workflowDescription').value || null,
+        trigger_event: document.getElementById('workflowTriggerEvent').value,
+        template_name: document.getElementById('workflowTemplate').value,
+        priority: parseInt(document.getElementById('workflowPriority').value),
+        delay_minutes: document.getElementById('workflowDelay').value ? parseInt(document.getElementById('workflowDelay').value) : null,
+        custom_vars: customVars,
+        is_enabled: document.getElementById('workflowEnabled').checked
+    };
+
+    // Only add 'name' when creating (not editing)
+    if (!id) {
+        data.name = document.getElementById('workflowName').value;
+    }
+
+    // Validation
+    const requiredFields = id
+        ? ['display_name', 'trigger_event', 'template_name']
+        : ['name', 'display_name', 'trigger_event', 'template_name'];
+
+    const missingFields = requiredFields.filter(field => !data[field]);
+    if (missingFields.length > 0) {
+        alert('Please fill in all required fields');
+        return;
+    }
+
+    try {
+        const url = id ? `/api/admin/email-workflows/${id}` : '/api/admin/email-workflows';
+        const method = id ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to save workflow');
+        }
+
+        bootstrap.Modal.getInstance(document.getElementById('workflowModal')).hide();
+        await loadWorkflows();
+        alert('Workflow saved successfully');
+    } catch (error) {
+        console.error('Error:', error);
+        alert(error.message);
+    }
+}
+
+async function toggleWorkflow(id, enabled) {
+    try {
+        const response = await fetch(`/api/admin/email-workflows/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ is_enabled: enabled })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to toggle workflow');
+        }
+
+        await loadWorkflows();
+    } catch (error) {
+        console.error('Error:', error);
+        alert(error.message);
+    }
+}
+
+async function deleteWorkflow(id) {
+    if (!confirm('Are you sure you want to delete this workflow?')) return;
+
+    try {
+        const response = await fetch(`/api/admin/email-workflows/${id}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to delete workflow');
+        }
+
+        await loadWorkflows();
+        alert('Workflow deleted successfully');
+    } catch (error) {
+        console.error('Error:', error);
+        alert(error.message);
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Expose functions to global scope for onclick handlers
+window.openCreateWorkflowModal = openCreateWorkflowModal;
+window.editWorkflow = editWorkflow;
+window.saveWorkflow = saveWorkflow;
+window.toggleWorkflow = toggleWorkflow;
+window.deleteWorkflow = deleteWorkflow;
+window.onTriggerEventChange = onTriggerEventChange;
+
+})(); // End IIFE
+</script>
+{% endblock %}

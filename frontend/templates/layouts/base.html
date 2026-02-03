@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="CyberX Event Management">
+    <meta name="author" content="CyberX Red Team">
+    <!-- Cross-browser compatibility -->
+    <meta name="format-detection" content="telephone=no">
+    <meta name="msapplication-tap-highlight" content="no">
+    <title>{% block title %}CyberX{% endblock %} - Event Management</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer">
+
+    <!-- Custom styles -->
+    <style>
+        /* CSS Variables */
+        :root {
+            --primary-color: #0061f2;
+            --secondary-color: #6900c7;
+            --success-color: #00ac69;
+            --danger-color: #e81500;
+            --warning-color: #f4a100;
+            --info-color: #00cfd5;
+        }
+
+        /* Base Typography - Cross-browser font stack */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Gradient Background */
+        .bg-gradient-primary-to-secondary {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            background: -webkit-linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        }
+
+        /* Navigation Fixed */
+        .nav-fixed {
+            padding-top: 56px;
+        }
+
+        /* Ensure fixed navbar stays on top */
+        .navbar.fixed-top {
+            z-index: 1040;
+        }
+
+        /* Sidenav Styles */
+        .sidenav {
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-orient: vertical;
+            -webkit-box-direction: normal;
+            -ms-flex-direction: column;
+            flex-direction: column;
+            height: calc(100vh - 56px);
+            -ms-flex-wrap: nowrap;
+            flex-wrap: nowrap;
+            position: fixed;
+            top: 56px;
+            width: 225px;
+            left: 0;
+            background-color: #212529;
+            z-index: 1038;
+            -webkit-transition: -webkit-transform 0.15s ease-in-out;
+            transition: -webkit-transform 0.15s ease-in-out;
+            transition: transform 0.15s ease-in-out;
+            transition: transform 0.15s ease-in-out, -webkit-transform 0.15s ease-in-out;
+        }
+
+        .sidenav .sidenav-menu {
+            -webkit-box-flex: 1;
+            -ms-flex-positive: 1;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .sidenav .nav-link {
+            color: rgba(255,255,255,0.5);
+            padding: 0.75rem 1rem;
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+        }
+
+        .sidenav .nav-link:hover {
+            color: rgba(255,255,255,0.8);
+        }
+
+        .sidenav .nav-link.active {
+            color: #fff;
+        }
+
+        /* Feather Icons - Default size */
+        .sidenav .nav-link svg,
+        .sidenav .nav-link [data-feather] {
+            margin-right: 0.5rem;
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+
+        /* Feather Icon Sizes */
+        .feather {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+            vertical-align: text-bottom;
+        }
+
+        .feather-sm {
+            width: 14px;
+            height: 14px;
+        }
+
+        .feather-lg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .feather-xl {
+            width: 32px;
+            height: 32px;
+        }
+
+        .feather-xxl {
+            width: 48px;
+            height: 48px;
+        }
+
+        /* Card header icons */
+        .card-header svg,
+        .card-header [data-feather] {
+            width: 16px;
+            height: 16px;
+            vertical-align: text-bottom;
+        }
+
+        /* Button icons */
+        .btn svg,
+        .btn [data-feather] {
+            width: 16px;
+            height: 16px;
+            vertical-align: text-bottom;
+        }
+
+        /* Page header icon */
+        .page-header-icon svg,
+        .page-header-icon [data-feather] {
+            width: 24px;
+            height: 24px;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+        }
+
+        /* Stats card icons */
+        .stats-card .feather-xl,
+        .stats-card svg.feather-xl {
+            width: 32px;
+            height: 32px;
+            opacity: 0.5;
+        }
+
+        /* Sidenav Light Theme */
+        .sidenav-light {
+            background-color: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+        }
+
+        .sidenav-light .nav-link {
+            color: #495057;
+        }
+
+        .sidenav-light .nav-link:hover {
+            color: var(--primary-color);
+            background-color: rgba(0, 97, 242, 0.05);
+        }
+
+        .sidenav-light .nav-link.active {
+            color: var(--primary-color);
+            font-weight: 600;
+            background-color: rgba(0, 97, 242, 0.1);
+        }
+
+        .sidenav-light .nav-link svg {
+            stroke: currentColor;
+        }
+
+        .sidenav-light .sidenav-menu-heading {
+            color: #6c757d;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+
+        .sidenav-light .sidenav-footer {
+            background-color: #fff;
+        }
+
+        /* Layout Sidenav */
+        #layoutSidenav {
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+        }
+
+        #layoutSidenav #layoutSidenav_content {
+            position: relative;
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-orient: vertical;
+            -webkit-box-direction: normal;
+            -ms-flex-direction: column;
+            flex-direction: column;
+            -webkit-box-pack: start;
+            -ms-flex-pack: start;
+            justify-content: flex-start;
+            min-width: 0;
+            -webkit-box-flex: 1;
+            -ms-flex-positive: 1;
+            flex-grow: 1;
+            min-height: calc(100vh - 56px);
+            margin-left: 225px;
+        }
+
+        /* Page Header */
+        .page-header {
+            padding: 2rem 0;
+            position: relative;
+            z-index: 1;
+        }
+
+        .page-header-dark {
+            color: #fff;
+        }
+
+        .page-header-title {
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+        }
+
+        .page-header-subtitle {
+            opacity: 0.8;
+        }
+
+        /* Page header with bottom padding for card overlap */
+        .pb-10 {
+            padding-bottom: 8rem !important;
+        }
+
+        /* Negative margin for card overlap effect */
+        .mt-n10 {
+            margin-top: -6rem !important;
+            position: relative;
+            z-index: 2;
+        }
+
+        /* Card Styling */
+        .card {
+            -webkit-box-shadow: 0 0.15rem 1.75rem 0 rgba(33, 40, 50, 0.15);
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(33, 40, 50, 0.15);
+            border: none;
+        }
+
+        .card-header {
+            background-color: rgba(33, 40, 50, 0.03);
+            border-bottom: 1px solid rgba(33, 40, 50, 0.125);
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+        }
+
+        /* Footer */
+        .footer {
+            padding: 1rem 0;
+            background-color: #fff;
+        }
+
+        /* Stats Cards */
+        .stats-card {
+            -webkit-transition: -webkit-transform 0.15s ease-in-out;
+            transition: -webkit-transform 0.15s ease-in-out;
+            transition: transform 0.15s ease-in-out;
+            transition: transform 0.15s ease-in-out, -webkit-transform 0.15s ease-in-out;
+        }
+
+        .stats-card:hover {
+            -webkit-transform: translateY(-3px);
+            transform: translateY(-3px);
+        }
+
+        /* Text helpers */
+        .text-white-50 {
+            color: rgba(255, 255, 255, 0.5) !important;
+        }
+
+        .text-white-75 {
+            color: rgba(255, 255, 255, 0.75) !important;
+        }
+
+        /* DataTables Styling */
+        .dataTables_wrapper {
+            padding: 0;
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 992px) {
+            .sidenav {
+                -webkit-transform: translateX(-225px);
+                transform: translateX(-225px);
+            }
+
+            .sidenav.show {
+                -webkit-transform: translateX(0);
+                transform: translateX(0);
+            }
+
+            #layoutSidenav #layoutSidenav_content {
+                margin-left: 0;
+            }
+        }
+
+        /* Print styles */
+        @media print {
+            .sidenav,
+            .navbar {
+                display: none !important;
+            }
+
+            #layoutSidenav #layoutSidenav_content {
+                margin-left: 0 !important;
+            }
+        }
+    </style>
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    {% block body %}{% endblock %}
+
+    <!-- Bootstrap JS Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+
+    <!-- Chart.js for analytics charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <!-- Feather Icons - with fallback -->
+    <script src="https://unpkg.com/feather-icons@4.29.1/dist/feather.min.js"></script>
+    <script>
+        // Fallback if unpkg fails
+        if (typeof feather === 'undefined') {
+            var script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/feather-icons@4.29.1/dist/feather.min.js';
+            document.head.appendChild(script);
+        }
+    </script>
+
+    <!-- Initialize Feather Icons -->
+    <script>
+        // Initialize feather icons on DOM ready
+        document.addEventListener('DOMContentLoaded', function() {
+            // Wait a bit for feather to load
+            setTimeout(function() {
+                if (typeof feather !== 'undefined') {
+                    feather.replace();
+                } else {
+                    console.warn('Feather icons not loaded');
+                }
+            }, 50);
+        });
+
+        // Global function to refresh icons (call after dynamic content loads)
+        function refreshFeatherIcons() {
+            if (typeof feather !== 'undefined') {
+                feather.replace();
+            }
+        }
+
+        // =============================================================================
+        // Global DateTime Formatting
+        // =============================================================================
+        // Global formatDateTime function respecting user preferences
+        window.formatDateTime = function(dateStr, options = {}) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            const timezone = localStorage.getItem('timezonePreference') || 'utc';
+            const timeFormat = localStorage.getItem('timeFormat') || '24';
+
+            const formatOptions = {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: options.hideSeconds ? undefined : '2-digit',
+                hour12: options.hour12 !== undefined ? options.hour12 : (timeFormat === '12')
+            };
+
+            if (timezone === 'utc') {
+                formatOptions.timeZone = 'UTC';
+            }
+
+            return date.toLocaleString('en-US', formatOptions);
+        }
+
+        // Global formatDate function for date-only display
+        window.formatDate = function(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            const timezone = localStorage.getItem('timezonePreference') || 'utc';
+
+            const formatOptions = {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            };
+
+            if (timezone === 'utc') {
+                formatOptions.timeZone = 'UTC';
+            }
+
+            return date.toLocaleDateString('en-US', formatOptions);
+        }
+    </script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,619 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Audit Logs{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Audit log specific styles */
+.audit-action {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+}
+
+.details-json {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    background-color: #f8f9fa;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="file-text"></i></div>
+                        Audit Logs
+                    </h1>
+                    <div class="page-header-subtitle">Complete audit trail of system activities</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card stats-card bg-primary text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Total Events</div>
+                            <div class="fs-3 fw-bold" id="statTotal">-</div>
+                        </div>
+                        <i data-feather="activity" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card stats-card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Logins</div>
+                            <div class="fs-3 fw-bold" id="statLogins">-</div>
+                        </div>
+                        <i data-feather="log-in" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card stats-card bg-warning text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">User Changes</div>
+                            <div class="fs-3 fw-bold" id="statUserChanges">-</div>
+                        </div>
+                        <i data-feather="users" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card stats-card bg-info text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Last 24h</div>
+                            <div class="fs-3 fw-bold" id="statRecent">-</div>
+                        </div>
+                        <i data-feather="clock" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VPN Request Stats -->
+    <div class="row mb-4">
+        <div class="col-xl-4 col-md-4">
+            <div class="card stats-card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">VPN Requests (Success)</div>
+                            <div class="fs-3 fw-bold" id="statVPNSuccess">-</div>
+                        </div>
+                        <i data-feather="check-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4 col-md-4">
+            <div class="card stats-card bg-danger text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">VPN Requests (Failed)</div>
+                            <div class="fs-3 fw-bold" id="statVPNFailed">-</div>
+                        </div>
+                        <i data-feather="x-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4 col-md-4">
+            <div class="card stats-card bg-warning text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">VPN Requests (Rate Limited)</div>
+                            <div class="fs-3 fw-bold" id="statVPNRateLimited">-</div>
+                        </div>
+                        <i data-feather="shield-off" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="filter" class="me-2"></i>
+            Filters
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label small">Action Type</label>
+                    <select class="form-select" id="actionFilter">
+                        <option value="">All Actions</option>
+                        <optgroup label="Authentication">
+                            <option value="LOGIN_SUCCESS">Login Success</option>
+                            <option value="LOGIN_FAILED">Login Failed</option>
+                            <option value="LOGOUT">Logout</option>
+                            <option value="PASSWORD_CHANGE">Password Change</option>
+                            <option value="PASSWORD_RESET">Password Reset</option>
+                            <option value="PASSWORD_RESET_REQUEST">Password Reset Request</option>
+                            <option value="PASSWORD_RESET_COMPLETE">Password Reset Complete</option>
+                        </optgroup>
+                        <optgroup label="User Management">
+                            <option value="USER_CREATE">User Create</option>
+                            <option value="USER_UPDATE">User Update</option>
+                            <option value="USER_DELETE">User Delete</option>
+                            <option value="ROLE_CHANGE">Role Change</option>
+                            <option value="BULK_ACTIVATE">Bulk Activate</option>
+                            <option value="BULK_DEACTIVATE">Bulk Deactivate</option>
+                        </optgroup>
+                        <optgroup label="VPN Management">
+                            <option value="VPN_ASSIGN">VPN Assign</option>
+                            <option value="VPN_UNASSIGN">VPN Unassign</option>
+                            <option value="VPN_REQUEST_SUCCESS">VPN Request Success</option>
+                            <option value="VPN_REQUEST_FAILED">VPN Request Failed</option>
+                            <option value="VPN_REQUEST_RATE_LIMITED">VPN Request Rate Limited</option>
+                        </optgroup>
+                        <optgroup label="Sponsor Actions">
+                            <option value="CREATE_INVITEE">Create Invitee</option>
+                            <option value="UPDATE_INVITEE">Update Invitee</option>
+                            <option value="RESET_INVITEE_PASSWORD">Reset Invitee Password</option>
+                            <option value="RESEND_INVITATION">Resend Invitation</option>
+                        </optgroup>
+                        <optgroup label="Event Management">
+                            <option value="EVENT_CREATE">Event Create</option>
+                            <option value="EVENT_UPDATE">Event Update</option>
+                            <option value="EVENT_ACTIVATE">Event Activate</option>
+                            <option value="EVENT_ARCHIVE">Event Archive</option>
+                        </optgroup>
+                        <optgroup label="Participation">
+                            <option value="PARTICIPATION_CONFIRM">Participation Confirm</option>
+                            <option value="DECLINE_PARTICIPATION">Decline Participation</option>
+                            <option value="TERMS_ACCEPT">Terms Accept</option>
+                        </optgroup>
+                        <optgroup label="Email">
+                            <option value="EMAIL_SEND">Email Send</option>
+                            <option value="INVITATION_BLOCKED">Invitation Blocked</option>
+                            <option value="REMINDER_1_SENT">Reminder 1 Sent</option>
+                            <option value="REMINDER_2_SENT">Reminder 2 Sent</option>
+                            <option value="REMINDER_3_SENT">Reminder 3 Sent (Final)</option>
+                        </optgroup>
+                        <optgroup label="Workflows">
+                            <option value="WORKFLOW_CREATE">Workflow Create</option>
+                            <option value="WORKFLOW_UPDATE">Workflow Update</option>
+                            <option value="WORKFLOW_DELETE">Workflow Delete</option>
+                            <option value="WORKFLOW_TRIGGER">Workflow Trigger</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Resource Type</label>
+                    <select class="form-select" id="resourceFilter">
+                        <option value="">All Resources</option>
+                        <option value="USER">User</option>
+                        <option value="VPN">VPN</option>
+                        <option value="EMAIL">Email</option>
+                        <option value="EVENT">Event</option>
+                        <option value="WORKFLOW">Workflow</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Start Date</label>
+                    <input type="datetime-local" class="form-control" id="startDate">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">End Date</label>
+                    <input type="datetime-local" class="form-control" id="endDate">
+                </div>
+                <div class="col-md-12 d-flex align-items-end justify-content-between">
+                    <div>
+                        <button class="btn btn-primary me-2" onclick="loadAuditLogs(1)">
+                            <i data-feather="search" class="me-1"></i> Search
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="clearFilters()">
+                            <i data-feather="x" class="me-1"></i> Clear
+                        </button>
+                    </div>
+                    <div>
+                        <label class="form-label small me-2">Timezone:</label>
+                        <div class="btn-group" role="group">
+                            <input type="radio" class="btn-check" name="timezoneToggle" id="timezoneLocal" value="local" onchange="toggleTimezone()">
+                            <label class="btn btn-outline-secondary btn-sm" for="timezoneLocal">Local</label>
+                            <input type="radio" class="btn-check" name="timezoneToggle" id="timezoneUTC" value="utc" onchange="toggleTimezone()" checked>
+                            <label class="btn btn-outline-secondary btn-sm" for="timezoneUTC">UTC</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Audit Logs Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <i data-feather="list" class="me-2"></i>
+                Audit Trail
+                <span class="badge bg-secondary ms-2" id="logCountBadge">0</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="auditLogsTable">
+                    <thead>
+                        <tr>
+                            <th width="180">Timestamp</th>
+                            <th>User</th>
+                            <th>Action</th>
+                            <th>Resource</th>
+                            <th width="120">IP Address</th>
+                            <th width="60">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="auditLogsBody">
+                        <tr>
+                            <td colspan="6" class="text-center py-4">
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                                Loading audit logs...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <!-- Pagination -->
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div class="small text-muted" id="paginationInfo">Showing 0 of 0</div>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Details Modal -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="info" class="me-2"></i>
+                    Audit Log Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">Timestamp</label>
+                        <div id="detailTimestamp">-</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">User</label>
+                        <div id="detailUser">-</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">Action</label>
+                        <div id="detailAction">-</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">Resource</label>
+                        <div id="detailResource">-</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">IP Address</label>
+                        <div id="detailIP">-</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">User Agent</label>
+                        <div id="detailUserAgent" class="small">-</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-bold">Additional Details</label>
+                        <div id="detailDetails" class="details-json">-</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+'use strict';
+
+// =============================================================================
+// State
+// =============================================================================
+let auditLogs = [];
+let currentPage = 1;
+let totalPages = 1;
+let pageSize = 50;
+
+// Use global formatDateTime function from dashboard.html with fallback
+const formatDateTime = window.formatDateTime || function(dateStr) {
+    console.error('formatDateTime not available from window.formatDateTime, using fallback');
+    const date = new Date(dateStr);
+    return date.toLocaleString() + ' (fallback)';
+};
+
+// =============================================================================
+// Initialization
+// =============================================================================
+document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadAuditLogs(1);
+    feather.replace();
+});
+
+// =============================================================================
+// Data Loading
+// =============================================================================
+async function loadStats() {
+    try {
+        const response = await fetch('/api/admin/audit-logs/stats', {
+            credentials: 'include'
+        });
+        const stats = await response.json();
+
+        document.getElementById('statTotal').textContent = stats.total_events || 0;
+        document.getElementById('statLogins').textContent = stats.login_count || 0;
+
+        const userChanges = (stats.user_create_count || 0) +
+                           (stats.user_update_count || 0) +
+                           (stats.user_delete_count || 0) +
+                           (stats.role_change_count || 0);
+        document.getElementById('statUserChanges').textContent = userChanges;
+        document.getElementById('statRecent').textContent = stats.recent_24h || 0;
+
+        // VPN request stats
+        document.getElementById('statVPNSuccess').textContent = stats.vpn_request_success_count || 0;
+        document.getElementById('statVPNFailed').textContent = stats.vpn_request_failed_count || 0;
+        document.getElementById('statVPNRateLimited').textContent = stats.vpn_request_rate_limited_count || 0;
+    } catch (error) {
+        console.error('Error loading stats:', error);
+    }
+}
+
+window.loadAuditLogs = async function(page = 1) {
+    currentPage = page;
+    const action = document.getElementById('actionFilter').value;
+    const resourceType = document.getElementById('resourceFilter').value;
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+
+    const params = new URLSearchParams({
+        page: page,
+        page_size: pageSize
+    });
+
+    if (action) params.append('action', action);
+    if (resourceType) params.append('resource_type', resourceType);
+    if (startDate) params.append('start_date', new Date(startDate).toISOString());
+    if (endDate) params.append('end_date', new Date(endDate).toISOString());
+
+    try {
+        const response = await fetch(`/api/admin/audit-logs?${params}`, {
+            credentials: 'include'
+        });
+        const data = await response.json();
+
+        auditLogs = data.items || [];
+        totalPages = data.total_pages || 1;
+
+        renderAuditLogsTable();
+        renderPagination(data.total || 0);
+        document.getElementById('logCountBadge').textContent = data.total || 0;
+
+    } catch (error) {
+        console.error('Error loading audit logs:', error);
+        console.error('Error details:', error.message, error.stack);
+        document.getElementById('auditLogsBody').innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center text-danger py-4">
+                    Failed to load audit logs. Please try again.
+                    <div class="small text-muted mt-2">Error: ${error.message}</div>
+                </td>
+            </tr>
+        `;
+    }
+}
+
+// =============================================================================
+// Rendering
+// =============================================================================
+function renderAuditLogsTable() {
+    const tbody = document.getElementById('auditLogsBody');
+
+    if (auditLogs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No audit logs found</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = auditLogs.map(log => `
+        <tr>
+            <td class="small">${formatDateTime(log.created_at)}</td>
+            <td>
+                ${log.user_name ? `<strong>${escapeHtml(log.user_name)}</strong>` : '<span class="text-muted">System</span>'}
+                ${log.user_email ? `<div class="small text-muted">${escapeHtml(log.user_email)}</div>` : ''}
+            </td>
+            <td><span class="badge ${getActionBadge(log.action)} audit-action">${log.action}</span></td>
+            <td>
+                ${log.resource_type ? `<span class="badge bg-secondary">${log.resource_type}</span>` : '-'}
+                ${log.resource_id ? ` #${log.resource_id}` : ''}
+            </td>
+            <td class="small">${log.ip_address || '-'}</td>
+            <td class="text-center">
+                ${log.details ? `<button class="btn btn-sm btn-outline-primary" onclick="showDetails(${log.id})" title="View Details"><i data-feather="info"></i></button>` : '-'}
+            </td>
+        </tr>
+    `).join('');
+
+    feather.replace();
+}
+
+function renderPagination(total) {
+    const info = document.getElementById('paginationInfo');
+    const start = (currentPage - 1) * pageSize + 1;
+    const end = Math.min(currentPage * pageSize, total);
+    info.textContent = `Showing ${start}-${end} of ${total}`;
+
+    const pagination = document.getElementById('pagination');
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+    html += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadAuditLogs(${currentPage - 1}); return false;">Previous</a>
+    </li>`;
+
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+            html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="loadAuditLogs(${i}); return false;">${i}</a>
+            </li>`;
+        } else if (i === currentPage - 3 || i === currentPage + 3) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+
+    html += `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadAuditLogs(${currentPage + 1}); return false;">Next</a>
+    </li>`;
+
+    pagination.innerHTML = html;
+}
+
+function getActionBadge(action) {
+    const badges = {
+        // Authentication
+        'LOGIN_SUCCESS': 'bg-success',
+        'LOGIN_FAILED': 'bg-danger',
+        'LOGOUT': 'bg-secondary',
+        'PASSWORD_CHANGE': 'bg-info',
+        'PASSWORD_RESET': 'bg-warning',
+        'PASSWORD_RESET_REQUEST': 'bg-info',
+        'PASSWORD_RESET_COMPLETE': 'bg-success',
+
+        // User Management
+        'USER_CREATE': 'bg-primary',
+        'USER_UPDATE': 'bg-info',
+        'USER_DELETE': 'bg-danger',
+        'ROLE_CHANGE': 'bg-warning',
+        'BULK_ACTIVATE': 'bg-success',
+        'BULK_DEACTIVATE': 'bg-secondary',
+
+        // VPN Management
+        'VPN_ASSIGN': 'bg-success',
+        'VPN_UNASSIGN': 'bg-warning',
+        'VPN_REQUEST_SUCCESS': 'bg-success',
+        'VPN_REQUEST_FAILED': 'bg-danger',
+        'VPN_REQUEST_RATE_LIMITED': 'bg-warning',
+
+        // Sponsor Actions
+        'CREATE_INVITEE': 'bg-primary',
+        'UPDATE_INVITEE': 'bg-info',
+        'RESET_INVITEE_PASSWORD': 'bg-warning',
+        'RESEND_INVITATION': 'bg-info',
+
+        // Event Management
+        'EVENT_CREATE': 'bg-primary',
+        'EVENT_UPDATE': 'bg-info',
+        'EVENT_ACTIVATE': 'bg-success',
+        'EVENT_ARCHIVE': 'bg-secondary',
+
+        // Participation
+        'PARTICIPATION_CONFIRM': 'bg-success',
+        'DECLINE_PARTICIPATION': 'bg-warning',
+        'TERMS_ACCEPT': 'bg-success',
+
+        // Email
+        'EMAIL_SEND': 'bg-info',
+        'INVITATION_BLOCKED': 'bg-warning',
+        'REMINDER_1_SENT': 'bg-primary',
+        'REMINDER_2_SENT': 'bg-primary',
+        'REMINDER_3_SENT': 'bg-danger',  // Final reminder - more urgent
+
+        // Workflows
+        'WORKFLOW_CREATE': 'bg-primary',
+        'WORKFLOW_UPDATE': 'bg-info',
+        'WORKFLOW_DELETE': 'bg-danger',
+        'WORKFLOW_TRIGGER': 'bg-success'
+    };
+    return badges[action] || 'bg-secondary';
+}
+
+// =============================================================================
+// Details Modal
+// =============================================================================
+window.showDetails = function(logId) {
+    const log = auditLogs.find(l => l.id === logId);
+    if (!log) return;
+
+    document.getElementById('detailTimestamp').textContent = formatDateTime(log.created_at);
+    document.getElementById('detailUser').textContent = log.user_name ?
+        `${log.user_name} (${log.user_email})` : 'System';
+    document.getElementById('detailAction').innerHTML = `<span class="badge ${getActionBadge(log.action)}">${log.action}</span>`;
+    document.getElementById('detailResource').textContent = log.resource_type ?
+        `${log.resource_type} ${log.resource_id ? '#' + log.resource_id : ''}` : '-';
+    document.getElementById('detailIP').textContent = log.ip_address || '-';
+    document.getElementById('detailUserAgent').textContent = log.user_agent || '-';
+    document.getElementById('detailDetails').textContent = log.details ?
+        JSON.stringify(log.details, null, 2) : 'No additional details';
+
+    new bootstrap.Modal(document.getElementById('detailsModal')).show();
+    setTimeout(() => feather.replace(), 100);
+}
+
+// =============================================================================
+// Utilities
+// =============================================================================
+window.clearFilters = function() {
+    document.getElementById('actionFilter').value = '';
+    document.getElementById('resourceFilter').value = '';
+    document.getElementById('startDate').value = '';
+    document.getElementById('endDate').value = '';
+    loadAuditLogs(1);
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+})(); // End IIFE
+</script>
+{% endblock %}

@@ -1,0 +1,922 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}VPN Management{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<style>
+    .dropzone {
+        border: 2px dashed #dee2e6;
+        border-radius: 0.5rem;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        background: #f8f9fa;
+    }
+    .dropzone:hover, .dropzone.dragover {
+        border-color: #0d6efd;
+        background: #e7f1ff;
+    }
+    .dropzone.uploading {
+        pointer-events: none;
+        opacity: 0.7;
+    }
+    .dropzone i {
+        font-size: 3rem;
+        color: #6c757d;
+    }
+    .dropzone.dragover i {
+        color: #0d6efd;
+    }
+    .vpn-cell {
+        cursor: pointer;
+        user-select: text;
+        border-bottom: 1px dotted #dee2e6;
+    }
+    .vpn-cell:hover {
+        background-color: #f8f9fa;
+    }
+    .popover-body {
+        user-select: text;
+        word-break: break-all;
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-fluid px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="shield"></i></div>
+                        VPN Management
+                    </h1>
+                    <div class="page-header-subtitle">Manage VPN credentials and assignments</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-fluid px-4 mt-n10">
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-4 col-md-6">
+            <div class="card bg-primary text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Total Credentials</div>
+                            <div class="text-lg fw-bold" id="statTotal">-</div>
+                        </div>
+                        <i data-feather="database" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4 col-md-6">
+            <div class="card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Available</div>
+                            <div class="text-lg fw-bold" id="statAvailable">-</div>
+                        </div>
+                        <i data-feather="check-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4 col-md-6">
+            <div class="card bg-warning text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Assigned</div>
+                            <div class="text-lg fw-bold" id="statAssigned">-</div>
+                        </div>
+                        <i data-feather="user-check" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Import Card (Admin Only) -->
+    {% if current_user.is_admin_role %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="upload" class="me-2"></i>
+            Bulk Import VPN Credentials
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-lg-8">
+                    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+                        <input type="file" id="fileInput" accept=".zip" style="display: none;">
+                        <i data-feather="upload-cloud"></i>
+                        <p class="mt-2 mb-1">Drag and drop a ZIP file here, or click to select</p>
+                        <p class="small text-muted mb-0">ZIP file should contain WireGuard configuration files with Endpoint specified</p>
+                    </div>
+                    <div id="uploadProgress" class="mt-3" style="display: none;">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                        </div>
+                        <p class="small text-muted mt-1 mb-0">Importing VPN credentials...</p>
+                    </div>
+                    <div id="uploadResult" class="mt-3" style="display: none;"></div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Download File Naming Pattern</label>
+                        <input type="text" class="form-control form-control-sm font-monospace" id="namingPattern" placeholder="simnet_{ipv4_address}.conf" value="simnet_{ipv4_address}.conf">
+                        <div class="form-text small mt-2">
+                            <strong>Available variables:</strong><br>
+                            <code>{username}</code> - pandas_username<br>
+                            <code>{user_id}</code> - User ID<br>
+                            <code>{ipv4_address}</code> - IPv4 address<br>
+                            <code>{endpoint}</code> - VPN endpoint<br>
+                            <code>{index}</code> - Sequential number<br>
+                            <code>{id}</code> - VPN credential ID<br>
+                            <code>{batch_id}</code> - Request batch (8 chars)
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Filters Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="filter" class="me-2"></i>
+            Filters
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label small">Search</label>
+                    <input type="text" class="form-control" id="searchInput" placeholder="IP address, username...">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Status</label>
+                    <select class="form-select" id="availableFilter">
+                        <option value="">All</option>
+                        <option value="true">Available</option>
+                        <option value="false">Assigned</option>
+                    </select>
+                </div>
+                <div class="col-md-5 d-flex align-items-end">
+                    <button class="btn btn-primary me-2" onclick="applyFilters()">
+                        <i data-feather="search" class="me-1"></i> Search
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="clearFilters()">
+                        <i data-feather="x" class="me-1"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VPN Credentials Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <i data-feather="list" class="me-2"></i>
+                VPN Credentials
+            </div>
+            <div>
+                <button class="btn btn-sm btn-danger me-2" id="deleteSelectedBtn" onclick="deleteSelectedVPNs()" style="display: none;">
+                    <i data-feather="trash-2" class="me-1"></i> Delete Selected (<span id="selectedCount">0</span>)
+                </button>
+                <button class="btn btn-sm btn-outline-danger" id="deleteAllBtn" onclick="deleteAllVPNs()">
+                    <i data-feather="trash-2" class="me-1"></i> Delete All
+                </button>
+                <span class="small text-muted ms-3">
+                    Showing <span id="showingCount">0</span> of <span id="totalCount">0</span>
+                </span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="vpnTable">
+                    <thead>
+                        <tr>
+                            <th width="30">
+                                <input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleSelectAll()">
+                            </th>
+                            <th>ID</th>
+                            <th>IPv4 Address</th>
+                            <th>Interface IP</th>
+                            <th>Endpoint</th>
+                            <th>SHA256 Hash</th>
+                            <th>Request ID</th>
+                            <th>Status</th>
+                            <th>Assigned To</th>
+                            <th>Assigned At</th>
+                            <th width="100">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vpnBody">
+                        <tr>
+                            <td colspan="10" class="text-center py-4">
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                                Loading VPN credentials...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div>
+                    <select class="form-select form-select-sm" id="pageSizeSelect" onchange="loadVPNCredentials(1)">
+                        <option value="25">25 per page</option>
+                        <option value="50" selected>50 per page</option>
+                        <option value="100">100 per page</option>
+                    </select>
+                </div>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Assign VPN Modal -->
+<div class="modal fade" id="assignModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Assign VPN Credential</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Search Participant</label>
+                    <input type="text" class="form-control" id="participantSearch" placeholder="Start typing to search...">
+                </div>
+                <div id="participantResults" class="list-group" style="max-height: 200px; overflow-y: auto;"></div>
+                <input type="hidden" id="selectedParticipantId">
+                <div id="selectedParticipant" class="alert alert-info mt-3" style="display: none;"></div>
+                <div class="mb-3 mt-3">
+                    <label class="form-label">Number of VPNs to Assign</label>
+                    <input type="number" class="form-control" id="assignCount" value="1" min="1" max="25">
+                    <div class="form-text">Maximum 25 VPNs per assignment</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="assignVPN()">Assign VPN</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View VPN Details Modal -->
+<div class="modal fade" id="vpnDetailsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">VPN Credential Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="vpnDetailsBody">
+                <!-- Details loaded dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+let currentPage = 1;
+let searchTimeout = null;
+
+// Load VPN stats
+async function loadStats() {
+    try {
+        const response = await fetch('/api/vpn/stats', { credentials: 'include' });
+        if (response.ok) {
+            const data = await response.json();
+            document.getElementById('statTotal').textContent = data.total_credentials;
+            document.getElementById('statAvailable').textContent = data.available_count;
+            document.getElementById('statAssigned').textContent = data.assigned_count;
+        }
+    } catch (error) {
+        console.error('Failed to load stats:', error);
+    }
+}
+
+// Load VPN credentials
+async function loadVPNCredentials(page = 1) {
+    currentPage = page;
+    const pageSize = document.getElementById('pageSizeSelect').value;
+    const search = document.getElementById('searchInput').value;
+    const isAvailable = document.getElementById('availableFilter').value;
+
+    let url = `/api/vpn/credentials?page=${page}&page_size=${pageSize}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (isAvailable) url += `&is_available=${isAvailable}`;
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            throw new Error('Failed to load VPN credentials');
+        }
+
+        const data = await response.json();
+        renderVPNCredentials(data.items);
+        renderPagination(data.page, data.total_pages, data.total);
+        document.getElementById('showingCount').textContent = data.items.length;
+        document.getElementById('totalCount').textContent = data.total;
+
+    } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('vpnBody').innerHTML = `
+            <tr><td colspan="10" class="text-center text-danger py-4">
+                Failed to load VPN credentials. Please try again.
+            </td></tr>
+        `;
+    }
+}
+
+function renderVPNCredentials(credentials) {
+    const tbody = document.getElementById('vpnBody');
+
+    if (credentials.length === 0) {
+        tbody.innerHTML = `
+            <tr><td colspan="10" class="text-center py-4 text-muted">
+                No VPN credentials found matching your criteria.
+            </td></tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = credentials.map(v => `
+        <tr>
+            <td>
+                <input type="checkbox" class="form-check-input vpn-checkbox" value="${v.id}" onchange="updateSelectionCount()">
+            </td>
+            <td>${v.id}</td>
+            <td><code class="vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.ipv4_address || 'N/A'}">${v.ipv4_address || '-'}</code></td>
+            <td><code class="small vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.interface_ip || 'N/A'}">${truncate(v.interface_ip, 30)}</code></td>
+            <td><code class="vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.endpoint || 'N/A'}">${v.endpoint}</code></td>
+            <td><code class="small text-muted vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.file_hash || 'No hash'}">${v.file_hash ? truncate(v.file_hash, 16) : '-'}</code></td>
+            <td><code class="small text-muted vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.request_batch_id || 'No batch ID'}">${v.request_batch_id ? v.request_batch_id.substring(0, 8) : '-'}</code></td>
+            <td>
+                ${v.is_available
+                    ? '<span class="badge bg-success">Available</span>'
+                    : '<span class="badge bg-warning">Assigned</span>'}
+            </td>
+            <td>
+                ${v.assigned_to_name
+                    ? `<a href="/admin/participants/${v.assigned_to_user_id}" title="${v.assigned_to_email || ''}">${v.assigned_to_name}</a>`
+                    : '-'}
+            </td>
+            <td>${v.assigned_at ? formatDateTime(v.assigned_at) : '-'}</td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="viewVPN(${v.id})" title="View Details">
+                        <i data-feather="eye"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+    feather.replace();
+    updateSelectionCount();
+
+    // Initialize popovers and store instances
+    const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+    const popoverInstances = popoverTriggerList.map(function (popoverTriggerEl) {
+        return new bootstrap.Popover(popoverTriggerEl, {
+            html: true,
+            sanitize: false
+        });
+    });
+
+    // Close popovers when clicking outside
+    document.addEventListener('click', function(event) {
+        const isClickInsidePopover = event.target.closest('.popover');
+        const isClickOnTrigger = event.target.closest('[data-bs-toggle="popover"]');
+
+        if (!isClickInsidePopover && !isClickOnTrigger) {
+            popoverInstances.forEach(function(popover) {
+                popover.hide();
+            });
+        }
+    });
+}
+
+function renderPagination(currentPage, totalPages, total) {
+    const pagination = document.getElementById('pagination');
+
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    html += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="loadVPNCredentials(${currentPage - 1}); return false;">
+                <i data-feather="chevron-left"></i>
+            </a>
+        </li>
+    `;
+
+    const maxPages = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxPages / 2));
+    let endPage = Math.min(totalPages, startPage + maxPages - 1);
+
+    if (endPage - startPage < maxPages - 1) {
+        startPage = Math.max(1, endPage - maxPages + 1);
+    }
+
+    if (startPage > 1) {
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadVPNCredentials(1); return false;">1</a></li>`;
+        if (startPage > 2) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        html += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="loadVPNCredentials(${i}); return false;">${i}</a>
+            </li>
+        `;
+    }
+
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadVPNCredentials(${totalPages}); return false;">${totalPages}</a></li>`;
+    }
+
+    html += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="loadVPNCredentials(${currentPage + 1}); return false;">
+                <i data-feather="chevron-right"></i>
+            </a>
+        </li>
+    `;
+
+    pagination.innerHTML = html;
+    feather.replace();
+}
+
+function applyFilters() {
+    loadVPNCredentials(1);
+}
+
+function clearFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('availableFilter').value = '';
+    loadVPNCredentials(1);
+}
+
+// View VPN details
+async function viewVPN(id) {
+    try {
+        const response = await fetch(`/api/vpn/credentials/${id}`, { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to load VPN details');
+
+        const vpn = await response.json();
+
+        document.getElementById('vpnDetailsBody').innerHTML = `
+            <table class="table table-sm">
+                <tr><th>ID</th><td>${vpn.id}</td></tr>
+                <tr><th>IPv4 Address</th><td><code>${vpn.ipv4_address || '-'}</code></td></tr>
+                <tr><th>Interface IP</th><td><code class="small">${vpn.interface_ip}</code></td></tr>
+                <tr><th>Endpoint</th><td><code>${vpn.endpoint}</code></td></tr>
+                <tr><th>SHA256 Hash</th><td><code class="small text-muted">${vpn.file_hash || '-'}</code></td></tr>
+                <tr><th>Request ID</th><td><code class="small text-muted">${vpn.request_batch_id || '-'}</code></td></tr>
+                <tr><th>Status</th><td>${vpn.is_available ? 'Available' : 'Assigned'}</td></tr>
+                <tr><th>Assigned To</th><td>${vpn.assigned_to_name || '-'} ${vpn.assigned_to_email ? `(${vpn.assigned_to_email})` : ''}</td></tr>
+                <tr><th>Assigned At</th><td>${vpn.assigned_at ? formatDateTime(vpn.assigned_at) : '-'}</td></tr>
+                <tr><th>Created At</th><td>${formatDateTime(vpn.created_at)}</td></tr>
+            </table>
+        `;
+
+        new bootstrap.Modal(document.getElementById('vpnDetailsModal')).show();
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to load VPN details');
+    }
+}
+
+// Assign VPN modal
+function showAssignModal() {
+    document.getElementById('participantSearch').value = '';
+    document.getElementById('participantResults').innerHTML = '';
+    document.getElementById('selectedParticipantId').value = '';
+    document.getElementById('selectedParticipant').style.display = 'none';
+    document.getElementById('assignCount').value = 1;
+    new bootstrap.Modal(document.getElementById('assignModal')).show();
+}
+
+// Search participants for assignment
+document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById('participantSearch');
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(searchParticipants, 300);
+        });
+    }
+});
+
+async function searchParticipants() {
+    const search = document.getElementById('participantSearch').value;
+    if (search.length < 2) {
+        document.getElementById('participantResults').innerHTML = '';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/admin/participants?search=${encodeURIComponent(search)}&page_size=10`, {
+            credentials: 'include'
+        });
+        if (!response.ok) throw new Error('Search failed');
+
+        const data = await response.json();
+        const resultsDiv = document.getElementById('participantResults');
+
+        if (data.items.length === 0) {
+            resultsDiv.innerHTML = '<div class="list-group-item text-muted">No participants found</div>';
+            return;
+        }
+
+        resultsDiv.innerHTML = data.items.map(p => `
+            <button type="button" class="list-group-item list-group-item-action"
+                    onclick="selectParticipant(${p.id}, '${p.first_name} ${p.last_name}', '${p.email}')">
+                <div class="d-flex justify-content-between">
+                    <span>${p.first_name} ${p.last_name}</span>
+                    <small class="text-muted">${p.email}</small>
+                </div>
+                <small class="text-muted">VPNs: ${p.vpn_count || 0}</small>
+            </button>
+        `).join('');
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
+
+function selectParticipant(id, name, email) {
+    document.getElementById('selectedParticipantId').value = id;
+    document.getElementById('selectedParticipant').innerHTML = `
+        <strong>${name}</strong><br>
+        <small>${email}</small>
+    `;
+    document.getElementById('selectedParticipant').style.display = 'block';
+    document.getElementById('participantResults').innerHTML = '';
+    document.getElementById('participantSearch').value = '';
+}
+
+async function assignVPN() {
+    const participantId = document.getElementById('selectedParticipantId').value;
+    const count = parseInt(document.getElementById('assignCount').value);
+
+    if (!participantId) {
+        alert('Please select a participant');
+        return;
+    }
+
+    if (count < 1 || count > 25) {
+        alert('Please enter a valid count (1-25)');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/vpn/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                participant_id: parseInt(participantId),
+                count: count
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            alert(data.message);
+            bootstrap.Modal.getInstance(document.getElementById('assignModal')).hide();
+            loadVPNCredentials(currentPage);
+            loadStats();
+        } else {
+            alert(data.detail || data.message || 'Failed to assign VPN');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to assign VPN');
+    }
+}
+
+// Bulk import functionality
+{% if current_user.is_admin_role %}
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+
+dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('dragover');
+});
+
+dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('dragover');
+});
+
+dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleFileUpload(files[0]);
+    }
+});
+
+fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) {
+        handleFileUpload(fileInput.files[0]);
+    }
+});
+
+async function handleFileUpload(file) {
+    if (!file.name.endsWith('.zip')) {
+        alert('Please upload a ZIP file');
+        return;
+    }
+
+    dropzone.classList.add('uploading');
+    document.getElementById('uploadProgress').style.display = 'block';
+    document.getElementById('uploadResult').style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const response = await fetch('/api/vpn/import', {
+            method: 'POST',
+            credentials: 'include',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        document.getElementById('uploadProgress').style.display = 'none';
+        dropzone.classList.remove('uploading');
+
+        const resultDiv = document.getElementById('uploadResult');
+        resultDiv.style.display = 'block';
+
+        if (response.ok) {
+            resultDiv.className = 'mt-3 alert alert-success';
+            resultDiv.innerHTML = `
+                <strong>Import Complete</strong><br>
+                Imported: ${data.imported_count}<br>
+                Skipped: ${data.skipped_count}
+                ${data.errors.length > 0 ? '<br><small class="text-muted">Errors: ' + data.errors.slice(0, 3).join(', ') + '</small>' : ''}
+            `;
+            loadVPNCredentials(1);
+            loadStats();
+        } else {
+            resultDiv.className = 'mt-3 alert alert-danger';
+            resultDiv.innerHTML = `<strong>Import Failed</strong><br>${data.detail || 'Unknown error'}`;
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('uploadProgress').style.display = 'none';
+        dropzone.classList.remove('uploading');
+
+        const resultDiv = document.getElementById('uploadResult');
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'mt-3 alert alert-danger';
+        resultDiv.innerHTML = '<strong>Upload Failed</strong><br>Please try again.';
+    }
+
+    fileInput.value = '';
+}
+{% endif %}
+
+// Bulk selection and deletion functions
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.vpn-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = selectAll.checked;
+    });
+    updateSelectionCount();
+}
+
+function updateSelectionCount() {
+    const checkboxes = document.querySelectorAll('.vpn-checkbox:checked');
+    const count = checkboxes.length;
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const totalCheckboxes = document.querySelectorAll('.vpn-checkbox').length;
+
+    // Update select all checkbox state
+    if (count === 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    } else if (count === totalCheckboxes) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    } else {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = true;
+    }
+
+    // Show/hide delete selected button
+    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+    const selectedCountSpan = document.getElementById('selectedCount');
+
+    if (count > 0) {
+        deleteSelectedBtn.style.display = 'inline-block';
+        selectedCountSpan.textContent = count;
+    } else {
+        deleteSelectedBtn.style.display = 'none';
+    }
+}
+
+function getSelectedVPNIds() {
+    const checkboxes = document.querySelectorAll('.vpn-checkbox:checked');
+    return Array.from(checkboxes).map(cb => parseInt(cb.value));
+}
+
+async function deleteSelectedVPNs() {
+    const vpnIds = getSelectedVPNIds();
+
+    if (vpnIds.length === 0) {
+        showToast('No VPN credentials selected', 'warning');
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${vpnIds.length} VPN credential(s)? This action cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/vpn/bulk-delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({ vpn_ids: vpnIds })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            showToast(`Successfully deleted ${data.deleted_count} VPN credential(s)`, 'success');
+            if (data.failed_ids && data.failed_ids.length > 0) {
+                showToast(`Failed to delete ${data.failed_ids.length} credential(s)`, 'warning');
+            }
+            // Reload the table and stats
+            loadVPNCredentials(currentPage);
+            loadStats();
+        } else {
+            showToast(data.message || 'Failed to delete VPN credentials', 'danger');
+        }
+    } catch (error) {
+        console.error('Error deleting VPN credentials:', error);
+        showToast('An error occurred while deleting VPN credentials', 'danger');
+    }
+}
+
+async function deleteAllVPNs() {
+    const totalCount = document.getElementById('statTotal').textContent;
+
+    if (!confirm(`Are you sure you want to delete ALL ${totalCount} VPN credentials? This action cannot be undone and will permanently remove all VPN configs from the system.`)) {
+        return;
+    }
+
+    // Double confirmation for delete all
+    if (!confirm('This is your final warning. Click OK to permanently delete all VPN credentials.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/vpn/delete-all', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            showToast(`Successfully deleted all ${data.deleted_count} VPN credential(s)`, 'success');
+            // Reload the table and stats
+            loadVPNCredentials(1);
+            loadStats();
+        } else {
+            showToast(data.message || 'Failed to delete VPN credentials', 'danger');
+        }
+    } catch (error) {
+        console.error('Error deleting all VPN credentials:', error);
+        showToast('An error occurred while deleting VPN credentials', 'danger');
+    }
+}
+
+// Utility functions
+function truncate(str, length) {
+    if (!str) return '-';
+    return str.length > length ? str.substring(0, length) + '...' : str;
+}
+
+// Naming pattern management
+async function saveNamingPattern() {
+    const pattern = document.getElementById('namingPattern').value;
+
+    try {
+        const response = await fetch(`/api/vpn/naming-pattern?pattern=${encodeURIComponent(pattern)}`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            showToast('Naming pattern saved successfully', 'success');
+        } else {
+            showToast('Failed to save naming pattern', 'danger');
+        }
+    } catch (error) {
+        console.error('Error saving naming pattern:', error);
+        showToast('Error saving naming pattern', 'danger');
+    }
+}
+
+async function loadNamingPattern() {
+    try {
+        const response = await fetch('/api/vpn/naming-pattern', {
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            document.getElementById('namingPattern').value = data.pattern;
+        }
+    } catch (error) {
+        console.error('Error loading naming pattern:', error);
+    }
+}
+
+function getNamingPattern() {
+    return document.getElementById('namingPattern').value || 'simnet_{ipv4_address}.conf';
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadVPNCredentials(1);
+
+    document.getElementById('searchInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') applyFilters();
+    });
+
+    // Load saved naming pattern from API
+    {% if current_user.is_admin_role %}
+    loadNamingPattern();
+
+    // Save naming pattern when it changes (debounced)
+    let savePatternTimeout;
+    document.getElementById('namingPattern').addEventListener('input', () => {
+        clearTimeout(savePatternTimeout);
+        savePatternTimeout = setTimeout(() => {
+            saveNamingPattern();
+        }, 1000); // Save 1 second after user stops typing
+    });
+    {% endif %}
+});
+</script>
+{% endblock %}

@@ -1,0 +1,703 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}My Invitees{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Stats card styling */
+.stats-card {
+    transition: all 0.2s ease-in-out;
+    border: none;
+}
+
+.stats-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+/* Role badges */
+.badge-admin { background-color: #e81500; }
+.badge-sponsor { background-color: #6900c7; }
+.badge-invitee { background-color: #0061f2; }
+
+/* Status badges */
+.badge-confirmed { background-color: #00ba88; }
+.badge-declined { background-color: #dc3545; }
+.badge-pending { background-color: #f4a100; }
+
+/* Action button styling */
+.btn-actions {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* Ensure dropdowns can overflow table container */
+.table-responsive {
+    overflow: visible !important;
+}
+
+.card-body {
+    overflow: visible !important;
+}
+
+/* Dropdown menu positioning */
+.dropdown-menu {
+    z-index: 1050;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-fluid px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="users"></i></div>
+                        My Invitees
+                    </h1>
+                    <div class="page-header-subtitle">Manage your sponsored participants</div>
+                </div>
+                <div class="col-12 col-xl-auto mt-4">
+                    <button class="btn btn-sm btn-light" onclick="openAddInviteeModal()">
+                        <i data-feather="user-plus" class="me-1"></i>
+                        Add Invitee
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-fluid px-4 mt-n10">
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card stats-card bg-primary text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Total Invitees</div>
+                            <div class="fs-3 fw-bold" id="statTotal">-</div>
+                        </div>
+                        <i data-feather="users" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card stats-card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Confirmed</div>
+                            <div class="fs-3 fw-bold" id="statConfirmed">-</div>
+                        </div>
+                        <i data-feather="check-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card stats-card bg-info text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">With VPN</div>
+                            <div class="fs-3 fw-bold" id="statWithVPN">-</div>
+                        </div>
+                        <i data-feather="shield" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card stats-card bg-warning text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Active</div>
+                            <div class="fs-3 fw-bold" id="statActive">-</div>
+                        </div>
+                        <i data-feather="activity" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invitees Table Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <div class="row align-items-center">
+                <div class="col">
+                    <i data-feather="list" class="me-1"></i>
+                    Invitee List
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- Filters -->
+            <div class="row mb-3">
+                <div class="col-md-4 mb-2">
+                    <input type="text" class="form-control" id="searchInput" placeholder="Search by name or email...">
+                </div>
+                <div class="col-md-2 mb-2">
+                    <select class="form-select" id="filterConfirmed">
+                        <option value="">All Status</option>
+                        <option value="YES">Confirmed</option>
+                        <option value="NO">Declined</option>
+                        <option value="UNKNOWN">Pending</option>
+                    </select>
+                </div>
+                <div class="col-md-2 mb-2">
+                    <select class="form-select" id="filterVPN">
+                        <option value="">All VPN</option>
+                        <option value="true">Has VPN</option>
+                        <option value="false">No VPN</option>
+                    </select>
+                </div>
+                <div class="col-md-2 mb-2">
+                    <select class="form-select" id="filterActive">
+                        <option value="">All Active Status</option>
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                    </select>
+                </div>
+                <div class="col-md-2 mb-2">
+                    <button class="btn btn-primary w-100" onclick="applyFilters()">
+                        <i data-feather="filter" class="me-1"></i>
+                        Apply
+                    </button>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loadingState" class="text-center py-5" style="display: none;">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">Loading invitees...</p>
+            </div>
+
+            <!-- Table -->
+            <div id="tableContainer" class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Country</th>
+                            <th>Status</th>
+                            <th>VPN</th>
+                            <th>Active</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inviteesTableBody">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div id="paginationContainer" class="d-flex justify-content-between align-items-center mt-3">
+                <div>
+                    <span id="paginationInfo">Showing 0 of 0 invitees</span>
+                </div>
+                <nav>
+                    <ul class="pagination mb-0" id="pagination">
+                        <!-- Populated by JavaScript -->
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Invitee Modal -->
+<div class="modal fade" id="addInviteeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Invitee</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addInviteeForm">
+                    <div class="mb-3">
+                        <label for="addFirstName" class="form-label">First Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="addFirstName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="addLastName" class="form-label">Last Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="addLastName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="addEmail" class="form-label">Email <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" id="addEmail" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="addCountry" class="form-label">Country</label>
+                        <select class="form-select" id="addCountry">
+                            <option value="">Loading countries...</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitAddInvitee()">Add Invitee</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Invitee Modal -->
+<div class="modal fade" id="editInviteeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Invitee</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editInviteeForm">
+                    <input type="hidden" id="editInviteeId">
+                    <div class="mb-3">
+                        <label for="editFirstName" class="form-label">First Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editFirstName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editLastName" class="form-label">Last Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editLastName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editEmail" class="form-label">Email <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" id="editEmail" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editCountry" class="form-label">Country</label>
+                        <select class="form-select" id="editCountry">
+                            <option value="">Select country...</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitEditInvitee()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+// Global state for invitees page
+let currentPage = 1;
+let currentFilters = {};
+const pageSize = 20;
+let countriesData = null;
+
+// Load countries from API
+async function loadCountries() {
+    try {
+        const response = await fetch('/api/public/countries');
+        if (!response.ok) throw new Error('Failed to load countries');
+
+        const data = await response.json();
+        countriesData = data;
+
+        // Populate country dropdowns
+        populateCountryDropdown('addCountry', data.default);
+        populateCountryDropdown('editCountry', null);
+
+    } catch (error) {
+        console.error('Error loading countries:', error);
+        // Fallback to default if API fails
+        countriesData = {
+            countries: [
+                { value: 'United States', flag: '🇺🇸', label: 'United States' },
+                { value: 'Canada', flag: '🇨🇦', label: 'Canada' },
+                { value: 'United Kingdom', flag: '🇬🇧', label: 'United Kingdom' }
+            ],
+            default: 'United States'
+        };
+        populateCountryDropdown('addCountry', countriesData.default);
+        populateCountryDropdown('editCountry', null);
+    }
+}
+
+function populateCountryDropdown(elementId, defaultValue) {
+    const select = document.getElementById(elementId);
+    if (!select || !countriesData) return;
+
+    // Clear existing options except the first placeholder if present
+    const hasPlaceholder = select.options[0] && !select.options[0].value;
+    select.innerHTML = hasPlaceholder ? '<option value="">Select country...</option>' : '';
+
+    // Add country options
+    countriesData.countries.forEach(country => {
+        const option = document.createElement('option');
+        option.value = country.value;
+        option.textContent = `${country.flag} ${country.label}`;
+        if (defaultValue && country.value === defaultValue) {
+            option.selected = true;
+        }
+        select.appendChild(option);
+    });
+}
+
+// Get country flag emoji
+function getCountryFlag(countryValue) {
+    if (!countriesData || !countriesData.countries) return '';
+    const country = countriesData.countries.find(c => c.value === countryValue);
+    return country ? country.flag : '';
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadCountries();
+    loadStats();
+    loadInvitees();
+
+    // Enter key in search triggers apply
+    document.getElementById('searchInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            applyFilters();
+        }
+    });
+});
+
+// Load statistics
+async function loadStats() {
+    try {
+        const response = await fetch('/api/sponsors/my-invitees/stats');
+        if (!response.ok) throw new Error('Failed to load stats');
+
+        const stats = await response.json();
+
+        document.getElementById('statTotal').textContent = stats.total_invitees || 0;
+        document.getElementById('statConfirmed').textContent = stats.confirmed_count || 0;
+        document.getElementById('statWithVPN').textContent = stats.with_vpn_count || 0;
+        document.getElementById('statActive').textContent = stats.active_count || 0;
+    } catch (error) {
+        console.error('Error loading stats:', error);
+        showToast('Error loading statistics', 'error');
+    }
+}
+
+// Load invitees list
+async function loadInvitees(page = 1) {
+    showLoading(true);
+    currentPage = page;
+
+    try {
+        // Build query parameters
+        const params = new URLSearchParams({
+            page: page,
+            page_size: pageSize
+        });
+
+        // Add filters
+        if (currentFilters.search) params.append('search', currentFilters.search);
+        if (currentFilters.confirmed) params.append('confirmed', currentFilters.confirmed);
+        if (currentFilters.has_vpn !== undefined) params.append('has_vpn', currentFilters.has_vpn);
+        if (currentFilters.is_active !== undefined) params.append('is_active', currentFilters.is_active);
+
+        const response = await fetch(`/api/sponsors/my-invitees?${params}`);
+        if (!response.ok) throw new Error('Failed to load invitees');
+
+        const data = await response.json();
+
+        renderTable(data.items);
+        renderPagination(data);
+
+    } catch (error) {
+        console.error('Error loading invitees:', error);
+        showToast('Error loading invitees', 'error');
+        document.getElementById('inviteesTableBody').innerHTML =
+            '<tr><td colspan="7" class="text-center text-danger">Error loading invitees</td></tr>';
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Render table
+function renderTable(invitees) {
+    const tbody = document.getElementById('inviteesTableBody');
+
+    if (invitees.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No invitees found</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = invitees.map(invitee => `
+        <tr>
+            <td>${escapeHtml(invitee.first_name)} ${escapeHtml(invitee.last_name)}</td>
+            <td>${escapeHtml(invitee.email)}</td>
+            <td>${getCountryFlag(invitee.country)} ${escapeHtml(invitee.country)}</td>
+            <td>${renderStatusBadge(invitee.confirmed)}</td>
+            <td>${invitee.has_vpn ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-secondary">No</span>'}</td>
+            <td>${invitee.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
+            <td>
+                <button class="btn btn-sm btn-primary btn-actions me-1" onclick="openEditInviteeModal(${invitee.id})" title="Edit">
+                    <i data-feather="edit-2" class="feather-sm"></i>
+                </button>
+                ${invitee.confirmed === 'NO' ? `
+                    <span class="d-inline-block" tabindex="0" title="Actions not available for declined invitees">
+                        <button class="btn btn-sm btn-secondary btn-actions" type="button" disabled style="pointer-events: none;">
+                            <i data-feather="more-vertical" class="feather-sm"></i>
+                        </button>
+                    </span>
+                ` : `
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-secondary btn-actions dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="true" data-bs-boundary="viewport" title="More actions">
+                            <i data-feather="more-vertical" class="feather-sm"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="#" onclick="resetPassword(${invitee.id}); return false;">
+                                <i data-feather="key" class="feather-sm me-1"></i> Reset Password
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="resendInvitation(${invitee.id}); return false;">
+                                <i data-feather="mail" class="feather-sm me-1"></i> Resend Invitation
+                            </a></li>
+                        </ul>
+                    </div>
+                `}
+            </td>
+        </tr>
+    `).join('');
+
+    // Re-initialize feather icons
+    feather.replace();
+}
+
+// Render pagination
+function renderPagination(data) {
+    const info = document.getElementById('paginationInfo');
+    const start = (data.page - 1) * data.page_size + 1;
+    const end = Math.min(data.page * data.page_size, data.total);
+    info.textContent = `Showing ${start}-${end} of ${data.total} invitees`;
+
+    const pagination = document.getElementById('pagination');
+    if (data.total_pages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    // Previous button
+    html += `<li class="page-item ${data.page === 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadInvitees(${data.page - 1}); return false;">Previous</a>
+    </li>`;
+
+    // Page numbers
+    for (let i = 1; i <= data.total_pages; i++) {
+        if (i === 1 || i === data.total_pages || (i >= data.page - 2 && i <= data.page + 2)) {
+            html += `<li class="page-item ${i === data.page ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="loadInvitees(${i}); return false;">${i}</a>
+            </li>`;
+        } else if (i === data.page - 3 || i === data.page + 3) {
+            html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+        }
+    }
+
+    // Next button
+    html += `<li class="page-item ${data.page === data.total_pages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadInvitees(${data.page + 1}); return false;">Next</a>
+    </li>`;
+
+    pagination.innerHTML = html;
+}
+
+// Apply filters
+function applyFilters() {
+    currentFilters = {
+        search: document.getElementById('searchInput').value.trim() || undefined,
+        confirmed: document.getElementById('filterConfirmed').value || undefined,
+        has_vpn: document.getElementById('filterVPN').value === '' ? undefined : document.getElementById('filterVPN').value === 'true',
+        is_active: document.getElementById('filterActive').value === '' ? undefined : document.getElementById('filterActive').value === 'true'
+    };
+
+    loadInvitees(1);
+}
+
+// Open Add Invitee Modal
+function openAddInviteeModal() {
+    document.getElementById('addInviteeForm').reset();
+    new bootstrap.Modal(document.getElementById('addInviteeModal')).show();
+}
+
+// Submit Add Invitee
+async function submitAddInvitee() {
+    const data = {
+        first_name: document.getElementById('addFirstName').value.trim(),
+        last_name: document.getElementById('addLastName').value.trim(),
+        email: document.getElementById('addEmail').value.trim(),
+        country: document.getElementById('addCountry').value || 'United States'
+    };
+
+    try {
+        const response = await fetch('/api/sponsors/my-invitees', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to create invitee');
+        }
+
+        showToast('Invitee created successfully', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('addInviteeModal')).hide();
+        loadStats();
+        loadInvitees(currentPage);
+
+    } catch (error) {
+        console.error('Error creating invitee:', error);
+        showToast(error.message, 'error');
+    }
+}
+
+// Open Edit Invitee Modal
+async function openEditInviteeModal(inviteeId) {
+    try {
+        const response = await fetch(`/api/sponsors/my-invitees/${inviteeId}`);
+        if (!response.ok) throw new Error('Failed to load invitee');
+
+        const invitee = await response.json();
+
+        document.getElementById('editInviteeId').value = invitee.id;
+        document.getElementById('editFirstName').value = invitee.first_name;
+        document.getElementById('editLastName').value = invitee.last_name;
+        document.getElementById('editEmail').value = invitee.email;
+        document.getElementById('editCountry').value = invitee.country || '';
+
+        new bootstrap.Modal(document.getElementById('editInviteeModal')).show();
+
+    } catch (error) {
+        console.error('Error loading invitee:', error);
+        showToast('Error loading invitee details', 'error');
+    }
+}
+
+// Submit Edit Invitee
+async function submitEditInvitee() {
+    const inviteeId = document.getElementById('editInviteeId').value;
+    const data = {
+        first_name: document.getElementById('editFirstName').value.trim(),
+        last_name: document.getElementById('editLastName').value.trim(),
+        email: document.getElementById('editEmail').value.trim(),
+        country: document.getElementById('editCountry').value || 'United States'
+    };
+
+    try {
+        const response = await fetch(`/api/sponsors/my-invitees/${inviteeId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to update invitee');
+        }
+
+        showToast('Invitee updated successfully', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('editInviteeModal')).hide();
+        loadStats();
+        loadInvitees(currentPage);
+
+    } catch (error) {
+        console.error('Error updating invitee:', error);
+        showToast(error.message, 'error');
+    }
+}
+
+// Reset Password
+async function resetPassword(inviteeId) {
+    if (!confirm('Reset password for this invitee? They will receive an email with their new credentials.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/sponsors/my-invitees/${inviteeId}/reset-password`, {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to reset password');
+        }
+
+        const result = await response.json();
+        showToast(result.message, 'success');
+
+    } catch (error) {
+        console.error('Error resetting password:', error);
+        showToast(error.message, 'error');
+    }
+}
+
+// Resend Invitation
+async function resendInvitation(inviteeId) {
+    if (!confirm('Resend invitation email to this invitee?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/sponsors/my-invitees/${inviteeId}/resend-invite`, {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to resend invitation');
+        }
+
+        const result = await response.json();
+        showToast(result.message, 'success');
+
+    } catch (error) {
+        console.error('Error resending invitation:', error);
+        showToast(error.message, 'error');
+    }
+}
+
+// Helper functions
+function showLoading(show) {
+    document.getElementById('loadingState').style.display = show ? 'block' : 'none';
+    document.getElementById('tableContainer').style.display = show ? 'none' : 'block';
+}
+
+function renderStatusBadge(status) {
+    const badges = {
+        'YES': '<span class="badge badge-confirmed">Confirmed</span>',
+        'NO': '<span class="badge badge-declined">Declined</span>',
+        'UNKNOWN': '<span class="badge badge-pending">Pending</span>'
+    };
+    return badges[status] || '<span class="badge bg-secondary">Unknown</span>';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showToast(message, type = 'info') {
+    // Simple toast implementation - you can replace with your toast library
+    alert(message);
+}
+</script>
+{% endblock %}

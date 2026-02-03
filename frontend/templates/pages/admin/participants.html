@@ -1,0 +1,456 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Invitees{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="users"></i></div>
+                        Invitees
+                    </h1>
+                    <div class="page-header-subtitle">Manage event invitees and track participation history</div>
+                </div>
+                <div class="col-12 col-xl-auto mt-4">
+                    <a class="btn btn-sm btn-light" href="/admin/participants/add">
+                        <i data-feather="user-plus" class="me-1"></i>
+                        Add Invitee
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+    <!-- Filters Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="filter" class="me-2"></i>
+            Filters
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label small">Search</label>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Name, email, username...">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Confirmed</label>
+                    <select class="form-select" id="confirmedFilter">
+                        <option value="">All</option>
+                        <option value="YES">Yes</option>
+                        <option value="NO">No</option>
+                        <option value="UNKNOWN">Unknown</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">VPN Status</label>
+                    <select class="form-select" id="vpnFilter">
+                        <option value="">All</option>
+                        <option value="true">Has VPN</option>
+                        <option value="false">No VPN</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Status</label>
+                    <select class="form-select" id="activeFilter">
+                        <option value="">All</option>
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button class="btn btn-primary me-2" onclick="applyFilters()">
+                        <i data-feather="search" class="me-1"></i> Search
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="clearFilters()">
+                        <i data-feather="x" class="me-1"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Actions -->
+    <div class="card mb-4" id="bulkActionsCard" style="display: none;">
+        <div class="card-body py-2">
+            <div class="d-flex align-items-center">
+                <span class="me-3"><span id="selectedCount">0</span> selected</span>
+                <button class="btn btn-sm btn-outline-success me-2" onclick="bulkAction('activate')">
+                    <i data-feather="check" class="me-1"></i> Activate
+                </button>
+                <button class="btn btn-sm btn-outline-warning me-2" onclick="bulkAction('deactivate')">
+                    <i data-feather="x" class="me-1"></i> Deactivate
+                </button>
+                <button class="btn btn-sm btn-outline-primary me-2" onclick="bulkAssignVPN()">
+                    <i data-feather="shield" class="me-1"></i> Assign VPN
+                </button>
+                <button class="btn btn-sm btn-outline-info" onclick="bulkSendEmail()">
+                    <i data-feather="mail" class="me-1"></i> Send Email
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invitees Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <i data-feather="list" class="me-2"></i>
+                Invitees List
+            </div>
+            <div class="small text-muted">
+                Showing <span id="showingCount">0</span> of <span id="totalCount">0</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="participantsTable">
+                    <thead>
+                        <tr>
+                            <th width="30">
+                                <input type="checkbox" class="form-check-input" id="selectAll" onclick="toggleSelectAll()">
+                            </th>
+                            <th>First Name</th>
+                            <th>Last Name</th>
+                            <th>Email</th>
+                            <th>Username</th>
+                            <th>Confirmed</th>
+                            <th>VPN</th>
+                            <th>Participation</th>
+                            <th>Status</th>
+                            <th width="120">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="participantsBody">
+                        <tr>
+                            <td colspan="10" class="text-center py-4">
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                                Loading participants...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div>
+                    <select class="form-select form-select-sm" id="pageSizeSelect" onchange="loadParticipants(1)">
+                        <option value="25">25 per page</option>
+                        <option value="50" selected>50 per page</option>
+                        <option value="100">100 per page</option>
+                    </select>
+                </div>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+let currentPage = 1;
+let selectedIds = new Set();
+
+async function loadParticipants(page = 1) {
+    currentPage = page;
+    const pageSize = document.getElementById('pageSizeSelect').value;
+    const search = document.getElementById('searchInput').value;
+    const confirmed = document.getElementById('confirmedFilter').value;
+    const hasVpn = document.getElementById('vpnFilter').value;
+    const isActive = document.getElementById('activeFilter').value;
+
+    let url = `/api/admin/participants?page=${page}&page_size=${pageSize}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (confirmed) url += `&confirmed=${confirmed}`;
+    if (hasVpn) url += `&has_vpn=${hasVpn}`;
+    if (isActive) url += `&is_active=${isActive}`;
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            throw new Error('Failed to load participants');
+        }
+
+        const data = await response.json();
+        renderParticipants(data.items);
+        renderPagination(data.page, data.total_pages, data.total);
+        document.getElementById('showingCount').textContent = data.items.length;
+        document.getElementById('totalCount').textContent = data.total;
+
+    } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('participantsBody').innerHTML = `
+            <tr><td colspan="10" class="text-center text-danger py-4">
+                Failed to load participants. Please try again.
+            </td></tr>
+        `;
+    }
+}
+
+function renderParticipants(participants) {
+    const tbody = document.getElementById('participantsBody');
+
+    if (participants.length === 0) {
+        tbody.innerHTML = `
+            <tr><td colspan="10" class="text-center py-4 text-muted">
+                No invitees found matching your criteria.
+            </td></tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = participants.map(p => `
+        <tr class="${p.should_recommend_removal ? 'table-warning' : ''}">
+            <td>
+                <input type="checkbox" class="form-check-input participant-checkbox"
+                       data-id="${p.id}" onchange="updateSelection()">
+            </td>
+            <td>
+                <a href="/admin/participants/${p.id}" class="text-decoration-none">
+                    ${p.first_name}
+                </a>
+            </td>
+            <td>${p.last_name}</td>
+            <td>${p.email}</td>
+            <td><code>${p.pandas_username || '-'}</code></td>
+            <td>
+                ${p.confirmed === 'YES'
+                    ? '<span class="badge bg-success">Yes</span>'
+                    : p.confirmed === 'NO'
+                    ? '<span class="badge bg-danger">No</span>'
+                    : '<span class="badge bg-secondary">Unknown</span>'}
+            </td>
+            <td>
+                ${p.has_vpn
+                    ? `<span class="badge bg-info">${p.vpn_count}</span>`
+                    : '<span class="badge bg-warning">0</span>'}
+            </td>
+            <td>
+                <span class="small" title="Years participated / Years invited">
+                    ${p.years_participated}/${p.years_invited}
+                    ${p.is_chronic_non_participant
+                        ? '<span class="badge bg-danger ms-1" title="Chronic non-participant">!</span>'
+                        : p.should_recommend_removal
+                        ? '<span class="badge bg-warning ms-1" title="Recommend removal">?</span>'
+                        : ''}
+                </span>
+            </td>
+            <td>
+                ${p.is_active
+                    ? '<span class="badge bg-success">Active</span>'
+                    : '<span class="badge bg-secondary">Inactive</span>'}
+            </td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <a href="/admin/participants/${p.id}" class="btn btn-outline-primary" title="Edit">
+                        <i data-feather="edit-2"></i>
+                    </a>
+                    <button class="btn btn-outline-danger" onclick="deleteInvitee(${p.id})" title="Delete">
+                        <i data-feather="trash-2"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+    // Re-initialize feather icons
+    feather.replace();
+}
+
+function renderPagination(currentPage, totalPages, total) {
+    const pagination = document.getElementById('pagination');
+
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    // Previous button
+    html += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="loadParticipants(${currentPage - 1}); return false;">
+                <i data-feather="chevron-left"></i>
+            </a>
+        </li>
+    `;
+
+    // Page numbers
+    const maxPages = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxPages / 2));
+    let endPage = Math.min(totalPages, startPage + maxPages - 1);
+
+    if (endPage - startPage < maxPages - 1) {
+        startPage = Math.max(1, endPage - maxPages + 1);
+    }
+
+    if (startPage > 1) {
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadParticipants(1); return false;">1</a></li>`;
+        if (startPage > 2) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        html += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="loadParticipants(${i}); return false;">${i}</a>
+            </li>
+        `;
+    }
+
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadParticipants(${totalPages}); return false;">${totalPages}</a></li>`;
+    }
+
+    // Next button
+    html += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="loadParticipants(${currentPage + 1}); return false;">
+                <i data-feather="chevron-right"></i>
+            </a>
+        </li>
+    `;
+
+    pagination.innerHTML = html;
+    feather.replace();
+}
+
+function applyFilters() {
+    loadParticipants(1);
+}
+
+function clearFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('confirmedFilter').value = '';
+    document.getElementById('vpnFilter').value = '';
+    document.getElementById('activeFilter').value = '';
+    loadParticipants(1);
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.participant-checkbox');
+
+    checkboxes.forEach(cb => {
+        cb.checked = selectAll.checked;
+        if (selectAll.checked) {
+            selectedIds.add(parseInt(cb.dataset.id));
+        } else {
+            selectedIds.delete(parseInt(cb.dataset.id));
+        }
+    });
+
+    updateBulkActionsUI();
+}
+
+function updateSelection() {
+    selectedIds.clear();
+    document.querySelectorAll('.participant-checkbox:checked').forEach(cb => {
+        selectedIds.add(parseInt(cb.dataset.id));
+    });
+    updateBulkActionsUI();
+}
+
+function updateBulkActionsUI() {
+    const card = document.getElementById('bulkActionsCard');
+    const count = document.getElementById('selectedCount');
+
+    if (selectedIds.size > 0) {
+        card.style.display = 'block';
+        count.textContent = selectedIds.size;
+    } else {
+        card.style.display = 'none';
+    }
+}
+
+async function bulkAction(action) {
+    if (selectedIds.size === 0) return;
+
+    if (!confirm(`Are you sure you want to ${action} ${selectedIds.size} invitees?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/participants/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                participant_ids: Array.from(selectedIds),
+                action: action
+            })
+        });
+
+        const data = await response.json();
+        alert(data.message);
+        loadParticipants(currentPage);
+        selectedIds.clear();
+        updateBulkActionsUI();
+
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Operation failed. Please try again.');
+    }
+}
+
+async function deleteInvitee(id) {
+    if (!confirm('Are you sure you want to delete this invitee?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/admin/participants/${id}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            loadParticipants(currentPage);
+        } else {
+            const data = await response.json();
+            alert(data.detail || 'Failed to delete invitee');
+        }
+
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to delete invitee');
+    }
+}
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadParticipants(1);
+
+    // Enter key triggers search
+    document.getElementById('searchInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') applyFilters();
+    });
+});
+</script>
+{% endblock %}

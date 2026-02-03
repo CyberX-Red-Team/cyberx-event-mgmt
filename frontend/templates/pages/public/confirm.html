@@ -1,0 +1,370 @@
+{% extends "layouts/auth.html" %}
+
+{% block title %}Confirm Participation{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-lg border-0 rounded-lg mt-5">
+                <div class="card-header bg-white border-bottom">
+                    <h3 class="text-center fw-light my-4 text-primary">
+                        <i data-feather="check-circle" class="me-2"></i>Confirm Your Participation
+                    </h3>
+                </div>
+                <div class="card-body bg-white" id="confirmationBody">
+                    <!-- Loading state -->
+                    <div id="loadingState" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-dark mt-3">Loading confirmation details...</p>
+                    </div>
+
+                    <!-- Error state -->
+                    <div id="errorState" class="d-none">
+                        <div class="alert alert-danger" role="alert">
+                            <i data-feather="alert-circle" class="me-2"></i>
+                            <span id="errorMessage"></span>
+                        </div>
+                        <div class="text-center">
+                            <a href="/" class="btn btn-light">Return Home</a>
+                        </div>
+                    </div>
+
+                    <!-- Already confirmed state -->
+                    <div id="alreadyConfirmedState" class="d-none">
+                        <div class="alert alert-info" role="alert">
+                            <i data-feather="info" class="me-2"></i>
+                            You have already confirmed your participation!
+                        </div>
+                        <div class="text-center">
+                            <a href="/login" class="btn btn-light">Go to Login</a>
+                        </div>
+                    </div>
+
+                    <!-- Already declined state -->
+                    <div id="alreadyDeclinedState" class="d-none">
+                        <div class="alert alert-warning" role="alert">
+                            <i data-feather="x-circle" class="me-2"></i>
+                            You have already declined participation for this event.
+                        </div>
+                        <div class="text-center">
+                            <a href="/" class="btn btn-light">Return Home</a>
+                        </div>
+                    </div>
+
+                    <!-- No active event state -->
+                    <div id="noActiveEventState" class="d-none">
+                        <div class="alert alert-warning" role="alert">
+                            <i data-feather="alert-triangle" class="me-2"></i>
+                            <strong>Event Not Active</strong>
+                            <p class="mb-0 mt-2">There is currently no active event. Please check back later or contact the event organizers for more information.</p>
+                        </div>
+                        <div class="text-center">
+                            <a href="/" class="btn btn-light">Return Home</a>
+                        </div>
+                    </div>
+
+                    <!-- Confirmation form -->
+                    <div id="confirmationForm" class="d-none">
+                        <div class="mb-4 p-3 bg-light rounded">
+                            <h5 class="text-dark mb-3">Welcome, <span id="userName" class="text-dark fw-bold"></span>!</h5>
+                            <p class="text-muted mb-2"><strong>Email:</strong> <span id="userEmail" class="text-dark"></span></p>
+                            <p class="text-muted mb-0"><strong>Event:</strong> <span id="eventName" class="text-dark"></span></p>
+                        </div>
+
+                        <div class="card border-primary mb-4">
+                            <div class="card-header bg-primary text-white">
+                                <h6 class="mb-0">
+                                    <i data-feather="file-text" class="me-2"></i>
+                                    Terms and Conditions
+                                </h6>
+                            </div>
+                            <div class="card-body bg-light" style="max-height: 400px; overflow-y: auto;">
+                                <div id="termsContent" class="text-dark"></div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4 p-3 bg-light rounded border border-2 border-warning d-flex align-items-start">
+                            <input class="form-check-input mt-0 flex-shrink-0" type="checkbox" id="acceptTerms" required style="width: 1.5em; height: 1.5em; margin-right: 0.75rem;">
+                            <label class="text-dark fw-bold" for="acceptTerms" style="cursor: pointer; user-select: none;">
+                                I have read and accept the terms and conditions above
+                            </label>
+                        </div>
+
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <button type="button" class="btn btn-success btn-lg w-100" id="confirmBtn" disabled>
+                                    <i data-feather="check" class="me-2"></i>
+                                    Confirm My Participation
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <button type="button" class="btn btn-outline-danger btn-lg w-100" id="declineBtn">
+                                    <i data-feather="x" class="me-2"></i>
+                                    Not Participating
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Success state -->
+                    <div id="successState" class="d-none">
+                        <div class="alert alert-success" role="alert">
+                            <i data-feather="check-circle" class="me-2"></i>
+                            <strong>Participation Confirmed!</strong>
+                            <p class="mb-0 mt-2">Thank you for confirming your participation. You will receive an email with your login credentials shortly.</p>
+                        </div>
+                        <div class="text-center mt-4">
+                            <a href="/login" class="btn btn-light btn-lg">
+                                <i data-feather="log-in" class="me-2"></i>
+                                Go to Login
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Declined state -->
+                    <div id="declinedState" class="d-none">
+                        <div class="alert alert-info" role="alert">
+                            <i data-feather="info" class="me-2"></i>
+                            <strong>Participation Declined</strong>
+                            <p class="mb-0 mt-2">Thank you for letting us know. We hope to see you at future events!</p>
+                        </div>
+                        <div class="text-center mt-4">
+                            <a href="/" class="btn btn-light btn-lg">
+                                <i data-feather="home" class="me-2"></i>
+                                Return Home
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-light text-center py-3 border-top">
+                    <div class="small text-muted">
+                        CyberX Event Management System
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Marked.js for Markdown rendering -->
+<script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+<script>
+(function() {
+    'use strict';
+
+    // Get confirmation code from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const confirmationCode = urlParams.get('code');
+
+    // State elements
+    const loadingState = document.getElementById('loadingState');
+    const errorState = document.getElementById('errorState');
+    const errorMessage = document.getElementById('errorMessage');
+    const alreadyConfirmedState = document.getElementById('alreadyConfirmedState');
+    const alreadyDeclinedState = document.getElementById('alreadyDeclinedState');
+    const noActiveEventState = document.getElementById('noActiveEventState');
+    const confirmationForm = document.getElementById('confirmationForm');
+    const successState = document.getElementById('successState');
+    const declinedState = document.getElementById('declinedState');
+
+    // Form elements
+    const acceptTermsCheckbox = document.getElementById('acceptTerms');
+    const confirmBtn = document.getElementById('confirmBtn');
+    const declineBtn = document.getElementById('declineBtn');
+
+    // Data elements
+    let termsVersion = null;
+
+    // Show specific state
+    function showState(stateName) {
+        loadingState.classList.add('d-none');
+        errorState.classList.add('d-none');
+        alreadyConfirmedState.classList.add('d-none');
+        alreadyDeclinedState.classList.add('d-none');
+        noActiveEventState.classList.add('d-none');
+        confirmationForm.classList.add('d-none');
+        successState.classList.add('d-none');
+        declinedState.classList.add('d-none');
+
+        switch(stateName) {
+            case 'loading':
+                loadingState.classList.remove('d-none');
+                break;
+            case 'error':
+                errorState.classList.remove('d-none');
+                break;
+            case 'already-confirmed':
+                alreadyConfirmedState.classList.remove('d-none');
+                break;
+            case 'already-declined':
+                alreadyDeclinedState.classList.remove('d-none');
+                break;
+            case 'no-active-event':
+                noActiveEventState.classList.remove('d-none');
+                break;
+            case 'form':
+                confirmationForm.classList.remove('d-none');
+                break;
+            case 'success':
+                successState.classList.remove('d-none');
+                break;
+            case 'declined':
+                declinedState.classList.remove('d-none');
+                break;
+        }
+
+        // Re-initialize feather icons
+        if (typeof feather !== 'undefined') {
+            feather.replace();
+        }
+    }
+
+    // Load confirmation details
+    async function loadConfirmationDetails() {
+        if (!confirmationCode) {
+            errorMessage.textContent = 'Invalid confirmation link. No confirmation code provided.';
+            showState('error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/public/confirm/terms?code=${encodeURIComponent(confirmationCode)}`);
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || 'Failed to load confirmation details');
+            }
+
+            if (data.already_confirmed) {
+                showState('already-confirmed');
+                return;
+            }
+
+            if (data.already_declined) {
+                showState('already-declined');
+                return;
+            }
+
+            if (data.no_active_event) {
+                showState('no-active-event');
+                return;
+            }
+
+            // Populate form with data
+            document.getElementById('userName').textContent = `${data.user.first_name} ${data.user.last_name}`;
+            document.getElementById('userEmail').textContent = data.user.email;
+            document.getElementById('eventName').textContent = data.event.name;
+
+            // Render markdown as HTML
+            const termsHtml = marked.parse(data.terms.content || '');
+            document.getElementById('termsContent').innerHTML = termsHtml;
+            termsVersion = data.terms.version;
+
+            showState('form');
+        } catch (error) {
+            console.error('Error loading confirmation details:', error);
+            errorMessage.textContent = error.message || 'Failed to load confirmation details. Please try again or contact support.';
+            showState('error');
+        }
+    }
+
+    // Handle terms acceptance checkbox
+    acceptTermsCheckbox.addEventListener('change', function() {
+        confirmBtn.disabled = !this.checked;
+    });
+
+    // Handle confirmation submission
+    confirmBtn.addEventListener('click', async function() {
+        if (!acceptTermsCheckbox.checked) {
+            alert('Please accept the terms and conditions to continue.');
+            return;
+        }
+
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+
+        try {
+            const response = await fetch('/api/public/confirm/accept', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    confirmation_code: confirmationCode,
+                    terms_accepted: true,
+                    terms_version: termsVersion
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || 'Failed to confirm participation');
+            }
+
+            showState('success');
+        } catch (error) {
+            console.error('Error confirming participation:', error);
+            alert(error.message || 'Failed to confirm participation. Please try again.');
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i data-feather="check" class="me-2"></i>Confirm My Participation';
+            if (typeof feather !== 'undefined') {
+                feather.replace();
+            }
+        }
+    });
+
+    // Handle decline button
+    declineBtn.addEventListener('click', async function() {
+        const confirmed = confirm('Are you sure you want to decline participation in this event?');
+        if (!confirmed) {
+            return;
+        }
+
+        const reason = prompt('Optional: Please let us know why you cannot participate (press Cancel to skip):');
+
+        declineBtn.disabled = true;
+        confirmBtn.disabled = true;
+        declineBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+
+        try {
+            const response = await fetch('/api/public/confirm/decline', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    confirmation_code: confirmationCode,
+                    reason: reason || ''
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || 'Failed to decline participation');
+            }
+
+            showState('declined');
+        } catch (error) {
+            console.error('Error declining participation:', error);
+            alert(error.message || 'Failed to decline participation. Please try again.');
+            declineBtn.disabled = false;
+            confirmBtn.disabled = acceptTermsCheckbox.checked ? false : true;
+            declineBtn.innerHTML = '<i data-feather="x" class="me-2"></i>Not Participating';
+            if (typeof feather !== 'undefined') {
+                feather.replace();
+            }
+        }
+    });
+
+    // Initialize
+    loadConfirmationDetails();
+})();
+</script>
+{% endblock %}

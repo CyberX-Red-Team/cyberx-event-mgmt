@@ -1,0 +1,223 @@
+"""User/Invitee model."""
+from sqlalchemy import Column, Integer, String, Boolean, BigInteger, TIMESTAMP, Index, ForeignKey, Enum
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+import enum
+from app.database import Base
+
+
+class UserRole(str, enum.Enum):
+    """User role enumeration."""
+    ADMIN = "admin"  # Full access - event management, bulk emails, all invitees
+    SPONSOR = "sponsor"  # Can manage invitees they sponsor
+    INVITEE = "invitee"  # Invited to participate - becomes participant when confirmed
+
+
+class User(Base):
+    """
+    User/Invitee model - replaces CyberX Master Invite SharePoint list.
+
+    Users start as 'invitees' (role=INVITEE) and become 'participants'
+    when they confirm participation for a specific event year.
+    """
+
+    __tablename__ = "users"
+
+    # Primary Key
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Migration tracking
+    sharepoint_id = Column(String(50), unique=True, nullable=True)
+
+    # Basic Information
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    first_name = Column(String(255), nullable=False)
+    last_name = Column(String(255), nullable=False)
+    country = Column(String(100), nullable=False)
+
+    # Role and Permissions
+    role = Column(
+        String(20),
+        default=UserRole.INVITEE.value,
+        nullable=False,
+        index=True
+    )
+
+    # Sponsor relationship - who sponsored this invitee
+    sponsor_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+    sponsor = relationship("User", remote_side=[id], backref="sponsored_invitees", foreign_keys=[sponsor_id])
+
+    # Legacy sponsor field (for migration from CSV)
+    sponsor_email = Column(String(255), nullable=True)
+
+    # Account Status
+    confirmed = Column(String(20), default='UNKNOWN', nullable=False)  # YES/NO/UNKNOWN
+    confirmed_at = Column(TIMESTAMP(timezone=True), nullable=True)  # When user confirmed participation
+    decline_reason = Column(String(500), nullable=True)  # Optional reason for declining participation
+    email_status = Column(String(50), default='GOOD', nullable=False)  # GOOD/BOUNCED/SPAM_REPORTED/UNSUBSCRIBE
+    email_status_timestamp = Column(BigInteger, nullable=True)
+    future_participation = Column(String(20), default='UNKNOWN')
+    remove_permanently = Column(String(20), default='UNKNOWN')
+
+    # Confirmation & Terms
+    confirmation_code = Column(String(100), unique=True, nullable=True, index=True)
+    confirmation_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    terms_accepted = Column(Boolean, default=False, nullable=False)
+    terms_accepted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    terms_version = Column(String(50), nullable=True)
+
+    # Credentials
+    pandas_username = Column(String(255), unique=True, nullable=True, index=True)
+    pandas_password = Column(String(255), nullable=True)
+    password_phonetic = Column(String(500), nullable=True)
+    password_hash = Column(String(255), nullable=True)  # For web portal login
+
+    # Password Reset
+    password_reset_token = Column(String(100), unique=True, nullable=True, index=True)
+    password_reset_expires = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    # Discord Integration
+    discord_username = Column(String(255), nullable=True)
+    snowflake_id = Column(String(100), nullable=True)
+    discord_invite_code = Column(String(50), nullable=True)
+    discord_invite_sent = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    # Communication Tracking
+    invite_id = Column(String(50), nullable=True)
+    invite_sent = Column(TIMESTAMP(timezone=True), nullable=True)
+    invite_reminder_sent = Column(TIMESTAMP(timezone=True), nullable=True)
+    last_invite_sent = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    # Multi-stage Invitation Reminders
+    reminder_1_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    reminder_2_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    reminder_3_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    password_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
+    check_microsoft_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
+    survey_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
+    survey_response_timestamp = Column(TIMESTAMP(timezone=True), nullable=True)
+    orientation_invite_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
+    in_person_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    # In-Person Attendance
+    slated_in_person = Column(Boolean, default=False)
+    confirmed_in_person = Column(Boolean, default=False)
+
+    # System Fields
+    azure_object_id = Column(String(100), nullable=True)
+    pandas_groups = Column(String(500), nullable=True)
+    is_admin = Column(Boolean, default=False)  # Legacy - use role instead
+    is_active = Column(Boolean, default=True)
+
+    # Timestamps
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Event participation relationship
+    event_participations = relationship(
+        "EventParticipation",
+        back_populates="user",
+        foreign_keys="EventParticipation.user_id",
+        cascade="all, delete-orphan"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index('idx_users_email', 'email'),
+        Index('idx_users_pandas_username', 'pandas_username'),
+        Index('idx_users_confirmed', 'confirmed'),
+        Index('idx_users_email_status', 'email_status'),
+        Index('idx_users_role', 'role'),
+        Index('idx_users_sponsor_id', 'sponsor_id'),
+    )
+
+    # Helper properties for role checking
+    @property
+    def is_admin_role(self) -> bool:
+        """Check if user has admin role."""
+        return self.role == UserRole.ADMIN.value or self.is_admin
+
+    @property
+    def is_sponsor_role(self) -> bool:
+        """Check if user has sponsor role (or higher)."""
+        return self.role in (UserRole.ADMIN.value, UserRole.SPONSOR.value) or self.is_admin
+
+    @property
+    def is_invitee_role(self) -> bool:
+        """Check if user has invitee role (regular user, not admin/sponsor)."""
+        return self.role == UserRole.INVITEE.value and not self.is_admin
+
+    @property
+    def can_manage_invitees(self) -> bool:
+        """Check if user can manage invitees."""
+        return self.is_sponsor_role
+
+    @property
+    def can_send_bulk_emails(self) -> bool:
+        """Check if user can send bulk emails to all invitees."""
+        return self.is_admin_role
+
+    @property
+    def full_name(self) -> str:
+        """Get user's full name."""
+        return f"{self.first_name} {self.last_name}"
+
+    # Participation tracking properties
+    @property
+    def years_invited(self) -> int:
+        """Count how many years this user has been invited."""
+        if not self.event_participations:
+            return 0
+        return len(self.event_participations)
+
+    @property
+    def years_participated(self) -> int:
+        """Count how many years this user has confirmed participation."""
+        if not self.event_participations:
+            return 0
+        from app.models.event import ParticipationStatus
+        return sum(1 for p in self.event_participations if p.status == ParticipationStatus.CONFIRMED.value)
+
+    @property
+    def participation_rate(self) -> float:
+        """Calculate participation rate as a percentage."""
+        if self.years_invited == 0:
+            return 0.0
+        return (self.years_participated / self.years_invited) * 100
+
+    @property
+    def is_chronic_non_participant(self) -> bool:
+        """
+        Check if this user is a chronic non-participant.
+
+        Criteria: Invited 3+ years and never participated.
+        """
+        return self.years_invited >= 3 and self.years_participated == 0
+
+    @property
+    def should_recommend_removal(self) -> bool:
+        """
+        Recommend removal from invitee list based on participation history.
+
+        Criteria:
+        - Invited 3+ years with 0 participations, OR
+        - Invited 5+ years with participation rate < 20%
+        """
+        if self.years_invited >= 3 and self.years_participated == 0:
+            return True
+        if self.years_invited >= 5 and self.participation_rate < 20:
+            return True
+        return False
+
+    def can_manage_invitee(self, invitee: "User") -> bool:
+        """Check if this user can manage a specific invitee."""
+        # Admins can manage anyone
+        if self.is_admin_role:
+            return True
+        # Sponsors can manage invitees they sponsor
+        if self.is_sponsor_role and invitee.sponsor_id == self.id:
+            return True
+        return False
+
+    def __repr__(self):
+        return f"<User(id={self.id}, email={self.email}, role={self.role}, name={self.full_name})>"

@@ -1,0 +1,363 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Profile Settings{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="settings"></i></div>
+                        Profile Settings
+                    </h1>
+                    <div class="page-header-subtitle">Manage your account preferences</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+    <!-- User Information Card -->
+    <div class="row">
+        <div class="col-xl-4">
+            <div class="card mb-4">
+                <div class="card-header">User Information</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="small text-muted">Name</label>
+                        <div class="fw-bold">{{ current_user.first_name }} {{ current_user.last_name }}</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small text-muted">Email</label>
+                        <div>{{ current_user.email }}</div>
+                    </div>
+                    {% if current_user.pandas_username %}
+                    <div class="mb-3">
+                        <label class="small text-muted">Username</label>
+                        <div class="fw-bold font-monospace">{{ current_user.pandas_username }}</div>
+                        <small class="text-muted">Your username cannot be changed</small>
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label class="small text-muted">Role</label>
+                        <div>
+                            {% if current_user.is_admin %}
+                                <span class="badge bg-danger">Administrator</span>
+                            {% elif current_user.is_sponsor %}
+                                <span class="badge bg-warning">Sponsor</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Participant</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if current_user.country %}
+                    <div class="mb-3">
+                        <label class="small text-muted">Country</label>
+                        <div>
+                            {% if current_user.country == 'United States' %}
+                                🇺🇸 United States
+                            {% elif current_user.country == 'Canada' %}
+                                🇨🇦 Canada
+                            {% elif current_user.country == 'United Kingdom' %}
+                                🇬🇧 United Kingdom
+                            {% else %}
+                                🌐 {{ current_user.country }}
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-8">
+            <!-- Password Change Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i data-feather="lock" class="me-2"></i>
+                    Change Password
+                </div>
+                <div class="card-body">
+                    <form id="passwordChangeForm">
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="currentPassword" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="newPassword" minlength="8" required>
+                            <div class="form-text">Minimum 8 characters</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="confirmPassword" minlength="8" required>
+                        </div>
+                        <div id="passwordChangeAlert" class="d-none"></div>
+                        <button type="submit" class="btn btn-primary">
+                            <i data-feather="save" class="me-1"></i> Change Password
+                        </button>
+                        <button type="button" class="btn btn-secondary ms-2" onclick="resetPasswordForm()">
+                            Cancel
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Display Preferences Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i data-feather="monitor" class="me-2"></i>
+                    Display Preferences
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">Timezone Display</label>
+                                <p class="small text-muted mb-3">
+                                    Choose how timestamps are displayed throughout the application. This setting is saved to your browser.
+                                </p>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="timezonePreference" id="timezoneUTC" value="utc" checked>
+                                    <label class="form-check-label" for="timezoneUTC">
+                                        <strong>UTC (Coordinated Universal Time)</strong>
+                                        <div class="small text-muted">All times displayed in UTC timezone (shown in header)</div>
+                                        <div class="small"><code>Example: 01/31/2026, 19:30:45</code></div>
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="timezonePreference" id="timezoneLocal" value="local">
+                                    <label class="form-check-label" for="timezoneLocal">
+                                        <strong>Local Time</strong>
+                                        <div class="small text-muted">Automatically convert to your device's timezone</div>
+                                        <div class="small"><code>Example: 01/31/2026, 14:30:45</code> <span class="text-muted">(if in EST)</span></div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">Time Format</label>
+                                <p class="small text-muted mb-3">
+                                    Choose between 12-hour (AM/PM) or 24-hour time format.
+                                </p>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="timeFormat" id="timeFormat24" value="24" checked>
+                                    <label class="form-check-label" for="timeFormat24">
+                                        <strong>24-Hour Format</strong>
+                                        <div class="small text-muted">Military time format</div>
+                                        <div class="small"><code>Example: 19:30:45</code></div>
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="timeFormat" id="timeFormat12" value="12">
+                                    <label class="form-check-label" for="timeFormat12">
+                                        <strong>12-Hour Format (AM/PM)</strong>
+                                        <div class="small text-muted">Standard time format with AM/PM</div>
+                                        <div class="small"><code>Example: 7:30:45 PM</code></div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-info d-flex align-items-center">
+                                <i data-feather="info" class="me-2"></i>
+                                <div class="small">
+                                    <strong>Note:</strong> These preferences are stored in your browser and apply only to this device.
+                                    You can set different preferences on different devices.
+                                </div>
+                            </div>
+
+                            <button type="button" class="btn btn-primary" onclick="savePreferences()">
+                                <i data-feather="save" class="me-1"></i> Save Preferences
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sample Timestamps Card -->
+            <div class="card">
+                <div class="card-header">
+                    <i data-feather="clock" class="me-2"></i>
+                    Preview
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted mb-3">Preview how timestamps will appear with your selected timezone preference:</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Event</th>
+                                    <th>Timestamp</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Current time</td>
+                                    <td id="previewCurrent">-</td>
+                                </tr>
+                                <tr>
+                                    <td>1 hour ago</td>
+                                    <td id="previewOneHourAgo">-</td>
+                                </tr>
+                                <tr>
+                                    <td>Yesterday</td>
+                                    <td id="previewYesterday">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+'use strict';
+
+// Load current preferences
+document.addEventListener('DOMContentLoaded', () => {
+    const savedTimezone = localStorage.getItem('timezonePreference') || 'utc';
+    document.getElementById(savedTimezone === 'utc' ? 'timezoneUTC' : 'timezoneLocal').checked = true;
+
+    const savedTimeFormat = localStorage.getItem('timeFormat') || '24';
+    document.getElementById(savedTimeFormat === '24' ? 'timeFormat24' : 'timeFormat12').checked = true;
+
+    updatePreview();
+    feather.replace();
+
+    // Update preview when radio buttons change
+    document.querySelectorAll('input[name="timezonePreference"]').forEach(radio => {
+        radio.addEventListener('change', updatePreview);
+    });
+    document.querySelectorAll('input[name="timeFormat"]').forEach(radio => {
+        radio.addEventListener('change', updatePreview);
+    });
+});
+
+function updatePreview() {
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    // Temporarily update localStorage for preview
+    const selectedTimezone = document.querySelector('input[name="timezonePreference"]:checked').value;
+    const selectedTimeFormat = document.querySelector('input[name="timeFormat"]:checked').value;
+    const originalTimezone = localStorage.getItem('timezonePreference');
+    const originalTimeFormat = localStorage.getItem('timeFormat');
+
+    localStorage.setItem('timezonePreference', selectedTimezone);
+    localStorage.setItem('timeFormat', selectedTimeFormat);
+
+    document.getElementById('previewCurrent').textContent = window.formatDateTime(now.toISOString());
+    document.getElementById('previewOneHourAgo').textContent = window.formatDateTime(oneHourAgo.toISOString());
+    document.getElementById('previewYesterday').textContent = window.formatDateTime(yesterday.toISOString());
+
+    // Restore originals if not saved yet
+    if (originalTimezone) localStorage.setItem('timezonePreference', originalTimezone);
+    if (originalTimeFormat) localStorage.setItem('timeFormat', originalTimeFormat);
+}
+
+window.savePreferences = function() {
+    const timezone = document.querySelector('input[name="timezonePreference"]:checked').value;
+    const timeFormat = document.querySelector('input[name="timeFormat"]:checked').value;
+    localStorage.setItem('timezonePreference', timezone);
+    localStorage.setItem('timeFormat', timeFormat);
+
+    // Show success message
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-success alert-dismissible fade show';
+    alert.innerHTML = `
+        <i data-feather="check-circle" class="me-2"></i>
+        <strong>Success!</strong> Your preferences have been saved. The page will reload to apply changes.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.querySelector('.container-xl').insertBefore(alert, document.querySelector('.container-xl').firstChild);
+    feather.replace();
+
+    // Reload page after a short delay to apply the timezone change
+    setTimeout(() => {
+        location.reload();
+    }, 1500);
+}
+
+// Password change functionality
+window.resetPasswordForm = function() {
+    document.getElementById('passwordChangeForm').reset();
+    const alertDiv = document.getElementById('passwordChangeAlert');
+    alertDiv.classList.add('d-none');
+}
+
+document.getElementById('passwordChangeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    const alertDiv = document.getElementById('passwordChangeAlert');
+
+    // Validate passwords match
+    if (newPassword !== confirmPassword) {
+        alertDiv.className = 'alert alert-danger';
+        alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>New passwords do not match';
+        alertDiv.classList.remove('d-none');
+        feather.replace();
+        return;
+    }
+
+    // Validate password length
+    if (newPassword.length < 8) {
+        alertDiv.className = 'alert alert-danger';
+        alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>Password must be at least 8 characters';
+        alertDiv.classList.remove('d-none');
+        feather.replace();
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/auth/password/change', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                current_password: currentPassword,
+                new_password: newPassword
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alertDiv.className = 'alert alert-success';
+            alertDiv.innerHTML = '<i data-feather="check-circle" class="me-2"></i>' + data.message;
+            alertDiv.classList.remove('d-none');
+            feather.replace();
+            resetPasswordForm();
+        } else {
+            alertDiv.className = 'alert alert-danger';
+            alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>' + data.detail;
+            alertDiv.classList.remove('d-none');
+            feather.replace();
+        }
+    } catch (error) {
+        console.error('Error changing password:', error);
+        alertDiv.className = 'alert alert-danger';
+        alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>Failed to change password. Please try again.';
+        alertDiv.classList.remove('d-none');
+        feather.replace();
+    }
+});
+
+})();
+</script>
+{% endblock %}

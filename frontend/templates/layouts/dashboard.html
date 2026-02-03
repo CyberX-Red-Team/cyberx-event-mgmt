@@ -1,0 +1,228 @@
+{% extends "layouts/base.html" %}
+
+{% block body_class %}nav-fixed{% endblock %}
+
+{% block body %}
+<!-- Top Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light bg-white fixed-top shadow-sm">
+    <div class="container-fluid px-4">
+        <a class="navbar-brand text-primary fw-bold" href="/">
+            <i data-feather="shield" class="me-2"></i>CyberX
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="/profile" id="timezoneIndicator" title="Click to change timezone preference">
+                        <i data-feather="clock" class="me-1"></i>
+                        <span id="timezoneText">UTC</span>
+                    </a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                        <i data-feather="user" class="me-1"></i>
+                        {{ current_user.first_name }} {{ current_user.last_name }}
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="/profile"><i data-feather="settings" class="me-2"></i>Settings</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="logout()"><i data-feather="log-out" class="me-2"></i>Logout</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+{% set show_sidebar = current_user.is_admin or current_user.role == 'admin' or current_user.role == 'sponsor' %}
+
+<div id="layoutSidenav" class="{% if not show_sidebar %}no-sidebar{% endif %}">
+    <!-- Sidenav (Admin and Sponsors only) -->
+    {% if show_sidebar %}
+    <div id="layoutSidenav_nav">
+        <nav class="sidenav sidenav-light">
+            <div class="sidenav-menu">
+                <div class="nav pt-3">
+                    <!-- Sponsor Navigation (Sponsors Only) -->
+                    {% if current_user.role == 'sponsor' and not (current_user.is_admin or current_user.role == 'admin') %}
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2">My Participants</div>
+                    <a class="nav-link {% if active_page == 'invitees' %}active{% endif %}" href="/sponsor/invitees">
+                        <i data-feather="users"></i>
+                        <span>My Invitees</span>
+                    </a>
+                    {% endif %}
+
+                    <!-- Admin Navigation (Admins Only) -->
+                    {% if current_user.is_admin or current_user.role == 'admin' %}
+                    <!-- Dashboard Section -->
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2">Dashboard</div>
+                    <a class="nav-link {% if active_page == 'dashboard' %}active{% endif %}" href="/admin/dashboard">
+                        <i data-feather="activity"></i>
+                        <span>Dashboard</span>
+                    </a>
+
+                    <!-- Event Management Section -->
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Event Management</div>
+                    <a class="nav-link {% if active_page == 'events' %}active{% endif %}" href="/admin/events">
+                        <i data-feather="calendar"></i>
+                        <span>Events</span>
+                    </a>
+
+                    <!-- Participants Section -->
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Participants</div>
+                    <a class="nav-link {% if active_page == 'participants' or active_page == 'users' %}active{% endif %}" href="/admin/users">
+                        <i data-feather="users"></i>
+                        <span>Invitees</span>
+                    </a>
+
+                    <!-- VPN Section -->
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">VPN Management</div>
+                    <a class="nav-link {% if active_page == 'vpn' %}active{% endif %}" href="/admin/vpn">
+                        <i data-feather="shield"></i>
+                        <span>VPN Credentials</span>
+                    </a>
+
+                    <!-- Email Section -->
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Communications</div>
+                    <a class="nav-link {% if active_page == 'email' %}active{% endif %}" href="/admin/email">
+                        <i data-feather="mail"></i>
+                        <span>Email Center</span>
+                    </a>
+
+                    <!-- Automation Section -->
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Automation</div>
+                    <a class="nav-link {% if active_page == 'workflows' %}active{% endif %}" href="/admin/workflows">
+                        <i data-feather="zap"></i>
+                        <span>Email Workflows</span>
+                    </a>
+
+                    <!-- Security & Audit -->
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Security</div>
+                    <a class="nav-link {% if active_page == 'audit' %}active{% endif %}" href="/admin/audit">
+                        <i data-feather="file-text"></i>
+                        <span>Audit Logs</span>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="sidenav-footer p-3 border-top">
+                <div class="small text-muted">Logged in as:</div>
+                <div class="small fw-bold">{{ current_user.email }}</div>
+            </div>
+        </nav>
+    </div>
+    {% endif %}
+
+    <!-- Content -->
+    <div id="layoutSidenav_content" class="{% if not show_sidebar %}full-width{% endif %}">
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer mt-auto">
+            <div class="container-fluid px-4">
+                <div class="d-flex align-items-center justify-content-between small">
+                    <div class="text-muted">Copyright &copy; CyberX Red Team {{ now.year if now else '2024' }}</div>
+                    <div>
+                        <a href="#" class="text-muted">Privacy Policy</a>
+                        &middot;
+                        <a href="#" class="text-muted">Terms &amp; Conditions</a>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Full-width layout for users without sidebar */
+#layoutSidenav.no-sidebar {
+    padding-left: 0 !important;
+}
+
+#layoutSidenav.no-sidebar #layoutSidenav_content {
+    margin-left: 0 !important;
+    width: 100%;
+}
+
+#layoutSidenav_content.full-width {
+    margin-left: 0 !important;
+    width: 100%;
+}
+
+#layoutSidenav_content.full-width main {
+    padding-top: 3.5rem;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// =============================================================================
+// Global Timezone Management
+// =============================================================================
+// Global formatDateTime function available to all pages
+window.formatDateTime = function(dateStr, options = {}) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    const timezone = localStorage.getItem('timezonePreference') || 'utc';
+    const timeFormat = localStorage.getItem('timeFormat') || '24';
+
+    const formatOptions = {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: options.hideSeconds ? undefined : '2-digit',
+        hour12: options.hour12 !== undefined ? options.hour12 : (timeFormat === '12')
+    };
+
+    if (timezone === 'utc') {
+        formatOptions.timeZone = 'UTC';
+    }
+
+    return date.toLocaleString('en-US', formatOptions);
+}
+
+// Update timezone indicator in header
+function updateTimezoneIndicator() {
+    const timezone = localStorage.getItem('timezonePreference') || 'utc';
+    const indicator = document.getElementById('timezoneText');
+    if (indicator) {
+        indicator.textContent = timezone === 'utc' ? 'UTC' : 'Local Time';
+    }
+}
+
+// Update on page load
+document.addEventListener('DOMContentLoaded', () => {
+    updateTimezoneIndicator();
+});
+
+// Logout function - explicitly global
+window.logout = async function() {
+    try {
+        const response = await fetch('/api/auth/logout', {
+            method: 'POST',
+            credentials: 'include'
+        });
+        if (response.ok) {
+            window.location.href = '/login';
+        } else {
+            console.error('Logout failed: Server returned status', response.status);
+            // Redirect anyway to login page
+            window.location.href = '/login';
+        }
+    } catch (error) {
+        console.error('Logout failed:', error);
+        // Redirect anyway to login page
+        window.location.href = '/login';
+    }
+}
+</script>
+{% endblock %}

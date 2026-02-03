@@ -1,0 +1,555 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Event Management{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="calendar"></i></div>
+                        Event Management
+                    </h1>
+                    <div class="page-header-subtitle">Manage events for different years</div>
+                </div>
+                <div class="col-auto mt-4">
+                    <button class="btn btn-light" onclick="showCreateEventModal()">
+                        <i data-feather="plus" class="me-2"></i>
+                        Create New Event
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+    <!-- Events Table Card -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <i data-feather="list" class="me-2"></i>
+                <strong>All Events</strong>
+            </div>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="showArchivedToggle" onchange="loadEvents()">
+                <label class="form-check-label" for="showArchivedToggle">Show Archived</label>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="eventsLoadingState" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="text-muted mt-3">Loading events...</p>
+            </div>
+
+            <div id="eventsTableContainer" class="d-none">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Event Name</th>
+                                <th>Status</th>
+                                <th>Registration</th>
+                                <th>VPN</th>
+                                <th>Test Mode</th>
+                                <th>Dates</th>
+                                <th>Max Participants</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventsTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="eventsEmptyState" class="d-none text-center py-5">
+                <i data-feather="calendar" class="feather-xl text-muted mb-3"></i>
+                <p class="text-muted">No events found</p>
+                <button class="btn btn-primary" onclick="showCreateEventModal()">
+                    <i data-feather="plus" class="me-2"></i>
+                    Create First Event
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit Event Modal -->
+<div class="modal fade" id="eventModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="eventModalTitle">Create Event</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="eventForm">
+                    <input type="hidden" id="eventId">
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="eventYear">Year <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="eventYear" required min="2020" max="2100">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="eventName">Event Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="eventName" required>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="eventStartDate">Start Date</label>
+                            <input type="date" class="form-control" id="eventStartDate">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="eventEndDate">End Date</label>
+                            <input type="date" class="form-control" id="eventEndDate">
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="eventTime">Event Time</label>
+                            <input type="text" class="form-control" id="eventTime" placeholder="e.g., Doors open 18:00 UTC">
+                            <small class="text-muted">Used in invitation emails</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="eventLocation">Event Location</label>
+                            <input type="text" class="form-control" id="eventLocation" placeholder="e.g., Austin, TX">
+                            <small class="text-muted">Used in invitation emails</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="eventMaxParticipants">Max Participants</label>
+                            <input type="number" class="form-control" id="eventMaxParticipants" min="1">
+                            <small class="text-muted">Leave empty for unlimited</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="eventConfirmationDays">Confirmation Expires (days)</label>
+                            <input type="number" class="form-control" id="eventConfirmationDays" value="30" min="1">
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="eventTermsVersion">Terms Version</label>
+                            <input type="text" class="form-control" id="eventTermsVersion" placeholder="e.g., 2026-v1">
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="eventRegistrationOpen">
+                                <label class="form-check-label" for="eventRegistrationOpen">
+                                    Registration Open
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="eventTermsContent">Terms & Conditions</label>
+                        <textarea class="form-control" id="eventTermsContent" rows="8" placeholder="Enter terms and conditions in Markdown format"></textarea>
+                        <small class="text-muted">Supports Markdown formatting</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEvent()">
+                    <span id="saveEventBtnText">Save Event</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+    let eventModal = null;
+
+    window.loadEvents = async function() {
+        const loadingState = document.getElementById('eventsLoadingState');
+        const tableContainer = document.getElementById('eventsTableContainer');
+        const emptyState = document.getElementById('eventsEmptyState');
+        const tableBody = document.getElementById('eventsTableBody');
+        const showArchived = document.getElementById('showArchivedToggle').checked;
+
+        loadingState.classList.remove('d-none');
+        tableContainer.classList.add('d-none');
+        emptyState.classList.add('d-none');
+
+        try {
+            const response = await fetch(`/api/admin/events?include_archived=${showArchived}`, {
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to load events');
+            }
+
+            const data = await response.json();
+
+            loadingState.classList.add('d-none');
+
+            if (data.events.length === 0) {
+                emptyState.classList.remove('d-none');
+                return;
+            }
+
+            // Build table rows
+            tableBody.innerHTML = data.events.map(event => {
+                const statusBadge = event.is_archived ?
+                    '<span class="badge bg-secondary">Archived</span>' :
+                    event.is_active ?
+                        '<span class="badge bg-success">Active</span>' :
+                        '<span class="badge bg-warning">Inactive</span>';
+
+                // Add test mode indicator below status if enabled
+                const testModeBadge = event.test_mode && !event.is_archived ?
+                    '<br><span class="badge bg-warning text-dark mt-1"><i data-feather="zap" style="width:12px;height:12px;"></i> Test Mode</span>' : '';
+
+                const regBadge = event.registration_open ?
+                    '<span class="badge bg-success">Open</span>' :
+                    '<span class="badge bg-secondary">Closed</span>';
+
+                const vpnToggle = event.is_archived ?
+                    '<span class="text-muted">-</span>' :
+                    `<button class="btn btn-sm ${event.vpn_available ? 'btn-success' : 'btn-outline-secondary'}"
+                        onclick="toggleVPNAvailability(${event.id}, ${event.vpn_available}, '${event.name}')"
+                        title="${event.vpn_available ? 'VPN Available - Click to disable' : 'VPN Disabled - Click to enable'}">
+                        <i data-feather="${event.vpn_available ? 'check-circle' : 'x-circle'}"></i>
+                    </button>`;
+
+                const testModeToggle = event.is_archived ?
+                    '<span class="text-muted">-</span>' :
+                    `<button class="btn btn-sm ${event.test_mode ? 'btn-warning' : 'btn-outline-secondary'}"
+                        onclick="toggleTestMode(${event.id}, ${event.test_mode}, '${event.name}')"
+                        title="${event.test_mode ? 'Test Mode Active - Click to disable' : 'Test Mode Disabled - Click to enable'}">
+                        <i data-feather="${event.test_mode ? 'zap' : 'zap'}"></i>
+                    </button>`;
+
+                const dates = event.start_date && event.end_date ?
+                    `${event.start_date} to ${event.end_date}` :
+                    '<span class="text-muted">Not set</span>';
+
+                const maxPart = event.max_participants || '<span class="text-muted">Unlimited</span>';
+
+                const actions = event.is_archived ?
+                    `<span class="text-muted">Archived</span>` :
+                    `
+                    <div class="btn-group btn-group-sm">
+                        ${event.is_active ?
+                            `<button class="btn btn-outline-warning" onclick="toggleEventActive(${event.id}, ${event.is_active}, '${event.name}')">Deactivate</button>` :
+                            `<button class="btn btn-outline-success" onclick="toggleEventActive(${event.id}, ${event.is_active}, '${event.name}')">Activate</button>`
+                        }
+                        <button class="btn btn-outline-primary" onclick="editEvent(${event.id})">Edit</button>
+                        ${!event.is_active ?
+                            `<button class="btn btn-outline-danger" onclick="archiveEvent(${event.id}, ${event.year})">Archive</button>` :
+                            ''
+                        }
+                    </div>
+                    `;
+
+                return `
+                    <tr>
+                        <td><strong>${event.year}</strong></td>
+                        <td>${event.name}</td>
+                        <td>${statusBadge}${testModeBadge}</td>
+                        <td>${regBadge}</td>
+                        <td class="text-center">${vpnToggle}</td>
+                        <td class="text-center">${testModeToggle}</td>
+                        <td>${dates}</td>
+                        <td>${maxPart}</td>
+                        <td>${actions}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            tableContainer.classList.remove('d-none');
+
+            if (typeof feather !== 'undefined') {
+                feather.replace();
+            }
+
+        } catch (error) {
+            console.error('Error loading events:', error);
+            loadingState.classList.add('d-none');
+            alert('Failed to load events');
+        }
+    };
+
+    window.showCreateEventModal = function() {
+        document.getElementById('eventModalTitle').textContent = 'Create New Event';
+        document.getElementById('eventForm').reset();
+        document.getElementById('eventId').value = '';
+        document.getElementById('eventYear').disabled = false;
+
+        // Set default values
+        const currentYear = new Date().getFullYear();
+        document.getElementById('eventYear').value = currentYear + 1;
+        document.getElementById('eventName').value = `CyberX Red Team Exercise ${currentYear + 1}`;
+        document.getElementById('eventTermsVersion').value = `${currentYear + 1}-v1`;
+        document.getElementById('eventConfirmationDays').value = 30;
+
+        if (!eventModal) {
+            eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
+        }
+        eventModal.show();
+    };
+
+    window.editEvent = async function(eventId) {
+        try {
+            const response = await fetch(`/api/admin/events/${eventId}`, {
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to load event');
+            }
+
+            const data = await response.json();
+            const event = data.event;
+
+            document.getElementById('eventModalTitle').textContent = `Edit Event ${event.year}`;
+            document.getElementById('eventId').value = event.id;
+            document.getElementById('eventYear').value = event.year;
+            document.getElementById('eventYear').disabled = true;
+            document.getElementById('eventName').value = event.name;
+            document.getElementById('eventStartDate').value = event.start_date || '';
+            document.getElementById('eventEndDate').value = event.end_date || '';
+            document.getElementById('eventTime').value = event.event_time || '';
+            document.getElementById('eventLocation').value = event.event_location || '';
+            document.getElementById('eventMaxParticipants').value = event.max_participants || '';
+            document.getElementById('eventConfirmationDays').value = event.confirmation_expires_days || 30;
+            document.getElementById('eventTermsVersion').value = event.terms_version || '';
+            document.getElementById('eventTermsContent').value = event.terms_content || '';
+            document.getElementById('eventRegistrationOpen').checked = event.registration_open;
+
+            if (!eventModal) {
+                eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
+            }
+            eventModal.show();
+
+        } catch (error) {
+            console.error('Error loading event:', error);
+            alert('Failed to load event details');
+        }
+    };
+
+    window.saveEvent = async function() {
+        const eventId = document.getElementById('eventId').value;
+        const isEdit = eventId !== '';
+
+        const eventData = {
+            year: parseInt(document.getElementById('eventYear').value),
+            name: document.getElementById('eventName').value,
+            start_date: document.getElementById('eventStartDate').value || null,
+            end_date: document.getElementById('eventEndDate').value || null,
+            event_time: document.getElementById('eventTime').value || null,
+            event_location: document.getElementById('eventLocation').value || null,
+            max_participants: parseInt(document.getElementById('eventMaxParticipants').value) || null,
+            confirmation_expires_days: parseInt(document.getElementById('eventConfirmationDays').value) || 30,
+            terms_version: document.getElementById('eventTermsVersion').value || null,
+            terms_content: document.getElementById('eventTermsContent').value || null,
+            registration_open: document.getElementById('eventRegistrationOpen').checked
+        };
+
+        const saveBtn = document.getElementById('saveEventBtnText');
+        saveBtn.textContent = 'Saving...';
+
+        try {
+            const url = isEdit ? `/api/admin/events/${eventId}` : '/api/admin/events';
+            const method = isEdit ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method: method,
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(eventData)
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to save event');
+            }
+
+            eventModal.hide();
+            await loadEvents();
+
+            // Reload dashboard event status if exists
+            if (typeof loadEventStatus === 'function') {
+                loadEventStatus();
+            }
+
+        } catch (error) {
+            console.error('Error saving event:', error);
+            alert(error.message || 'Failed to save event');
+        } finally {
+            saveBtn.textContent = 'Save Event';
+        }
+    };
+
+    window.toggleEventActive = async function(eventId, currentStatus, eventName) {
+        const newStatus = !currentStatus;
+        const action = newStatus ? 'activate' : 'deactivate';
+
+        let confirmMessage = newStatus
+            ? `Are you sure you want to activate ${eventName}? This will deactivate all other events.`
+            : `Are you sure you want to deactivate ${eventName}?`;
+
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/admin/events/${eventId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    is_active: newStatus
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || `Failed to ${action} event`);
+            }
+
+            await loadEvents();
+
+            // Reload dashboard event status if exists
+            if (typeof loadEventStatus === 'function') {
+                loadEventStatus();
+            }
+
+        } catch (error) {
+            console.error(`Error ${action}ing event:`, error);
+            alert(error.message || `Failed to ${action} event`);
+        }
+    };
+
+    window.archiveEvent = async function(eventId, year) {
+        if (!confirm(`Are you sure you want to archive the ${year} event? This action can be reversed by editing the event directly in the database.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/admin/events/${eventId}/archive`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to archive event');
+            }
+
+            await loadEvents();
+
+        } catch (error) {
+            console.error('Error archiving event:', error);
+            alert(error.message || 'Failed to archive event');
+        }
+    };
+
+    window.toggleVPNAvailability = async function(eventId, currentStatus, eventName) {
+        const newStatus = !currentStatus;
+        const action = newStatus ? 'enable' : 'disable';
+
+        if (!confirm(`Are you sure you want to ${action} VPN access for ${eventName}?`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/admin/events/${eventId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    vpn_available: newStatus
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to update VPN availability');
+            }
+
+            await loadEvents();
+
+        } catch (error) {
+            console.error('Error toggling VPN availability:', error);
+            alert(error.message || 'Failed to update VPN availability');
+        }
+    };
+
+    window.toggleTestMode = async function(eventId, currentStatus, eventName) {
+        const newStatus = !currentStatus;
+        const action = newStatus ? 'enable' : 'disable';
+
+        if (!confirm(`Are you sure you want to ${action} test mode for ${eventName}?\n\n${newStatus ? 'Sponsors will be able to request VPNs and sync to Keycloak for testing.' : 'Sponsors will no longer have early VPN access.'}`)) {
+            return;
+        }
+
+        try {
+            console.log(`Toggling test mode for event ${eventId} from ${currentStatus} to ${newStatus}`);
+
+            const response = await fetch(`/api/admin/events/${eventId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    test_mode: newStatus
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                console.error('Server error:', error);
+                throw new Error(error.detail || 'Failed to update test mode');
+            }
+
+            const result = await response.json();
+            console.log('Test mode updated successfully:', result);
+
+            await loadEvents();
+
+        } catch (error) {
+            console.error('Error toggling test mode:', error);
+            alert(error.message || 'Failed to update test mode');
+        }
+    };
+
+    // Load events on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadEvents();
+
+        if (typeof feather !== 'undefined') {
+            setTimeout(() => feather.replace(), 100);
+        }
+    });
+})();
+</script>
+{% endblock %}

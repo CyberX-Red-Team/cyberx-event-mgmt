@@ -1,0 +1,873 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Participant Portal{% endblock %}
+
+{% block extra_css %}
+<style>
+    .vpn-cell {
+        cursor: pointer;
+        user-select: text;
+        border-bottom: 1px dotted #dee2e6;
+    }
+    .vpn-cell:hover {
+        background-color: #f8f9fa;
+    }
+    .popover-body {
+        user-select: text;
+        word-break: break-all;
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}
+
+{% block body_class %}bg-light{% endblock %}
+
+{% block body %}
+<!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container">
+        <a class="navbar-brand" href="/portal">
+            <i data-feather="shield" class="me-2"></i>CyberX Portal
+        </a>
+        <div class="navbar-nav ms-auto">
+            <span class="navbar-text text-white me-3">
+                Welcome, {{ current_user.first_name }}
+            </span>
+            <a class="btn btn-outline-light btn-sm" href="#" onclick="logout()">
+                <i data-feather="log-out" class="me-1"></i>Logout
+            </a>
+        </div>
+    </div>
+</nav>
+
+<!-- Main Content -->
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <!-- Welcome Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-body text-center py-5">
+                    <div class="display-1 mb-3">
+                        <i data-feather="shield" class="text-primary" style="width: 64px; height: 64px;"></i>
+                    </div>
+                    <h2>Welcome to CyberX, {{ current_user.first_name }}!</h2>
+                    <p class="text-muted mb-0">Your participant dashboard for the CyberX event</p>
+                </div>
+            </div>
+
+            <!-- Sponsor Management Card (Sponsors Only) -->
+            {% if current_user.role == 'sponsor' %}
+            <div class="card shadow-sm mb-4 border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i data-feather="users" class="me-2"></i>Sponsor Management</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h6 class="mb-2">Manage Your Invitees</h6>
+                            <p class="text-muted mb-0">
+                                As a sponsor, you can manage your invitees, add new participants, reset passwords, and track their status.
+                            </p>
+                        </div>
+                        <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                            <a href="/sponsor/invitees" class="btn btn-primary btn-lg" target="_blank" rel="noopener noreferrer">
+                                <i data-feather="external-link" class="me-2"></i>
+                                Manage Invitees
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Event Information Card -->
+            <div class="card shadow-sm mb-4" id="eventInfoCard">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="calendar" class="me-2"></i>Current Event</h5>
+                </div>
+                <div class="card-body">
+                    <div id="eventLoadingState" class="text-center py-3">
+                        <div class="spinner-border spinner-border-sm text-primary"></div>
+                        <span class="ms-2 text-muted">Loading event information...</span>
+                    </div>
+                    <div id="eventDetailsState" class="d-none">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-center">
+                                    <div class="flex-shrink-0">
+                                        <div class="rounded-circle bg-info bg-opacity-10 p-3">
+                                            <i data-feather="calendar" class="text-info"></i>
+                                        </div>
+                                    </div>
+                                    <div class="ms-3">
+                                        <div class="small text-muted">Event Name</div>
+                                        <div class="fw-bold" id="eventName">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-center">
+                                    <div class="flex-shrink-0">
+                                        <div class="rounded-circle bg-success bg-opacity-10 p-3">
+                                            <i data-feather="clock" class="text-success"></i>
+                                        </div>
+                                    </div>
+                                    <div class="ms-3">
+                                        <div class="small text-muted">Event Dates</div>
+                                        <div class="fw-bold" id="eventDates">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="eventErrorState" class="d-none">
+                        <div class="alert alert-warning mb-0">
+                            <i data-feather="info" class="me-2"></i>
+                            <span>No active event found. Please contact your administrator.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="user" class="me-2"></i>Your Status</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="rounded-circle bg-primary bg-opacity-10 p-3">
+                                        <i data-feather="mail" class="text-primary"></i>
+                                    </div>
+                                </div>
+                                <div class="ms-3">
+                                    <div class="small text-muted">Email</div>
+                                    <div class="fw-bold">{{ current_user.email }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="rounded-circle bg-success bg-opacity-10 p-3">
+                                        <i data-feather="check-circle" class="text-success"></i>
+                                    </div>
+                                </div>
+                                <div class="ms-3">
+                                    <div class="small text-muted">Confirmation Status</div>
+                                    <div class="fw-bold">
+                                        {% if current_user.confirmed == 'YES' %}
+                                        <span class="text-success">Confirmed</span>
+                                        {% elif current_user.confirmed == 'NO' %}
+                                        <span class="text-danger">Not Confirmed</span>
+                                        {% else %}
+                                        <span class="text-warning">Pending</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% if current_user.country %}
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="rounded-circle bg-info bg-opacity-10 p-3">
+                                        <i data-feather="globe" class="text-info"></i>
+                                    </div>
+                                </div>
+                                <div class="ms-3">
+                                    <div class="small text-muted">Country</div>
+                                    <div class="fw-bold">
+                                        {% if current_user.country == 'United States' %}
+                                        🇺🇸 United States
+                                        {% elif current_user.country == 'Canada' %}
+                                        🇨🇦 Canada
+                                        {% elif current_user.country == 'United Kingdom' %}
+                                        🇬🇧 United Kingdom
+                                        {% else %}
+                                        🌐 {{ current_user.country }}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if current_user.sponsor %}
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="rounded-circle bg-info bg-opacity-10 p-3">
+                                        <i data-feather="user-check" class="text-info"></i>
+                                    </div>
+                                </div>
+                                <div class="ms-3">
+                                    <div class="small text-muted">Sponsored By</div>
+                                    <div class="fw-bold">{{ current_user.sponsor.first_name }} {{ current_user.sponsor.last_name }}</div>
+                                    <div class="small text-muted">{{ current_user.sponsor.email }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Credentials Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="key" class="me-2"></i>Your Credentials</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3 mb-md-0">
+                            <label class="form-label small text-muted">Username</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" value="{{ current_user.pandas_username or 'Not assigned' }}" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard('{{ current_user.pandas_username }}')">
+                                    <i data-feather="copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small text-muted">Password</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="passwordField" value="{{ current_user.pandas_password or '********' }}" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="togglePassword()">
+                                    <i data-feather="eye" id="eyeIcon"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard('{{ current_user.pandas_password }}')">
+                                    <i data-feather="copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Change Password Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="lock" class="me-2"></i>Change Password</h5>
+                </div>
+                <div class="card-body">
+                    <form id="passwordChangeForm">
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label for="currentPassword" class="form-label">Current Password</label>
+                                <input type="password" class="form-control" id="currentPassword" required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="newPassword" class="form-label">New Password</label>
+                                <input type="password" class="form-control" id="newPassword" minlength="8" required>
+                                <div class="form-text">Minimum 8 characters</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                                <input type="password" class="form-control" id="confirmPassword" minlength="8" required>
+                            </div>
+                        </div>
+                        <div id="passwordChangeAlert" class="d-none mb-3"></div>
+                        <button type="submit" class="btn btn-primary">
+                            <i data-feather="save" class="me-1"></i> Change Password
+                        </button>
+                        <button type="button" class="btn btn-secondary ms-2" onclick="resetPasswordForm()">
+                            Cancel
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- VPN Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i data-feather="shield" class="me-2"></i>VPN Credentials</h5>
+                    <span class="badge bg-primary" id="vpnCountBadge">-</span>
+                </div>
+                <div class="card-body" id="vpnContent">
+                    <div class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                        Loading VPN status...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Request VPN Card -->
+            <div class="card shadow-sm mb-4" id="requestVPNCard">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="plus-circle" class="me-2"></i>Request VPN Credentials</h5>
+                </div>
+                <div class="card-body">
+                    <div id="vpnRequestContent">
+                        <p class="text-muted mb-3">Need more VPN credentials? You can request up to 25 at a time.</p>
+                        <div class="row align-items-end">
+                            <div class="col-md-4 mb-3 mb-md-0">
+                                <label class="form-label">Number of VPNs to Request</label>
+                                <input type="number" class="form-control" id="requestCount" value="1" min="1" max="25">
+                            </div>
+                            <div class="col-md-4 mb-3 mb-md-0">
+                                <label class="form-label">Available VPNs</label>
+                                <div class="form-control bg-light" id="availableCount">Loading...</div>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-primary w-100" onclick="requestVPNs()" id="requestBtn">
+                                    <i data-feather="download-cloud" class="me-2"></i>Request VPNs
+                                </button>
+                            </div>
+                        </div>
+                        <div id="requestResult" class="mt-3" style="display: none;"></div>
+                    </div>
+                    <div id="vpnRequestDisabled" class="d-none">
+                        <div class="alert alert-warning mb-0">
+                            <i data-feather="info" class="me-2"></i>
+                            <strong>VPN Requests Not Available</strong>
+                            <p class="mb-0 mt-2">VPN access has not been enabled for this event yet. Please check back closer to the event date.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Help Card -->
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="help-circle" class="me-2"></i>Need Help?</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-2">If you have any questions or issues, please contact:</p>
+                    <ul class="mb-0">
+                        {% if current_user.sponsor %}
+                        <li><strong>Your Sponsor:</strong> {{ current_user.sponsor.first_name }} {{ current_user.sponsor.last_name }} (<a href="mailto:{{ current_user.sponsor.email }}">{{ current_user.sponsor.email }}</a>)</li>
+                        {% else %}
+                        <li>Your sponsor or team lead</li>
+                        {% endif %}
+                        <li>The CyberX support team</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Footer -->
+<footer class="bg-dark text-white-50 py-3 mt-auto">
+    <div class="container text-center">
+        <small>Copyright &copy; CyberX Red Team {{ now.year if now else '2024' }}</small>
+    </div>
+</footer>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function logout() {
+    try {
+        const response = await fetch('/api/auth/logout', {
+            method: 'POST',
+            credentials: 'include'
+        });
+        if (response.ok) {
+            window.location.href = '/login';
+        }
+    } catch (error) {
+        console.error('Logout failed:', error);
+    }
+}
+
+function togglePassword() {
+    const field = document.getElementById('passwordField');
+    const icon = document.getElementById('eyeIcon');
+
+    if (field.type === 'password') {
+        field.type = 'text';
+        icon.setAttribute('data-feather', 'eye-off');
+    } else {
+        field.type = 'password';
+        icon.setAttribute('data-feather', 'eye');
+    }
+    if (typeof refreshFeatherIcons === 'function') {
+        refreshFeatherIcons();
+    } else if (typeof feather !== 'undefined') {
+        feather.replace();
+    }
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(function() {
+        // Show brief feedback
+        var toast = document.createElement('div');
+        toast.className = 'position-fixed bottom-0 end-0 p-3';
+        toast.style.zIndex = '1050';
+        toast.innerHTML = '<div class="toast show" role="alert"><div class="toast-body"><i class="fas fa-check me-2 text-success"></i>Copied to clipboard!</div></div>';
+        document.body.appendChild(toast);
+        setTimeout(function() { toast.remove(); }, 2000);
+    });
+}
+
+let currentEvent = null;  // Store current event data globally
+
+// Current user info from server
+const currentUser = {
+    role: '{{ current_user.role }}',
+    isSponsor: {{ 'true' if current_user.role == 'sponsor' or current_user.is_sponsor else 'false' }}
+};
+
+async function loadEventInfo() {
+    var loadingState = document.getElementById('eventLoadingState');
+    var detailsState = document.getElementById('eventDetailsState');
+    var errorState = document.getElementById('eventErrorState');
+
+    try {
+        var response = await fetch('/api/events/active', {
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            var data = await response.json();
+
+            // Check if there's an active event
+            if (!data.active || !data.event) {
+                loadingState.classList.add('d-none');
+                errorState.classList.remove('d-none');
+                refreshFeatherIcons();
+                return;
+            }
+
+            currentEvent = data.event;
+
+            // Update event details
+            document.getElementById('eventName').textContent = currentEvent.name;
+
+            // Format dates
+            if (currentEvent.start_date && currentEvent.end_date) {
+                var startDate = formatDate(currentEvent.start_date);
+                var endDate = formatDate(currentEvent.end_date);
+                document.getElementById('eventDates').textContent = `${startDate} - ${endDate}`;
+            } else {
+                document.getElementById('eventDates').textContent = 'Dates TBD';
+            }
+
+            loadingState.classList.add('d-none');
+            detailsState.classList.remove('d-none');
+        } else {
+            throw new Error('Failed to load event information');
+        }
+
+        refreshFeatherIcons();
+
+    } catch (error) {
+        console.error('Error loading event info:', error);
+        loadingState.classList.add('d-none');
+        errorState.classList.remove('d-none');
+        refreshFeatherIcons();
+    }
+}
+
+async function loadVPNStatus() {
+    var content = document.getElementById('vpnContent');
+    var badge = document.getElementById('vpnCountBadge');
+
+    try {
+        // Check if VPN is available for current event
+        const vpnAllowed = currentEvent && (currentEvent.vpn_available || (currentEvent.test_mode && currentUser.isSponsor));
+
+        if (!vpnAllowed) {
+            content.innerHTML = `
+                <div class="alert alert-warning mb-0">
+                    <i data-feather="info" class="me-2"></i>
+                    <strong>VPN Access Not Yet Available</strong>
+                    <p class="mb-0 mt-2">VPN credentials for ${currentEvent ? currentEvent.name : 'this event'} will be made available closer to the event start date. Please check back later.</p>
+                </div>
+            `;
+            badge.textContent = '0';
+            refreshFeatherIcons();
+            return;
+        }
+
+        var response = await fetch('/api/vpn/my-credentials', {
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            var data = await response.json();
+            badge.textContent = data.total;
+
+            if (data.total === 0) {
+                const testModeBadge = currentEvent.test_mode && !currentEvent.vpn_available && currentUser.isSponsor ?
+                    '<span class="badge bg-warning text-dark ms-2"><i data-feather="zap" class="me-1" style="width:12px;height:12px;"></i>Test Mode</span>' : '';
+                content.innerHTML = `
+                    <div class="alert alert-info mb-0">
+                        <i data-feather="info" class="me-2"></i>
+                        You don't have any VPN credentials yet. Use the form below to request VPN access.${testModeBadge}
+                    </div>
+                `;
+            } else {
+                const testModeBadge = currentEvent.test_mode && !currentEvent.vpn_available && currentUser.isSponsor ?
+                    '<span class="badge bg-warning text-dark ms-2"><i data-feather="zap" style="width:12px;height:12px;"></i> Test Mode</span>' : '';
+
+                // Get naming pattern from API (default pattern if fetch fails)
+                let namingPattern = 'simnet_{ipv4_address}.conf';
+                try {
+                    const patternResponse = await fetch('/api/vpn/naming-pattern', {
+                        credentials: 'include'
+                    });
+                    if (patternResponse.ok) {
+                        const patternData = await patternResponse.json();
+                        namingPattern = patternData.pattern;
+                    }
+                } catch (error) {
+                    console.error('Error fetching naming pattern:', error);
+                }
+                const namingParam = `?naming_pattern=${encodeURIComponent(namingPattern)}`;
+
+                // Fetch request batches for bulk download options
+                let batchesHTML = '';
+                if (data.total > 1) {
+                    try {
+                        const batchesResponse = await fetch('/api/vpn/my-request-batches', {
+                            credentials: 'include'
+                        });
+                        if (batchesResponse.ok) {
+                            const batchesData = await batchesResponse.json();
+                            if (batchesData.batches && batchesData.batches.length > 0) {
+                                batchesHTML = `
+                                    <div class="btn-group me-2">
+                                        <a href="/api/vpn/my-configs/download${namingParam}" class="btn btn-sm btn-primary">
+                                            <i data-feather="download" class="me-1"></i>Bulk Download
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                                            <span class="visually-hidden">Toggle Dropdown</span>
+                                        </button>
+                                        <ul class="dropdown-menu">
+                                            <li><h6 class="dropdown-header">Download Options</h6></li>
+                                            <li><a class="dropdown-item" href="/api/vpn/my-configs/download${namingParam}">
+                                                <i data-feather="download" class="me-2"></i>All Credentials (${data.total})
+                                            </a></li>
+                                            <li><hr class="dropdown-divider"></li>
+                                            ${batchesData.batches.map((batch, index) => {
+                                                const requestDate = new Date(batch.requested_at).toLocaleString('en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                    hour: 'numeric',
+                                                    minute: '2-digit'
+                                                });
+                                                const batchIdShort = batch.batch_id.substring(0, 8);
+                                                return `<li><a class="dropdown-item" href="/api/vpn/download-batch/${batch.batch_id}${namingParam}">
+                                                    <i data-feather="package" class="me-2"></i>${batchIdShort} (${batch.count}) - ${requestDate}
+                                                </a></li>`;
+                                            }).join('')}
+                                        </ul>
+                                    </div>
+                                `;
+                            } else {
+                                // Fallback if no batches (legacy VPNs without batch_id)
+                                batchesHTML = `<a href="/api/vpn/my-configs/download${namingParam}" class="btn btn-sm btn-primary me-2">
+                                    <i data-feather="download" class="me-1"></i>Download All (ZIP)
+                                </a>`;
+                            }
+                        } else {
+                            // Fallback if batches endpoint fails
+                            batchesHTML = `<a href="/api/vpn/my-configs/download${namingParam}" class="btn btn-sm btn-primary me-2">
+                                <i data-feather="download" class="me-1"></i>Download All (ZIP)
+                            </a>`;
+                        }
+                    } catch (error) {
+                        console.error('Error fetching batches:', error);
+                        // Fallback on error
+                        batchesHTML = `<a href="/api/vpn/my-configs/download${namingParam}" class="btn btn-sm btn-primary me-2">
+                            <i data-feather="download" class="me-1"></i>Download All (ZIP)
+                        </a>`;
+                    }
+                }
+
+                var html = `
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-muted">You have ${data.total} VPN credential${data.total > 1 ? 's' : ''}${testModeBadge}</span>
+                        <div>
+                            ${batchesHTML}
+                            <button class="btn btn-sm btn-outline-secondary" onclick="showVPNInstructions()">
+                                <i data-feather="help-circle" class="me-1"></i>Setup Guide
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>IPv4 Address</th>
+                                    <th>Endpoint</th>
+                                    <th>SHA256 Hash</th>
+                                    <th>Request ID</th>
+                                    <th>Assigned</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                data.credentials.forEach((vpn, index) => {
+                    const hashDisplay = vpn.file_hash ? vpn.file_hash.substring(0, 8) + '...' : '-';
+                    const batchIdDisplay = vpn.request_batch_id ? vpn.request_batch_id.substring(0, 8) : '-';
+                    html += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td><code class="vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${vpn.ipv4_address || 'N/A'}">${vpn.ipv4_address || '-'}</code></td>
+                            <td><code class="vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${vpn.endpoint || 'N/A'}">${vpn.endpoint}</code></td>
+                            <td><code class="small text-muted vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${vpn.file_hash || 'No hash'}">${hashDisplay}</code></td>
+                            <td><code class="small text-muted vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${vpn.request_batch_id || 'No batch ID'}">${batchIdDisplay}</code></td>
+                            <td tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${vpn.assigned_at ? new Date(vpn.assigned_at).toLocaleString() : 'N/A'}">${formatDateTime(vpn.assigned_at, {hideSeconds: true})}</td>
+                            <td class="text-end">
+                                <a href="/api/vpn/my-config/download?vpn_id=${vpn.id}" class="btn btn-sm btn-outline-primary" title="Download config">
+                                    <i data-feather="download"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += '</tbody></table></div>';
+                content.innerHTML = html;
+
+                // Initialize popovers for VPN cells and store instances
+                const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+                const popoverInstances = popoverTriggerList.map(function (popoverTriggerEl) {
+                    return new bootstrap.Popover(popoverTriggerEl, {
+                        html: true,
+                        sanitize: false
+                    });
+                });
+
+                // Close popovers when clicking outside
+                document.addEventListener('click', function(event) {
+                    const isClickInsidePopover = event.target.closest('.popover');
+                    const isClickOnTrigger = event.target.closest('[data-bs-toggle="popover"]');
+
+                    if (!isClickInsidePopover && !isClickOnTrigger) {
+                        popoverInstances.forEach(function(popover) {
+                            popover.hide();
+                        });
+                    }
+                });
+            }
+        } else if (response.status === 401) {
+            window.location.href = '/login';
+            return;
+        } else {
+            throw new Error('Failed to load VPN status');
+        }
+
+        refreshFeatherIcons();
+
+    } catch (error) {
+        console.error('Error:', error);
+        content.innerHTML = '<div class="alert alert-danger mb-0"><i data-feather="alert-circle" class="me-2"></i>Failed to load VPN status. Please refresh the page.</div>';
+        refreshFeatherIcons();
+    }
+}
+
+async function loadAvailableCount() {
+    // Check if VPN is available for current event
+    const vpnAllowed = currentEvent && (currentEvent.vpn_available || (currentEvent.test_mode && currentUser.isSponsor));
+
+    if (!vpnAllowed) {
+        // Hide the request form and show disabled message
+        document.getElementById('vpnRequestContent').classList.add('d-none');
+        document.getElementById('vpnRequestDisabled').classList.remove('d-none');
+        refreshFeatherIcons();
+        return;
+    }
+
+    // VPN is available, show the request form
+    document.getElementById('vpnRequestContent').classList.remove('d-none');
+    document.getElementById('vpnRequestDisabled').classList.add('d-none');
+
+    try {
+        var response = await fetch('/api/vpn/available-count', {
+            credentials: 'include'
+        });
+        if (response.ok) {
+            var data = await response.json();
+            document.getElementById('availableCount').textContent = data.available_count + ' available';
+        }
+    } catch (error) {
+        console.error('Error loading available count:', error);
+        document.getElementById('availableCount').textContent = 'Unknown';
+    }
+}
+
+async function requestVPNs() {
+    var count = parseInt(document.getElementById('requestCount').value);
+    var btn = document.getElementById('requestBtn');
+    var resultDiv = document.getElementById('requestResult');
+
+    // Check if VPN is available
+    const vpnAllowed = currentEvent && (currentEvent.vpn_available || (currentEvent.test_mode && currentUser.isSponsor));
+
+    if (!vpnAllowed) {
+        resultDiv.className = 'mt-3 alert alert-warning';
+        resultDiv.innerHTML = '<i data-feather="info" class="me-2"></i>VPN access is not yet available for this event.';
+        resultDiv.style.display = 'block';
+        refreshFeatherIcons();
+        return;
+    }
+
+    if (count < 1 || count > 25) {
+        resultDiv.className = 'mt-3 alert alert-warning';
+        resultDiv.innerHTML = 'Please enter a number between 1 and 25.';
+        resultDiv.style.display = 'block';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Requesting...';
+
+    try {
+        var response = await fetch('/api/vpn/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ count: count })
+        });
+
+        var data = await response.json();
+
+        if (response.ok && data.success) {
+            resultDiv.className = 'mt-3 alert alert-success';
+            resultDiv.innerHTML = `<i data-feather="check-circle" class="me-2"></i>${data.message} You now have ${data.total_vpns} VPN credential${data.total_vpns > 1 ? 's' : ''}.`;
+            loadVPNStatus();
+            loadAvailableCount();
+        } else if (response.status === 429) {
+            resultDiv.className = 'mt-3 alert alert-warning';
+            resultDiv.innerHTML = '<i data-feather="clock" class="me-2"></i>Too many requests. Please wait a few minutes before requesting more VPNs.';
+        } else {
+            resultDiv.className = 'mt-3 alert alert-danger';
+            resultDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>' + (data.detail || data.message || 'Failed to request VPNs');
+        }
+
+        resultDiv.style.display = 'block';
+        refreshFeatherIcons();
+
+    } catch (error) {
+        console.error('Error:', error);
+        resultDiv.className = 'mt-3 alert alert-danger';
+        resultDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>Failed to request VPNs. Please try again.';
+        resultDiv.style.display = 'block';
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i data-feather="download-cloud" class="me-2"></i>Request VPNs';
+    refreshFeatherIcons();
+}
+
+function refreshFeatherIcons() {
+    if (typeof feather !== 'undefined') {
+        feather.replace();
+    }
+}
+
+function resetPasswordForm() {
+    document.getElementById('passwordChangeForm').reset();
+    const alertDiv = document.getElementById('passwordChangeAlert');
+    alertDiv.classList.add('d-none');
+}
+
+async function handlePasswordChange(e) {
+    e.preventDefault();
+
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    const alertDiv = document.getElementById('passwordChangeAlert');
+
+    // Validate passwords match
+    if (newPassword !== confirmPassword) {
+        alertDiv.className = 'alert alert-danger';
+        alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>New passwords do not match';
+        alertDiv.classList.remove('d-none');
+        refreshFeatherIcons();
+        return;
+    }
+
+    // Validate password length
+    if (newPassword.length < 8) {
+        alertDiv.className = 'alert alert-danger';
+        alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>Password must be at least 8 characters';
+        alertDiv.classList.remove('d-none');
+        refreshFeatherIcons();
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/auth/password/change', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                current_password: currentPassword,
+                new_password: newPassword
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alertDiv.className = 'alert alert-success';
+            alertDiv.innerHTML = '<i data-feather="check-circle" class="me-2"></i>' + data.message;
+            alertDiv.classList.remove('d-none');
+            refreshFeatherIcons();
+            resetPasswordForm();
+        } else {
+            alertDiv.className = 'alert alert-danger';
+            alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>' + data.detail;
+            alertDiv.classList.remove('d-none');
+            refreshFeatherIcons();
+        }
+    } catch (error) {
+        console.error('Error changing password:', error);
+        alertDiv.className = 'alert alert-danger';
+        alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>Failed to change password. Please try again.';
+        alertDiv.classList.remove('d-none');
+        refreshFeatherIcons();
+    }
+}
+
+function showVPNInstructions() {
+    var modal = document.createElement('div');
+    modal.className = 'modal fade show';
+    modal.style.display = 'block';
+    modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    modal.innerHTML = '<div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">WireGuard Setup Instructions</h5><button type="button" class="btn-close" onclick="this.closest(\'.modal\').remove()"></button></div><div class="modal-body"><h6>1. Install WireGuard</h6><p>Download WireGuard from <a href="https://www.wireguard.com/install/" target="_blank" rel="noopener noreferrer">wireguard.com</a> for your operating system.</p><h6>2. Import Configuration</h6><ul><li><strong>Windows/Mac/Linux:</strong> Click "Import tunnel(s) from file" and select the downloaded .conf file</li><li><strong>Mobile:</strong> Use the QR code scanner or import the file</li></ul><h6>3. Connect</h6><p>Click "Activate" to connect to the VPN. You should see a connected status and your traffic will be routed through the CyberX network.</p><div class="alert alert-info"><i class="fas fa-info-circle me-2"></i><strong>Important:</strong> Only connect to the VPN during the event timeframe as specified by your team lead.</div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="this.closest(\'.modal\').remove()">Close</button></div></div></div>';
+    document.body.appendChild(modal);
+}
+
+// Load event info and VPN status on page load
+document.addEventListener('DOMContentLoaded', async function() {
+    // Load event info first
+    await loadEventInfo();
+
+    // Then load VPN status (which depends on event data)
+    loadVPNStatus();
+    loadAvailableCount();
+
+    // Attach password change form handler
+    const passwordForm = document.getElementById('passwordChangeForm');
+    if (passwordForm) {
+        passwordForm.addEventListener('submit', handlePasswordChange);
+    }
+
+    // Ensure icons are rendered after initial load
+    setTimeout(function() {
+        refreshFeatherIcons();
+    }, 100);
+});
+</script>
+{% endblock %}
