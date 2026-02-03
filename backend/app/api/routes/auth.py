@@ -298,16 +298,28 @@ async def request_password_reset(
             user_agent=user_agent
         )
 
-        # TODO: Send password reset email via workflow
-        # workflow_service = WorkflowService(db)
-        # await workflow_service.trigger_workflow(
-        #     trigger_event=WorkflowTriggerEvent.PASSWORD_RESET_REQUESTED,
-        #     user_id=user.id,
-        #     custom_vars={
-        #         "reset_url": f"https://portal.cyberxredteam.org/reset-password?token={reset_token}",
-        #         "reset_token": reset_token
-        #     }
-        # )
+        # Send password reset email via workflow
+        from app.services.workflow_service import WorkflowService
+        from app.models.email_workflow import WorkflowTriggerEvent
+        from app.config import get_settings
+
+        settings = get_settings()
+        workflow_service = WorkflowService(db)
+
+        # Build password reset URL using configured frontend URL
+        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+
+        await workflow_service.trigger_workflow(
+            trigger_event=WorkflowTriggerEvent.PASSWORD_RESET,
+            user_id=user.id,
+            custom_vars={
+                "reset_url": reset_url,
+                "reset_token": reset_token,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "email": user.email
+            }
+        )
 
     # Always return success to prevent email enumeration
     return PasswordResetRequestResponse(
