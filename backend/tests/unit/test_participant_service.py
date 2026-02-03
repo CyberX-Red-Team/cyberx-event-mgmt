@@ -391,3 +391,228 @@ class TestParticipantServicePasswordManagement:
 
         assert success is False
         assert password == ""
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestParticipantServiceBulkOperations:
+    """Test bulk participant operations."""
+
+    async def test_bulk_activate_participants(self, db_session: AsyncSession):
+        """Test bulk activating multiple participants."""
+        service = ParticipantService(db_session)
+
+        # Create inactive participants
+        user_ids = []
+        for i in range(3):
+            user = await service.create_participant(
+                email=f"user{i}@test.com",
+                first_name=f"User{i}",
+                last_name="Test",
+                country="USA"
+            )
+            user.is_active = False
+            user_ids.append(user.id)
+        await db_session.commit()
+
+        # Bulk activate
+        success_count, failed_ids = await service.bulk_activate(user_ids)
+
+        assert success_count == 3
+        assert len(failed_ids) == 0
+
+        # Verify all activated
+        for user_id in user_ids:
+            user = await service.get_participant(user_id)
+            assert user.is_active is True
+
+    async def test_bulk_activate_nonexistent(self, db_session: AsyncSession):
+        """Test bulk activate handles non-existent users."""
+        service = ParticipantService(db_session)
+
+        success_count, failed_ids = await service.bulk_activate([99999, 88888])
+
+        assert success_count == 0
+        assert len(failed_ids) == 2
+
+    async def test_bulk_deactivate_participants(self, db_session: AsyncSession):
+        """Test bulk deactivating multiple participants."""
+        service = ParticipantService(db_session)
+
+        # Create active participants
+        user_ids = []
+        for i in range(3):
+            user = await service.create_participant(
+                email=f"user{i}@test.com",
+                first_name=f"User{i}",
+                last_name="Test",
+                country="USA"
+            )
+            user_ids.append(user.id)
+        await db_session.commit()
+
+        # Bulk deactivate
+        success_count, failed_ids = await service.bulk_deactivate(user_ids)
+
+        assert success_count == 3
+        assert len(failed_ids) == 0
+
+        # Verify all deactivated
+        for user_id in user_ids:
+            user = await service.get_participant(user_id)
+            assert user.is_active is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestParticipantServiceStatistics:
+    """Test participant statistics operations."""
+
+    async def test_get_statistics_all(self, db_session: AsyncSession):
+        """Test getting overall participant statistics."""
+        service = ParticipantService(db_session)
+
+        # Create various participants
+        await service.create_participant(
+            email="user1@test.com",
+            first_name="User1",
+            last_name="Test",
+            country="USA",
+            confirmed="YES"
+        )
+        await service.create_participant(
+            email="user2@test.com",
+            first_name="User2",
+            last_name="Test",
+            country="Canada",
+            confirmed="NO"
+        )
+
+        stats = await service.get_statistics()
+
+        assert stats["total_invitees"] >= 2
+        assert "confirmed_count" in stats
+        assert "active_count" in stats
+
+    async def test_get_statistics_by_sponsor(
+        self, db_session: AsyncSession, sponsor_user: User
+    ):
+        """Test getting statistics filtered by sponsor."""
+        service = ParticipantService(db_session)
+
+        # Create participant sponsored by sponsor
+        await service.create_participant(
+            email="sponsored@test.com",
+            first_name="Sponsored",
+            last_name="User",
+            country="USA",
+            sponsor_id=sponsor_user.id
+        )
+
+        stats = await service.get_statistics(sponsor_id=sponsor_user.id)
+
+        assert stats["total_invitees"] >= 1
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestParticipantServiceSponsorOperations:
+    """Test sponsor-related operations."""
+
+    async def test_get_sponsored_participants(
+        self, db_session: AsyncSession, sponsor_user: User
+    ):
+        """Test retrieving participants sponsored by a sponsor."""
+        service = ParticipantService(db_session)
+
+        # Create sponsored participants
+        user1 = await service.create_participant(
+            email="sponsored1@test.com",
+            first_name="Sponsored1",
+            last_name="User",
+            country="USA",
+            sponsor_id=sponsor_user.id
+        )
+        user2 = await service.create_participant(
+            email="sponsored2@test.com",
+            first_name="Sponsored2",
+            last_name="User",
+            country="USA",
+            sponsor_id=sponsor_user.id
+        )
+
+        # Get sponsored participants
+        participants, total = await service.get_sponsored_participants(sponsor_user.id)
+
+        assert len(participants) >= 2
+        assert total >= 2
+        participant_ids = [p.id for p in participants]
+        assert user1.id in participant_ids
+        assert user2.id in participant_ids
+
+    async def test_assign_sponsor(self, db_session: AsyncSession, sponsor_user: User):
+        """Test assigning a sponsor to a participant."""
+        service = ParticipantService(db_session)
+
+        # Create participant without sponsor
+        user = await service.create_participant(
+            email="user@test.com",
+            first_name="User",
+            last_name="Test",
+            country="USA"
+        )
+
+        # Assign sponsor
+        updated = await service.assign_sponsor(user.id, sponsor_user.id)
+
+        assert updated is not None
+        assert updated.sponsor_id == sponsor_user.id
+
+    async def test_assign_sponsor_nonexistent(self, db_session: AsyncSession):
+        """Test assigning sponsor to non-existent participant."""
+        service = ParticipantService(db_session)
+
+        result = await service.assign_sponsor(99999, 1)
+        assert result is None
+
+    async def test_list_sponsors(self, db_session: AsyncSession, sponsor_user: User):
+        """Test listing all sponsors."""
+        service = ParticipantService(db_session)
+
+        sponsors = await service.list_sponsors()
+
+        assert len(sponsors) >= 1
+        sponsor_ids = [s.id for s in sponsors]
+        assert sponsor_user.id in sponsor_ids
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestParticipantServiceRoleManagement:
+    """Test participant role management operations."""
+
+    async def test_update_role(self, db_session: AsyncSession, invitee_user: User):
+        """Test updating participant role."""
+        service = ParticipantService(db_session)
+
+        # Update role from invitee to sponsor
+        updated = await service.update_role(invitee_user.id, UserRole.SPONSOR.value)
+
+        assert updated is not None
+        assert updated.role == UserRole.SPONSOR.value
+
+    async def test_update_role_nonexistent(self, db_session: AsyncSession):
+        """Test updating role for non-existent participant."""
+        service = ParticipantService(db_session)
+
+        result = await service.update_role(99999, UserRole.ADMIN.value)
+        assert result is None
+
+    async def test_get_sponsor_by_id(self, db_session: AsyncSession, sponsor_user: User):
+        """Test retrieving sponsor by ID."""
+        service = ParticipantService(db_session)
+
+        sponsor = await service.get_sponsor(sponsor_user.id)
+
+        assert sponsor is not None
+        assert sponsor.id == sponsor_user.id
+        assert sponsor.role == UserRole.SPONSOR.value
