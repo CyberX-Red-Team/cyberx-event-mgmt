@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette_csrf import CSRFMiddleware
 
 from app.config import get_settings
 from app.api.routes import auth, admin, vpn, email, webhooks, views, event, public, sponsor
@@ -68,8 +69,29 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Restrict methods
     allow_headers=["*"],
+)
+
+# CSRF protection
+# Exempt endpoints that receive external POSTs (webhooks, public actions)
+csrf_exempt_urls = [
+    "/api/webhooks/sendgrid",  # SendGrid webhook
+    "/api/webhooks/discord",   # Discord OAuth callback
+    "/api/public/confirm",     # Public confirmation endpoint
+    "/api/public/decline",     # Public decline endpoint
+    "/health",                 # Health check
+]
+
+app.add_middleware(
+    CSRFMiddleware,
+    secret=settings.CSRF_SECRET_KEY or settings.SECRET_KEY,
+    exempt_urls=csrf_exempt_urls,
+    cookie_name="csrf_token",
+    cookie_secure=not settings.DEBUG,  # HTTPS only in production
+    cookie_samesite="lax",
+    cookie_httponly=False,  # JavaScript needs to read this for AJAX requests
+    header_name="X-CSRF-Token",
 )
 
 
