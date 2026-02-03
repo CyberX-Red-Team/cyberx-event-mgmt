@@ -630,9 +630,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // =============================================================================
 async function loadStats() {
     try {
-        const response = await fetch('/api/admin/participants/stats', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/admin/participants/stats');
         const stats = await response.json();
 
         document.getElementById('statConfirmed').textContent = stats.confirmed_count || 0;
@@ -668,9 +666,7 @@ window.loadUsers = async function(page = 1) {
     if (country) params.append('country', country);
 
     try {
-        const response = await fetch(`/api/admin/participants?${params}`, {
-            credentials: 'include'
-        });
+        const response = await csrfFetch(`/api/admin/participants?${params}`);
         const data = await response.json();
 
         users = data.items || [];
@@ -695,9 +691,7 @@ window.loadUsers = async function(page = 1) {
 
 async function loadSponsors() {
     try {
-        const response = await fetch('/api/admin/sponsors', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/admin/sponsors');
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -718,9 +712,7 @@ async function loadSponsors() {
 
 async function loadAdmins() {
     try {
-        const response = await fetch('/api/admin/participants?role=admin&page_size=100', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/admin/participants?role=admin&page_size=100');
         const data = await response.json();
 
         const tbody = document.getElementById('adminsBody');
@@ -753,9 +745,7 @@ async function loadAdmins() {
 
 async function loadSponsorsList() {
     try {
-        const response = await fetch('/api/admin/sponsors', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/admin/sponsors');
         const sponsorList = await response.json();
 
         const tbody = document.getElementById('sponsorsBody');
@@ -768,9 +758,7 @@ async function loadSponsorsList() {
         const sponsoredCounts = {};
         for (const sponsor of sponsorList) {
             try {
-                const countRes = await fetch(`/api/admin/participants?sponsor_id=${sponsor.id}&page_size=1`, {
-                    credentials: 'include'
-                });
+                const countRes = await csrfFetch(`/api/admin/participants?sponsor_id=${sponsor.id}&page_size=1`);
                 const countData = await countRes.json();
                 sponsoredCounts[sponsor.id] = countData.total || 0;
             } catch {
@@ -984,9 +972,7 @@ window.openCreateUserModal = function() {
 window.editUser = async function(userId) {
     try {
         console.log('Editing user:', userId);
-        const response = await fetch(`/api/admin/participants/${userId}`, {
-            credentials: 'include'
-        });
+        const response = await csrfFetch(`/api/admin/participants/${userId}`);
 
         if (!response.ok) {
             throw new Error('Failed to load user data');
@@ -1082,11 +1068,9 @@ window.saveUser = async function() {
         const url = isEdit ? `/api/admin/participants/${userId}` : '/api/admin/participants';
         const method = isEdit ? 'PUT' : 'POST';
 
-        const response = await fetch(url, {
+        const response = await csrfFetch(url, {
             method: method,
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(data)
+            body: data
         });
 
         if (!response.ok) {
@@ -1126,9 +1110,8 @@ window.resetUserPassword = async function() {
     if (!confirm('Generate a new password for this invitee?')) return;
 
     try {
-        const response = await fetch(`/api/admin/participants/${userId}/reset-password?send_email=false`, {
-            method: 'POST',
-            credentials: 'include'
+        const response = await csrfFetch(`/api/admin/participants/${userId}/reset-password?send_email=false`, {
+            method: 'POST'
         });
 
         const result = await response.json();
@@ -1187,11 +1170,9 @@ window.saveRoleChange = async function() {
     const newRole = document.getElementById('newRole').value;
 
     try {
-        const response = await fetch(`/api/admin/participants/${userId}/role`, {
+        const response = await csrfFetch(`/api/admin/participants/${userId}/role`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ participant_id: parseInt(userId), role: newRole })
+            body: { participant_id: parseInt(userId), role: newRole }
         });
 
         if (!response.ok) {
@@ -1227,9 +1208,8 @@ window.confirmDelete = async function() {
     const userId = document.getElementById('deleteUserId').value;
 
     try {
-        const response = await fetch(`/api/admin/participants/${userId}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const response = await csrfFetch(`/api/admin/participants/${userId}`, {
+            method: 'DELETE'
         });
 
         if (!response.ok) {
@@ -1291,20 +1271,17 @@ window.bulkAction = async function(action) {
         if (action === 'delete') {
             // Delete one by one
             for (const id of ids) {
-                await fetch(`/api/admin/participants/${id}`, {
-                    method: 'DELETE',
-                    credentials: 'include'
+                await csrfFetch(`/api/admin/participants/${id}`, {
+                    method: 'DELETE'
                 });
             }
         } else {
-            await fetch('/api/admin/participants/bulk', {
+            await csrfFetch('/api/admin/participants/bulk', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
+                body: {
                     action: action,
                     participant_ids: ids
-                })
+                }
             });
         }
 

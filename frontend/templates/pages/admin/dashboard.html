@@ -339,9 +339,7 @@
     const statusBadge = document.getElementById('eventStatusBadge');
 
     try {
-        const response = await fetch('/api/admin/event/current', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/admin/event/current');
 
         if (!response.ok) {
             if (response.status === 401) {
@@ -468,12 +466,8 @@
     toggleBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
 
     try {
-        const response = await fetch('/api/admin/event/toggle-active', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            }
+        const response = await csrfFetch('/api/admin/event/toggle-active', {
+            method: 'POST'
         });
 
         if (!response.ok) {
@@ -512,9 +506,7 @@
 
 async function loadDashboardStats() {
     try {
-        const response = await fetch('/api/admin/dashboard', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/admin/dashboard');
 
         if (!response.ok) {
             if (response.status === 401) {

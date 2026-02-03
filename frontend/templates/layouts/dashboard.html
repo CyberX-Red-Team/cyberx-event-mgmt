@@ -207,9 +207,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // Logout function - explicitly global
 window.logout = async function() {
     try {
-        const response = await fetch('/api/auth/logout', {
-            method: 'POST',
-            credentials: 'include'
+        const response = await csrfFetch('/api/auth/logout', {
+            method: 'POST'
         });
         if (response.ok) {
             window.location.href = '/login';

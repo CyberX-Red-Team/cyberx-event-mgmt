@@ -311,7 +311,7 @@ let searchTimeout = null;
 // Load VPN stats
 async function loadStats() {
     try {
-        const response = await fetch('/api/vpn/stats', { credentials: 'include' });
+        const response = await csrfFetch('/api/vpn/stats');
         if (response.ok) {
             const data = await response.json();
             document.getElementById('statTotal').textContent = data.total_credentials;
@@ -335,7 +335,7 @@ async function loadVPNCredentials(page = 1) {
     if (isAvailable) url += `&is_available=${isAvailable}`;
 
     try {
-        const response = await fetch(url, { credentials: 'include' });
+        const response = await csrfFetch(url);
 
         if (!response.ok) {
             if (response.status === 401) {
@@ -503,7 +503,7 @@ function clearFilters() {
 // View VPN details
 async function viewVPN(id) {
     try {
-        const response = await fetch(`/api/vpn/credentials/${id}`, { credentials: 'include' });
+        const response = await csrfFetch(`/api/vpn/credentials/${id}`);
         if (!response.ok) throw new Error('Failed to load VPN details');
 
         const vpn = await response.json();
@@ -559,9 +559,7 @@ async function searchParticipants() {
     }
 
     try {
-        const response = await fetch(`/api/admin/participants?search=${encodeURIComponent(search)}&page_size=10`, {
-            credentials: 'include'
-        });
+        const response = await csrfFetch(`/api/admin/participants?search=${encodeURIComponent(search)}&page_size=10`);
         if (!response.ok) throw new Error('Search failed');
 
         const data = await response.json();
@@ -613,14 +611,12 @@ async function assignVPN() {
     }
 
     try {
-        const response = await fetch('/api/vpn/assign', {
+        const response = await csrfFetch('/api/vpn/assign', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
+            body: {
                 participant_id: parseInt(participantId),
                 count: count
-            })
+            }
         });
 
         const data = await response.json();
@@ -682,9 +678,8 @@ async function handleFileUpload(file) {
     formData.append('file', file);
 
     try {
-        const response = await fetch('/api/vpn/import', {
+        const response = await csrfFetch('/api/vpn/import', {
             method: 'POST',
-            credentials: 'include',
             body: formData
         });
 
@@ -783,13 +778,9 @@ async function deleteSelectedVPNs() {
     }
 
     try {
-        const response = await fetch('/api/vpn/bulk-delete', {
+        const response = await csrfFetch('/api/vpn/bulk-delete', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-            body: JSON.stringify({ vpn_ids: vpnIds })
+            body: { vpn_ids: vpnIds }
         });
 
         const data = await response.json();
@@ -824,12 +815,8 @@ async function deleteAllVPNs() {
     }
 
     try {
-        const response = await fetch('/api/vpn/delete-all', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            credentials: 'include'
+        const response = await csrfFetch('/api/vpn/delete-all', {
+            method: 'POST'
         });
 
         const data = await response.json();
@@ -859,9 +846,8 @@ async function saveNamingPattern() {
     const pattern = document.getElementById('namingPattern').value;
 
     try {
-        const response = await fetch(`/api/vpn/naming-pattern?pattern=${encodeURIComponent(pattern)}`, {
-            method: 'POST',
-            credentials: 'include'
+        const response = await csrfFetch(`/api/vpn/naming-pattern?pattern=${encodeURIComponent(pattern)}`, {
+            method: 'POST'
         });
 
         if (response.ok) {
@@ -878,9 +864,7 @@ async function saveNamingPattern() {
 
 async function loadNamingPattern() {
     try {
-        const response = await fetch('/api/vpn/naming-pattern', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/vpn/naming-pattern');
 
         if (response.ok) {
             const data = await response.json();

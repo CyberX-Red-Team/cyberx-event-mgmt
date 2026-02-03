@@ -212,7 +212,7 @@ async function loadWorkflows() {
     if (enabledFilter) url += `&enabled_only=${enabledFilter}`;
 
     try {
-        const response = await fetch(url, { credentials: 'include' });
+        const response = await csrfFetch(url);
         if (!response.ok) throw new Error('Failed to load workflows');
 
         const data = await response.json();
@@ -227,7 +227,7 @@ async function loadWorkflows() {
 
 async function loadTemplates() {
     try {
-        const response = await fetch('/api/email/templates?active_only=true', { credentials: 'include' });
+        const response = await csrfFetch('/api/email/templates?active_only=true');
         if (!response.ok) throw new Error('Failed to load templates');
 
         templates = await response.json();
@@ -239,7 +239,7 @@ async function loadTemplates() {
 
 async function loadTriggerEvents() {
     try {
-        const response = await fetch('/api/admin/email-workflows/trigger-events', { credentials: 'include' });
+        const response = await csrfFetch('/api/admin/email-workflows/trigger-events');
         if (!response.ok) throw new Error('Failed to load trigger events');
 
         const data = await response.json();
@@ -379,7 +379,7 @@ function openCreateWorkflowModal() {
 
 async function editWorkflow(id) {
     try {
-        const response = await fetch(`/api/admin/email-workflows/${id}`, { credentials: 'include' });
+        const response = await csrfFetch(`/api/admin/email-workflows/${id}`);
         if (!response.ok) throw new Error('Failed to load workflow');
 
         const workflow = await response.json();
@@ -453,11 +453,9 @@ async function saveWorkflow() {
         const url = id ? `/api/admin/email-workflows/${id}` : '/api/admin/email-workflows';
         const method = id ? 'PUT' : 'POST';
 
-        const response = await fetch(url, {
+        const response = await csrfFetch(url, {
             method,
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(data)
+            body: data
         });
 
         if (!response.ok) {
@@ -476,11 +474,9 @@ async function saveWorkflow() {
 
 async function toggleWorkflow(id, enabled) {
     try {
-        const response = await fetch(`/api/admin/email-workflows/${id}`, {
+        const response = await csrfFetch(`/api/admin/email-workflows/${id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ is_enabled: enabled })
+            body: { is_enabled: enabled }
         });
 
         if (!response.ok) {
@@ -499,9 +495,8 @@ async function deleteWorkflow(id) {
     if (!confirm('Are you sure you want to delete this workflow?')) return;
 
     try {
-        const response = await fetch(`/api/admin/email-workflows/${id}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const response = await csrfFetch(`/api/admin/email-workflows/${id}`, {
+            method: 'DELETE'
         });
 
         if (!response.ok) {

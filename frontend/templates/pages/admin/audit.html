@@ -380,9 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // =============================================================================
 async function loadStats() {
     try {
-        const response = await fetch('/api/admin/audit-logs/stats', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/admin/audit-logs/stats');
         const stats = await response.json();
 
         document.getElementById('statTotal').textContent = stats.total_events || 0;
@@ -422,9 +420,7 @@ window.loadAuditLogs = async function(page = 1) {
     if (endDate) params.append('end_date', new Date(endDate).toISOString());
 
     try {
-        const response = await fetch(`/api/admin/audit-logs?${params}`, {
-            credentials: 'include'
-        });
+        const response = await csrfFetch(`/api/admin/audit-logs?${params}`);
         const data = await response.json();
 
         auditLogs = data.items || [];

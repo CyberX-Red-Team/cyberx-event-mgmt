@@ -1053,7 +1053,7 @@ function setupRecipientModeListeners() {
 // =============================================================================
 async function loadTemplates() {
     try {
-        const response = await fetch('/api/email/templates?active_only=false', { credentials: 'include' });
+        const response = await csrfFetch('/api/email/templates?active_only=false');
         if (!response.ok) throw new Error('Failed to load templates');
 
         templates = await response.json();
@@ -1145,7 +1145,7 @@ function openCreateTemplateModal() {
 
 async function editTemplate(id) {
     try {
-        const response = await fetch(`/api/email/templates/${id}`, { credentials: 'include' });
+        const response = await csrfFetch(`/api/email/templates/${id}`);
         if (!response.ok) throw new Error('Failed to load template');
 
         const template = await response.json();
@@ -1187,11 +1187,9 @@ async function saveTemplate() {
         const url = id ? `/api/email/templates/${id}` : '/api/email/templates';
         const method = id ? 'PUT' : 'POST';
 
-        const response = await fetch(url, {
+        const response = await csrfFetch(url, {
             method,
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(data)
+            body: data
         });
 
         if (!response.ok) {
@@ -1212,9 +1210,8 @@ async function deleteTemplate(id) {
     if (!confirm('Are you sure you want to delete this template?')) return;
 
     try {
-        const response = await fetch(`/api/email/templates/${id}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const response = await csrfFetch(`/api/email/templates/${id}`, {
+            method: 'DELETE'
         });
 
         if (!response.ok) {
@@ -1234,9 +1231,8 @@ async function duplicateTemplate(id) {
     if (!newName) return;
 
     try {
-        const response = await fetch(`/api/email/templates/${id}/duplicate?new_name=${encodeURIComponent(newName)}`, {
-            method: 'POST',
-            credentials: 'include'
+        const response = await csrfFetch(`/api/email/templates/${id}/duplicate?new_name=${encodeURIComponent(newName)}`, {
+            method: 'POST'
         });
 
         if (!response.ok) {
@@ -1254,11 +1250,9 @@ async function duplicateTemplate(id) {
 
 async function previewTemplate(id) {
     try {
-        const response = await fetch(`/api/email/templates/${id}/preview`, {
+        const response = await csrfFetch(`/api/email/templates/${id}/preview`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ sample_data: {} })
+            body: { sample_data: {} }
         });
 
         if (!response.ok) throw new Error('Failed to preview template');
@@ -1293,11 +1287,9 @@ async function onTemplateChange() {
     }
 
     try {
-        const response = await fetch(`/api/email/templates/${templateId}/preview`, {
+        const response = await csrfFetch(`/api/email/templates/${templateId}/preview`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ sample_data: {} })
+            body: { sample_data: {} }
         });
 
         if (!response.ok) throw new Error('Failed to preview');
@@ -1338,9 +1330,7 @@ async function searchRecipients() {
 
     searchTimeout = setTimeout(async () => {
         try {
-            const response = await fetch(`/api/admin/participants?search=${encodeURIComponent(query)}&page_size=10`, {
-                credentials: 'include'
-            });
+            const response = await csrfFetch(`/api/admin/participants?search=${encodeURIComponent(query)}&page_size=10`);
             if (!response.ok) throw new Error('Search failed');
 
             const data = await response.json();
@@ -1373,7 +1363,7 @@ async function loadFilteredRecipients() {
     if (active) url += `&is_active=${active}`;
 
     try {
-        const response = await fetch(url, { credentials: 'include' });
+        const response = await csrfFetch(url);
         if (!response.ok) throw new Error('Failed to load');
 
         const data = await response.json();
@@ -1393,9 +1383,7 @@ async function loadFilteredRecipients() {
 
 async function loadAllConfirmedRecipients() {
     try {
-        const response = await fetch('/api/admin/participants?confirmed=YES&is_active=true&page_size=500', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/admin/participants?confirmed=YES&is_active=true&page_size=500');
         if (!response.ok) throw new Error('Failed to load');
 
         const data = await response.json();
@@ -1476,16 +1464,14 @@ async function sendComposedEmail() {
     if (!confirm(`Send email to ${selectedRecipients.size} recipient(s)?`)) return;
 
     try {
-        const response = await fetch('/api/email/bulk', {
+        const response = await csrfFetch('/api/email/bulk', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
+            body: {
                 participant_ids: Array.from(selectedRecipients.keys()),
                 template_id: parseInt(templateId),
                 custom_subject: customSubject,
                 custom_variables: {}
-            })
+            }
         });
 
         const data = await response.json();
@@ -1521,7 +1507,7 @@ async function loadEmailHistory(page = 1) {
     if (status) url += `&status=${encodeURIComponent(status)}`;
 
     try {
-        const response = await fetch(url, { credentials: 'include' });
+        const response = await csrfFetch(url);
         if (!response.ok) throw new Error('Failed to load history');
 
         const data = await response.json();
@@ -1640,7 +1626,7 @@ async function loadAnalytics() {
 
 async function loadAnalyticsStats() {
     try {
-        const response = await fetch('/api/email/analytics', { credentials: 'include' });
+        const response = await csrfFetch('/api/email/analytics');
         if (!response.ok) throw new Error('Failed to load analytics');
 
         const data = await response.json();
@@ -1666,7 +1652,7 @@ async function loadAnalyticsStats() {
 
 async function loadDailyStats() {
     try {
-        const response = await fetch('/api/email/analytics/daily?days=30', { credentials: 'include' });
+        const response = await csrfFetch('/api/email/analytics/daily?days=30');
         if (!response.ok) throw new Error('Failed to load daily stats');
 
         const data = await response.json();
@@ -1678,7 +1664,7 @@ async function loadDailyStats() {
 
 async function loadTemplateStats() {
     try {
-        const response = await fetch('/api/email/analytics/by-template', { credentials: 'include' });
+        const response = await csrfFetch('/api/email/analytics/by-template');
         if (!response.ok) throw new Error('Failed to load template stats');
 
         const data = await response.json();
@@ -1836,15 +1822,13 @@ async function sendTestEmail() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending...';
 
     try {
-        const response = await fetch('/api/email/test', {
+        const response = await csrfFetch('/api/email/test', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
+            body: {
                 to_email: toEmail,
                 template_id: templateId ? parseInt(templateId) : null,
                 subject: subject
-            })
+            }
         });
 
         const data = await response.json();
@@ -1922,9 +1906,7 @@ async function openSendGridSyncModal() {
     feather.replace();
 
     try {
-        const response = await fetch('/api/email/sendgrid/templates', {
-            credentials: 'include'
-        });
+        const response = await csrfFetch('/api/email/sendgrid/templates');
 
         const data = await response.json();
 
@@ -1993,13 +1975,11 @@ async function importSendGridTemplate(sendgridId, templateName) {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
     try {
-        const response = await fetch('/api/email/sendgrid/import', {
+        const response = await csrfFetch('/api/email/sendgrid/import', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
+            body: {
                 sendgrid_template_id: sendgridId
-            })
+            }
         });
 
         const data = await response.json();
@@ -2047,10 +2027,8 @@ async function syncAllSendGridTemplates() {
     `;
 
     try {
-        const response = await fetch('/api/email/sendgrid/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include'
+        const response = await csrfFetch('/api/email/sendgrid/sync', {
+            method: 'POST'
         });
 
         const data = await response.json();
@@ -2166,7 +2144,7 @@ async function loadQueueTab() {
 
 async function loadSchedulerStatus() {
     try {
-        const response = await fetch('/api/admin/scheduler/status', { credentials: 'include' });
+        const response = await csrfFetch('/api/admin/scheduler/status');
         if (!response.ok) throw new Error('Failed to load scheduler status');
 
         const data = await response.json();
@@ -2223,7 +2201,7 @@ function updateCountdown(nextRunTime) {
 
 async function loadQueueStats() {
     try {
-        const response = await fetch('/api/admin/email-queue/stats', { credentials: 'include' });
+        const response = await csrfFetch('/api/admin/email-queue/stats');
         if (!response.ok) throw new Error('Failed to load queue stats');
 
         const data = await response.json();
@@ -2254,13 +2232,13 @@ async function loadEmailQueue() {
 
     try {
         // Load pending emails
-        const pendingResponse = await fetch('/api/admin/email-queue?page_size=100&status=pending', { credentials: 'include' });
+        const pendingResponse = await csrfFetch('/api/admin/email-queue?page_size=100&status=pending');
         if (!pendingResponse.ok) throw new Error('Failed to load pending queue');
         const pendingData = await pendingResponse.json();
 
         // Load recent non-pending emails (within past hour)
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-        const recentResponse = await fetch(`/api/admin/email-queue?page_size=100&exclude_status=pending&since=${oneHourAgo}`, { credentials: 'include' });
+        const recentResponse = await csrfFetch(`/api/admin/email-queue?page_size=100&exclude_status=pending&since=${oneHourAgo}`);
         if (!recentResponse.ok) throw new Error('Failed to load recent queue');
         const recentData = await recentResponse.json();
 
@@ -2374,7 +2352,7 @@ function getQueueStatusBadge(status) {
 
 async function loadBatchLogs() {
     try {
-        const response = await fetch('/api/admin/email-batch-logs?page_size=20', { credentials: 'include' });
+        const response = await csrfFetch('/api/admin/email-batch-logs?page_size=20');
         if (!response.ok) throw new Error('Failed to load batch logs');
 
         const data = await response.json();
@@ -2424,11 +2402,9 @@ async function triggerManualBatch() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing...';
 
     try {
-        const response = await fetch('/api/admin/email-queue/process-batch', {
+        const response = await csrfFetch('/api/admin/email-queue/process-batch', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ batch_size: 50 })
+            body: { batch_size: 50 }
         });
 
         const data = await response.json();
@@ -2453,9 +2429,8 @@ async function cancelQueuedEmail(emailId) {
     if (!confirm('Cancel this queued email?')) return;
 
     try {
-        const response = await fetch(`/api/admin/email-queue/${emailId}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const response = await csrfFetch(`/api/admin/email-queue/${emailId}`, {
+            method: 'DELETE'
         });
 
         const data = await response.json();

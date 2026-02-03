@@ -192,9 +192,7 @@
         emptyState.classList.add('d-none');
 
         try {
-            const response = await fetch(`/api/admin/events?include_archived=${showArchived}`, {
-                credentials: 'include'
-            });
+            const response = await csrfFetch(`/api/admin/events?include_archived=${showArchived}`);
 
             if (!response.ok) {
                 throw new Error('Failed to load events');
@@ -312,9 +310,7 @@
 
     window.editEvent = async function(eventId) {
         try {
-            const response = await fetch(`/api/admin/events/${eventId}`, {
-                credentials: 'include'
-            });
+            const response = await csrfFetch(`/api/admin/events/${eventId}`);
 
             if (!response.ok) {
                 throw new Error('Failed to load event');
@@ -374,13 +370,9 @@
             const url = isEdit ? `/api/admin/events/${eventId}` : '/api/admin/events';
             const method = isEdit ? 'PUT' : 'POST';
 
-            const response = await fetch(url, {
+            const response = await csrfFetch(url, {
                 method: method,
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(eventData)
+                body: eventData
             });
 
             if (!response.ok) {
@@ -417,15 +409,11 @@
         }
 
         try {
-            const response = await fetch(`/api/admin/events/${eventId}`, {
+            const response = await csrfFetch(`/api/admin/events/${eventId}`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({
+                body: {
                     is_active: newStatus
-                })
+                }
             });
 
             if (!response.ok) {
@@ -452,9 +440,8 @@
         }
 
         try {
-            const response = await fetch(`/api/admin/events/${eventId}/archive`, {
-                method: 'POST',
-                credentials: 'include'
+            const response = await csrfFetch(`/api/admin/events/${eventId}/archive`, {
+                method: 'POST'
             });
 
             if (!response.ok) {
@@ -479,15 +466,11 @@
         }
 
         try {
-            const response = await fetch(`/api/admin/events/${eventId}`, {
+            const response = await csrfFetch(`/api/admin/events/${eventId}`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({
+                body: {
                     vpn_available: newStatus
-                })
+                }
             });
 
             if (!response.ok) {
@@ -514,15 +497,11 @@
         try {
             console.log(`Toggling test mode for event ${eventId} from ${currentStatus} to ${newStatus}`);
 
-            const response = await fetch(`/api/admin/events/${eventId}`, {
+            const response = await csrfFetch(`/api/admin/events/${eventId}`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({
+                body: {
                     test_mode: newStatus
-                })
+                }
             });
 
             if (!response.ok) {

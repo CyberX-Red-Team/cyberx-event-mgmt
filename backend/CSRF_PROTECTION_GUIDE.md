@@ -6,10 +6,11 @@ This guide explains the CSRF (Cross-Site Request Forgery) protection implementat
 
 CSRF protection prevents attackers from tricking authenticated users into performing unwanted actions on the application.
 
-**Implemented**: starlette-csrf middleware  
-**Status**: ✅ Enabled in production and development  
-**Cookie**: `csrf_token`  
+**Implemented**: Custom CSRF middleware (FastAPI/Starlette compatible)
+**Status**: ✅ Enabled in production and development
+**Cookie**: `csrf_token`
 **Header**: `X-CSRF-Token`
+**Token Signing**: itsdangerous (URLSafeTimedSerializer)
 
 ---
 
@@ -22,13 +23,29 @@ cd backend
 pip install -r requirements.txt
 ```
 
-This installs `starlette-csrf==1.4.4` along with other dependencies.
+This installs `itsdangerous==2.2.0` for secure token signing.
 
 ### Verify Installation
 
 ```bash
-python -c "from starlette_csrf import CSRFMiddleware; print('✓ CSRF middleware installed')"
+python -c "from app.middleware.csrf import CSRFMiddleware; from app.main import app; print('✓ Custom CSRF middleware installed and configured')"
 ```
+
+### Test CSRF Protection
+
+Run the automated test script to verify CSRF protection is working:
+
+```bash
+# Start the server in one terminal
+cd backend
+uvicorn app.main:app --reload
+
+# In another terminal, run the test
+cd backend
+python scripts/test_csrf_protection.py
+```
+
+Expected output: POST requests without CSRF tokens should be blocked (403), while exempt URLs should work.
 
 ---
 
@@ -490,7 +507,10 @@ if response.status_code == 403:
 
 Before deploying CSRF protection:
 
-- [ ] Install starlette-csrf: `pip install starlette-csrf`
+- [x] Install itsdangerous: `pip install itsdangerous`
+- [x] Custom CSRF middleware implemented at `app/middleware/csrf.py`
+- [x] Middleware configured in `app/main.py`
+- [x] Automated test script created: `scripts/test_csrf_protection.py`
 - [ ] Update frontend to include X-CSRF-Token header
 - [ ] Test all forms and AJAX requests
 - [ ] Verify exempt endpoints work without token
@@ -503,6 +523,7 @@ Before deploying CSRF protection:
 
 ---
 
-**Last Updated:** 2026-02-03  
-**Status:** ✅ Implemented and ready for use  
-**Related Commit:** 1b1bab8
+**Last Updated:** 2026-02-03
+**Status:** ✅ Backend implemented and ready for frontend integration
+**Implementation:** Custom middleware using itsdangerous for token signing
+**Compatibility:** FastAPI 0.115.6 / Starlette 0.41.3

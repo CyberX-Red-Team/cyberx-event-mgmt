@@ -309,7 +309,7 @@ let countriesData = null;
 // Load countries from API
 async function loadCountries() {
     try {
-        const response = await fetch('/api/public/countries');
+        const response = await csrfFetch('/api/public/countries');
         if (!response.ok) throw new Error('Failed to load countries');
 
         const data = await response.json();
@@ -379,7 +379,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // Load statistics
 async function loadStats() {
     try {
-        const response = await fetch('/api/sponsors/my-invitees/stats');
+        const response = await csrfFetch('/api/sponsors/my-invitees/stats');
         if (!response.ok) throw new Error('Failed to load stats');
 
         const stats = await response.json();
@@ -412,7 +412,7 @@ async function loadInvitees(page = 1) {
         if (currentFilters.has_vpn !== undefined) params.append('has_vpn', currentFilters.has_vpn);
         if (currentFilters.is_active !== undefined) params.append('is_active', currentFilters.is_active);
 
-        const response = await fetch(`/api/sponsors/my-invitees?${params}`);
+        const response = await csrfFetch(`/api/sponsors/my-invitees?${params}`);
         if (!response.ok) throw new Error('Failed to load invitees');
 
         const data = await response.json();
@@ -547,10 +547,9 @@ async function submitAddInvitee() {
     };
 
     try {
-        const response = await fetch('/api/sponsors/my-invitees', {
+        const response = await csrfFetch('/api/sponsors/my-invitees', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+            body: data
         });
 
         if (!response.ok) {
@@ -572,7 +571,7 @@ async function submitAddInvitee() {
 // Open Edit Invitee Modal
 async function openEditInviteeModal(inviteeId) {
     try {
-        const response = await fetch(`/api/sponsors/my-invitees/${inviteeId}`);
+        const response = await csrfFetch(`/api/sponsors/my-invitees/${inviteeId}`);
         if (!response.ok) throw new Error('Failed to load invitee');
 
         const invitee = await response.json();
@@ -602,10 +601,9 @@ async function submitEditInvitee() {
     };
 
     try {
-        const response = await fetch(`/api/sponsors/my-invitees/${inviteeId}`, {
+        const response = await csrfFetch(`/api/sponsors/my-invitees/${inviteeId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+            body: data
         });
 
         if (!response.ok) {
@@ -631,7 +629,7 @@ async function resetPassword(inviteeId) {
     }
 
     try {
-        const response = await fetch(`/api/sponsors/my-invitees/${inviteeId}/reset-password`, {
+        const response = await csrfFetch(`/api/sponsors/my-invitees/${inviteeId}/reset-password`, {
             method: 'POST'
         });
 
@@ -656,7 +654,7 @@ async function resendInvitation(inviteeId) {
     }
 
     try {
-        const response = await fetch(`/api/sponsors/my-invitees/${inviteeId}/resend-invite`, {
+        const response = await csrfFetch(`/api/sponsors/my-invitees/${inviteeId}/resend-invite`, {
             method: 'POST'
         });
 

@@ -57,13 +57,9 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     const password = document.getElementById('password').value;
 
     try {
-        const response = await fetch('/api/auth/login', {
+        const response = await csrfFetch('/api/auth/login', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-            body: JSON.stringify({ username, password })
+            body: { username, password }
         });
 
         const data = await response.json();

@@ -182,7 +182,7 @@ async function loadParticipants(page = 1) {
     if (isActive) url += `&is_active=${isActive}`;
 
     try {
-        const response = await fetch(url, { credentials: 'include' });
+        const response = await csrfFetch(url);
 
         if (!response.ok) {
             if (response.status === 401) {
@@ -397,14 +397,12 @@ async function bulkAction(action) {
     }
 
     try {
-        const response = await fetch('/api/admin/participants/bulk', {
+        const response = await csrfFetch('/api/admin/participants/bulk', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
+            body: {
                 participant_ids: Array.from(selectedIds),
                 action: action
-            })
+            }
         });
 
         const data = await response.json();
@@ -425,9 +423,8 @@ async function deleteInvitee(id) {
     }
 
     try {
-        const response = await fetch(`/api/admin/participants/${id}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const response = await csrfFetch(`/api/admin/participants/${id}`, {
+            method: 'DELETE'
         });
 
         if (response.ok) {

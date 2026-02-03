@@ -369,9 +369,8 @@
 <script>
 async function logout() {
     try {
-        const response = await fetch('/api/auth/logout', {
-            method: 'POST',
-            credentials: 'include'
+        const response = await csrfFetch('/api/auth/logout', {
+            method: 'POST'
         });
         if (response.ok) {
             window.location.href = '/login';
@@ -425,9 +424,7 @@ async function loadEventInfo() {
     var errorState = document.getElementById('eventErrorState');
 
     try {
-        var response = await fetch('/api/events/active', {
-            credentials: 'include'
-        });
+        var response = await csrfFetch('/api/events/active');
 
         if (response.ok) {
             var data = await response.json();
@@ -491,9 +488,7 @@ async function loadVPNStatus() {
             return;
         }
 
-        var response = await fetch('/api/vpn/my-credentials', {
-            credentials: 'include'
-        });
+        var response = await csrfFetch('/api/vpn/my-credentials');
 
         if (response.ok) {
             var data = await response.json();
@@ -515,9 +510,7 @@ async function loadVPNStatus() {
                 // Get naming pattern from API (default pattern if fetch fails)
                 let namingPattern = 'simnet_{ipv4_address}.conf';
                 try {
-                    const patternResponse = await fetch('/api/vpn/naming-pattern', {
-                        credentials: 'include'
-                    });
+                    const patternResponse = await csrfFetch('/api/vpn/naming-pattern');
                     if (patternResponse.ok) {
                         const patternData = await patternResponse.json();
                         namingPattern = patternData.pattern;
@@ -531,9 +524,7 @@ async function loadVPNStatus() {
                 let batchesHTML = '';
                 if (data.total > 1) {
                     try {
-                        const batchesResponse = await fetch('/api/vpn/my-request-batches', {
-                            credentials: 'include'
-                        });
+                        const batchesResponse = await csrfFetch('/api/vpn/my-request-batches');
                         if (batchesResponse.ok) {
                             const batchesData = await batchesResponse.json();
                             if (batchesData.batches && batchesData.batches.length > 0) {
@@ -690,9 +681,7 @@ async function loadAvailableCount() {
     document.getElementById('vpnRequestDisabled').classList.add('d-none');
 
     try {
-        var response = await fetch('/api/vpn/available-count', {
-            credentials: 'include'
-        });
+        var response = await csrfFetch('/api/vpn/available-count');
         if (response.ok) {
             var data = await response.json();
             document.getElementById('availableCount').textContent = data.available_count + ' available';
@@ -730,11 +719,9 @@ async function requestVPNs() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Requesting...';
 
     try {
-        var response = await fetch('/api/vpn/request', {
+        var response = await csrfFetch('/api/vpn/request', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ count: count })
+            body: { count: count }
         });
 
         var data = await response.json();
@@ -806,15 +793,12 @@ async function handlePasswordChange(e) {
     }
 
     try {
-        const response = await fetch('/api/auth/password/change', {
+        const response = await csrfFetch('/api/auth/password/change', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
+            body: {
                 current_password: currentPassword,
                 new_password: newPassword
-            })
+            }
         });
 
         const data = await response.json();

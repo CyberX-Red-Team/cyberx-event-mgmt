@@ -324,15 +324,12 @@ document.getElementById('passwordChangeForm').addEventListener('submit', async f
     }
 
     try {
-        const response = await fetch('/api/auth/password/change', {
+        const response = await csrfFetch('/api/auth/password/change', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
+            body: {
                 current_password: currentPassword,
                 new_password: newPassword
-            })
+            }
         });
 
         const data = await response.json();

@@ -289,16 +289,13 @@
         confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
 
         try {
-            const response = await fetch('/api/public/confirm/accept', {
+            const response = await csrfFetch('/api/public/confirm/accept', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
+                body: {
                     confirmation_code: confirmationCode,
                     terms_accepted: true,
                     terms_version: termsVersion
-                })
+                }
             });
 
             const data = await response.json();
@@ -333,15 +330,12 @@
         declineBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
 
         try {
-            const response = await fetch('/api/public/confirm/decline', {
+            const response = await csrfFetch('/api/public/confirm/decline', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
+                body: {
                     confirmation_code: confirmationCode,
                     reason: reason || ''
-                })
+                }
             });
 
             const data = await response.json();
