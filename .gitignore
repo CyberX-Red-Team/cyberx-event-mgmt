@@ -41,9 +41,13 @@ alembic.ini.bak
 # Testing
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+coverage.xml
+*.cover
 .tox/
 .hypothesis/
+nosetests.xml
 
 # IDEs
 .vscode/
