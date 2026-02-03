@@ -177,18 +177,20 @@ This codebase is in **pre-production beta** and requires security hardening befo
 - ✅ SQL injection prevention (SQLAlchemy ORM)
 - ✅ Input validation (Pydantic schemas)
 - ✅ Comprehensive audit logging
-- ✅ Rate limiting on VPN endpoints
+- ✅ Rate limiting on VPN endpoints and login
 - ✅ Secrets excluded from version control
+- ✅ **CSRF Protection**: Custom middleware with signed tokens (backend + frontend)
+- ✅ **Password Reset**: Email workflow with WorkflowService integration
+- ✅ **Field Encryption**: Sensitive fields encrypted at rest (Fernet AES-128)
+- ✅ **CORS**: Restricted to specific methods and origins
 
 #### Known Security Gaps ⚠️
 
-- ⚠️ **CSRF Protection**: Not implemented (critical for production)
-- ⚠️ **Password Reset**: Email workflow incomplete
-- ⚠️ **Rate Limiting**: In-memory implementation (single-instance only)
-- ⚠️ **Plaintext Passwords**: `pandas_password` field stores plaintext (legacy)
-- ⚠️ **CORS**: Currently permissive (needs tightening for production)
+- ⚠️ **Rate Limiting**: In-memory implementation (single-instance only, needs Redis for production)
+- ⚠️ **Secrets Management**: Environment variables (consider HashiCorp Vault for production)
+- ⚠️ **Session Storage**: In-memory (consider Redis for production)
 
-**Do not deploy to production without addressing these issues.**
+**Production Deployment**: Suitable for beta testing. Multi-instance deployment requires Redis.
 
 ---
 
@@ -345,20 +347,20 @@ curl -X POST http://localhost:8000/api/vpn/assign \
 - ✅ Audit logging comprehensive
 - ✅ Version control established
 
-**Blockers for Production**:
-- ❌ CSRF protection required
-- ❌ Password reset workflow incomplete
-- ❌ No automated tests
-- ❌ Rate limiting needs Redis for distributed deployment
+**Remaining for Production**:
+- ⚠️ **Automated Tests**: pytest framework needed (70% coverage target)
+- ⚠️ **Redis Integration**: For distributed rate limiting and session storage
+- ⚠️ **Security Audit**: Professional review recommended
 
 ### Roadmap
 
-**Phase 1: Security Hardening** (2 weeks)
-- [ ] Implement CSRF middleware
-- [ ] Complete password reset email workflow
-- [ ] Remove plaintext password storage
-- [ ] Tighten CORS configuration
-- [ ] Add login rate limiting
+**Phase 1: Security Hardening** ✅ COMPLETED (Feb 2026)
+- [x] Implement CSRF middleware (custom solution, backend + frontend)
+- [x] Complete password reset email workflow (WorkflowService integration)
+- [x] Remove plaintext password storage (Fernet encryption implemented)
+- [x] Tighten CORS configuration (method and origin restrictions)
+- [x] Add login rate limiting (5 attempts per 15 minutes)
+- [x] Fix VPN race condition (SELECT FOR UPDATE with skip_locked)
 
 **Phase 2: Testing Infrastructure** (2 weeks)
 - [ ] Set up pytest framework
