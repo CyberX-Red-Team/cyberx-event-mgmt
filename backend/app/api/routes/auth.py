@@ -1,4 +1,6 @@
 """Authentication API routes."""
+from datetime import datetime, timezone, timedelta
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -29,11 +31,64 @@ from app.schemas.auth import (
 from app.config import get_settings
 from app.api.utils.request import extract_client_metadata
 from app.api.utils.response_builders import build_auth_user_response
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
+from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error, rate_limited
 
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 settings = get_settings()
+
+# Rate limiting storage (in production, use Redis)
+# Key: IP address, Value: list of login attempt timestamps
+_login_rate_limit_cache: dict = {}
+
+
+def check_login_rate_limit(
+    ip_address: str,
+    window_minutes: int = 15,
+    max_attempts: int = 5
+) -> bool:
+    """
+    Check if IP address has exceeded login rate limit.
+
+    Args:
+        ip_address: Client IP address
+        window_minutes: Time window in minutes (default 15)
+        max_attempts: Maximum login attempts allowed (default 5)
+
+    Returns:
+        True if rate limit exceeded, False if OK to proceed
+    """
+    now = datetime.now(timezone.utc)
+    cache_key = f"login_{ip_address}"
+
+    if cache_key not in _login_rate_limit_cache:
+        _login_rate_limit_cache[cache_key] = []
+
+    # Clean old entries outside the time window
+    window_start = now - timedelta(minutes=window_minutes)
+    _login_rate_limit_cache[cache_key] = [
+        ts for ts in _login_rate_limit_cache[cache_key] if ts > window_start
+    ]
+
+    # Check if limit exceeded
+    if len(_login_rate_limit_cache[cache_key]) >= max_attempts:
+        return True
+
+    # Record this attempt
+    _login_rate_limit_cache[cache_key].append(now)
+    return False
+
+
+def clear_login_rate_limit(ip_address: str) -> None:
+    """
+    Clear login rate limit for an IP address after successful login.
+
+    Args:
+        ip_address: Client IP address
+    """
+    cache_key = f"login_{ip_address}"
+    if cache_key in _login_rate_limit_cache:
+        del _login_rate_limit_cache[cache_key]
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -47,6 +102,9 @@ async def login(
     """
     Authenticate user and create session.
 
+    Rate limited to 5 attempts per 15 minutes per IP address
+    to prevent brute force attacks.
+
     Args:
         login_data: Login credentials
         request: FastAPI request object
@@ -58,8 +116,26 @@ async def login(
         Login response with user info and session expiry
 
     Raises:
-        HTTPException: If authentication fails
+        HTTPException: If authentication fails or rate limit exceeded
     """
+    # Get client info early for rate limiting
+    ip_address, user_agent = extract_client_metadata(request)
+
+    # Check rate limit before attempting authentication
+    if check_login_rate_limit(ip_address):
+        # Log the rate limit violation
+        audit_service = AuditService(db)
+        await audit_service.log_login(
+            user_id=None,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=False,
+            details={"reason": "Rate limit exceeded"}
+        )
+        raise rate_limited(
+            "Too many login attempts. Please wait 15 minutes before trying again."
+        )
+
     # Authenticate user
     user = await auth_service.authenticate_user(
         username=login_data.username,
@@ -67,10 +143,19 @@ async def login(
     )
 
     if not user:
+        # Log failed login attempt
+        audit_service = AuditService(db)
+        await audit_service.log_login(
+            user_id=None,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=False,
+            details={"username": login_data.username, "reason": "Invalid credentials"}
+        )
         raise unauthorized("Incorrect username or password")
 
-    # Get client info
-    ip_address, user_agent = extract_client_metadata(request)
+    # Clear rate limit on successful authentication
+    clear_login_rate_limit(ip_address)
 
     # Create session
     session_token, expires_at = await auth_service.create_session(
