@@ -128,7 +128,12 @@ class AuthService:
             return None
 
         # Check if session has expired
-        if session.expires_at < datetime.now(timezone.utc):
+        # Ensure expires_at is timezone-aware (SQLite may return naive datetimes)
+        expires_at = session.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+        if expires_at < datetime.now(timezone.utc):
             # Mark session as inactive
             session.is_active = False
             await self.session.commit()

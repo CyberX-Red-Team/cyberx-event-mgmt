@@ -1,5 +1,5 @@
 """Email queue model for event-based email batching."""
-from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey, Text, Index
+from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey, Text, Index, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -37,7 +37,8 @@ class EmailQueue(Base):
     recipient_name = Column(String(500), nullable=True)
 
     # Custom Variables
-    custom_vars = Column(JSONB, nullable=True)  # Template variables
+    # Use JSON for cross-database compatibility (PostgreSQL and SQLite)
+    custom_vars = Column(JSON, nullable=True)  # Template variables
 
     # Priority (lower number = higher priority)
     priority = Column(Integer, default=5, nullable=False, index=True)

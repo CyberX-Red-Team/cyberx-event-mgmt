@@ -1,5 +1,5 @@
 """Email template model for dynamic email templates."""
-from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, Index, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -28,7 +28,8 @@ class EmailTemplate(Base):
     sendgrid_template_id = Column(String(100), nullable=True)  # SendGrid dynamic template ID (e.g., "d-1234567890abcdef")
 
     # Variable metadata - list of variable names available for this template
-    available_variables = Column(JSONB, default=list)  # e.g., ["first_name", "last_name", "email"]
+    # Use JSON for cross-database compatibility (PostgreSQL and SQLite)
+    available_variables = Column(JSON, default=list)  # e.g., ["first_name", "last_name", "email"]
 
     # Status
     is_active = Column(Boolean, default=True, nullable=False)

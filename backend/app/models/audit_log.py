@@ -1,5 +1,5 @@
 """Audit logging model."""
-from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey, Text, Index
+from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey, Text, Index, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -23,7 +23,8 @@ class AuditLog(Base):
     resource_id = Column(Integer, nullable=True)
 
     # Additional Details
-    details = Column(JSONB, nullable=True)  # Flexible JSON storage for action-specific data
+    # Use JSON for cross-database compatibility (PostgreSQL and SQLite)
+    details = Column(JSON, nullable=True)  # Flexible JSON storage for action-specific data
 
     # Request Info
     ip_address = Column(String(45), nullable=True)
@@ -67,7 +68,8 @@ class EmailEvent(Base):
     sendgrid_message_id = Column(String(255), nullable=True)
 
     # Event Payload
-    payload = Column(JSONB, nullable=True)  # Full webhook payload
+    # Use JSON for cross-database compatibility (PostgreSQL and SQLite)
+    payload = Column(JSON, nullable=True)  # Full webhook payload
 
     # Processing
     processed = Column(Boolean, default=False)

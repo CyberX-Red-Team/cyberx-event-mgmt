@@ -1,5 +1,5 @@
 """Email workflow configuration model."""
-from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, Text, Index
+from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, Text, Index, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.database import Base
@@ -31,7 +31,8 @@ class EmailWorkflow(Base):
     priority = Column(Integer, default=5, nullable=False)  # Queue priority (1=highest, 10=lowest)
 
     # Custom Variables (merged with event data)
-    custom_vars = Column(JSONB, nullable=True, default=dict)  # Default template variables
+    # Use JSON for cross-database compatibility (PostgreSQL and SQLite)
+    custom_vars = Column(JSON, nullable=True, default=dict)  # Default template variables
 
     # Scheduling (optional)
     delay_minutes = Column(Integer, nullable=True)  # Delay before sending (null = immediate)
