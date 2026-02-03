@@ -1814,3 +1814,114 @@ class TestEmailServiceBulkOperations:
         assert user.id in failed_ids
         assert len(errors) == 1
         assert "not found" in errors[0].lower()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestEmailServiceAdvancedSending:
+    """Test advanced EmailService sending features."""
+
+    async def test_send_test_email_with_template(self, db_session: AsyncSession, mocker):
+        """Test sending test email with specific template."""
+        service = EmailService(db_session)
+
+        # Create template with variables
+        template = await service.create_template(
+            name="test_template",
+            display_name="Test Template",
+            subject="Test: {first_name} {last_name}",
+            html_content="<p>Hello {first_name}! Your email is {email}.</p>"
+        )
+
+        # Mock SendGrid client
+        mock_response = mocker.Mock()
+        mock_response.status_code = 202
+        mock_response.headers = {"X-Message-Id": "test_with_template_msg"}
+
+        mock_client = mocker.Mock()
+        mock_client.send = mocker.Mock(return_value=mock_response)
+
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Send test email with template
+        success, message, msg_id, template_name = await service.send_test_email(
+            to_email="tester@example.com",
+            template_id=template.id
+        )
+
+        assert success is True
+        assert msg_id == "test_with_template_msg"
+        assert template_name == "Test Template"
+        assert mock_client.send.called
+
+    async def test_send_test_email_template_not_found(self, db_session: AsyncSession):
+        """Test send_test_email with non-existent template."""
+        service = EmailService(db_session)
+
+        # Try to send test email with non-existent template
+        success, message, msg_id, template_name = await service.send_test_email(
+            to_email="tester@example.com",
+            template_id=99999
+        )
+
+        assert success is False
+        assert "not found" in message.lower()
+        assert msg_id is None
+        assert template_name is None
+
+    async def test_send_test_email_without_template(self, db_session: AsyncSession, mocker):
+        """Test sending simple test email without template."""
+        service = EmailService(db_session)
+
+        # Mock SendGrid client
+        mock_response = mocker.Mock()
+        mock_response.status_code = 202
+        mock_response.headers = {"X-Message-Id": "simple_test_msg"}
+
+        mock_client = mocker.Mock()
+        mock_client.send = mocker.Mock(return_value=mock_response)
+
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Send simple test email
+        success, message, msg_id, template_name = await service.send_test_email(
+            to_email="tester@example.com"
+        )
+
+        assert success is True
+        assert msg_id == "simple_test_msg"
+        assert template_name == "Simple Test"
+        assert mock_client.send.called
+
+    async def test_send_bulk_emails_with_template_id_template_not_found(
+        self, db_session: AsyncSession
+    ):
+        """Test bulk send with non-existent template ID."""
+        from app.models.user import User, UserRole
+
+        service = EmailService(db_session)
+
+        # Create test user
+        user = User(
+            email="test@example.com",
+            first_name="Test",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value
+        )
+        db_session.add(user)
+        await db_session.commit()
+
+        # Try bulk send with non-existent template
+        sent_count, failed_count, failed_ids, errors = await service.send_bulk_emails_with_template_id(
+            users=[user],
+            template_id=99999
+        )
+
+        # Template not found is returned as error for the user
+        assert sent_count == 0
+        assert failed_count == 1
+        assert len(failed_ids) == 1
+        assert user.id in failed_ids
+        assert len(errors) == 1
+        assert "not found" in errors[0].lower()
