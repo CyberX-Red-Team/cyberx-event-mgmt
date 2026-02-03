@@ -103,22 +103,27 @@ class VPNService:
         """
         Assign an available VPN credential to a user.
 
+        Uses SELECT FOR UPDATE with skip_locked to prevent race conditions
+        when multiple requests try to assign the same VPN credential.
+
         Returns:
             Tuple of (success, message, vpn_credential)
         """
-        # Find available credential in random order to avoid predictable IP patterns
+        # Find available credential with row-level lock
+        # skip_locked=True: Skip rows locked by other transactions (prevents deadlocks)
         result = await self.session.execute(
             select(VPNCredential)
             .where(VPNCredential.is_available == True)
             .order_by(func.random())
             .limit(1)
+            .with_for_update(skip_locked=True)
         )
         vpn = result.scalar_one_or_none()
 
         if not vpn:
             return False, "No available VPN credentials", None
 
-        # Assign to user
+        # Assign to user (row is now locked until commit)
         vpn.assigned_to_user_id = user_id
         vpn.assigned_to_username = username
         vpn.assigned_at = datetime.now(timezone.utc)
@@ -138,6 +143,9 @@ class VPNService:
         """
         Request multiple VPN credentials for a user (participant self-service).
 
+        Uses SELECT FOR UPDATE with skip_locked to prevent race conditions
+        when multiple concurrent requests try to assign VPN credentials.
+
         Args:
             user_id: User requesting the VPNs
             count: Number of VPNs requested (max 25)
@@ -153,12 +161,15 @@ class VPNService:
         if count < 1:
             return 0, "Count must be at least 1", []
 
-        # Find available credentials in random order to avoid predictable IP patterns
+        # Find available credentials with row-level lock
+        # skip_locked=True: Skip rows locked by other transactions
+        # This prevents race conditions during concurrent bulk assignments
         result = await self.session.execute(
             select(VPNCredential)
             .where(VPNCredential.is_available == True)
             .order_by(func.random())
             .limit(count)
+            .with_for_update(skip_locked=True)
         )
         available_vpns = list(result.scalars().all())
 
@@ -172,6 +183,7 @@ class VPNService:
         assigned_vpns = []
         now = datetime.now(timezone.utc)
 
+        # Update all VPNs (rows are now locked until commit)
         for vpn in available_vpns:
             vpn.assigned_to_user_id = user_id
             vpn.assigned_to_username = username
