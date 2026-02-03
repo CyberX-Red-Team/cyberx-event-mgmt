@@ -904,12 +904,10 @@ From: CyberX Red Team"""
 
             # Log the event
             event = EmailEvent(
-                email=email,
+                email_to=email,
                 event_type=event_type,
-                sg_message_id=sg_message_id,
-                reason=reason,
-                raw_payload=json.dumps(event_data),
-                timestamp=datetime.fromtimestamp(timestamp, tz=timezone.utc) if timestamp else None
+                sendgrid_message_id=sg_message_id,
+                payload=json.dumps(event_data)
             )
             self.session.add(event)
 

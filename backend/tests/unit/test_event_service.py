@@ -431,3 +431,163 @@ class TestEventServiceMutation:
         assert event_2025.is_active is False
         assert event_2026.is_active is True
         assert event_2027.is_active is False
+
+    async def test_deactivate_other_events_when_none_active(
+        self, db_session: AsyncSession
+    ):
+        """Test deactivating other events when no other events are active."""
+        service = EventService(db_session)
+
+        # Create one active event and inactive events
+        inactive_event = Event(
+            year=2025,
+            name="CyberX 2025",
+            start_date=date(2025, 6, 1),
+            end_date=date(2025, 6, 7),
+            is_active=False
+        )
+        active_event = Event(
+            year=2026,
+            name="CyberX 2026",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 7),
+            is_active=True
+        )
+        db_session.add_all([inactive_event, active_event])
+        await db_session.commit()
+
+        # Deactivate others (should be no-op since only one is active)
+        await service.deactivate_other_events(active_event.id)
+        await db_session.commit()
+
+        # Refresh
+        await db_session.refresh(inactive_event)
+        await db_session.refresh(active_event)
+
+        # States should remain unchanged
+        assert inactive_event.is_active is False
+        assert active_event.is_active is True
+
+    async def test_list_events_empty(self, db_session: AsyncSession):
+        """Test listing events when none exist."""
+        service = EventService(db_session)
+
+        events = await service.list_events()
+
+        assert len(events) == 0
+
+    async def test_list_events_all_archived(self, db_session: AsyncSession):
+        """Test listing events when all are archived."""
+        service = EventService(db_session)
+
+        # Create only archived events
+        archived_event = Event(
+            year=2024,
+            name="CyberX 2024",
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 7),
+            is_archived=True
+        )
+        db_session.add(archived_event)
+        await db_session.commit()
+
+        # List without archived
+        events = await service.list_events(include_archived=False)
+
+        assert len(events) == 0
+
+    async def test_activate_event_deactivates_others(
+        self, db_session: AsyncSession
+    ):
+        """Test that activating an event deactivates all others."""
+        service = EventService(db_session)
+
+        # Create multiple events
+        event_2025 = await service.create_event(
+            year=2025,
+            name="CyberX 2025",
+            start_date=date(2025, 6, 1),
+            end_date=date(2025, 6, 7),
+            is_active=True
+        )
+        event_2026 = await service.create_event(
+            year=2026,
+            name="CyberX 2026",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 7),
+            is_active=False
+        )
+
+        # Activate 2026 (should deactivate 2025)
+        await service.update_event(event_2026.id, is_active=True)
+        await service.deactivate_other_events(event_2026.id)
+        await db_session.commit()
+
+        # Refresh
+        await db_session.refresh(event_2025)
+        await db_session.refresh(event_2026)
+
+        assert event_2025.is_active is False
+        assert event_2026.is_active is True
+
+    async def test_get_event_by_year_nonexistent(self, db_session: AsyncSession):
+        """Test retrieving event by year when year doesn't exist."""
+        service = EventService(db_session)
+
+        # Create event for 2026
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 7)
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Try to get 2099
+        result = await service.get_event_by_year(2099)
+        assert result is None
+
+    async def test_create_event_with_minimal_fields(self, db_session: AsyncSession):
+        """Test creating event with only required fields."""
+        service = EventService(db_session)
+
+        event = await service.create_event(
+            year=2026,
+            name="CyberX 2026",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 7)
+        )
+
+        assert event.id is not None
+        assert event.year == 2026
+        assert event.name == "CyberX 2026"
+        assert event.is_active is False  # Default
+        assert event.registration_open is False  # Default
+
+    async def test_update_event_partial_fields(self, db_session: AsyncSession):
+        """Test updating only some event fields."""
+        service = EventService(db_session)
+
+        # Create event
+        event = await service.create_event(
+            year=2026,
+            name="CyberX 2026",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 7),
+            event_time="9:00 AM",
+            event_location="Building A"
+        )
+
+        original_location = event.event_location
+
+        # Update only name and time
+        updated = await service.update_event(
+            event.id,
+            name="CyberX 2026 - Updated",
+            event_time="10:00 AM"
+        )
+
+        assert updated.name == "CyberX 2026 - Updated"
+        assert updated.event_time == "10:00 AM"
+        assert updated.event_location == original_location  # Unchanged

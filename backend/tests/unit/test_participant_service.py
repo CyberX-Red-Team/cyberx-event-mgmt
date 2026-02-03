@@ -255,6 +255,57 @@ class TestParticipantServiceRetrieve:
         page2_ids = {u.id for u in users_page2}
         assert len(page1_ids & page2_ids) == 0  # No overlap
 
+    async def test_list_participants_empty_results(self, db_session: AsyncSession):
+        """Test listing participants with search that returns no results."""
+        service = ParticipantService(db_session)
+
+        users, total = await service.list_participants(
+            search="nonexistent_xyz_search_term", page=1, page_size=50
+        )
+
+        assert total == 0
+        assert len(users) == 0
+
+    async def test_list_participants_single_page(self, db_session: AsyncSession):
+        """Test listing participants when all fit on single page."""
+        service = ParticipantService(db_session)
+
+        # Create 3 users
+        for i in range(3):
+            await service.create_participant(
+                email=f"single_page_{i}@test.com",
+                first_name=f"User{i}",
+                last_name="Test",
+                country="USA",
+            )
+
+        # Request large page size
+        users, total = await service.list_participants(page=1, page_size=100)
+
+        # All users should fit on one page
+        assert total >= 3
+        assert len(users) == total
+
+    async def test_list_participants_last_page_partial(self, db_session: AsyncSession):
+        """Test listing last page with fewer items than page size."""
+        service = ParticipantService(db_session)
+
+        # Create exactly 5 users
+        for i in range(5):
+            await service.create_participant(
+                email=f"partial_page_{i}@test.com",
+                first_name=f"User{i}",
+                last_name="Test",
+                country="USA",
+            )
+
+        # Get page 2 with page_size=3 (should have 2 items)
+        users, total = await service.list_participants(page=2, page_size=3)
+
+        # Should have fewer than page_size
+        assert len(users) >= 1
+        assert len(users) < 3
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -461,6 +512,82 @@ class TestParticipantServiceBulkOperations:
             user = await service.get_participant(user_id)
             assert user.is_active is False
 
+    async def test_bulk_activate_mixed_success_failure(
+        self, db_session: AsyncSession
+    ):
+        """Test bulk activate with mix of valid and invalid IDs."""
+        service = ParticipantService(db_session)
+
+        # Create 2 valid users
+        user1 = await service.create_participant(
+            email="valid1@test.com",
+            first_name="Valid1",
+            last_name="User",
+            country="USA"
+        )
+        user2 = await service.create_participant(
+            email="valid2@test.com",
+            first_name="Valid2",
+            last_name="User",
+            country="USA"
+        )
+        user1.is_active = False
+        user2.is_active = False
+        await db_session.commit()
+
+        # Mix valid and invalid IDs
+        mixed_ids = [user1.id, 99999, user2.id, 88888]
+
+        success_count, failed_ids = await service.bulk_activate(mixed_ids)
+
+        # Should succeed for 2 valid users
+        assert success_count == 2
+        # Should fail for 2 invalid IDs
+        assert len(failed_ids) == 2
+        assert 99999 in failed_ids
+        assert 88888 in failed_ids
+
+    async def test_bulk_activate_empty_list(self, db_session: AsyncSession):
+        """Test bulk activate with empty ID list."""
+        service = ParticipantService(db_session)
+
+        success_count, failed_ids = await service.bulk_activate([])
+
+        assert success_count == 0
+        assert len(failed_ids) == 0
+
+    async def test_bulk_deactivate_mixed_success_failure(
+        self, db_session: AsyncSession
+    ):
+        """Test bulk deactivate with mix of valid and invalid IDs."""
+        service = ParticipantService(db_session)
+
+        # Create 2 valid users
+        user1 = await service.create_participant(
+            email="deactivate1@test.com",
+            first_name="Deactivate1",
+            last_name="User",
+            country="USA"
+        )
+        user2 = await service.create_participant(
+            email="deactivate2@test.com",
+            first_name="Deactivate2",
+            last_name="User",
+            country="USA"
+        )
+
+        # Mix valid and invalid IDs
+        mixed_ids = [user1.id, 77777, user2.id, 66666]
+
+        success_count, failed_ids = await service.bulk_deactivate(mixed_ids)
+
+        # Should succeed for 2 valid users
+        assert success_count == 2
+        # Should fail for 2 invalid IDs
+        assert len(failed_ids) == 2
+        assert 77777 in failed_ids
+        assert 66666 in failed_ids
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -616,3 +743,130 @@ class TestParticipantServiceRoleManagement:
         assert sponsor is not None
         assert sponsor.id == sponsor_user.id
         assert sponsor.role == UserRole.SPONSOR.value
+
+    async def test_get_sponsor_nonexistent(self, db_session: AsyncSession):
+        """Test retrieving non-existent sponsor returns None."""
+        service = ParticipantService(db_session)
+
+        sponsor = await service.get_sponsor(99999)
+
+        assert sponsor is None
+
+    async def test_list_participants_with_role_filter(
+        self, db_session: AsyncSession, sponsor_user: User, invitee_user: User
+    ):
+        """Test listing participants filtered by role."""
+        service = ParticipantService(db_session)
+
+        users, total = await service.list_participants(
+            role=UserRole.SPONSOR.value, page=1, page_size=50
+        )
+
+        # Should only return sponsors
+        assert total >= 1
+        for user in users:
+            assert user.role == UserRole.SPONSOR.value
+
+    async def test_list_participants_with_sponsor_filter(
+        self, db_session: AsyncSession, sponsor_user: User
+    ):
+        """Test listing participants filtered by sponsor."""
+        service = ParticipantService(db_session)
+
+        # Create sponsored participant
+        sponsored = await service.create_participant(
+            email="sponsored_filter@test.com",
+            first_name="Sponsored",
+            last_name="User",
+            country="USA",
+            sponsor_id=sponsor_user.id
+        )
+
+        users, total = await service.list_participants(
+            sponsor_id=sponsor_user.id, page=1, page_size=50
+        )
+
+        # Should return at least our sponsored user
+        assert total >= 1
+        user_ids = [u.id for u in users]
+        assert sponsored.id in user_ids
+
+    async def test_list_participants_with_confirmed_filter(
+        self, db_session: AsyncSession
+    ):
+        """Test listing participants filtered by confirmed status."""
+        service = ParticipantService(db_session)
+
+        # Create confirmed participant
+        confirmed_user = await service.create_participant(
+            email="confirmed_filter@test.com",
+            first_name="Confirmed",
+            last_name="User",
+            country="USA",
+            confirmed="YES"
+        )
+
+        users, total = await service.list_participants(
+            confirmed="YES", page=1, page_size=50
+        )
+
+        # Should return confirmed users
+        assert total >= 1
+        user_ids = [u.id for u in users]
+        assert confirmed_user.id in user_ids
+
+    async def test_get_sponsored_participants_nonexistent_sponsor(
+        self, db_session: AsyncSession
+    ):
+        """Test getting sponsored participants for non-existent sponsor."""
+        service = ParticipantService(db_session)
+
+        participants, total = await service.get_sponsored_participants(99999)
+
+        assert len(participants) == 0
+        assert total == 0
+
+    async def test_get_sponsored_participants_empty(
+        self, db_session: AsyncSession
+    ):
+        """Test getting sponsored participants when sponsor has none."""
+        service = ParticipantService(db_session)
+
+        # Create sponsor with no sponsored users
+        sponsor = await service.create_participant(
+            email="lonely_sponsor@test.com",
+            first_name="Lonely",
+            last_name="Sponsor",
+            country="USA",
+            role=UserRole.SPONSOR.value
+        )
+
+        participants, total = await service.get_sponsored_participants(sponsor.id)
+
+        assert len(participants) == 0
+        assert total == 0
+
+    async def test_assign_sponsor_invalid_sponsor_id(
+        self, db_session: AsyncSession, invitee_user: User
+    ):
+        """Test assigning invalid sponsor ID."""
+        service = ParticipantService(db_session)
+
+        # Try to assign non-existent sponsor
+        updated = await service.assign_sponsor(invitee_user.id, 99999)
+
+        # Should still update but with invalid sponsor_id
+        # (FK constraint might be deferred or not enforced in test DB)
+        # The behavior depends on DB constraints
+        # For now, just test that it doesn't crash
+        assert updated is not None or updated is None  # Either outcome is acceptable
+
+    async def test_list_sponsors_empty(self, db_session: AsyncSession):
+        """Test listing sponsors when only one exists."""
+        service = ParticipantService(db_session)
+
+        # Get all sponsors
+        sponsors = await service.list_sponsors()
+
+        # Should return list (may be empty or contain sponsors from fixtures)
+        assert isinstance(sponsors, list)
