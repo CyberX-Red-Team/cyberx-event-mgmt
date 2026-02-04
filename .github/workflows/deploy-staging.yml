@@ -87,15 +87,15 @@ jobs:
 
           BASE_URL="https://staging.events.cyberxredteam.org"
 
-          # Test auth endpoint (should return 422 for missing credentials)
+          # Test auth endpoint (should return 403 for missing CSRF token or 422 for invalid credentials)
           echo "Testing auth endpoint..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST "${BASE_URL}/api/auth/login" \
             -H "Content-Type: application/json" \
             -d '{}')
 
-          if [ "$HTTP_CODE" -eq 422 ]; then
-            echo "✅ Auth endpoint responding correctly"
+          if [ "$HTTP_CODE" -eq 403 ] || [ "$HTTP_CODE" -eq 422 ]; then
+            echo "✅ Auth endpoint responding correctly (HTTP $HTTP_CODE)"
           else
             echo "❌ Auth endpoint returned unexpected code: $HTTP_CODE"
             exit 1
