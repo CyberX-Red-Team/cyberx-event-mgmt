@@ -24,7 +24,10 @@ config = context.config
 
 # Get database URL from environment
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.async_database_url)
+# Escape % characters for ConfigParser (% is used for interpolation in INI files)
+# URL-encoded characters like %40 need to be escaped as %%40
+escaped_url = settings.async_database_url.replace('%', '%%')
+config.set_main_option("sqlalchemy.url", escaped_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
