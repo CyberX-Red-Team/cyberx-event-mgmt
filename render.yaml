@@ -1,13 +1,14 @@
 # Render.com Blueprint for CyberX Event Management System
-# Deploys: FastAPI app, PostgreSQL, Redis
-# Estimated cost: ~$24/month
+# Deploys: FastAPI app + Background Worker
+# Uses Supabase for PostgreSQL (configured via environment variables)
+# Estimated cost: ~$14/month (2x $7 services)
 
 services:
   # FastAPI Web Application
   - type: web
     name: cyberx-event-mgmt
     runtime: python
-    region: oregon  # Change to: oregon, frankfurt, singapore
+    region: virginia  # US East
     plan: starter  # $7/month - 512MB RAM (sufficient for 100 users)
     branch: main
     buildCommand: |
@@ -23,15 +24,10 @@ services:
         value: 3.11.7
       - key: DEBUG
         value: false
+      # Database - Supabase connection string (set manually in Render dashboard)
       - key: DATABASE_URL
-        fromDatabase:
-          name: cyberx-postgres
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: cyberx-redis
-          type: redis
-          property: connectionString
+        value: ""  # Set this to your Supabase connection string in Render dashboard
+      # Security keys
       - key: SECRET_KEY
         generateValue: true
         sync: false
@@ -41,6 +37,7 @@ services:
       - key: ENCRYPTION_KEY
         generateValue: true
         sync: false
+      # Email configuration
       - key: SENDGRID_API_KEY
         sync: false
       - key: SENDGRID_FROM_EMAIL
@@ -49,6 +46,7 @@ services:
         value: CyberX Red Team
       - key: SENDGRID_SANDBOX_MODE
         value: false
+      # VPN configuration
       - key: VPN_SERVER_PUBLIC_KEY
         sync: false
       - key: VPN_SERVER_ENDPOINT
@@ -57,6 +55,7 @@ services:
         value: 10.20.200.1
       - key: VPN_ALLOWED_IPS
         value: 10.0.0.0/8,fd00:a::/32
+      # Application configuration
       - key: FRONTEND_URL
         value: https://cyberx-event-mgmt.onrender.com
       - key: ALLOWED_HOSTS
@@ -65,12 +64,19 @@ services:
         value: 24
       - key: BULK_EMAIL_INTERVAL_MINUTES
         value: 45
+      # PowerDNS configuration
+      - key: POWERDNS_API_URL
+        sync: false
+      - key: POWERDNS_USERNAME
+        sync: false
+      - key: POWERDNS_PASSWORD
+        sync: false
 
   # Background Worker (for scheduled jobs)
   - type: worker
     name: cyberx-worker
     runtime: python
-    region: oregon
+    region: virginia  # US East
     plan: starter  # $7/month - only if you need background jobs
     branch: main
     buildCommand: |
@@ -80,6 +86,7 @@ services:
       cd backend
       python -m app.tasks.scheduler
     envVars:
+      # Share database connection from web service
       - fromService:
           name: cyberx-event-mgmt
           type: web
@@ -87,23 +94,17 @@ services:
       - fromService:
           name: cyberx-event-mgmt
           type: web
-          envVarKey: REDIS_URL
+          envVarKey: SECRET_KEY
+      # Email configuration for worker
       - fromService:
           name: cyberx-event-mgmt
           type: web
-          envVarKey: SECRET_KEY
-
-databases:
-  # PostgreSQL Database
-  - name: cyberx-postgres
-    databaseName: cyberx_events
-    plan: starter  # $7/month - 1GB storage, 97 connection limit
-    region: oregon
-    ipAllowList: []  # Empty = allow all (secured by credentials)
-
-  # Redis Cache
-  - name: cyberx-redis
-    plan: starter  # $10/month - 25MB RAM, perfect for sessions
-    region: oregon
-    maxmemoryPolicy: allkeys-lru  # Evict least recently used keys
-    ipAllowList: []
+          envVarKey: SENDGRID_API_KEY
+      - fromService:
+          name: cyberx-event-mgmt
+          type: web
+          envVarKey: SENDGRID_FROM_EMAIL
+      - fromService:
+          name: cyberx-event-mgmt
+          type: web
+          envVarKey: SENDGRID_FROM_NAME
