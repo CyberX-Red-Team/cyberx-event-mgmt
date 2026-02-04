@@ -10,7 +10,7 @@ services:
     runtime: python
     region: virginia  # US East
     plan: starter  # $7/month - 512MB RAM (sufficient for 100 users)
-    branch: main  # Change to 'develop' if you want staging to deploy from develop branch
+    branch: staging  # Staging service watches staging branch
     buildCommand: |
       cd backend
       pip install -r requirements.txt
@@ -88,7 +88,7 @@ services:
     runtime: python
     region: virginia  # US East
     plan: starter  # $7/month - only if you need background jobs
-    branch: main  # Change to 'develop' if you want staging to deploy from develop branch
+    branch: staging  # Staging service watches staging branch
     buildCommand: |
       cd backend
       pip install -r requirements.txt
