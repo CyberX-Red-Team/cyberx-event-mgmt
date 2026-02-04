@@ -2,6 +2,7 @@
 # Deploys: FastAPI app + Background Worker
 # Uses Supabase for PostgreSQL (configured via environment variables)
 # Estimated cost: ~$14/month (2x $7 services)
+# Trigger: DATABASE_URL will be injected via GitHub Actions
 
 services:
   # FastAPI Web Application - STAGING
