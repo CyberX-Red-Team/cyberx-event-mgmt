@@ -43,12 +43,19 @@ jobs:
       - name: Trigger Render Deploy via Deploy Hook
         env:
           STAGING_DEPLOY_HOOK_URL: ${{ secrets.STAGING_DEPLOY_HOOK_URL }}
+          STAGING_WORKER_DEPLOY_HOOK_URL: ${{ secrets.STAGING_WORKER_DEPLOY_HOOK_URL }}
         run: |
-          echo "🚀 Triggering Render deployment for staging via deploy hook..."
-
+          echo "🚀 Triggering Render deployment for staging web service..."
           curl -X POST "${STAGING_DEPLOY_HOOK_URL}"
+          echo "✅ Web service deployment triggered!"
 
-          echo "✅ Deployment triggered!"
+          echo ""
+          echo "🔧 Triggering Render deployment for staging worker..."
+          curl -X POST "${STAGING_WORKER_DEPLOY_HOOK_URL}"
+          echo "✅ Worker deployment triggered!"
+
+          echo ""
+          echo "🎉 Both services deployment triggered successfully!"
 
       - name: Wait for deployment
         run: |
