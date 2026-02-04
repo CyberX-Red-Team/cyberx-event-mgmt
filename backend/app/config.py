@@ -36,14 +36,14 @@ class Settings(BaseSettings):
     SENDGRID_SANDBOX_MODE: bool = False  # Enable to validate emails without sending
     TEST_EMAIL_OVERRIDE: str = ""  # If set, all emails go to this address instead
 
-    # PowerDNS
-    POWERDNS_API_URL: str
-    POWERDNS_USERNAME: str
-    POWERDNS_PASSWORD: str
+    # PowerDNS (optional - only needed if using PowerDNS integration)
+    POWERDNS_API_URL: str = ""
+    POWERDNS_USERNAME: str = ""
+    POWERDNS_PASSWORD: str = ""
 
-    # VPN Server Configuration
-    VPN_SERVER_PUBLIC_KEY: str
-    VPN_SERVER_ENDPOINT: str
+    # VPN Server Configuration (optional - only needed if using VPN features)
+    VPN_SERVER_PUBLIC_KEY: str = ""
+    VPN_SERVER_ENDPOINT: str = ""
     VPN_DNS_SERVERS: str = "10.20.200.1"
     VPN_ALLOWED_IPS: str = "10.0.0.0/8,fd00:a::/32"
 
