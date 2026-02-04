@@ -349,6 +349,123 @@ class TestWorkflowServiceTrigger:
 
         assert count == 1
 
+    async def test_trigger_workflow_with_delay(self, db_session: AsyncSession):
+        """Test triggering workflow with delay_minutes schedules for future."""
+        from sqlalchemy import select
+        from app.models.email_queue import EmailQueue
+
+        service = WorkflowService(db_session)
+
+        # Create user
+        user = User(
+            email="test@test.com",
+            first_name="Test",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value
+        )
+        db_session.add(user)
+
+        # Create workflow with delay
+        workflow = EmailWorkflow(
+            name="delayed_workflow",
+            display_name="Delayed Workflow",
+            trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
+            template_name="confirmation",
+            priority=5,
+            delay_minutes=30,  # 30 minute delay
+            is_enabled=True
+        )
+        db_session.add(workflow)
+        await db_session.commit()
+
+        # Trigger
+        count = await service.trigger_workflow(
+            WorkflowTriggerEvent.USER_CONFIRMED,
+            user.id
+        )
+
+        assert count == 1
+
+        # Verify email was scheduled for future
+        result = await db_session.execute(
+            select(EmailQueue).where(EmailQueue.user_id == user.id)
+        )
+        email = result.scalar_one_or_none()
+        assert email is not None
+        assert email.scheduled_for is not None
+        # Should be scheduled approximately 30 minutes in future
+        from datetime import timedelta
+        expected_time = datetime.now(timezone.utc) + timedelta(minutes=30)
+        # Handle timezone-naive datetime from SQLite
+        scheduled_time = email.scheduled_for
+        if scheduled_time.tzinfo is None:
+            scheduled_time = scheduled_time.replace(tzinfo=timezone.utc)
+        time_diff = abs((scheduled_time - expected_time).total_seconds())
+        assert time_diff < 5  # Within 5 seconds
+
+    async def test_trigger_workflow_error_handling(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test workflow continues on error and logs failure."""
+        service = WorkflowService(db_session)
+
+        # Create user
+        user = User(
+            email="test@test.com",
+            first_name="Test",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value
+        )
+        db_session.add(user)
+
+        # Create workflows - first will fail, second should succeed
+        workflow1 = EmailWorkflow(
+            name="failing_workflow",
+            display_name="Failing Workflow",
+            trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
+            template_name="nonexistent_template",
+            priority=1,
+            is_enabled=True
+        )
+        workflow2 = EmailWorkflow(
+            name="succeeding_workflow",
+            display_name="Succeeding Workflow",
+            trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
+            template_name="confirmation",
+            priority=2,
+            is_enabled=True
+        )
+        db_session.add_all([workflow1, workflow2])
+        await db_session.commit()
+
+        # Mock EmailQueueService.enqueue_email to fail for first call
+        from app.services.email_queue_service import EmailQueueService
+        original_enqueue = EmailQueueService.enqueue_email
+        call_count = [0]
+
+        async def mock_enqueue(self, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise Exception("Simulated queue failure")
+            return await original_enqueue(self, *args, **kwargs)
+
+        mocker.patch.object(
+            EmailQueueService,
+            'enqueue_email',
+            mock_enqueue
+        )
+
+        # Trigger - should log error for first but continue
+        count = await service.trigger_workflow(
+            WorkflowTriggerEvent.USER_CONFIRMED,
+            user.id
+        )
+
+        # Only second workflow should succeed
+        assert count == 1
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio

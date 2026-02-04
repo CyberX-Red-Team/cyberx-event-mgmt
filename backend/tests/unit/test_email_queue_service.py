@@ -729,3 +729,63 @@ class TestEmailQueueServiceBatchProcessing:
         assert email.batch_id == batch_log.batch_id
         assert email.processed_by == "test_worker_1"
         assert email.last_attempt_at is not None
+
+    async def test_process_batch_email_reaches_max_attempts(
+        self, db_session: AsyncSession, test_user: User, mocker
+    ):
+        """Test email marked as FAILED when max_attempts is reached."""
+        service = EmailQueueService(db_session)
+
+        # Create email with high attempts (one away from max)
+        email = await service.enqueue_email(test_user.id, "test")
+        email.attempts = 2  # Next attempt will be the 3rd
+        email.max_attempts = 3  # Set max to 3
+        await db_session.commit()
+
+        # Mock EmailService.send_email to fail
+        mock_send = mocker.patch(
+            'app.services.email_queue_service.EmailService.send_email',
+            return_value=(False, "Final failure", None)
+        )
+
+        # Process batch - should fail and reach max_attempts
+        batch_log = await service.process_batch(batch_size=10)
+
+        assert batch_log.total_failed == 1
+        assert batch_log.total_sent == 0
+
+        # Verify email is marked as FAILED (not PENDING)
+        await db_session.refresh(email)
+        assert email.status == EmailQueueStatus.FAILED
+        assert email.attempts == 3  # Reached max
+        assert "Final failure" in email.error_message
+
+    async def test_process_batch_catastrophic_exception(
+        self, db_session: AsyncSession, test_user: User, mocker
+    ):
+        """Test process_batch handles catastrophic exceptions."""
+        service = EmailQueueService(db_session)
+
+        # Create email
+        email = await service.enqueue_email(test_user.id, "test")
+
+        # Mock database commit to raise catastrophic exception
+        # This simulates a database failure that happens at the batch level
+        original_commit = db_session.commit
+        commit_count = [0]
+
+        async def failing_commit(*args, **kwargs):
+            commit_count[0] += 1
+            # Fail on the final commit (after processing emails)
+            if commit_count[0] == 3:  # Third commit is the batch log completion
+                raise RuntimeError("Database connection lost")
+            return await original_commit(*args, **kwargs)
+
+        mocker.patch.object(db_session, 'commit', failing_commit)
+
+        # Process batch should raise exception but log it first
+        with pytest.raises(RuntimeError, match="Database connection lost"):
+            await service.process_batch(batch_size=10)
+
+        # Note: Can't verify batch_log here because the exception prevented
+        # the final commit. The exception handling code runs but can't commit.

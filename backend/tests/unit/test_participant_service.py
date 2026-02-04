@@ -870,3 +870,329 @@ class TestParticipantServiceRoleManagement:
 
         # Should return list (may be empty or contain sponsors from fixtures)
         assert isinstance(sponsors, list)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestParticipantServiceListFilters:
+    """Test list_participants filtering options."""
+
+    async def test_list_participants_filter_by_is_active(
+        self, db_session: AsyncSession
+    ):
+        """Test filtering participants by active status."""
+        service = ParticipantService(db_session)
+
+        # Create active and inactive participants
+        active = await service.create_participant(
+            email="active@test.com",
+            first_name="Active",
+            last_name="User",
+            country="USA"
+        )
+        inactive = await service.create_participant(
+            email="inactive@test.com",
+            first_name="Inactive",
+            last_name="User",
+            country="USA"
+        )
+        inactive.is_active = False
+        await db_session.commit()
+
+        # Filter by active
+        active_users, total = await service.list_participants(
+            is_active=True, page=1, page_size=50
+        )
+        active_ids = [u.id for u in active_users]
+        assert active.id in active_ids
+        assert inactive.id not in active_ids
+
+        # Filter by inactive
+        inactive_users, total = await service.list_participants(
+            is_active=False, page=1, page_size=50
+        )
+        inactive_ids = [u.id for u in inactive_users]
+        assert inactive.id in inactive_ids
+        assert active.id not in inactive_ids
+
+    async def test_list_participants_filter_by_email_status(
+        self, db_session: AsyncSession
+    ):
+        """Test filtering participants by email status."""
+        service = ParticipantService(db_session)
+
+        # Create users with different email statuses
+        good = await service.create_participant(
+            email="good@test.com",
+            first_name="Good",
+            last_name="User",
+            country="USA"
+        )
+        good.email_status = "GOOD"
+        bounced = await service.create_participant(
+            email="bounced@test.com",
+            first_name="Bounced",
+            last_name="User",
+            country="USA"
+        )
+        bounced.email_status = "BOUNCED"
+        await db_session.commit()
+
+        # Filter by GOOD status
+        good_users, total = await service.list_participants(
+            email_status="GOOD", page=1, page_size=50
+        )
+        good_ids = [u.id for u in good_users]
+        assert good.id in good_ids
+        assert bounced.id not in good_ids
+
+        # Filter by BOUNCED status
+        bounced_users, total = await service.list_participants(
+            email_status="BOUNCED", page=1, page_size=50
+        )
+        bounced_ids = [u.id for u in bounced_users]
+        assert bounced.id in bounced_ids
+        assert good.id not in bounced_ids
+
+    async def test_list_participants_filter_by_country(
+        self, db_session: AsyncSession
+    ):
+        """Test filtering participants by country."""
+        service = ParticipantService(db_session)
+
+        # Create users from different countries
+        usa_user = await service.create_participant(
+            email="usa@test.com",
+            first_name="USA",
+            last_name="User",
+            country="USA"
+        )
+        canada_user = await service.create_participant(
+            email="canada@test.com",
+            first_name="Canada",
+            last_name="User",
+            country="Canada"
+        )
+
+        # Filter by USA
+        usa_users, total = await service.list_participants(
+            country="USA", page=1, page_size=50
+        )
+        usa_ids = [u.id for u in usa_users]
+        assert usa_user.id in usa_ids
+        assert canada_user.id not in usa_ids
+
+        # Filter by Canada
+        canada_users, total = await service.list_participants(
+            country="Canada", page=1, page_size=50
+        )
+        canada_ids = [u.id for u in canada_users]
+        assert canada_user.id in canada_ids
+        assert usa_user.id not in canada_ids
+
+    async def test_list_participants_filter_by_has_vpn(
+        self, db_session: AsyncSession
+    ):
+        """Test filtering participants by VPN status."""
+        service = ParticipantService(db_session)
+        from app.models.vpn import VPNCredential
+
+        # Create users
+        with_vpn = await service.create_participant(
+            email="withvpn@test.com",
+            first_name="WithVPN",
+            last_name="User",
+            country="USA"
+        )
+        without_vpn = await service.create_participant(
+            email="withoutvpn@test.com",
+            first_name="WithoutVPN",
+            last_name="User",
+            country="USA"
+        )
+
+        # Assign VPN to first user
+        vpn = VPNCredential(
+            assigned_to_user_id=with_vpn.id,
+            interface_ip="10.20.200.149",
+            private_key="base64encodedprivatekey==",
+            endpoint="216.208.235.11:51020",
+            key_type="cyber",
+            is_available=False,
+            is_active=True
+        )
+        db_session.add(vpn)
+        await db_session.commit()
+
+        # Filter by has_vpn=True
+        vpn_users, total = await service.list_participants(
+            has_vpn=True, page=1, page_size=50
+        )
+        vpn_ids = [u.id for u in vpn_users]
+        assert with_vpn.id in vpn_ids
+
+        # Filter by has_vpn=False
+        no_vpn_users, total = await service.list_participants(
+            has_vpn=False, page=1, page_size=50
+        )
+        no_vpn_ids = [u.id for u in no_vpn_users]
+        assert without_vpn.id in no_vpn_ids
+
+    async def test_list_participants_sort_by_email(
+        self, db_session: AsyncSession
+    ):
+        """Test sorting participants by email."""
+        service = ParticipantService(db_session)
+
+        # Create users with different emails
+        await service.create_participant(
+            email="charlie@test.com",
+            first_name="Charlie",
+            last_name="User",
+            country="USA"
+        )
+        await service.create_participant(
+            email="alice@test.com",
+            first_name="Alice",
+            last_name="User",
+            country="USA"
+        )
+        await service.create_participant(
+            email="bob@test.com",
+            first_name="Bob",
+            last_name="User",
+            country="USA"
+        )
+
+        # Sort ascending
+        users_asc, _ = await service.list_participants(
+            sort_by="email", sort_order="asc", page=1, page_size=50
+        )
+        emails_asc = [u.email for u in users_asc if u.email.endswith("@test.com")]
+        assert emails_asc[0] == "alice@test.com"
+        assert emails_asc[-1] == "charlie@test.com"
+
+        # Sort descending
+        users_desc, _ = await service.list_participants(
+            sort_by="email", sort_order="desc", page=1, page_size=50
+        )
+        emails_desc = [u.email for u in users_desc if u.email.endswith("@test.com")]
+        assert emails_desc[0] == "charlie@test.com"
+        assert emails_desc[-1] == "alice@test.com"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestParticipantServiceUsernameGeneration:
+    """Test username generation edge cases."""
+
+    async def test_generate_username_with_conflict(
+        self, db_session: AsyncSession
+    ):
+        """Test username generation resolves conflicts with counter."""
+        service = ParticipantService(db_session)
+
+        # Create user with jsmith username
+        user1 = await service.create_participant(
+            email="john1@test.com",
+            first_name="John",
+            last_name="Smith",
+            country="USA",
+            pandas_username="jsmith"
+        )
+        assert user1.pandas_username == "jsmith"
+
+        # Create another John Smith - should get jsmith1
+        user2 = await service.create_participant(
+            email="john2@test.com",
+            first_name="John",
+            last_name="Smith",
+            country="USA",
+            role=UserRole.SPONSOR.value  # Trigger credential generation
+        )
+        # Username should have counter suffix
+        assert user2.pandas_username == "jsmith1"
+
+        # Create third John Smith - should get jsmith2
+        user3 = await service.create_participant(
+            email="john3@test.com",
+            first_name="John",
+            last_name="Smith",
+            country="USA",
+            role=UserRole.SPONSOR.value
+        )
+        assert user3.pandas_username == "jsmith2"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestParticipantServiceDeleteWithVPN:
+    """Test delete participant with VPN credentials."""
+
+    async def test_delete_participant_with_vpn(
+        self, db_session: AsyncSession
+    ):
+        """Test deleting participant marks VPN as unavailable."""
+        service = ParticipantService(db_session)
+        from app.models.vpn import VPNCredential
+        from sqlalchemy import select
+
+        # Create user
+        user = await service.create_participant(
+            email="vpnuser@test.com",
+            first_name="VPN",
+            last_name="User",
+            country="USA"
+        )
+
+        # Assign VPN credential
+        vpn = VPNCredential(
+            assigned_to_user_id=user.id,
+            interface_ip="10.20.200.150",
+            private_key="base64encodedprivatekey2==",
+            endpoint="216.208.235.11:51020",
+            key_type="cyber",
+            is_available=False,
+            is_active=True
+        )
+        db_session.add(vpn)
+        await db_session.commit()
+        vpn_id = vpn.id
+
+        # Delete user
+        success = await service.delete_participant(user.id)
+        assert success is True
+
+        # Verify VPN credential is marked unavailable
+        result = await db_session.execute(
+            select(VPNCredential).where(VPNCredential.id == vpn_id)
+        )
+        vpn_after = result.scalar_one_or_none()
+        assert vpn_after is not None
+        assert vpn_after.is_available is False
+        assert vpn_after.is_active is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestParticipantServiceCanSendEmail:
+    """Test email status checking."""
+
+    async def test_can_send_email_good_status(
+        self, db_session: AsyncSession
+    ):
+        """Test can send email to GOOD status."""
+        service = ParticipantService(db_session)
+
+        assert service._can_send_email("GOOD") is True
+        assert service._can_send_email("UNKNOWN") is True
+
+    async def test_cannot_send_email_blocked_statuses(
+        self, db_session: AsyncSession
+    ):
+        """Test cannot send email to blocked statuses."""
+        service = ParticipantService(db_session)
+
+        assert service._can_send_email("BOUNCED") is False
+        assert service._can_send_email("SPAM_REPORTED") is False
+        assert service._can_send_email("UNSUBSCRIBED") is False
