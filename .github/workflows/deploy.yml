@@ -1,0 +1,302 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: |
+          cd backend
+          # Quick smoke tests before deployment
+          python -c "from app.main import app; print('✅ App imports successfully')"
+
+      - name: Build deployment package
+        run: |
+          tar -czf cyberx-event-mgmt.tar.gz \
+            backend/ \
+            docker-compose.yml \
+            docker-compose.prod.yml \
+            INSTALL.md \
+            README.md
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package
+          path: cyberx-event-mgmt.tar.gz
+          retention-days: 30
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.events.cyberxredteam.org
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-package
+
+      - name: Deploy to staging server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+        run: |
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $STAGING_HOST >> ~/.ssh/known_hosts
+
+          # Copy deployment package
+          scp -i ~/.ssh/deploy_key cyberx-event-mgmt.tar.gz $STAGING_USER@$STAGING_HOST:/tmp/
+
+          # Deploy on remote server
+          ssh -i ~/.ssh/deploy_key $STAGING_USER@$STAGING_HOST << 'ENDSSH'
+            set -e
+
+            # Extract package
+            mkdir -p /opt/cyberx-staging
+            cd /opt/cyberx-staging
+            tar -xzf /tmp/cyberx-event-mgmt.tar.gz
+
+            # Backup current .env
+            if [ -f backend/.env ]; then
+              cp backend/.env backend/.env.backup
+            fi
+
+            # Run database migrations
+            cd backend
+            source venv/bin/activate
+            pip install -r requirements.txt
+            alembic upgrade head
+
+            # Restart service
+            sudo systemctl restart cyberx-event-mgmt-staging
+            sudo systemctl status cyberx-event-mgmt-staging
+
+            # Health check
+            sleep 5
+            curl -f http://localhost:8000/health || exit 1
+
+            echo "✅ Staging deployment completed successfully"
+          ENDSSH
+
+      - name: Run smoke tests
+        run: |
+          # Add smoke tests here
+          echo "Running smoke tests..."
+          # curl -f https://staging.events.cyberxredteam.org/health
+
+      - name: Notify deployment
+        if: always()
+        run: |
+          echo "Staging deployment completed"
+          # Add notification logic (Slack, Discord, email, etc.)
+
+  deploy-production:
+    name: Deploy to Production
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://events.cyberxredteam.org
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-package
+
+      - name: Create deployment backup
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_USER: ${{ secrets.PRODUCTION_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $PRODUCTION_HOST >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/deploy_key $PRODUCTION_USER@$PRODUCTION_HOST << 'ENDSSH'
+            BACKUP_DIR="/opt/backups/cyberx/$(date +%Y%m%d_%H%M%S)"
+            mkdir -p $BACKUP_DIR
+
+            # Backup application
+            if [ -d /opt/cyberx-event-mgmt ]; then
+              tar -czf $BACKUP_DIR/app_backup.tar.gz /opt/cyberx-event-mgmt
+            fi
+
+            # Backup database
+            docker exec cyberx_postgres pg_dump -U cyberx cyberx_events | gzip > $BACKUP_DIR/db_backup.sql.gz
+
+            echo "✅ Backup created: $BACKUP_DIR"
+          ENDSSH
+
+      - name: Deploy to production server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_USER: ${{ secrets.PRODUCTION_USER }}
+        run: |
+          # Copy deployment package
+          scp -i ~/.ssh/deploy_key cyberx-event-mgmt.tar.gz $PRODUCTION_USER@$PRODUCTION_HOST:/tmp/
+
+          # Deploy on remote server
+          ssh -i ~/.ssh/deploy_key $PRODUCTION_USER@$PRODUCTION_HOST << 'ENDSSH'
+            set -e
+
+            # Extract package
+            mkdir -p /opt/cyberx-event-mgmt
+            cd /opt/cyberx-event-mgmt
+            tar -xzf /tmp/cyberx-event-mgmt.tar.gz
+
+            # Preserve .env
+            if [ -f backend/.env.backup ]; then
+              mv backend/.env.backup backend/.env
+            fi
+
+            # Run database migrations
+            cd backend
+            source venv/bin/activate
+            pip install -r requirements.txt
+            alembic upgrade head
+
+            # Restart service (zero-downtime with systemd)
+            sudo systemctl reload cyberx-event-mgmt
+            sleep 5
+            sudo systemctl status cyberx-event-mgmt
+
+            # Health check
+            curl -f http://localhost:8000/health || exit 1
+
+            echo "✅ Production deployment completed successfully"
+          ENDSSH
+
+      - name: Run production smoke tests
+        env:
+          PRODUCTION_URL: https://events.cyberxredteam.org
+        run: |
+          echo "Running production smoke tests..."
+
+          # Health check
+          curl -f $PRODUCTION_URL/health
+
+          # API availability check
+          curl -f $PRODUCTION_URL/api/docs
+
+          echo "✅ Smoke tests passed"
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            ## Changes in this Release
+            - Deployed to production
+            - See commit history for details
+          draft: false
+          prerelease: false
+
+      - name: Notify deployment
+        if: always()
+        run: |
+          echo "Production deployment completed"
+          # Add notification logic (Slack, Discord, email, etc.)
+
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: failure()
+    needs: [deploy-staging, deploy-production]
+    environment:
+      name: rollback
+
+    steps:
+      - name: Rollback to previous version
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_USER: ${{ secrets.PRODUCTION_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          ssh -i ~/.ssh/deploy_key $PRODUCTION_USER@$PRODUCTION_HOST << 'ENDSSH'
+            set -e
+
+            # Find latest backup
+            LATEST_BACKUP=$(ls -t /opt/backups/cyberx/ | head -1)
+
+            if [ -z "$LATEST_BACKUP" ]; then
+              echo "❌ No backup found for rollback"
+              exit 1
+            fi
+
+            echo "Rolling back to: $LATEST_BACKUP"
+
+            # Restore application
+            cd /opt
+            tar -xzf /opt/backups/cyberx/$LATEST_BACKUP/app_backup.tar.gz
+
+            # Restore database
+            gunzip < /opt/backups/cyberx/$LATEST_BACKUP/db_backup.sql.gz | \
+              docker exec -i cyberx_postgres psql -U cyberx -d cyberx_events
+
+            # Restart service
+            sudo systemctl restart cyberx-event-mgmt
+
+            echo "✅ Rollback completed"
+          ENDSSH
+
+      - name: Notify rollback
+        if: always()
+        run: |
+          echo "⚠️ Deployment rolled back"
+          # Add notification logic

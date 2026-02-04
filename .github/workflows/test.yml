@@ -1,0 +1,220 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: cyberx_events_test
+          POSTGRES_USER: cyberx
+          POSTGRES_PASSWORD: testpassword
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements*.txt'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Create .env file
+        run: |
+          cd backend
+          cat > .env << EOF
+          DATABASE_URL=postgresql+asyncpg://cyberx:testpassword@localhost:5432/cyberx_events_test
+          SECRET_KEY=test-secret-key-for-ci-cd-testing-only
+          DEBUG=True
+          SENDGRID_API_KEY=SG.test-key
+          SENDGRID_FROM_EMAIL=test@example.com
+          SENDGRID_FROM_NAME=Test
+          SENDGRID_SANDBOX_MODE=true
+          VPN_SERVER_PUBLIC_KEY=test-key
+          VPN_SERVER_ENDPOINT=test.example.com:51820
+          VPN_DNS_SERVERS=10.20.200.1
+          VPN_ALLOWED_IPS=10.0.0.0/8
+          FRONTEND_URL=http://localhost:8000
+          EOF
+
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U cyberx; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
+      - name: Run database migrations
+        run: |
+          cd backend
+          alembic upgrade head
+
+      - name: Run tests with pytest
+        run: |
+          cd backend
+          pytest \
+            --verbose \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-report=html \
+            --junit-xml=test-results.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: backend/coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.python-version }}
+          path: |
+            backend/test-results.xml
+            backend/htmlcov/
+          retention-days: 30
+
+      - name: Comment test coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          MINIMUM_GREEN: 70
+          MINIMUM_ORANGE: 50
+
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: cyberx_events_test
+          POSTGRES_USER: cyberx
+          POSTGRES_PASSWORD: testpassword
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Create .env file
+        run: |
+          cd backend
+          cat > .env << EOF
+          DATABASE_URL=postgresql+asyncpg://cyberx:testpassword@localhost:5432/cyberx_events_test
+          SECRET_KEY=test-secret-key-for-ci-cd-testing-only
+          DEBUG=True
+          SENDGRID_API_KEY=SG.test-key
+          SENDGRID_FROM_EMAIL=test@example.com
+          SENDGRID_SANDBOX_MODE=true
+          FRONTEND_URL=http://localhost:8000
+          EOF
+
+      - name: Setup database
+        run: |
+          cd backend
+          alembic upgrade head
+          python scripts/setup_clean_db.py \
+            --admin-email admin@test.com \
+            --admin-password testpassword \
+            --no-prompt \
+            --seed-data
+
+      - name: Start application
+        run: |
+          cd backend
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          sleep 10
+
+      - name: Run integration tests
+        run: |
+          cd backend
+          pytest tests/integration/ -v --junit-xml=integration-results.xml
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: backend/integration-results.xml
+          retention-days: 30

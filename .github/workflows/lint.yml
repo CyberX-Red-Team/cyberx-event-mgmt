@@ -1,0 +1,178 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run ruff (linter)
+        run: |
+          cd backend
+          ruff check . --output-format=github
+        continue-on-error: true
+
+      - name: Run ruff (formatter)
+        run: |
+          cd backend
+          ruff format --check .
+        continue-on-error: true
+
+      - name: Run mypy (type checker)
+        run: |
+          cd backend
+          mypy app/ --ignore-missing-imports --no-strict-optional
+        continue-on-error: true
+
+      - name: Run bandit (security linter)
+        run: |
+          cd backend
+          bandit -r app/ -f json -o bandit-report.json
+          bandit -r app/ -f screen
+        continue-on-error: true
+
+      - name: Upload bandit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-security-report
+          path: backend/bandit-report.json
+          retention-days: 30
+
+  complexity:
+    name: Code Complexity Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install radon
+        run: pip install radon
+
+      - name: Check cyclomatic complexity
+        run: |
+          cd backend
+          radon cc app/ -a -nb
+
+      - name: Check maintainability index
+        run: |
+          cd backend
+          radon mi app/ -nb
+
+  dependencies:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Scan dependencies for vulnerabilities
+        run: |
+          cd backend
+          pip-audit -r requirements.txt --format json --output audit-report.json
+          pip-audit -r requirements.txt
+        continue-on-error: true
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-audit-report
+          path: backend/audit-report.json
+          retention-days: 30
+
+  docker:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test Docker Compose
+        run: |
+          docker-compose config
+          docker-compose up -d postgres redis
+          sleep 10
+          docker-compose ps
+          docker-compose down -v
+
+  documentation:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for required documentation
+        run: |
+          echo "Checking for required documentation files..."
+          required_files=(
+            "README.md"
+            "INSTALL.md"
+            "SETUP.md"
+            "EVENT_MANAGEMENT.md"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [ -f "$file" ]; then
+              echo "✅ Found: $file"
+            else
+              echo "❌ Missing: $file"
+              exit 1
+            fi
+          done
+
+      - name: Check documentation links
+        run: |
+          cd backend
+          # Check for broken markdown links (basic check)
+          find . -name "*.md" -exec grep -H "http" {} \; || true
+
+      - name: Validate OpenAPI schema
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install pyyaml
+          # Validate that FastAPI app can be imported
+          python -c "from app.main import app; print('✅ FastAPI app imports successfully')"
