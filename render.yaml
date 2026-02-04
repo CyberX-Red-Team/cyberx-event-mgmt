@@ -23,20 +23,17 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.7
       - key: DEBUG
-        value: false
+        value: "false"
       # Database - Supabase connection string (set manually in Render dashboard)
       - key: DATABASE_URL
         value: ""  # Set this to your Supabase connection string in Render dashboard
       # Security keys
       - key: SECRET_KEY
         generateValue: true
-        sync: false
       - key: CSRF_SECRET_KEY
         generateValue: true
-        sync: false
       - key: ENCRYPTION_KEY
         generateValue: true
-        sync: false
       # Email configuration
       - key: SENDGRID_API_KEY
         sync: false
@@ -45,7 +42,7 @@ services:
       - key: SENDGRID_FROM_NAME
         value: CyberX Red Team
       - key: SENDGRID_SANDBOX_MODE
-        value: false
+        value: "false"
       # VPN configuration
       - key: VPN_SERVER_PUBLIC_KEY
         sync: false
@@ -87,24 +84,29 @@ services:
       python -m app.tasks.scheduler
     envVars:
       # Share database connection from web service
-      - fromService:
+      - key: DATABASE_URL
+        fromService:
           name: cyberx-event-mgmt
           type: web
           envVarKey: DATABASE_URL
-      - fromService:
+      - key: SECRET_KEY
+        fromService:
           name: cyberx-event-mgmt
           type: web
           envVarKey: SECRET_KEY
       # Email configuration for worker
-      - fromService:
+      - key: SENDGRID_API_KEY
+        fromService:
           name: cyberx-event-mgmt
           type: web
           envVarKey: SENDGRID_API_KEY
-      - fromService:
+      - key: SENDGRID_FROM_EMAIL
+        fromService:
           name: cyberx-event-mgmt
           type: web
           envVarKey: SENDGRID_FROM_EMAIL
-      - fromService:
+      - key: SENDGRID_FROM_NAME
+        fromService:
           name: cyberx-event-mgmt
           type: web
           envVarKey: SENDGRID_FROM_NAME
