@@ -1,5 +1,7 @@
 name: Deploy to Production
 
+# Production deploys from main branch only
+# Triggered by: version tags (v*) or manual workflow dispatch
 on:
   push:
     tags:
@@ -74,21 +76,6 @@ jobs:
       url: https://events.cyberxredteam.org
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
       - name: Check if service is suspended
         id: check-status
         env:
@@ -138,16 +125,8 @@ jobs:
 
           echo "✅ DATABASE_URL updated"
 
-      - name: Run database migrations (Production)
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-        run: |
-          cd backend
-
-          echo "🔄 Running production database migrations..."
-          alembic upgrade head
-
-          echo "✅ Migrations completed!"
+      # Database migrations are handled by Render during deployment
+      # Render runs 'alembic upgrade head' in the startCommand (see render.yaml)
 
       - name: Trigger Render Deploy (Production)
         env:
