@@ -37,12 +37,8 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run database migrations (Staging)
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-        run: |
-          cd backend
-          alembic upgrade head
+      # Database migrations are handled by Render during deployment
+      # Render has all required environment variables configured
 
       - name: Trigger Render Deploy (Staging)
         env:
