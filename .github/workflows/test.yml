@@ -2,9 +2,9 @@ name: Run Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, staging, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, staging, develop ]
   workflow_call:  # Allow this workflow to be called by other workflows
 
 jobs:
