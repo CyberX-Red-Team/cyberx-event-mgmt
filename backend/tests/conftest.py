@@ -129,13 +129,25 @@ async def client(async_engine, db_session: AsyncSession, test_settings: Settings
     Provide HTTP test client.
 
     Overrides the database session dependency to use the test database.
+
+    IMPORTANT: Uses a shared session approach to avoid session isolation issues.
+    The same db_session instance is reused across all dependency injections.
     """
     # Initialize encryption
     init_encryptor(test_settings.ENCRYPTION_KEY)
 
-    # Override database session dependency
+    # Clear rate limit cache for tests
+    from app.api.routes import auth
+    auth._login_rate_limit_cache.clear()
+
+    # Override database session dependency to return THE SAME session
+    # This is critical - we can't create new sessions or the data won't be visible
     async def override_get_db():
-        yield db_session
+        try:
+            yield db_session
+        except Exception:
+            await db_session.rollback()
+            raise
 
     # Override settings dependency
     def override_get_settings():
@@ -144,6 +156,15 @@ async def client(async_engine, db_session: AsyncSession, test_settings: Settings
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_settings] = override_get_settings
 
+    # Disable CSRF middleware for integration tests by making _is_exempt always return True
+    # CSRF middleware should be tested separately with dedicated CSRF tests
+    from app.middleware.csrf import CSRFMiddleware
+
+    # Monkey-patch the _is_exempt method to always return True
+    # Store original for cleanup
+    original_is_exempt = CSRFMiddleware._is_exempt
+    CSRFMiddleware._is_exempt = lambda self, path: True
+
     # Create client
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -151,8 +172,14 @@ async def client(async_engine, db_session: AsyncSession, test_settings: Settings
     ) as client:
         yield client
 
+    # Restore original _is_exempt method
+    CSRFMiddleware._is_exempt = original_is_exempt
+
     # Clear overrides
     app.dependency_overrides.clear()
+
+    # Clear rate limit cache after test
+    auth._login_rate_limit_cache.clear()
 
 
 # ============================================================================

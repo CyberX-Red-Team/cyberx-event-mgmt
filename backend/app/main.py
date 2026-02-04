@@ -105,7 +105,7 @@ csrf_exempt_urls = [
 
 app.add_middleware(
     CSRFMiddleware,
-    secret=settings.CSRF_SECRET_KEY or settings.SECRET_KEY,
+    secret_key=settings.CSRF_SECRET_KEY or settings.SECRET_KEY,
     exempt_urls=csrf_exempt_urls,
     cookie_name="csrf_token",
     cookie_secure=not settings.DEBUG,  # HTTPS only in production

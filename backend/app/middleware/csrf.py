@@ -78,7 +78,16 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     
     def _is_exempt(self, path: str) -> bool:
         """Check if a path is exempt from CSRF protection."""
-        return path in self.exempt_urls
+        for exempt_pattern in self.exempt_urls:
+            # Handle wildcard patterns (e.g., "/api/webhooks/*")
+            if exempt_pattern.endswith("/*"):
+                prefix = exempt_pattern[:-2]  # Remove "/*"
+                if path.startswith(prefix):
+                    return True
+            # Handle exact match
+            elif path == exempt_pattern:
+                return True
+        return False
     
     def _requires_csrf_check(self, method: str) -> bool:
         """Check if HTTP method requires CSRF validation."""

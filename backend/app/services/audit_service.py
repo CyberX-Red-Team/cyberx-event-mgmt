@@ -57,14 +57,16 @@ class AuditService:
         user_id: int,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-        success: bool = True
+        success: bool = True,
+        details: Optional[dict] = None
     ) -> AuditLog:
         """Log a login attempt."""
         return await self.log(
             action="LOGIN_SUCCESS" if success else "LOGIN_FAILED",
             user_id=user_id,
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
+            details=details
         )
 
     async def log_logout(
