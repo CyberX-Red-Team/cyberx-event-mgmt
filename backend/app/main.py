@@ -63,6 +63,53 @@ async def lifespan(app: FastAPI):
         init_encryptor(fernet_key.decode())
         logger.info("  Field encryption: Initialized with derived key")
 
+    # Bootstrap default admin user if configured
+    # Only runs if NO admin users exist in the system (prevents accidental password resets)
+    if settings.ADMIN_EMAIL and settings.ADMIN_PASSWORD:
+        try:
+            from sqlalchemy import select, or_
+            from app.database import AsyncSessionLocal
+            from app.models.user import User, UserRole
+            from app.utils.security import hash_password
+
+            async with AsyncSessionLocal() as session:
+                # Check if ANY admin users exist (by role or is_admin flag)
+                result = await session.execute(
+                    select(User).where(
+                        or_(
+                            User.role == UserRole.ADMIN.value,
+                            User.is_admin == True
+                        )
+                    ).limit(1)
+                )
+                existing_admin = result.scalar_one_or_none()
+
+                if existing_admin:
+                    logger.info("  Admin bootstrap: Skipped (admin users already exist)")
+                else:
+                    # No admins exist - create the initial admin user
+                    logger.info("  Admin bootstrap: No admins found, creating initial admin user...")
+                    admin_user = User(
+                        email=settings.ADMIN_EMAIL,
+                        first_name=settings.ADMIN_FIRST_NAME,
+                        last_name=settings.ADMIN_LAST_NAME,
+                        country="USA",
+                        role=UserRole.ADMIN.value,
+                        confirmed="YES",
+                        email_status="GOOD",
+                        is_admin=True,
+                        is_active=True,
+                        password_hash=hash_password(settings.ADMIN_PASSWORD),
+                    )
+                    session.add(admin_user)
+                    await session.commit()
+                    logger.info("  Admin bootstrap: Created initial admin user %s", settings.ADMIN_EMAIL)
+        except Exception as e:
+            logger.error("  Admin bootstrap: Failed - %s", e)
+            # Don't fail startup if admin creation fails
+    else:
+        logger.info("  Admin bootstrap: Skipped (ADMIN_EMAIL not configured)")
+
     # Start the background scheduler (only in local development)
     # In production, use the dedicated background worker service instead
     import os

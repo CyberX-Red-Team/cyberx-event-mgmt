@@ -85,6 +85,15 @@ services:
         value: ""
       - key: POWERDNS_PASSWORD
         value: ""
+      # Default Admin User (optional - bootstraps admin on startup)
+      - key: ADMIN_EMAIL
+        sync: false  # Set manually in Render dashboard
+      - key: ADMIN_PASSWORD
+        sync: false  # Set manually in Render dashboard
+      - key: ADMIN_FIRST_NAME
+        value: "Admin"
+      - key: ADMIN_LAST_NAME
+        value: "User"
 
   # Background Worker (for scheduled jobs) - STAGING
   - type: worker

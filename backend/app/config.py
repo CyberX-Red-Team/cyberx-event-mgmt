@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8000"]
     FRONTEND_URL: str = "http://localhost:8000"  # Base URL for frontend links in emails
 
+    # Default Admin User (optional - for automatic bootstrapping on startup)
+    ADMIN_EMAIL: str = ""  # If set, creates/updates admin user on startup
+    ADMIN_PASSWORD: str = ""  # Required if ADMIN_EMAIL is set
+    ADMIN_FIRST_NAME: str = "Admin"
+    ADMIN_LAST_NAME: str = "User"
+
     # SendGrid
     SENDGRID_API_KEY: str
     SENDGRID_FROM_EMAIL: str
