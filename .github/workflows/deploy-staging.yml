@@ -5,7 +5,7 @@ on:
     workflows: ["Run Tests"]
     types:
       - completed
-    branches: [ main, develop ]
+    branches: [ staging ]
   workflow_dispatch:
 
 env:
