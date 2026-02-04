@@ -106,17 +106,25 @@ if __name__ == "__main__":
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
-    logger.info("Starting background worker scheduler...")
+    async def main():
+        """Main async function to start scheduler and keep it running."""
+        logger.info("Starting background worker scheduler...")
 
-    # Start the scheduler
-    asyncio.run(start_scheduler())
+        # Start the scheduler
+        await start_scheduler()
 
-    # Keep the process running
+        # Keep the process running
+        try:
+            logger.info("Scheduler is running. Press Ctrl+C to stop.")
+            # Wait forever - scheduler runs in background
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            logger.info("Received shutdown signal")
+            await stop_scheduler()
+
+    # Run the main async function
     try:
-        logger.info("Scheduler is running. Press Ctrl+C to stop.")
-        # Run forever - scheduler runs in background threads
-        asyncio.run(asyncio.Event().wait())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Received shutdown signal")
-        asyncio.run(stop_scheduler())
+        logger.info("Shutting down...")
         sys.exit(0)
