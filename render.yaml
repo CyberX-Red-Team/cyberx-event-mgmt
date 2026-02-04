@@ -22,7 +22,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.7
+        value: 3.12.8
       - key: DEBUG
         value: "false"
       # Database - Supabase connection string (set manually in Render dashboard)

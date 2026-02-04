@@ -9,6 +9,17 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
 
+    @property
+    def async_database_url(self) -> str:
+        """Get DATABASE_URL with asyncpg driver for async SQLAlchemy.
+
+        Converts postgresql:// to postgresql+asyncpg:// automatically.
+        This allows flexibility in how the DATABASE_URL is provided.
+        """
+        if self.DATABASE_URL.startswith("postgresql://"):
+            return self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self.DATABASE_URL
+
     # Application
     SECRET_KEY: str
     CSRF_SECRET_KEY: str = ""  # If empty, uses SECRET_KEY
