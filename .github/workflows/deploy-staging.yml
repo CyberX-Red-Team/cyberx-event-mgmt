@@ -22,24 +22,6 @@ jobs:
       url: https://staging.events.cyberxredteam.org
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      # Database migrations are handled by Render during deployment
-      # Render has all required environment variables configured
-
       - name: Trigger Render Deploy via Deploy Hook
         env:
           STAGING_DEPLOY_HOOK_URL: ${{ secrets.STAGING_DEPLOY_HOOK_URL }}
