@@ -103,3 +103,7 @@ Thumbs.db
 *.pfx
 credentials.json
 secrets.yaml
+
+# Render environment answers files (keep .example files)
+scripts/render-env-answers.sh
+**/render-env-answers.sh

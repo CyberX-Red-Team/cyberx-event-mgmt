@@ -1,0 +1,95 @@
+# Render + Supabase Pro Configuration
+# Manual suspend strategy for cost savings during idle periods
+# No Redis needed (single instance, sessions in PostgreSQL)
+
+services:
+  # FastAPI Web Application (Suspend between events)
+  - type: web
+    name: cyberx-event-mgmt
+    runtime: python
+    region: oregon  # Change to: oregon, frankfurt, singapore
+    plan: starter   # $7/month (only when active)
+    branch: main
+    buildCommand: |
+      cd backend
+      pip install -r requirements.txt
+    startCommand: |
+      cd backend
+      alembic upgrade head
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /health
+
+    envVars:
+      # Python settings
+      - key: PYTHON_VERSION
+        value: 3.11.7
+
+      - key: DEBUG
+        value: false
+
+      # Database (Supabase Pro)
+      # ADD MANUALLY: postgresql+asyncpg://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
+      - key: DATABASE_URL
+        sync: false
+
+      # No Redis needed!
+      # Redis was only needed for:
+      # 1. Session storage - Already using PostgreSQL ✅
+      # 2. Rate limiting - In-memory is fine for single instance ✅
+      # 3. Caching - Not currently used ✅
+
+      # Security keys (auto-generate in Render dashboard)
+      - key: SECRET_KEY
+        generateValue: true
+        sync: false
+
+      - key: CSRF_SECRET_KEY
+        generateValue: true
+        sync: false
+
+      - key: ENCRYPTION_KEY
+        generateValue: true
+        sync: false
+
+      # SendGrid (add your values)
+      - key: SENDGRID_API_KEY
+        sync: false
+
+      - key: SENDGRID_FROM_EMAIL
+        sync: false
+
+      - key: SENDGRID_FROM_NAME
+        value: CyberX Red Team
+
+      - key: SENDGRID_SANDBOX_MODE
+        value: false
+
+      # VPN Configuration (add your values)
+      - key: VPN_SERVER_PUBLIC_KEY
+        sync: false
+
+      - key: VPN_SERVER_ENDPOINT
+        sync: false
+
+      - key: VPN_DNS_SERVERS
+        value: 10.20.200.1
+
+      - key: VPN_ALLOWED_IPS
+        value: 10.0.0.0/8,fd00:a::/32
+
+      # Frontend URL (update with your Render URL)
+      - key: FRONTEND_URL
+        value: https://cyberx-event-mgmt.onrender.com
+
+      - key: ALLOWED_HOSTS
+        value: cyberx-event-mgmt.onrender.com
+
+      # Application settings
+      - key: SESSION_EXPIRY_HOURS
+        value: 24
+
+      - key: BULK_EMAIL_INTERVAL_MINUTES
+        value: 45
+
+# No databases section - using Supabase Pro externally
+# No Redis needed - sessions in PostgreSQL, single instance deployment

@@ -1,0 +1,159 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  RENDER_SERVICE_NAME: cyberx-staging
+
+jobs:
+  test:
+    name: Run Tests
+    uses: ./.github/workflows/test.yml
+
+  deploy-staging:
+    name: Deploy to Staging Environment
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.events.cyberxredteam.org
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run database migrations (Staging)
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          cd backend
+          alembic upgrade head
+
+      - name: Trigger Render Deploy (Staging)
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.STAGING_RENDER_SERVICE_ID }}
+        run: |
+          echo "🚀 Triggering Render deployment for staging..."
+
+          curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "clearCache": false
+            }'
+
+          echo "✅ Deployment triggered!"
+
+      - name: Wait for deployment
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.STAGING_RENDER_SERVICE_ID }}
+        run: |
+          echo "⏳ Waiting for deployment to complete..."
+
+          MAX_WAIT=600  # 10 minutes
+          ELAPSED=0
+          INTERVAL=15
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            STATUS=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              "https://api.render.com/v1/services/${RENDER_SERVICE_ID}" | \
+              jq -r '.service.serviceDetails.deployStatus')
+
+            echo "Current status: $STATUS (${ELAPSED}s elapsed)"
+
+            if [ "$STATUS" = "live" ]; then
+              echo "✅ Deployment successful!"
+              exit 0
+            elif [ "$STATUS" = "failed" ]; then
+              echo "❌ Deployment failed!"
+              exit 1
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "⚠️ Deployment timeout!"
+          exit 1
+
+      - name: Run health check
+        run: |
+          echo "🏥 Running health check..."
+
+          MAX_RETRIES=10
+          RETRY_DELAY=10
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://staging.events.cyberxredteam.org/health)
+
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Health check passed!"
+              exit 0
+            fi
+
+            echo "⏳ Attempt $i/$MAX_RETRIES failed (HTTP $HTTP_CODE), retrying in ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+          done
+
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          exit 1
+
+      - name: Run smoke tests
+        run: |
+          echo "🔥 Running smoke tests..."
+
+          BASE_URL="https://staging.events.cyberxredteam.org"
+
+          # Test API docs
+          echo "Testing API docs..."
+          curl -f "${BASE_URL}/api/docs" || exit 1
+
+          # Test auth endpoint (should return 422 for missing credentials)
+          echo "Testing auth endpoint..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${BASE_URL}/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+
+          if [ "$HTTP_CODE" -eq 422 ]; then
+            echo "✅ Auth endpoint responding correctly"
+          else
+            echo "❌ Auth endpoint returned unexpected code: $HTTP_CODE"
+            exit 1
+          fi
+
+          echo "✅ All smoke tests passed!"
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "🎉 Staging deployment successful!"
+          echo "URL: https://staging.events.cyberxredteam.org"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo "❌ Staging deployment failed!"
+          echo "Check logs for details"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"

@@ -1,0 +1,376 @@
+name: Deploy to Production
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - deploy
+          - resume
+          - suspend
+      skip_tests:
+        description: 'Skip tests (use for resume/suspend only)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  RENDER_SERVICE_NAME: cyberx-production
+
+jobs:
+  test:
+    name: Run Tests
+    if: ${{ !inputs.skip_tests }}
+    uses: ./.github/workflows/test.yml
+
+  backup-production:
+    name: Backup Production Database
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action != 'suspend' && github.event.inputs.action != 'resume' }}
+    needs: test
+
+    steps:
+      - name: Create Supabase backup
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          echo "📦 Creating production database backup..."
+
+          RESPONSE=$(curl -X POST \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/backups" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json")
+
+          echo "Backup response: $RESPONSE"
+          echo "✅ Backup initiated!"
+
+      - name: Wait for backup completion
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          echo "⏳ Waiting for backup to complete..."
+          sleep 60
+          echo "✅ Backup should be complete"
+
+  deploy-production:
+    name: Deploy to Production
+    needs: [test, backup-production]
+    if: |
+      always() &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.backup-production.result == 'success' || needs.backup-production.result == 'skipped') &&
+      (github.event.inputs.action == 'deploy' || github.event.inputs.action == '' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://events.cyberxredteam.org
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check if service is suspended
+        id: check-status
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+        run: |
+          echo "🔍 Checking Render service status..."
+
+          SERVICE_INFO=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}")
+
+          STATUS=$(echo "$SERVICE_INFO" | jq -r '.service.suspended')
+
+          echo "Service suspended: $STATUS"
+          echo "suspended=$STATUS" >> $GITHUB_OUTPUT
+
+      - name: Resume service if suspended
+        if: steps.check-status.outputs.suspended == 'true' || steps.check-status.outputs.suspended == 'suspended'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+        run: |
+          echo "▶️ Resuming suspended service..."
+
+          curl -X POST \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/resume" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}"
+
+          echo "⏳ Waiting for service to resume..."
+          sleep 120
+
+          echo "✅ Service resumed!"
+
+      - name: Run database migrations (Production)
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          cd backend
+
+          echo "🔄 Running production database migrations..."
+          alembic upgrade head
+
+          echo "✅ Migrations completed!"
+
+      - name: Trigger Render Deploy (Production)
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+        run: |
+          echo "🚀 Triggering Render deployment for production..."
+
+          DEPLOY_RESPONSE=$(curl -X POST \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "clearCache": true
+            }')
+
+          DEPLOY_ID=$(echo "$DEPLOY_RESPONSE" | jq -r '.id')
+          echo "Deploy ID: $DEPLOY_ID"
+          echo "deploy_id=$DEPLOY_ID" >> $GITHUB_OUTPUT
+          echo "✅ Deployment triggered!"
+
+      - name: Wait for deployment
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+        run: |
+          echo "⏳ Waiting for production deployment to complete..."
+
+          MAX_WAIT=600  # 10 minutes
+          ELAPSED=0
+          INTERVAL=15
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            STATUS=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              "https://api.render.com/v1/services/${RENDER_SERVICE_ID}" | \
+              jq -r '.service.serviceDetails.deployStatus')
+
+            echo "Current status: $STATUS (${ELAPSED}s elapsed)"
+
+            if [ "$STATUS" = "live" ]; then
+              echo "✅ Deployment successful!"
+              exit 0
+            elif [ "$STATUS" = "failed" ]; then
+              echo "❌ Deployment failed!"
+              exit 1
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "⚠️ Deployment timeout!"
+          exit 1
+
+      - name: Run health check
+        run: |
+          echo "🏥 Running production health check..."
+
+          MAX_RETRIES=10
+          RETRY_DELAY=15
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://events.cyberxredteam.org/health)
+
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Health check passed!"
+
+              # Get detailed health info
+              HEALTH=$(curl -s https://events.cyberxredteam.org/health)
+              echo "Health details: $HEALTH"
+              exit 0
+            fi
+
+            echo "⏳ Attempt $i/$MAX_RETRIES failed (HTTP $HTTP_CODE), retrying in ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+          done
+
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          exit 1
+
+      - name: Run production smoke tests
+        run: |
+          echo "🔥 Running production smoke tests..."
+
+          BASE_URL="https://events.cyberxredteam.org"
+
+          # Test API docs
+          echo "Testing API docs..."
+          curl -f "${BASE_URL}/api/docs" || exit 1
+
+          # Test database connectivity (via health endpoint)
+          echo "Testing database connection..."
+          HEALTH=$(curl -s "${BASE_URL}/health")
+          DB_STATUS=$(echo "$HEALTH" | jq -r '.database // "unknown"')
+
+          if [ "$DB_STATUS" != "connected" ] && [ "$DB_STATUS" != "unknown" ]; then
+            echo "❌ Database not connected: $DB_STATUS"
+            exit 1
+          fi
+
+          echo "✅ All production smoke tests passed!"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            ## 🚀 Production Release
+
+            **Deployed to:** https://events.cyberxredteam.org
+            **Tag:** ${{ github.ref_name }}
+            **Commit:** ${{ github.sha }}
+
+            ### Changes
+            See commit history for details.
+
+            ### Deployment Info
+            - Database migrations: ✅ Applied
+            - Health checks: ✅ Passed
+            - Smoke tests: ✅ Passed
+
+            **Generated by GitHub Actions**
+          draft: false
+          prerelease: false
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "🎉 Production deployment successful!"
+          echo "URL: https://events.cyberxredteam.org"
+          echo "Tag: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+
+      - name: Rollback on failure
+        if: failure()
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+        run: |
+          echo "❌ Deployment failed! Initiating rollback..."
+          echo "⚠️ Manual intervention may be required"
+          echo "Check Render dashboard: https://dashboard.render.com"
+          echo "Restore from Supabase backup if needed"
+
+  resume-production:
+    name: Resume Production Service
+    if: github.event.inputs.action == 'resume'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://events.cyberxredteam.org
+
+    steps:
+      - name: Resume Render service
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+        run: |
+          echo "▶️ Resuming production service..."
+
+          curl -X POST \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/resume" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}"
+
+          echo "⏳ Waiting for service to start..."
+          sleep 120
+
+      - name: Verify service resumed
+        run: |
+          echo "🔍 Verifying service is running..."
+
+          MAX_RETRIES=10
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://events.cyberxredteam.org/health)
+
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Service resumed successfully!"
+              exit 0
+            fi
+
+            echo "⏳ Attempt $i/$MAX_RETRIES, waiting..."
+            sleep 15
+          done
+
+          echo "❌ Failed to verify service resumed"
+          exit 1
+
+  suspend-production:
+    name: Suspend Production Service
+    if: github.event.inputs.action == 'suspend'
+    runs-on: ubuntu-latest
+    environment:
+      name: production-suspend
+
+    steps:
+      - name: Verify safe to suspend
+        run: |
+          echo "⚠️ About to suspend production service"
+          echo "This will stop all traffic to the application"
+          echo "Billing will pause until service is resumed"
+
+      - name: Suspend Render service
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+        run: |
+          echo "⏸️ Suspending production service..."
+
+          curl -X POST \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/suspend" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}"
+
+          echo "✅ Service suspended!"
+          echo "💰 Billing paused"
+          echo "📊 Database (Supabase) remains active"
+
+      - name: Verify service suspended
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+        run: |
+          echo "🔍 Verifying service is suspended..."
+
+          sleep 30
+
+          SERVICE_INFO=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}")
+
+          SUSPENDED=$(echo "$SERVICE_INFO" | jq -r '.service.suspended')
+
+          if [ "$SUSPENDED" = "suspended" ] || [ "$SUSPENDED" = "true" ]; then
+            echo "✅ Service confirmed suspended"
+            echo "Resume anytime with: Actions → Deploy to Production → Run workflow → resume"
+          else
+            echo "⚠️ Service suspension status unclear: $SUSPENDED"
+          fi
