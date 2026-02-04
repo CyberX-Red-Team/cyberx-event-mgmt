@@ -99,7 +99,7 @@ services:
       pip install -r requirements.txt
     startCommand: |
       cd backend
-      python -m app.tasks.scheduler
+      python run_scheduler.py
     envVars:
       # Share database connection from web service
       - key: DATABASE_URL
