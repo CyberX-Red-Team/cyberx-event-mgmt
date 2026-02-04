@@ -130,11 +130,11 @@ jobs:
 
       - name: Test Docker Compose
         run: |
-          docker-compose config
-          docker-compose up -d postgres redis
+          docker compose config
+          docker compose up -d postgres redis
           sleep 10
-          docker-compose ps
-          docker-compose down -v
+          docker compose ps
+          docker compose down -v
 
   documentation:
     name: Documentation Check
@@ -173,6 +173,18 @@ jobs:
         run: |
           cd backend
           python -m pip install --upgrade pip
-          pip install pyyaml
+          pip install -r requirements.txt
+          # Create minimal .env file for app import
+          cat > .env << EOF
+          DATABASE_URL=postgresql+asyncpg://localhost/test
+          SECRET_KEY=test-key
+          SENDGRID_API_KEY=SG.test
+          SENDGRID_FROM_EMAIL=test@test.com
+          POWERDNS_API_URL=http://test
+          POWERDNS_USERNAME=test
+          POWERDNS_PASSWORD=test
+          VPN_SERVER_PUBLIC_KEY=test
+          VPN_SERVER_ENDPOINT=test:51820
+          EOF
           # Validate that FastAPI app can be imported
           python -c "from app.main import app; print('✅ FastAPI app imports successfully')"

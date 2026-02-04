@@ -75,6 +75,9 @@ jobs:
           SENDGRID_FROM_EMAIL=test@example.com
           SENDGRID_FROM_NAME=Test
           SENDGRID_SANDBOX_MODE=true
+          POWERDNS_API_URL=http://test-dns.local
+          POWERDNS_USERNAME=test
+          POWERDNS_PASSWORD=test
           VPN_SERVER_PUBLIC_KEY=test-key
           VPN_SERVER_ENDPOINT=test.example.com:51820
           VPN_DNS_SERVERS=10.20.200.1
@@ -188,6 +191,11 @@ jobs:
           SENDGRID_API_KEY=SG.test-key
           SENDGRID_FROM_EMAIL=test@example.com
           SENDGRID_SANDBOX_MODE=true
+          POWERDNS_API_URL=http://test-dns.local
+          POWERDNS_USERNAME=test
+          POWERDNS_PASSWORD=test
+          VPN_SERVER_PUBLIC_KEY=test-key
+          VPN_SERVER_ENDPOINT=test.example.com:51820
           FRONTEND_URL=http://localhost:8000
           EOF
 

@@ -41,6 +41,18 @@ jobs:
       - name: Run tests
         run: |
           cd backend
+          # Create minimal .env file for app import
+          cat > .env << EOF
+          DATABASE_URL=postgresql+asyncpg://localhost/test
+          SECRET_KEY=test-key
+          SENDGRID_API_KEY=SG.test
+          SENDGRID_FROM_EMAIL=test@test.com
+          POWERDNS_API_URL=http://test
+          POWERDNS_USERNAME=test
+          POWERDNS_PASSWORD=test
+          VPN_SERVER_PUBLIC_KEY=test
+          VPN_SERVER_ENDPOINT=test:51820
+          EOF
           # Quick smoke tests before deployment
           python -c "from app.main import app; print('✅ App imports successfully')"
 
