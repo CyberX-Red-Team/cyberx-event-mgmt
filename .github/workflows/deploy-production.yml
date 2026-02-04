@@ -122,6 +122,22 @@ jobs:
 
           echo "✅ Service resumed!"
 
+      - name: Set DATABASE_URL for Production
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          PRODUCTION_RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          echo "🔧 Setting DATABASE_URL for production service..."
+
+          curl -X PUT \
+            "https://api.render.com/v1/services/${PRODUCTION_RENDER_SERVICE_ID}/env-vars/DATABASE_URL" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"value\":\"${PRODUCTION_DATABASE_URL}\"}"
+
+          echo "✅ DATABASE_URL updated"
+
       - name: Run database migrations (Production)
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}

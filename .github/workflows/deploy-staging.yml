@@ -40,6 +40,22 @@ jobs:
       # Database migrations are handled by Render during deployment
       # Render has all required environment variables configured
 
+      - name: Set DATABASE_URL for Staging
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          STAGING_RENDER_SERVICE_ID: ${{ secrets.STAGING_RENDER_SERVICE_ID }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          echo "🔧 Setting DATABASE_URL for staging service..."
+
+          curl -X PUT \
+            "https://api.render.com/v1/services/${STAGING_RENDER_SERVICE_ID}/env-vars/DATABASE_URL" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"value\":\"${STAGING_DATABASE_URL}\"}"
+
+          echo "✅ DATABASE_URL updated"
+
       - name: Trigger Render Deploy (Staging)
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
