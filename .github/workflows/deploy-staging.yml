@@ -48,39 +48,22 @@ jobs:
         run: |
           echo "🔧 Setting DATABASE_URL for staging service..."
 
-          # Try to update existing env var with PATCH
-          PATCH_RESPONSE=$(curl -s -w "\n%{http_code}" \
-            -X PATCH \
+          # Update or create env var with PUT (creates if doesn't exist, updates if it does)
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X PUT \
             "https://api.render.com/v1/services/${STAGING_RENDER_SERVICE_ID}/env-vars/DATABASE_URL" \
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"value\":\"${STAGING_DATABASE_URL}\"}")
 
-          HTTP_CODE=$(echo "$PATCH_RESPONSE" | tail -n 1)
-          RESPONSE_BODY=$(echo "$PATCH_RESPONSE" | sed '$d')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+          RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
 
-          if [ "$HTTP_CODE" = "404" ]; then
-            echo "⚠️ DATABASE_URL doesn't exist, creating it..."
-            # Create new env var with POST
-            CREATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
-              -X POST \
-              "https://api.render.com/v1/services/${STAGING_RENDER_SERVICE_ID}/env-vars" \
-              -H "Authorization: Bearer ${RENDER_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d "{\"key\":\"DATABASE_URL\",\"value\":\"${STAGING_DATABASE_URL}\"}")
-
-            CREATE_CODE=$(echo "$CREATE_RESPONSE" | tail -n 1)
-            if [ "$CREATE_CODE" -ge 200 ] && [ "$CREATE_CODE" -lt 300 ]; then
-              echo "✅ DATABASE_URL created successfully"
-            else
-              echo "❌ Failed to create DATABASE_URL (HTTP $CREATE_CODE)"
-              echo "$CREATE_RESPONSE" | sed '$d'
-              exit 1
-            fi
-          elif [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "✅ DATABASE_URL updated successfully"
+            echo "$RESPONSE_BODY"
           else
-            echo "❌ Failed to update DATABASE_URL (HTTP $HTTP_CODE)"
+            echo "❌ Failed to set DATABASE_URL (HTTP $HTTP_CODE)"
             echo "$RESPONSE_BODY"
             exit 1
           fi
