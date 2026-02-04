@@ -9,7 +9,19 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
 
+    @property
+    def async_database_url(self) -> str:
+        """Get DATABASE_URL with asyncpg driver for async SQLAlchemy.
+
+        Converts postgresql:// to postgresql+asyncpg:// automatically.
+        This allows flexibility in how the DATABASE_URL is provided.
+        """
+        if self.DATABASE_URL.startswith("postgresql://"):
+            return self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self.DATABASE_URL
+
     # Application
+    ENVIRONMENT: str = "development"  # development, staging, or production
     SECRET_KEY: str
     CSRF_SECRET_KEY: str = ""  # If empty, uses SECRET_KEY
     ENCRYPTION_KEY: str = ""  # Field-level encryption key (Fernet), if empty uses SECRET_KEY
@@ -18,6 +30,12 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8000"]
     FRONTEND_URL: str = "http://localhost:8000"  # Base URL for frontend links in emails
 
+    # Default Admin User (optional - for automatic bootstrapping on startup)
+    ADMIN_EMAIL: str = ""  # If set, creates/updates admin user on startup
+    ADMIN_PASSWORD: str = ""  # Required if ADMIN_EMAIL is set
+    ADMIN_FIRST_NAME: str = "Admin"
+    ADMIN_LAST_NAME: str = "User"
+
     # SendGrid
     SENDGRID_API_KEY: str
     SENDGRID_FROM_EMAIL: str
@@ -25,14 +43,14 @@ class Settings(BaseSettings):
     SENDGRID_SANDBOX_MODE: bool = False  # Enable to validate emails without sending
     TEST_EMAIL_OVERRIDE: str = ""  # If set, all emails go to this address instead
 
-    # PowerDNS
-    POWERDNS_API_URL: str
-    POWERDNS_USERNAME: str
-    POWERDNS_PASSWORD: str
+    # PowerDNS (optional - only needed if using PowerDNS integration)
+    POWERDNS_API_URL: str = ""
+    POWERDNS_USERNAME: str = ""
+    POWERDNS_PASSWORD: str = ""
 
-    # VPN Server Configuration
-    VPN_SERVER_PUBLIC_KEY: str
-    VPN_SERVER_ENDPOINT: str
+    # VPN Server Configuration (optional - only needed if using VPN features)
+    VPN_SERVER_PUBLIC_KEY: str = ""
+    VPN_SERVER_ENDPOINT: str = ""
     VPN_DNS_SERVERS: str = "10.20.200.1"
     VPN_ALLOWED_IPS: str = "10.0.0.0/8,fd00:a::/32"
 

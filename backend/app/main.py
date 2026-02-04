@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown events."""
     # Startup
     logger.info("CyberX Event Management API starting...")
-    logger.info("  Environment: %s", 'Development' if settings.DEBUG else 'Production')
+    logger.info("  Environment: %s", settings.ENVIRONMENT.upper())
     logger.info("  Database: %s", settings.DATABASE_URL.split('@')[1] if '@' in settings.DATABASE_URL else 'configured')
     logger.info("  Session expiry: %d hours", settings.SESSION_EXPIRY_HOURS)
     logger.info("  Bulk email interval: %d minutes", settings.BULK_EMAIL_INTERVAL_MINUTES)
@@ -63,14 +63,68 @@ async def lifespan(app: FastAPI):
         init_encryptor(fernet_key.decode())
         logger.info("  Field encryption: Initialized with derived key")
 
-    # Start the background scheduler
-    await start_scheduler()
+    # Bootstrap default admin user if configured
+    # Only runs if NO admin users exist in the system (prevents accidental password resets)
+    if settings.ADMIN_EMAIL and settings.ADMIN_PASSWORD:
+        try:
+            from sqlalchemy import select, or_
+            from app.database import AsyncSessionLocal
+            from app.models.user import User, UserRole
+            from app.utils.security import hash_password
+
+            async with AsyncSessionLocal() as session:
+                # Check if ANY admin users exist (by role or is_admin flag)
+                result = await session.execute(
+                    select(User).where(
+                        or_(
+                            User.role == UserRole.ADMIN.value,
+                            User.is_admin == True
+                        )
+                    ).limit(1)
+                )
+                existing_admin = result.scalar_one_or_none()
+
+                if existing_admin:
+                    logger.info("  Admin bootstrap: Skipped (admin users already exist)")
+                else:
+                    # No admins exist - create the initial admin user
+                    logger.info("  Admin bootstrap: No admins found, creating initial admin user...")
+                    admin_user = User(
+                        email=settings.ADMIN_EMAIL,
+                        first_name=settings.ADMIN_FIRST_NAME,
+                        last_name=settings.ADMIN_LAST_NAME,
+                        country="USA",
+                        role=UserRole.ADMIN.value,
+                        confirmed="YES",
+                        email_status="GOOD",
+                        is_admin=True,
+                        is_active=True,
+                        password_hash=hash_password(settings.ADMIN_PASSWORD),
+                    )
+                    session.add(admin_user)
+                    await session.commit()
+                    logger.info("  Admin bootstrap: Created initial admin user %s", settings.ADMIN_EMAIL)
+        except Exception as e:
+            logger.error("  Admin bootstrap: Failed - %s", e)
+            # Don't fail startup if admin creation fails
+    else:
+        logger.info("  Admin bootstrap: Skipped (ADMIN_EMAIL not configured)")
+
+    # Start the background scheduler (only in local development)
+    # In production, use the dedicated background worker service instead
+    import os
+    if os.getenv('ENABLE_SCHEDULER_IN_WEB', 'false').lower() == 'true':
+        logger.info("  Background scheduler: Starting (ENABLE_SCHEDULER_IN_WEB=true)")
+        await start_scheduler()
+    else:
+        logger.info("  Background scheduler: Disabled (use dedicated worker service)")
 
     yield  # Application runs
 
     # Shutdown
     logger.info("CyberX Event Management API shutting down...")
-    await stop_scheduler()
+    if os.getenv('ENABLE_SCHEDULER_IN_WEB', 'false').lower() == 'true':
+        await stop_scheduler()
 
 
 # Create FastAPI application

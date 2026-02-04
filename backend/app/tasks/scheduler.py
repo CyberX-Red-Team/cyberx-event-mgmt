@@ -92,3 +92,39 @@ def list_jobs() -> list[dict]:
             "trigger": str(job.trigger),
         })
     return jobs
+
+
+if __name__ == "__main__":
+    """Entry point when running as a module."""
+    import asyncio
+    import signal
+    import sys
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    async def main():
+        """Main async function to start scheduler and keep it running."""
+        logger.info("Starting background worker scheduler...")
+
+        # Start the scheduler
+        await start_scheduler()
+
+        # Keep the process running
+        try:
+            logger.info("Scheduler is running. Press Ctrl+C to stop.")
+            # Wait forever - scheduler runs in background
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            logger.info("Received shutdown signal")
+            await stop_scheduler()
+
+    # Run the main async function
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+        sys.exit(0)
