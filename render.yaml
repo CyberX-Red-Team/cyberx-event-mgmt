@@ -61,13 +61,26 @@ services:
         value: 24
       - key: BULK_EMAIL_INTERVAL_MINUTES
         value: 45
-      # PowerDNS configuration
+      # Reminder configuration
+      - key: REMINDER_1_DAYS_AFTER_INVITE
+        value: 7
+      - key: REMINDER_1_MIN_DAYS_BEFORE_EVENT
+        value: 14
+      - key: REMINDER_2_DAYS_AFTER_INVITE
+        value: 14
+      - key: REMINDER_2_MIN_DAYS_BEFORE_EVENT
+        value: 7
+      - key: REMINDER_3_DAYS_BEFORE_EVENT
+        value: 3
+      - key: REMINDER_CHECK_INTERVAL_HOURS
+        value: 24
+      # PowerDNS configuration (optional - set if using PowerDNS)
       - key: POWERDNS_API_URL
-        sync: false
+        value: ""
       - key: POWERDNS_USERNAME
-        sync: false
+        value: ""
       - key: POWERDNS_PASSWORD
-        sync: false
+        value: ""
 
   # Background Worker (for scheduled jobs)
   - type: worker
@@ -110,3 +123,34 @@ services:
           name: cyberx-event-mgmt
           type: web
           envVarKey: SENDGRID_FROM_NAME
+      # Reminder configuration for worker
+      - key: REMINDER_1_DAYS_AFTER_INVITE
+        fromService:
+          name: cyberx-event-mgmt
+          type: web
+          envVarKey: REMINDER_1_DAYS_AFTER_INVITE
+      - key: REMINDER_1_MIN_DAYS_BEFORE_EVENT
+        fromService:
+          name: cyberx-event-mgmt
+          type: web
+          envVarKey: REMINDER_1_MIN_DAYS_BEFORE_EVENT
+      - key: REMINDER_2_DAYS_AFTER_INVITE
+        fromService:
+          name: cyberx-event-mgmt
+          type: web
+          envVarKey: REMINDER_2_DAYS_AFTER_INVITE
+      - key: REMINDER_2_MIN_DAYS_BEFORE_EVENT
+        fromService:
+          name: cyberx-event-mgmt
+          type: web
+          envVarKey: REMINDER_2_MIN_DAYS_BEFORE_EVENT
+      - key: REMINDER_3_DAYS_BEFORE_EVENT
+        fromService:
+          name: cyberx-event-mgmt
+          type: web
+          envVarKey: REMINDER_3_DAYS_BEFORE_EVENT
+      - key: REMINDER_CHECK_INTERVAL_HOURS
+        fromService:
+          name: cyberx-event-mgmt
+          type: web
+          envVarKey: REMINDER_CHECK_INTERVAL_HOURS
