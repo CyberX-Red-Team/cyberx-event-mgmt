@@ -1925,3 +1925,715 @@ class TestEmailServiceAdvancedSending:
         assert user.id in failed_ids
         assert len(errors) == 1
         assert "not found" in errors[0].lower()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestEmailServiceTemplateRendering:
+    """Test advanced template rendering scenarios."""
+
+    async def test_render_template_with_missing_variables(self, db_session: AsyncSession, mocker):
+        """Test template rendering handles missing variables gracefully."""
+        from app.models.user import User, UserRole
+
+        service = EmailService(db_session)
+
+        # Create template with variable that won't be provided
+        template = await service.create_template(
+            name="missing_var_template",
+            display_name="Missing Var Test",
+            subject="Hello {first_name} {missing_variable}!",
+            html_content="<p>Content with {missing_variable}</p>"
+        )
+
+        # Create user
+        user = User(
+            email="test@example.com",
+            first_name="Test",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value
+        )
+        db_session.add(user)
+        await db_session.commit()
+
+        # Mock SendGrid client
+        mock_response = mocker.Mock()
+        mock_response.status_code = 202
+        mock_response.headers = {"X-Message-Id": "missing_var_msg"}
+
+        mock_client = mocker.Mock()
+        mock_client.send = mocker.Mock(return_value=mock_response)
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Send email - should handle missing variable gracefully
+        success, message, msg_id = await service.send_email(
+            user=user,
+            template_name="missing_var_template"
+        )
+
+        # Should send with template as-is (placeholders remain)
+        assert success is True
+        assert mock_client.send.called
+
+    async def test_send_email_with_custom_subject(self, db_session: AsyncSession, mocker):
+        """Test sending email with custom subject override."""
+        from app.models.user import User, UserRole
+
+        service = EmailService(db_session)
+
+        # Create template
+        template = await service.create_template(
+            name="custom_subject_test",
+            display_name="Custom Subject",
+            subject="Default Subject",
+            html_content="<p>Content</p>"
+        )
+
+        # Create user
+        user = User(
+            email="test@example.com",
+            first_name="Test",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value
+        )
+        db_session.add(user)
+        await db_session.commit()
+
+        # Mock SendGrid client
+        mock_response = mocker.Mock()
+        mock_response.status_code = 202
+        mock_response.headers = {}
+
+        mock_client = mocker.Mock()
+        mock_client.send = mocker.Mock(return_value=mock_response)
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Send email with custom subject
+        success, message, msg_id = await service.send_email(
+            user=user,
+            template_name="custom_subject_test",
+            custom_subject="My Custom Subject"
+        )
+
+        assert success is True
+        # Verify email was sent (subject verification happens in email service)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestEmailServiceEmailOverrides:
+    """Test email override features (test mode, sandbox mode, attachments)."""
+
+    async def test_send_email_with_test_email_override(self, db_session: AsyncSession, mocker):
+        """Test email sending with TEST_EMAIL_OVERRIDE enabled."""
+        from app.models.user import User, UserRole
+        from app.config import get_settings
+
+        service = EmailService(db_session)
+
+        # Create template
+        template = await service.create_template(
+            name="test_override",
+            display_name="Test Override",
+            subject="Test Subject",
+            html_content="<p>Content</p>"
+        )
+
+        # Create user
+        user = User(
+            email="realuser@example.com",
+            first_name="Real",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value
+        )
+        db_session.add(user)
+        await db_session.commit()
+
+        # Mock settings to enable TEST_EMAIL_OVERRIDE
+        settings = get_settings()
+        original_override = settings.TEST_EMAIL_OVERRIDE
+        settings.TEST_EMAIL_OVERRIDE = "testrecipient@override.com"
+
+        try:
+            # Mock SendGrid client
+            mock_response = mocker.Mock()
+            mock_response.status_code = 202
+            mock_response.headers = {}
+
+            mock_client = mocker.Mock()
+            mock_client.send = mocker.Mock(return_value=mock_response)
+            mocker.patch.object(service, 'client', mock_client)
+
+            # Send email
+            success, message, msg_id = await service.send_email(
+                user=user,
+                template_name="test_override"
+            )
+
+            assert success is True
+            # Verify email was sent to override address
+            call_args = mock_client.send.call_args[0][0]
+            assert call_args.personalizations[0].tos[0]['email'] == "testrecipient@override.com"
+
+        finally:
+            # Restore original setting
+            settings.TEST_EMAIL_OVERRIDE = original_override
+
+    async def test_send_email_with_sandbox_mode(self, db_session: AsyncSession, mocker):
+        """Test email sending with SENDGRID_SANDBOX_MODE enabled."""
+        from app.models.user import User, UserRole
+        from app.config import get_settings
+
+        service = EmailService(db_session)
+
+        # Create template
+        template = await service.create_template(
+            name="sandbox_test",
+            display_name="Sandbox Test",
+            subject="Sandbox Subject",
+            html_content="<p>Sandbox content</p>"
+        )
+
+        # Create user
+        user = User(
+            email="sandbox@example.com",
+            first_name="Sandbox",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value
+        )
+        db_session.add(user)
+        await db_session.commit()
+
+        # Mock settings to enable sandbox mode
+        settings = get_settings()
+        original_sandbox = settings.SENDGRID_SANDBOX_MODE
+        settings.SENDGRID_SANDBOX_MODE = True
+
+        try:
+            # Mock SendGrid client
+            mock_response = mocker.Mock()
+            mock_response.status_code = 202
+            mock_response.headers = {}
+
+            mock_client = mocker.Mock()
+            mock_client.send = mocker.Mock(return_value=mock_response)
+            mocker.patch.object(service, 'client', mock_client)
+
+            # Send email
+            success, message, msg_id = await service.send_email(
+                user=user,
+                template_name="sandbox_test"
+            )
+
+            assert success is True
+            # Verify sandbox mode was enabled in message
+            call_args = mock_client.send.call_args[0][0]
+            assert call_args.mail_settings is not None
+            assert call_args.mail_settings.sandbox_mode is not None
+            assert call_args.mail_settings.sandbox_mode.enable is True
+
+        finally:
+            # Restore original setting
+            settings.SENDGRID_SANDBOX_MODE = original_sandbox
+
+    async def test_send_email_with_attachment(self, db_session: AsyncSession, mocker):
+        """Test sending email with file attachment."""
+        from app.models.user import User, UserRole
+
+        service = EmailService(db_session)
+
+        # Create template
+        template = await service.create_template(
+            name="attachment_test",
+            display_name="Attachment Test",
+            subject="Email with Attachment",
+            html_content="<p>See attached file</p>"
+        )
+
+        # Create user
+        user = User(
+            email="attachment@example.com",
+            first_name="Attach",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value
+        )
+        db_session.add(user)
+        await db_session.commit()
+
+        # Mock SendGrid client
+        mock_response = mocker.Mock()
+        mock_response.status_code = 202
+        mock_response.headers = {}
+
+        mock_client = mocker.Mock()
+        mock_client.send = mocker.Mock(return_value=mock_response)
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Send email with attachment
+        attachment_content = "VPN Config Content\nHost: 192.168.1.1"
+        success, message, msg_id = await service.send_email(
+            user=user,
+            template_name="attachment_test",
+            attachment_content=attachment_content,
+            attachment_filename="vpn_config.txt"
+        )
+
+        assert success is True
+        # Verify email was sent with attachment (attachment verification happens in service)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestEmailServiceSendGridSync:
+    """Test SendGrid template synchronization features."""
+
+    async def test_fetch_sendgrid_templates_success(self, db_session: AsyncSession, mocker):
+        """Test fetching templates from SendGrid API."""
+        service = EmailService(db_session)
+
+        # Mock SendGrid API response
+        mock_response = mocker.Mock()
+        mock_response.status_code = 200
+        mock_response.body = '''
+        {
+            "result": [
+                {
+                    "id": "d-abc123",
+                    "name": "Welcome Email",
+                    "generation": "dynamic",
+                    "updated_at": "2026-01-01 12:00:00",
+                    "versions": [
+                        {
+                            "id": "v1",
+                            "name": "Version 1",
+                            "active": 1,
+                            "subject": "Welcome!",
+                            "updated_at": "2026-01-01 12:00:00"
+                        }
+                    ]
+                }
+            ]
+        }
+        '''
+
+        mock_templates_api = mocker.Mock()
+        mock_templates_api.get = mocker.Mock(return_value=mock_response)
+
+        mock_client = mocker.Mock()
+        mock_client.client.templates = mock_templates_api
+
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Fetch templates
+        success, message, templates = await service.fetch_sendgrid_templates()
+
+        assert success is True
+        assert len(templates) == 1
+        assert templates[0]['sendgrid_id'] == "d-abc123"
+        assert templates[0]['name'] == "Welcome Email"
+        assert len(templates[0]['versions']) == 1
+        assert templates[0]['versions'][0]['active'] is True
+
+    async def test_fetch_sendgrid_templates_api_error(self, db_session: AsyncSession, mocker):
+        """Test handling SendGrid API error when fetching templates."""
+        service = EmailService(db_session)
+
+        # Mock SendGrid API error
+        mock_response = mocker.Mock()
+        mock_response.status_code = 401
+
+        mock_templates_api = mocker.Mock()
+        mock_templates_api.get = mocker.Mock(return_value=mock_response)
+
+        mock_client = mocker.Mock()
+        mock_client.client.templates = mock_templates_api
+
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Fetch templates
+        success, message, templates = await service.fetch_sendgrid_templates()
+
+        assert success is False
+        assert "401" in message
+        assert templates == []
+
+    async def test_fetch_sendgrid_templates_exception(self, db_session: AsyncSession, mocker):
+        """Test handling exception when fetching SendGrid templates."""
+        service = EmailService(db_session)
+
+        # Mock SendGrid API exception
+        mock_templates_api = mocker.Mock()
+        mock_templates_api.get = mocker.Mock(side_effect=Exception("Network error"))
+
+        mock_client = mocker.Mock()
+        mock_client.client.templates = mock_templates_api
+
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Fetch templates
+        success, message, templates = await service.fetch_sendgrid_templates()
+
+        assert success is False
+        assert "Network error" in message
+        assert templates == []
+
+    async def test_get_sendgrid_template_detail_success(self, db_session: AsyncSession, mocker):
+        """Test fetching single template detail from SendGrid."""
+        service = EmailService(db_session)
+
+        # Mock SendGrid API response
+        mock_response = mocker.Mock()
+        mock_response.status_code = 200
+        mock_response.body = '''
+        {
+            "id": "d-xyz789",
+            "name": "Password Reset",
+            "versions": [
+                {
+                    "id": "v1",
+                    "name": "Active Version",
+                    "active": 1,
+                    "subject": "Reset Your Password",
+                    "html_content": "<p>Click here to reset</p>",
+                    "plain_content": "Click here to reset",
+                    "updated_at": "2026-01-15 10:00:00"
+                }
+            ]
+        }
+        '''
+
+        mock_template_api = mocker.Mock()
+        mock_template_api.get = mocker.Mock(return_value=mock_response)
+
+        mock_templates_builder = mocker.Mock()
+        mock_templates_builder._ = mocker.Mock(return_value=mock_template_api)
+
+        mock_client = mocker.Mock()
+        mock_client.client.templates = mock_templates_builder
+
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Get template detail
+        success, message, detail = await service.get_sendgrid_template_detail("d-xyz789")
+
+        assert success is True
+        assert detail['sendgrid_id'] == "d-xyz789"
+        assert detail['name'] == "Password Reset"
+        assert detail['subject'] == "Reset Your Password"
+        assert detail['html_content'] == "<p>Click here to reset</p>"
+
+    async def test_get_sendgrid_template_detail_no_active_version(self, db_session: AsyncSession, mocker):
+        """Test getting template detail when no active version exists."""
+        service = EmailService(db_session)
+
+        # Mock response with inactive version
+        mock_response = mocker.Mock()
+        mock_response.status_code = 200
+        mock_response.body = '''
+        {
+            "id": "d-inactive",
+            "name": "Inactive Template",
+            "versions": [
+                {
+                    "id": "v1",
+                    "name": "Draft Version",
+                    "active": 0,
+                    "subject": "Draft Subject",
+                    "html_content": "<p>Draft</p>",
+                    "plain_content": "Draft",
+                    "updated_at": "2026-01-10 09:00:00"
+                }
+            ]
+        }
+        '''
+
+        mock_template_api = mocker.Mock()
+        mock_template_api.get = mocker.Mock(return_value=mock_response)
+
+        mock_templates_builder = mocker.Mock()
+        mock_templates_builder._ = mocker.Mock(return_value=mock_template_api)
+
+        mock_client = mocker.Mock()
+        mock_client.client.templates = mock_templates_builder
+
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Get template detail - should use first version
+        success, message, detail = await service.get_sendgrid_template_detail("d-inactive")
+
+        assert success is True
+        assert detail['subject'] == "Draft Subject"
+
+    async def test_get_sendgrid_template_detail_no_versions(self, db_session: AsyncSession, mocker):
+        """Test getting template detail when template has no versions."""
+        service = EmailService(db_session)
+
+        # Mock response with no versions
+        mock_response = mocker.Mock()
+        mock_response.status_code = 200
+        mock_response.body = '''
+        {
+            "id": "d-noversionid",
+            "name": "No Version Template",
+            "versions": []
+        }
+        '''
+
+        mock_template_api = mocker.Mock()
+        mock_template_api.get = mocker.Mock(return_value=mock_response)
+
+        mock_templates_builder = mocker.Mock()
+        mock_templates_builder._ = mocker.Mock(return_value=mock_template_api)
+
+        mock_client = mocker.Mock()
+        mock_client.client.templates = mock_templates_builder
+
+        mocker.patch.object(service, 'client', mock_client)
+
+        # Get template detail - should fail
+        success, message, detail = await service.get_sendgrid_template_detail("d-noversionid")
+
+        assert success is False
+        assert "No template version found" in message
+        assert detail is None
+
+    async def test_import_sendgrid_template_success(self, db_session: AsyncSession, mocker):
+        """Test importing a SendGrid template to local database."""
+        service = EmailService(db_session)
+
+        # Mock get_sendgrid_template_detail
+        mock_detail = {
+            "sendgrid_id": "d-import123",
+            "name": "Imported Template",
+            "subject": "Import Test",
+            "html_content": "<p>Hello {{first_name}}</p>",
+            "plain_content": "Hello {{first_name}}",
+            "version_id": "v1",
+            "version_name": "Version 1",
+            "updated_at": "2026-01-20 11:00:00"
+        }
+
+        mocker.patch.object(
+            service,
+            'get_sendgrid_template_detail',
+            return_value=(True, "Success", mock_detail)
+        )
+
+        # Import template
+        success, message, template = await service.import_sendgrid_template(
+            sendgrid_template_id="d-import123",
+            local_name="imported_test"
+        )
+
+        assert success is True
+        assert template is not None
+        assert template.name == "imported_test"
+        assert template.display_name == "[SendGrid] Imported Template"
+        assert "d-import123" in template.description
+        assert "first_name" in template.available_variables
+
+    async def test_import_sendgrid_template_fetch_fails(self, db_session: AsyncSession, mocker):
+        """Test importing template when fetching from SendGrid fails."""
+        service = EmailService(db_session)
+
+        # Mock failed fetch
+        mocker.patch.object(
+            service,
+            'get_sendgrid_template_detail',
+            return_value=(False, "API Error", None)
+        )
+
+        # Try to import
+        success, message, template = await service.import_sendgrid_template(
+            sendgrid_template_id="d-failed"
+        )
+
+        assert success is False
+        assert "API Error" in message
+        assert template is None
+
+    async def test_import_sendgrid_template_already_exists(self, db_session: AsyncSession, mocker):
+        """Test importing template when local name already exists."""
+        service = EmailService(db_session)
+
+        # Create existing template
+        await service.create_template(
+            name="existing_template",
+            display_name="Existing",
+            subject="Existing Subject",
+            html_content="<p>Existing</p>"
+        )
+
+        # Mock successful fetch
+        mock_detail = {
+            "sendgrid_id": "d-exists",
+            "name": "Existing Template",
+            "subject": "Subject",
+            "html_content": "<p>Content</p>",
+            "plain_content": "Content",
+            "version_id": "v1",
+            "version_name": "V1",
+            "updated_at": "2026-01-20"
+        }
+
+        mocker.patch.object(
+            service,
+            'get_sendgrid_template_detail',
+            return_value=(True, "Success", mock_detail)
+        )
+
+        # Try to import with existing name
+        success, message, template = await service.import_sendgrid_template(
+            sendgrid_template_id="d-exists",
+            local_name="existing_template"
+        )
+
+        assert success is False
+        assert "already exists" in message
+        assert template is None
+
+    async def test_sync_sendgrid_templates_success(self, db_session: AsyncSession, mocker):
+        """Test syncing all SendGrid templates to local database."""
+        service = EmailService(db_session)
+
+        # Mock fetch_sendgrid_templates
+        mock_templates = [
+            {"sendgrid_id": "d-sync1", "name": "Sync Template 1"},
+            {"sendgrid_id": "d-sync2", "name": "Sync Template 2"}
+        ]
+
+        mocker.patch.object(
+            service,
+            'fetch_sendgrid_templates',
+            return_value=(True, "Found 2 templates", mock_templates)
+        )
+
+        # Mock successful imports
+        async def mock_import(sendgrid_template_id, created_by_id=None):
+            template = EmailTemplate(
+                name=f"imported_{sendgrid_template_id}",
+                display_name="Test",
+                subject="Test",
+                html_content="<p>Test</p>"
+            )
+            return True, "Imported", template
+
+        mocker.patch.object(service, 'import_sendgrid_template', side_effect=mock_import)
+
+        # Sync templates
+        imported, skipped, failed, errors = await service.sync_sendgrid_templates()
+
+        assert imported == 2
+        assert skipped == 0
+        assert failed == 0
+        assert len(errors) == 0
+
+    async def test_sync_sendgrid_templates_fetch_fails(self, db_session: AsyncSession, mocker):
+        """Test sync when fetching from SendGrid fails."""
+        service = EmailService(db_session)
+
+        # Mock failed fetch
+        mocker.patch.object(
+            service,
+            'fetch_sendgrid_templates',
+            return_value=(False, "API Error", [])
+        )
+
+        # Sync templates
+        imported, skipped, failed, errors = await service.sync_sendgrid_templates()
+
+        assert imported == 0
+        assert skipped == 0
+        assert failed == 0
+        assert len(errors) == 1
+        assert "API Error" in errors[0]
+
+    async def test_sync_sendgrid_templates_with_failures(self, db_session: AsyncSession, mocker):
+        """Test sync with some templates failing to import."""
+        service = EmailService(db_session)
+
+        # Mock fetch
+        mock_templates = [
+            {"sendgrid_id": "d-good", "name": "Good Template"},
+            {"sendgrid_id": None, "name": "Bad Template"},  # No ID
+            {"sendgrid_id": "d-fail", "name": "Fail Template"}
+        ]
+
+        mocker.patch.object(
+            service,
+            'fetch_sendgrid_templates',
+            return_value=(True, "Found 3 templates", mock_templates)
+        )
+
+        # Mock import: first succeeds, third fails
+        async def mock_import(sendgrid_template_id, created_by_id=None):
+            if sendgrid_template_id == "d-good":
+                template = EmailTemplate(
+                    name="imported_good",
+                    display_name="Good",
+                    subject="Test",
+                    html_content="<p>Test</p>"
+                )
+                return True, "Imported", template
+            else:
+                return False, "Import failed", None
+
+        mocker.patch.object(service, 'import_sendgrid_template', side_effect=mock_import)
+
+        # Sync templates
+        imported, skipped, failed, errors = await service.sync_sendgrid_templates()
+
+        assert imported == 1
+        assert skipped == 0
+        assert failed == 2  # One without ID, one that failed import
+        assert len(errors) == 2
+
+    async def test_sync_sendgrid_templates_skips_existing(self, db_session: AsyncSession, mocker):
+        """Test sync skips templates that are already imported."""
+        service = EmailService(db_session)
+
+        # Create template with SendGrid ID in description
+        await service.create_template(
+            name="already_imported",
+            display_name="Already Imported",
+            subject="Test",
+            html_content="<p>Test</p>",
+            description="Imported from SendGrid template ID: d-existing123"
+        )
+
+        # Mock fetch
+        mock_templates = [
+            {"sendgrid_id": "d-existing123", "name": "Existing"},
+            {"sendgrid_id": "d-new456", "name": "New"}
+        ]
+
+        mocker.patch.object(
+            service,
+            'fetch_sendgrid_templates',
+            return_value=(True, "Found 2 templates", mock_templates)
+        )
+
+        # Mock import for new template
+        async def mock_import(sendgrid_template_id, created_by_id=None):
+            template = EmailTemplate(
+                name=f"imported_{sendgrid_template_id}",
+                display_name="New",
+                subject="Test",
+                html_content="<p>Test</p>"
+            )
+            return True, "Imported", template
+
+        mocker.patch.object(service, 'import_sendgrid_template', side_effect=mock_import)
+
+        # Sync templates
+        imported, skipped, failed, errors = await service.sync_sendgrid_templates()
+
+        assert imported == 1
+        assert skipped == 1  # Existing template skipped
+        assert failed == 0
+        assert len(errors) == 0

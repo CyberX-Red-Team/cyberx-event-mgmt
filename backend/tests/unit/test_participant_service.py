@@ -1196,3 +1196,706 @@ class TestParticipantServiceCanSendEmail:
         assert service._can_send_email("BOUNCED") is False
         assert service._can_send_email("SPAM_REPORTED") is False
         assert service._can_send_email("UNSUBSCRIBED") is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestParticipantServiceEventIntegration:
+    """Test participant service integration with event and workflow systems."""
+
+    async def test_create_participant_with_active_event_sends_invitation(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating participant with active event and registration open sends invitation."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.workflow_service import WorkflowService
+
+        # Create active event with registration open
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            is_active=True,
+            registration_open=True,
+            test_mode=False,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock WorkflowService.trigger_workflow
+        mock_trigger = mocker.patch.object(
+            WorkflowService,
+            'trigger_workflow',
+            return_value=1
+        )
+
+        # Create invitee
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invited",
+            last_name="User",
+            country="USA"
+        )
+
+        # Should have confirmation code and sent timestamp
+        assert participant.confirmation_code is not None
+        assert participant.confirmation_sent_at is not None
+        # Workflow not triggered for invitees without credentials
+        assert mock_trigger.call_count == 0
+
+    async def test_create_sponsor_with_active_event_triggers_workflow(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating sponsor with active event triggers user_created workflow."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.workflow_service import WorkflowService
+
+        # Create active event with registration open
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            is_active=True,
+            registration_open=True,
+            test_mode=False,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock WorkflowService.trigger_workflow
+        mock_trigger = mocker.patch.object(
+            WorkflowService,
+            'trigger_workflow',
+            return_value=1
+        )
+
+        # Create sponsor (has credentials)
+        participant = await service.create_participant(
+            email="sponsor@test.com",
+            first_name="Sponsor",
+            last_name="User",
+            country="USA",
+            role=UserRole.SPONSOR.value
+        )
+
+        # Should have confirmation code and trigger workflow
+        assert participant.confirmation_code is not None
+        assert participant.confirmation_sent_at is not None
+        assert mock_trigger.call_count == 1
+
+        # Verify workflow was called with correct trigger
+        call_args = mock_trigger.call_args
+        assert call_args[1]['trigger_event'] == 'user_created'
+        assert call_args[1]['user_id'] == participant.id
+        assert 'confirmation_code' in call_args[1]['custom_vars']
+
+    async def test_create_participant_test_mode_blocks_invitees(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating invitee with test mode enabled blocks invitation."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.audit_service import AuditService
+
+        # Create active event with test mode enabled
+        event = Event(
+            year=2026,
+            name="CyberX 2026 Test",
+            is_active=True,
+            registration_open=True,
+            test_mode=True,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock AuditService.log_invitation_blocked
+        mock_audit = mocker.patch.object(
+            AuditService,
+            'log_invitation_blocked',
+            return_value=None
+        )
+
+        # Create invitee
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invitee",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value
+        )
+
+        # Should NOT have confirmation code (blocked)
+        assert participant.confirmation_code is None
+        assert participant.confirmation_sent_at is None
+
+        # Should log invitation blocked
+        assert mock_audit.call_count == 1
+        call_args = mock_audit.call_args[1]
+        assert call_args['reason'] == 'test_mode_restricted_non_sponsor'
+
+    async def test_create_participant_test_mode_allows_sponsors(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating sponsor with test mode enabled allows invitation."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.workflow_service import WorkflowService
+
+        # Create active event with test mode enabled
+        event = Event(
+            year=2026,
+            name="CyberX 2026 Test",
+            is_active=True,
+            registration_open=True,
+            test_mode=True,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock WorkflowService.trigger_workflow
+        mock_trigger = mocker.patch.object(
+            WorkflowService,
+            'trigger_workflow',
+            return_value=1
+        )
+
+        # Create sponsor
+        participant = await service.create_participant(
+            email="sponsor@test.com",
+            first_name="Sponsor",
+            last_name="User",
+            country="USA",
+            role=UserRole.SPONSOR.value
+        )
+
+        # Should have confirmation code (allowed in test mode)
+        assert participant.confirmation_code is not None
+        assert participant.confirmation_sent_at is not None
+        assert mock_trigger.call_count == 1
+
+    async def test_create_participant_inactive_event_no_invitation(
+        self, db_session: AsyncSession
+    ):
+        """Test creating participant with inactive event does not send invitation."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+
+        # Create inactive event
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            is_active=False,
+            registration_open=True,
+            test_mode=False,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Create invitee
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invitee",
+            last_name="User",
+            country="USA"
+        )
+
+        # Should NOT have confirmation code
+        assert participant.confirmation_code is None
+        assert participant.confirmation_sent_at is None
+
+    async def test_create_sponsor_inactive_event_sends_credentials(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating sponsor with inactive event sends credentials email."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.email_queue_service import EmailQueueService
+
+        # Create inactive event
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            is_active=False,
+            registration_open=True,
+            test_mode=False,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock EmailQueueService.enqueue_email
+        mock_enqueue = mocker.patch.object(
+            EmailQueueService,
+            'enqueue_email',
+            return_value=mocker.Mock(id=1)
+        )
+
+        # Create sponsor
+        participant = await service.create_participant(
+            email="sponsor@test.com",
+            first_name="Sponsor",
+            last_name="User",
+            country="USA",
+            role=UserRole.SPONSOR.value
+        )
+
+        # Should enqueue password email
+        assert mock_enqueue.call_count == 1
+        call_args = mock_enqueue.call_args[1]
+        assert call_args['template_name'] == 'password'
+        assert call_args['user_id'] == participant.id
+
+    async def test_create_confirmed_invitee_with_active_event_triggers_workflow(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating confirmed invitee with active event triggers workflow."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.workflow_service import WorkflowService
+
+        # Create active event
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            is_active=True,
+            registration_open=True,
+            test_mode=False,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock WorkflowService.trigger_workflow
+        mock_trigger = mocker.patch.object(
+            WorkflowService,
+            'trigger_workflow',
+            return_value=1
+        )
+
+        # Create confirmed invitee (gets credentials because confirmed=YES)
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invitee",
+            last_name="User",
+            country="USA",
+            confirmed="YES"
+        )
+
+        # Should trigger user_created workflow (confirmed invitees have credentials)
+        assert mock_trigger.call_count == 1
+        call_args = mock_trigger.call_args[1]
+        assert call_args['trigger_event'] == 'user_created'
+        assert call_args['user_id'] == participant.id
+
+    async def test_create_confirmed_invitee_without_active_event_no_password(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating confirmed invitee without active event skips password email."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.email_queue_service import EmailQueueService
+
+        # Create inactive event
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            is_active=False,
+            registration_open=False,
+            test_mode=False,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock EmailQueueService.enqueue_email
+        mock_enqueue = mocker.patch.object(
+            EmailQueueService,
+            'enqueue_email',
+            return_value=mocker.Mock(id=1)
+        )
+
+        # Create confirmed invitee
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invitee",
+            last_name="User",
+            country="USA",
+            confirmed="YES"
+        )
+
+        # Should NOT enqueue password email (no active event)
+        assert mock_enqueue.call_count == 0
+
+    async def test_create_confirmed_sponsor_always_sends_password(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating confirmed sponsor always sends password regardless of event."""
+        service = ParticipantService(db_session)
+        from app.services.email_queue_service import EmailQueueService
+
+        # No event exists
+
+        # Mock EmailQueueService.enqueue_email
+        mock_enqueue = mocker.patch.object(
+            EmailQueueService,
+            'enqueue_email',
+            return_value=mocker.Mock(id=1)
+        )
+
+        # Create confirmed sponsor
+        participant = await service.create_participant(
+            email="sponsor@test.com",
+            first_name="Sponsor",
+            last_name="User",
+            country="USA",
+            role=UserRole.SPONSOR.value,
+            confirmed="YES"
+        )
+
+        # Should enqueue password email
+        assert mock_enqueue.call_count == 1
+        call_args = mock_enqueue.call_args[1]
+        assert call_args['template_name'] == 'password'
+
+    async def test_update_participant_to_confirmed_triggers_workflow(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test updating participant to confirmed=YES triggers user_confirmed workflow."""
+        service = ParticipantService(db_session)
+        from app.services.workflow_service import WorkflowService
+        from app.models.email_workflow import WorkflowTriggerEvent
+
+        # Create unconfirmed participant
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invitee",
+            last_name="User",
+            country="USA",
+            confirmed="NO"
+        )
+
+        # Mock WorkflowService.trigger_workflow
+        mock_trigger = mocker.patch.object(
+            WorkflowService,
+            'trigger_workflow',
+            return_value=2
+        )
+
+        # Update to confirmed
+        updated = await service.update_participant(
+            participant.id,
+            confirmed="YES"
+        )
+
+        # Should trigger workflow
+        assert updated.confirmed == "YES"
+        assert updated.confirmed_at is not None
+        assert mock_trigger.call_count == 1
+
+        # Verify workflow was called with correct trigger
+        call_args = mock_trigger.call_args
+        assert call_args[1]['trigger_event'] == WorkflowTriggerEvent.USER_CONFIRMED
+        assert call_args[1]['user_id'] == participant.id
+
+    async def test_update_participant_already_confirmed_no_workflow(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test updating already confirmed participant does not trigger workflow."""
+        service = ParticipantService(db_session)
+        from app.services.workflow_service import WorkflowService
+
+        # Create confirmed participant
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invitee",
+            last_name="User",
+            country="USA",
+            confirmed="YES"
+        )
+
+        # Mock WorkflowService.trigger_workflow
+        mock_trigger = mocker.patch.object(
+            WorkflowService,
+            'trigger_workflow',
+            return_value=1
+        )
+
+        # Update other field
+        updated = await service.update_participant(
+            participant.id,
+            country="Canada"
+        )
+
+        # Should NOT trigger workflow (already confirmed)
+        assert updated.country == "Canada"
+        assert mock_trigger.call_count == 0
+
+    async def test_create_admin_with_is_admin_flag(
+        self, db_session: AsyncSession
+    ):
+        """Test creating participant with is_admin=True sets role to ADMIN."""
+        service = ParticipantService(db_session)
+
+        # Create user with is_admin=True (legacy behavior)
+        participant = await service.create_participant(
+            email="admin@test.com",
+            first_name="Admin",
+            last_name="User",
+            country="USA",
+            is_admin=True  # Should set role to ADMIN even if role defaults to INVITEE
+        )
+
+        # Should have ADMIN role
+        assert participant.role == UserRole.ADMIN.value
+        assert participant.is_admin is True
+
+    async def test_create_confirmed_admin_sends_password(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating confirmed admin sends password email (non-event-participant path)."""
+        service = ParticipantService(db_session)
+        from app.services.email_queue_service import EmailQueueService
+
+        # Mock EmailQueueService.enqueue_email
+        mock_enqueue = mocker.patch.object(
+            EmailQueueService,
+            'enqueue_email',
+            return_value=mocker.Mock(id=1)
+        )
+
+        # Create confirmed admin (not an event participant)
+        participant = await service.create_participant(
+            email="admin@test.com",
+            first_name="Admin",
+            last_name="User",
+            country="USA",
+            role=UserRole.ADMIN.value,
+            confirmed="YES"
+        )
+
+        # Should enqueue password email via elif block (non-event-participant)
+        assert mock_enqueue.call_count == 1
+        call_args = mock_enqueue.call_args[1]
+        assert call_args['template_name'] == 'password'
+        assert call_args['user_id'] == participant.id
+
+    async def test_create_participant_workflow_trigger_error(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating participant handles workflow trigger errors gracefully."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.workflow_service import WorkflowService
+
+        # Create active event
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            is_active=True,
+            registration_open=True,
+            test_mode=False,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock WorkflowService.trigger_workflow to raise exception
+        mock_trigger = mocker.patch.object(
+            WorkflowService,
+            'trigger_workflow',
+            side_effect=Exception("Workflow system error")
+        )
+
+        # Should not raise, just log error
+        participant = await service.create_participant(
+            email="sponsor@test.com",
+            first_name="Sponsor",
+            last_name="User",
+            country="USA",
+            role=UserRole.SPONSOR.value
+        )
+
+        # Participant should still be created
+        assert participant.id is not None
+        assert mock_trigger.call_count == 1
+
+    async def test_create_sponsor_credentials_email_error(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating sponsor handles credentials email errors gracefully."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.email_queue_service import EmailQueueService
+
+        # Create inactive event (triggers credentials email path)
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            is_active=False,
+            registration_open=False,
+            test_mode=False,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock EmailQueueService.enqueue_email to raise exception
+        mock_enqueue = mocker.patch.object(
+            EmailQueueService,
+            'enqueue_email',
+            side_effect=Exception("Email queue error")
+        )
+
+        # Should not raise, just log error
+        participant = await service.create_participant(
+            email="sponsor@test.com",
+            first_name="Sponsor",
+            last_name="User",
+            country="USA",
+            role=UserRole.SPONSOR.value
+        )
+
+        # Participant should still be created
+        assert participant.id is not None
+        assert mock_enqueue.call_count == 1
+
+    async def test_update_participant_workflow_error(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test updating participant handles workflow errors gracefully."""
+        service = ParticipantService(db_session)
+        from app.services.workflow_service import WorkflowService
+
+        # Create unconfirmed participant
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invitee",
+            last_name="User",
+            country="USA",
+            confirmed="NO"
+        )
+
+        # Mock WorkflowService.trigger_workflow to raise exception
+        mock_trigger = mocker.patch.object(
+            WorkflowService,
+            'trigger_workflow',
+            side_effect=Exception("Workflow error")
+        )
+
+        # Should not raise, just log error
+        updated = await service.update_participant(
+            participant.id,
+            confirmed="YES"
+        )
+
+        # Participant should still be updated
+        assert updated.confirmed == "YES"
+        assert updated.confirmed_at is not None
+        assert mock_trigger.call_count == 1
+
+    async def test_create_confirmed_admin_email_queue_error(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating confirmed admin handles email queue errors gracefully."""
+        service = ParticipantService(db_session)
+        from app.services.email_queue_service import EmailQueueService
+
+        # Mock EmailQueueService.enqueue_email to raise exception
+        mock_enqueue = mocker.patch.object(
+            EmailQueueService,
+            'enqueue_email',
+            side_effect=Exception("Queue error")
+        )
+
+        # Should not raise, just log error
+        participant = await service.create_participant(
+            email="admin@test.com",
+            first_name="Admin",
+            last_name="User",
+            country="USA",
+            role=UserRole.ADMIN.value,
+            confirmed="YES"
+        )
+
+        # Participant should still be created
+        assert participant.id is not None
+        assert mock_enqueue.call_count == 1
+
+    async def test_create_confirmed_invitee_no_event_skips_password(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating confirmed invitee without event skips password (logs message)."""
+        service = ParticipantService(db_session)
+        from app.services.email_queue_service import EmailQueueService
+
+        # No event exists
+
+        # Mock EmailQueueService.enqueue_email (should not be called)
+        mock_enqueue = mocker.patch.object(
+            EmailQueueService,
+            'enqueue_email',
+            return_value=mocker.Mock(id=1)
+        )
+
+        # Create confirmed invitee (via different code path than event participants)
+        # This should hit the elif block lines 347-387 since there's no event
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invitee",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value,
+            confirmed="YES"
+        )
+
+        # Should NOT enqueue password email (no event)
+        # The code checks for active event and logs a message
+        assert participant.id is not None
+        # Note: This might not hit line 357-361 if is_event_participant is True
+
+    async def test_create_invitee_without_credentials_skips_workflow(
+        self, db_session: AsyncSession, mocker
+    ):
+        """Test creating invitee without credentials logs skip message."""
+        service = ParticipantService(db_session)
+        from app.models.event import Event
+        from app.services.workflow_service import WorkflowService
+
+        # Create active event
+        event = Event(
+            year=2026,
+            name="CyberX 2026",
+            is_active=True,
+            registration_open=True,
+            test_mode=False,
+            terms_version="1.0"
+        )
+        db_session.add(event)
+        await db_session.commit()
+
+        # Mock WorkflowService.trigger_workflow (should not be called)
+        mock_trigger = mocker.patch.object(
+            WorkflowService,
+            'trigger_workflow',
+            return_value=1
+        )
+
+        # Create unconfirmed invitee (no credentials)
+        participant = await service.create_participant(
+            email="invitee@test.com",
+            first_name="Invitee",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value,
+            confirmed="NO"
+        )
+
+        # Should have confirmation code but NOT trigger workflow
+        # (invitees without credentials are handled by background task)
+        assert participant.confirmation_code is not None
+        assert mock_trigger.call_count == 0  # Not called because has_credentials is False

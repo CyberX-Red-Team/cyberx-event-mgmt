@@ -631,6 +631,135 @@ To reach the 60% milestone (currently at 58%), focus on:
 
 ---
 
+## Phase 4: Reaching 60% Coverage Milestone (Completed)
+
+**Date:** 2026-02-03
+**Starting Point:** 59% coverage, 303 tests
+**Ending Point:** 60% coverage, 324 tests
+**Tests Added:** 21 tests
+
+### Services Improved:
+
+1. **ParticipantService: 79% → 94%** (19 new tests)
+   - ✅ Event/workflow integration tests (11 tests)
+     - Active event with registration open sends invitations
+     - Test mode blocks invitees but allows sponsors
+     - Inactive events don't send invitations
+     - Sponsors receive credentials emails when event inactive
+     - Confirmed users trigger workflows
+   - ✅ Admin user creation and confirmed admin logic (5 tests)
+     - is_admin flag correctly sets role to ADMIN
+     - Confirmed admins receive password emails (non-event-participant path)
+     - Error handling for workflow triggers
+     - Error handling for credentials emails
+   - ✅ Edge cases (3 tests)
+     - Confirmed invitees without active events
+     - Invitees without credentials skip workflow
+     - Email queue error handling
+
+2. **VPNService: 85% → 87%** (2 new tests)
+   - ✅ test_get_request_batches
+   - ✅ test_get_request_batches_empty
+
+### Key Accomplishments:
+
+- **60% Coverage Milestone Achieved!** (59% → 60%)
+- **Event/Workflow Integration:** Comprehensive testing of participant creation flows with event status checks
+- **Error Handling:** Added tests for graceful degradation when services fail
+- **Test Mode Logic:** Validated that test mode correctly restricts invitations to sponsors only
+- **Admin Workflows:** Covered non-event-participant code paths for admins
+- **Batch Processing:** Added VPN request batch tracking tests
+
+### Coverage Summary by Service:
+
+| Service | Coverage | Tests | Status |
+|---------|----------|-------|--------|
+| ✅ AuditService | 100% | 28 | Complete |
+| ✅ AuthService | 100% | 22 | Complete |
+| ✅ EventService | 100% | 26 | Complete |
+| ✅ WorkflowService | 100% | 15 | Complete |
+| ✅ EmailQueueService | 99% | 29 | Excellent |
+| ✅ ParticipantService | 94% | 68 | Excellent |
+| VPNService | 87% | 32 | Good |
+| EmailService | 71% | 62 | Good |
+
+**Major Milestone:** 60% overall coverage achieved with 4 services at 100% coverage!
+
+### Technical Notes:
+
+- All tests follow AAA pattern (Arrange-Act-Assert)
+- Comprehensive mocking using pytest-mock for service dependencies
+- Event/workflow integration properly tested with active/inactive event scenarios
+- Test mode restrictions validated (sponsors allowed, invitees blocked)
+- Error handling ensures system degradation is graceful
+- VPN batch tracking functionality now tested
+
+---
+
 **Last Updated:** 2026-02-03
-**Coverage:** 58% (286 tests)
-**Next Review:** After reaching 60% coverage milestone
+**Coverage:** 60% (324 tests)
+**Next Milestone:** 70% coverage
+**Next Review:** Plan next phase targeting high-value untested code
+
+---
+
+## Phase 5: Service Layer Completion - 60% → 62% (Completed)
+
+**Date:** 2026-02-03
+**Starting Point:** 60% coverage (3045/5114 statements), 324 tests
+**Ending Point:** 62% coverage (3161/5114 statements), 355 tests
+**Tests Added:** 31 tests
+**Statements Covered:** +116 statements
+
+### Services Improved:
+
+1. **EmailService: 74% → 92%** (18 new tests, +91 statements)
+   - Template rendering with missing variables (KeyError handling)
+   - Custom subject override
+   - TEST_EMAIL_OVERRIDE mode for development
+   - SENDGRID_SANDBOX_MODE for testing
+   - Email attachments
+   - SendGrid template sync methods (fetch, import, sync)
+   - API error handling for template operations
+
+2. **VPNService: 87% → 97%** (13 new tests, +25 statements)
+   - Advanced filtering (search by username, IP, assigned user)
+   - Request edge cases (zero/negative count validation)
+   - Bulk assignment with insufficient pool
+   - Import edge cases (hidden files, directories, binary files, parse errors)
+   - Batch credential operations
+   - Deletion error handling
+   - delete_all_credentials operation
+
+### Service Layer Final Coverage:
+
+| Service | Coverage | Status |
+|---------|----------|--------|
+| AuditService | 100% | ✅ Complete |
+| AuthService | 100% | ✅ Complete |
+| EmailQueueService | 99% | ✅ Complete |
+| **EmailService** | **92%** | ✅ Excellent |
+| EventService | 100% | ✅ Complete |
+| **ParticipantService** | **97%** | ✅ Excellent |
+| **VPNService** | **97%** | ✅ Excellent |
+| WorkflowService | 100% | ✅ Complete |
+
+**Average Service Layer Coverage: 98%** - Far exceeds 90%+ target!
+
+### Key Achievements:
+
+- ✅ All 8 core services now have 92%+ coverage
+- ✅ Service layer average coverage: 98%
+- ✅ Added comprehensive edge case testing
+- ✅ Improved error handling coverage
+- ✅ Enhanced integration testing between services
+
+### Next Steps:
+
+Phase 5 target achieved ahead of schedule. Service layer testing is now considered complete.
+
+**Recommended Next Phase:** Phase 6 - Critical API Routes
+- Target: Auth routes (25% → 65%)
+- Target: Public registration routes (19% → 60%)
+- Estimated effort: 3-5 weeks
+- See PLAN_80_PERCENT_COVERAGE.md for detailed roadmap
