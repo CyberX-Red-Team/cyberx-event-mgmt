@@ -183,7 +183,7 @@ class DatabaseSetup:
             async with AsyncSessionLocal() as session:
                 # Create sample event
                 result = await session.execute(
-                    select(Event).where(Event.name == "Sample Event 2026")
+                    select(Event).where(Event.year == 2026)
                 )
                 existing_event = result.scalar_one_or_none()
 
