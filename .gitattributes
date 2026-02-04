@@ -1,0 +1,11 @@
+# Git attributes for CyberX Event Management System
+
+# Environment-specific configuration files
+# Use 'ours' merge strategy to keep the target branch's version during merges
+# This prevents staging config from overwriting production config (and vice versa)
+render.yaml merge=ours
+
+# Explanation:
+# - When merging staging → main: Keep main's render.yaml (production config)
+# - When merging main → staging: Keep staging's render.yaml (staging config)
+# - This ensures each branch maintains its own environment configuration
