@@ -219,14 +219,16 @@ class DatabaseSetup:
 
                 for template_type, template_name in template_types:
                     result = await session.execute(
-                        select(EmailTemplate).where(EmailTemplate.template_type == template_type)
+                        select(EmailTemplate).where(EmailTemplate.name == template_type)
                     )
                     existing_template = result.scalar_one_or_none()
 
                     if not existing_template:
                         template = EmailTemplate(
-                            template_name=template_name,
-                            template_type=template_type,
+                            name=template_type,
+                            display_name=template_name,
+                            subject=f"{template_name} - CyberX Event",
+                            html_content=f"<p>This is a sample {template_name} template.</p>",
                             sendgrid_template_id=f"d-sample-{template_type}",
                             description=f"Sample {template_name} template"
                         )
