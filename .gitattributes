@@ -9,3 +9,9 @@ render.yaml merge=ours
 # - When merging staging → main: Keep main's render.yaml (production config)
 # - When merging main → staging: Keep staging's render.yaml (staging config)
 # - This ensures each branch maintains its own environment configuration
+
+# Optional: Protect other environment-specific files if they diverge between branches
+# Uncomment these if you have branch-specific versions of these files:
+# .env merge=ours
+# docker-compose.yml merge=ours
+# backend/alembic.ini merge=ours
