@@ -100,7 +100,7 @@ class DatabaseSetup:
         required_tables = [
             'users',
             'events',
-            'event_participation',
+            'event_participations',
             'sessions',
             'vpn_credentials',
             'audit_logs',
