@@ -63,14 +63,21 @@ async def lifespan(app: FastAPI):
         init_encryptor(fernet_key.decode())
         logger.info("  Field encryption: Initialized with derived key")
 
-    # Start the background scheduler
-    await start_scheduler()
+    # Start the background scheduler (only in local development)
+    # In production, use the dedicated background worker service instead
+    import os
+    if os.getenv('ENABLE_SCHEDULER_IN_WEB', 'false').lower() == 'true':
+        logger.info("  Background scheduler: Starting (ENABLE_SCHEDULER_IN_WEB=true)")
+        await start_scheduler()
+    else:
+        logger.info("  Background scheduler: Disabled (use dedicated worker service)")
 
     yield  # Application runs
 
     # Shutdown
     logger.info("CyberX Event Management API shutting down...")
-    await stop_scheduler()
+    if os.getenv('ENABLE_SCHEDULER_IN_WEB', 'false').lower() == 'true':
+        await stop_scheduler()
 
 
 # Create FastAPI application
