@@ -46,13 +46,39 @@ jobs:
           STAGING_WORKER_DEPLOY_HOOK_URL: ${{ secrets.STAGING_WORKER_DEPLOY_HOOK_URL }}
         run: |
           echo "🚀 Triggering Render deployment for staging web service..."
-          curl -X POST "${STAGING_DEPLOY_HOOK_URL}"
-          echo "✅ Web service deployment triggered!"
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${STAGING_DEPLOY_HOOK_URL}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+
+          echo "Response: $BODY"
+
+          # Extract deploy ID from JSON response
+          DEPLOY_ID=$(echo "$BODY" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && [ -n "$DEPLOY_ID" ]; then
+            echo "✅ Web service deployment triggered (Deploy ID: $DEPLOY_ID)"
+          else
+            echo "❌ Web service deployment failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
 
           echo ""
           echo "🔧 Triggering Render deployment for staging worker..."
-          curl -X POST "${STAGING_WORKER_DEPLOY_HOOK_URL}"
-          echo "✅ Worker deployment triggered!"
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${STAGING_WORKER_DEPLOY_HOOK_URL}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+
+          echo "Response: $BODY"
+
+          # Extract deploy ID from JSON response
+          DEPLOY_ID=$(echo "$BODY" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && [ -n "$DEPLOY_ID" ]; then
+            echo "✅ Worker deployment triggered (Deploy ID: $DEPLOY_ID)"
+          else
+            echo "❌ Worker deployment failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
 
           echo ""
           echo "🎉 Both services deployment triggered successfully!"
