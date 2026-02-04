@@ -1,0 +1,93 @@
+name: Seed Staging Test Data
+
+# Manual trigger only - run on-demand to populate staging with test data
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "seed-staging" to confirm (THIS WILL CREATE/UPDATE TEST DATA)'
+        required: true
+        type: string
+
+jobs:
+  seed-test-data:
+    name: Seed Test Data to Staging
+    runs-on: ubuntu-latest
+    # Only run if user confirmed with correct text
+    if: ${{ github.event.inputs.confirm == 'seed-staging' }}
+    environment:
+      name: staging
+      url: https://staging.events.cyberxredteam.org
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run test data seeder
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          cd backend
+          echo "🌱 Seeding test data to staging database..."
+          python scripts/seed_test_data.py
+
+      - name: Upload test credentials
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: staging-test-credentials
+          path: backend/test_credentials.json
+          retention-days: 90
+
+      - name: Display credentials summary
+        if: success()
+        run: |
+          echo "📋 Test Credentials Summary"
+          echo "============================"
+          echo ""
+          echo "Credentials file uploaded as artifact: 'staging-test-credentials'"
+          echo "Download it from the Actions run page to see all test user credentials."
+          echo ""
+          echo "Quick access to a few test accounts:"
+          echo "  - Admin: admin1@cyberxtest.org"
+          echo "  - Sponsor: sponsor1@cyberxtest.org"
+          echo "  - Invitee: invitee1@cyberxtest.org"
+          echo ""
+          echo "Password for all test users: CyberX2026!"
+          echo ""
+          echo "Total resources seeded:"
+          echo "  - 5 admins"
+          echo "  - 10 sponsors"
+          echo "  - 20 invitees"
+          echo "  - 1000 VPN configs"
+
+      - name: Security reminder
+        if: success()
+        run: |
+          echo "⚠️  SECURITY REMINDER"
+          echo "===================="
+          echo ""
+          echo "These test credentials are for STAGING ONLY."
+          echo "DO NOT use these accounts in production."
+          echo "Test data uses @cyberxtest.org domain to distinguish from real users."
+          echo ""
+          echo "To clean up test data, run the cleanup script (when implemented)"
+          echo "or manually delete users with @cyberxtest.org emails."
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "❌ Test data seeding failed!"
+          echo "Check the logs above for details."
