@@ -1,5 +1,7 @@
 name: Deploy to Production
 
+# Production deploys from main branch only
+# Triggered by: version tags (v*) or manual workflow dispatch
 on:
   push:
     tags:
