@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown events."""
     # Startup
     logger.info("CyberX Event Management API starting...")
-    logger.info("  Environment: %s", 'Development' if settings.DEBUG else 'Production')
+    logger.info("  Environment: %s", settings.ENVIRONMENT.upper())
     logger.info("  Database: %s", settings.DATABASE_URL.split('@')[1] if '@' in settings.DATABASE_URL else 'configured')
     logger.info("  Session expiry: %d hours", settings.SESSION_EXPIRY_HOURS)
     logger.info("  Bulk email interval: %d minutes", settings.BULK_EMAIL_INTERVAL_MINUTES)

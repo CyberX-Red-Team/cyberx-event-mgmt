@@ -24,6 +24,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
+      - key: ENVIRONMENT
+        value: staging
       - key: DEBUG
         value: "false"
       # Database - Supabase connection string (set manually in Render dashboard)

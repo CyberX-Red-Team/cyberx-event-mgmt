@@ -21,6 +21,7 @@ class Settings(BaseSettings):
         return self.DATABASE_URL
 
     # Application
+    ENVIRONMENT: str = "development"  # development, staging, or production
     SECRET_KEY: str
     CSRF_SECRET_KEY: str = ""  # If empty, uses SECRET_KEY
     ENCRYPTION_KEY: str = ""  # Field-level encryption key (Fernet), if empty uses SECRET_KEY
