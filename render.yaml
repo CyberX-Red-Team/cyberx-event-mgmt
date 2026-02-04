@@ -18,7 +18,7 @@ services:
       pip install -r requirements.txt
     startCommand: |
       cd backend
-      echo "⚠️  Skipping migrations temporarily for debugging"
+      alembic upgrade head
       uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
     healthCheckPath: /health
     envVars:
