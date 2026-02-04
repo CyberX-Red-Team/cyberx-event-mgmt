@@ -12,6 +12,7 @@ services:
     region: virginia  # US East
     plan: starter  # $7/month - 512MB RAM (sufficient for 100 users)
     branch: staging  # Staging service watches staging branch
+    autoDeploy: false  # Disable auto deploy - only deploy via GitHub Actions
     buildCommand: |
       cd backend
       pip install -r requirements.txt
@@ -90,6 +91,7 @@ services:
     region: virginia  # US East
     plan: starter  # $7/month - only if you need background jobs
     branch: staging  # Staging service watches staging branch
+    autoDeploy: false  # Disable auto deploy - only deploy via GitHub Actions
     buildCommand: |
       cd backend
       pip install -r requirements.txt
