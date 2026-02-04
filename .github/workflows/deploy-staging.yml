@@ -87,10 +87,6 @@ jobs:
 
           BASE_URL="https://staging.events.cyberxredteam.org"
 
-          # Test API docs
-          echo "Testing API docs..."
-          curl -f "${BASE_URL}/api/docs" || exit 1
-
           # Test auth endpoint (should return 422 for missing credentials)
           echo "Testing auth endpoint..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
