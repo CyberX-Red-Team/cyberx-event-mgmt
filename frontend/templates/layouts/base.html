@@ -1280,11 +1280,19 @@
                 {% endif %}
             }
 
-            // Initialize on page load
+            // Initialize on page load (skip for authentication pages)
+            function initTheme() {
+                // Skip theme loading on authentication pages (login, confirm, etc.)
+                const isAuthPage = document.getElementById('layoutAuthentication') !== null;
+                if (!isAuthPage) {
+                    loadTheme();
+                }
+            }
+
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', loadTheme);
+                document.addEventListener('DOMContentLoaded', initTheme);
             } else {
-                loadTheme();
+                initTheme();
             }
         })();
     </script>
