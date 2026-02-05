@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     SENDGRID_FROM_EMAIL: str = ""
     SENDGRID_FROM_NAME: str = "CyberX Red Team"
     SENDGRID_SANDBOX_MODE: bool = False  # Enable to validate emails without sending
+    SENDGRID_WEBHOOK_VERIFICATION_KEY: str = ""  # Verification key for webhook signature validation
     TEST_EMAIL_OVERRIDE: str = ""  # If set, all emails go to this address instead
 
     # PowerDNS (optional - only needed if using PowerDNS integration)
