@@ -412,8 +412,8 @@
         }
 
         /* Theme-aware Component Overrides */
-        /* Navbar */
-        .navbar {
+        /* Navbar - only affect navbar-light (admin dashboard), not navbar-dark (participant portal) */
+        .navbar-light {
             background-color: var(--navbar-bg) !important;
             border-bottom: 1px solid var(--border-color);
         }
@@ -1092,6 +1092,41 @@
         [data-theme="dark"] .btn-outline-danger:hover {
             background-color: var(--danger-color) !important;
             color: #fff !important;
+        }
+
+        /* Force authentication pages to always use light mode styling */
+        #layoutAuthentication {
+            /* Reset all theme variables to light mode values */
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-card: #ffffff;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --border-color: #dee2e6;
+        }
+
+        /* Ensure auth page body always shows gradient, never dark mode background */
+        body.bg-primary {
+            background: linear-gradient(135deg, #0061f2 0%, #6900c7 100%) !important;
+        }
+
+        /* Ensure auth page cards and elements use light mode colors */
+        #layoutAuthentication .card {
+            background-color: #ffffff !important;
+            color: #212529 !important;
+        }
+
+        #layoutAuthentication .card-header,
+        #layoutAuthentication .card-footer {
+            background-color: rgba(33, 40, 50, 0.03) !important;
+            color: #212529 !important;
+        }
+
+        #layoutAuthentication .form-control,
+        #layoutAuthentication .form-select {
+            background-color: #ffffff !important;
+            color: #212529 !important;
+            border-color: #dee2e6 !important;
         }
     </style>
 
