@@ -111,6 +111,9 @@ class User(Base):
     is_admin = Column(Boolean, default=False)  # Legacy - use role instead
     is_active = Column(Boolean, default=True)
 
+    # User Preferences
+    theme_preference = Column(String(10), default='light', nullable=False)  # 'light' or 'dark'
+
     # Timestamps
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.middleware.csrf import CSRFMiddleware
-from app.api.routes import auth, admin, vpn, email, webhooks, views, event, public, sponsor
+from app.api.routes import auth, admin, vpn, email, webhooks, views, event, public, sponsor, user
 from app.tasks import start_scheduler, stop_scheduler, list_jobs
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
@@ -188,6 +188,7 @@ app.include_router(email.router)
 app.include_router(webhooks.router)
 app.include_router(event.router)
 app.include_router(public.router)
+app.include_router(user.router)
 
 # Include view routes (HTML pages)
 app.include_router(views.router)

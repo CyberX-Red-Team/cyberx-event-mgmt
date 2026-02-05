@@ -20,12 +20,62 @@
     <style>
         /* CSS Variables */
         :root {
+            /* Brand Colors */
             --primary-color: #0061f2;
             --secondary-color: #6900c7;
             --success-color: #00ac69;
             --danger-color: #e81500;
             --warning-color: #f4a100;
             --info-color: #00cfd5;
+
+            /* Theme-aware Colors (Light Mode) */
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-card: #ffffff;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --text-muted: #adb5bd;
+            --border-color: #dee2e6;
+            --shadow: rgba(0, 0, 0, 0.1);
+            --navbar-bg: #ffffff;
+            --sidebar-bg: #212529;
+            --sidebar-text: rgba(255, 255, 255, 0.5);
+            --sidebar-text-active: #ffffff;
+            --hover-bg: rgba(0, 0, 0, 0.05);
+            --input-bg: #ffffff;
+            --input-border: #dee2e6;
+            --table-stripe: rgba(0, 0, 0, 0.05);
+            --modal-bg: #ffffff;
+        }
+
+        /* Dark Mode Theme */
+        [data-theme="dark"] {
+            /* Adjust brand colors for dark mode */
+            --primary-color: #00cfd5;
+            --secondary-color: #6900c7;
+
+            /* Dark mode backgrounds */
+            --bg-primary: #0a0e27;
+            --bg-secondary: #1a1f3a;
+            --bg-card: #151a2e;
+
+            /* Dark mode text */
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+
+            /* Dark mode UI elements */
+            --border-color: #2a2f4a;
+            --shadow: rgba(0, 0, 0, 0.3);
+            --navbar-bg: #0d1117;
+            --sidebar-bg: #0d1117;
+            --sidebar-text: #8b949e;
+            --sidebar-text-active: #e6edf3;
+            --hover-bg: rgba(0, 207, 213, 0.1);
+            --input-bg: #151a2e;
+            --input-border: #2a2f4a;
+            --table-stripe: rgba(255, 255, 255, 0.05);
+            --modal-bg: #151a2e;
         }
 
         /* Base Typography - Cross-browser font stack */
@@ -33,6 +83,8 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
         }
 
         /* Gradient Background */
@@ -67,7 +119,7 @@
             top: 56px;
             width: 225px;
             left: 0;
-            background-color: #212529;
+            background-color: var(--sidebar-bg);
             z-index: 1038;
             -webkit-transition: -webkit-transform 0.15s ease-in-out;
             transition: -webkit-transform 0.15s ease-in-out;
@@ -83,7 +135,7 @@
         }
 
         .sidenav .nav-link {
-            color: rgba(255,255,255,0.5);
+            color: var(--sidebar-text);
             padding: 0.75rem 1rem;
             display: -webkit-box;
             display: -ms-flexbox;
@@ -94,11 +146,11 @@
         }
 
         .sidenav .nav-link:hover {
-            color: rgba(255,255,255,0.8);
+            color: var(--sidebar-text-active);
         }
 
         .sidenav .nav-link.active {
-            color: #fff;
+            color: var(--sidebar-text-active);
         }
 
         /* Feather Icons - Default size */
@@ -358,6 +410,261 @@
                 margin-left: 0 !important;
             }
         }
+
+        /* Theme-aware Component Overrides */
+        /* Navbar */
+        .navbar {
+            background-color: var(--navbar-bg) !important;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .navbar-light .navbar-brand {
+            color: var(--primary-color) !important;
+        }
+
+        .navbar-light .navbar-nav .nav-link {
+            color: var(--text-secondary);
+        }
+
+        .navbar-light .navbar-nav .nav-link:hover {
+            color: var(--text-primary);
+        }
+
+        /* Cards */
+        .card {
+            background-color: var(--bg-card);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .card-header {
+            background-color: var(--bg-secondary);
+            border-bottom-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .card-footer {
+            background-color: var(--bg-secondary);
+            border-top-color: var(--border-color);
+        }
+
+        /* Tables */
+        .table {
+            color: var(--text-primary);
+            border-color: var(--border-color);
+        }
+
+        .table thead th {
+            border-bottom-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .table tbody tr {
+            border-bottom-color: var(--border-color);
+        }
+
+        .table-striped > tbody > tr:nth-of-type(odd) > * {
+            background-color: var(--table-stripe);
+        }
+
+        .table-hover > tbody > tr:hover > * {
+            background-color: var(--hover-bg);
+        }
+
+        /* Forms */
+        .form-control,
+        .form-select {
+            background-color: var(--input-bg);
+            border-color: var(--input-border);
+            color: var(--text-primary);
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background-color: var(--input-bg);
+            border-color: var(--primary-color);
+            color: var(--text-primary);
+        }
+
+        .form-control::placeholder {
+            color: var(--text-muted);
+        }
+
+        .form-label {
+            color: var(--text-primary);
+        }
+
+        .form-text {
+            color: var(--text-muted);
+        }
+
+        /* Modals */
+        .modal-content {
+            background-color: var(--modal-bg);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .modal-header {
+            border-bottom-color: var(--border-color);
+        }
+
+        .modal-footer {
+            border-top-color: var(--border-color);
+        }
+
+        .modal-title {
+            color: var(--text-primary);
+        }
+
+        /* Dropdowns */
+        .dropdown-menu {
+            background-color: var(--bg-card);
+            border-color: var(--border-color);
+        }
+
+        .dropdown-item {
+            color: var(--text-primary);
+        }
+
+        .dropdown-item:hover,
+        .dropdown-item:focus {
+            background-color: var(--hover-bg);
+            color: var(--text-primary);
+        }
+
+        .dropdown-divider {
+            border-top-color: var(--border-color);
+        }
+
+        /* Badges */
+        .badge {
+            color: #fff;
+        }
+
+        /* Alerts */
+        [data-theme="dark"] .alert-primary {
+            background-color: rgba(0, 207, 213, 0.2);
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        [data-theme="dark"] .alert-secondary {
+            background-color: rgba(105, 0, 199, 0.2);
+            border-color: var(--secondary-color);
+            color: #b88fff;
+        }
+
+        /* Pagination */
+        .page-link {
+            background-color: var(--bg-card);
+            border-color: var(--border-color);
+            color: var(--primary-color);
+        }
+
+        .page-link:hover {
+            background-color: var(--hover-bg);
+            border-color: var(--border-color);
+            color: var(--primary-color);
+        }
+
+        .page-item.active .page-link {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .page-item.disabled .page-link {
+            background-color: var(--bg-secondary);
+            border-color: var(--border-color);
+            color: var(--text-muted);
+        }
+
+        /* Text colors */
+        .text-muted {
+            color: var(--text-muted) !important;
+        }
+
+        /* Borders */
+        .border {
+            border-color: var(--border-color) !important;
+        }
+
+        /* Backgrounds */
+        .bg-white {
+            background-color: var(--bg-card) !important;
+        }
+
+        .bg-light {
+            background-color: var(--bg-secondary) !important;
+        }
+
+        /* List groups */
+        .list-group-item {
+            background-color: var(--bg-card);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .list-group-item:hover {
+            background-color: var(--hover-bg);
+        }
+
+        /* Progress bars */
+        .progress {
+            background-color: var(--bg-secondary);
+        }
+
+        /* Popovers and tooltips */
+        .popover {
+            background-color: var(--modal-bg);
+            border-color: var(--border-color);
+        }
+
+        .popover-header {
+            background-color: var(--bg-secondary);
+            border-bottom-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .popover-body {
+            color: var(--text-primary);
+        }
+
+        .tooltip-inner {
+            background-color: var(--sidebar-bg);
+            color: var(--sidebar-text-active);
+        }
+
+        /* Breadcrumbs */
+        .breadcrumb {
+            background-color: var(--bg-secondary);
+        }
+
+        .breadcrumb-item {
+            color: var(--text-secondary);
+        }
+
+        .breadcrumb-item.active {
+            color: var(--text-primary);
+        }
+
+        /* Code blocks */
+        code {
+            background-color: var(--bg-secondary);
+            color: var(--primary-color);
+        }
+
+        pre {
+            background-color: var(--bg-secondary);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        /* HR */
+        hr {
+            border-color: var(--border-color);
+            opacity: 1;
+        }
     </style>
 
     {% block extra_css %}{% endblock %}
@@ -451,6 +758,107 @@
 
             return date.toLocaleDateString('en-US', formatOptions);
         }
+    </script>
+
+    <!-- Theme Management -->
+    <script>
+        (function() {
+            // Load theme on page load
+            function loadTheme() {
+                // Check localStorage first (fast)
+                let theme = localStorage.getItem('theme');
+
+                if (theme) {
+                    applyTheme(theme);
+                } else {
+                    // If no localStorage, fetch from API (for authenticated users)
+                    {% if current_user %}
+                    fetchThemeFromAPI();
+                    {% else %}
+                    // Default to light theme for non-authenticated users
+                    applyTheme('light');
+                    {% endif %}
+                }
+            }
+
+            // Apply theme to DOM
+            function applyTheme(theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem('theme', theme);
+                updateThemeUI(theme);
+            }
+
+            // Fetch theme preference from API
+            async function fetchThemeFromAPI() {
+                try {
+                    const response = await csrfFetch('/api/user/theme');
+                    if (response.ok) {
+                        const data = await response.json();
+                        applyTheme(data.theme);
+                    } else {
+                        // API failed, default to light theme
+                        applyTheme('light');
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch theme:', error);
+                    // Default to light theme
+                    applyTheme('light');
+                }
+            }
+
+            // Update UI elements (icon and label)
+            function updateThemeUI(theme) {
+                const themeIcon = document.getElementById('themeIcon');
+                const themeLabel = document.getElementById('themeLabel');
+
+                if (themeIcon && themeLabel) {
+                    if (theme === 'dark') {
+                        themeIcon.setAttribute('data-feather', 'sun');
+                        themeLabel.textContent = 'Light Mode';
+                    } else {
+                        themeIcon.setAttribute('data-feather', 'moon');
+                        themeLabel.textContent = 'Dark Mode';
+                    }
+
+                    // Refresh feather icons
+                    if (typeof feather !== 'undefined') {
+                        feather.replace();
+                    }
+                }
+            }
+
+            // Toggle theme
+            window.toggleTheme = async function() {
+                const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+                const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+
+                // Apply immediately for instant feedback
+                applyTheme(newTheme);
+
+                // Save to database (only for authenticated users)
+                {% if current_user %}
+                try {
+                    await csrfFetch('/api/user/theme', {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ theme: newTheme })
+                    });
+                } catch (error) {
+                    console.error('Failed to save theme preference:', error);
+                    // Still works locally even if API fails
+                }
+                {% endif %}
+            }
+
+            // Initialize on page load
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', loadTheme);
+            } else {
+                loadTheme();
+            }
+        })();
     </script>
 
     {% block extra_js %}{% endblock %}
