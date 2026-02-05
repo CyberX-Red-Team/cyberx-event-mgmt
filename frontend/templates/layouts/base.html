@@ -964,6 +964,73 @@
         [data-theme="dark"] .sidenav-footer .fw-bold {
             color: var(--sidebar-text-active) !important;
         }
+
+        /* Force table row backgrounds in dark mode */
+        [data-theme="dark"] table tbody tr,
+        [data-theme="dark"] .table tbody tr,
+        [data-theme="dark"] table.dataTable tbody tr,
+        [data-theme="dark"] .dataTable tbody tr {
+            background-color: var(--bg-card) !important;
+        }
+
+        [data-theme="dark"] table tbody tr:hover,
+        [data-theme="dark"] .table tbody tr:hover,
+        [data-theme="dark"] table.dataTable tbody tr:hover,
+        [data-theme="dark"] .dataTable tbody tr:hover {
+            background-color: var(--hover-bg) !important;
+        }
+
+        [data-theme="dark"] table tbody tr.odd,
+        [data-theme="dark"] .table tbody tr.odd,
+        [data-theme="dark"] table.dataTable tbody tr.odd,
+        [data-theme="dark"] .dataTable tbody tr.odd {
+            background-color: var(--bg-card) !important;
+        }
+
+        [data-theme="dark"] table tbody tr.even,
+        [data-theme="dark"] .table tbody tr.even,
+        [data-theme="dark"] table.dataTable tbody tr.even,
+        [data-theme="dark"] .dataTable tbody tr.even {
+            background-color: var(--bg-secondary) !important;
+        }
+
+        [data-theme="dark"] table tbody tr td,
+        [data-theme="dark"] .table tbody tr td,
+        [data-theme="dark"] table.dataTable tbody tr td,
+        [data-theme="dark"] .dataTable tbody tr td {
+            background-color: transparent !important;
+            color: var(--text-primary) !important;
+            border-color: var(--border-color) !important;
+        }
+
+        /* DataTables specific styling */
+        [data-theme="dark"] .dataTables_wrapper {
+            color: var(--text-primary) !important;
+        }
+
+        [data-theme="dark"] .dataTables_wrapper .dataTables_info,
+        [data-theme="dark"] .dataTables_wrapper .dataTables_paginate {
+            color: var(--text-secondary) !important;
+        }
+
+        [data-theme="dark"] .dataTables_wrapper .dataTables_filter input,
+        [data-theme="dark"] .dataTables_wrapper .dataTables_length select {
+            background-color: var(--input-bg) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--input-border) !important;
+        }
+
+        [data-theme="dark"] div.dataTables_wrapper div.dataTables_paginate ul.pagination .page-link {
+            background-color: var(--bg-card) !important;
+            border-color: var(--border-color) !important;
+            color: var(--primary-color) !important;
+        }
+
+        [data-theme="dark"] div.dataTables_wrapper div.dataTables_paginate ul.pagination .page-item.active .page-link {
+            background-color: var(--primary-color) !important;
+            border-color: var(--primary-color) !important;
+            color: #fff !important;
+        }
     </style>
 
     {% block extra_css %}{% endblock %}
