@@ -86,13 +86,13 @@ async def get_my_invitees_stats(
     stats = await service.get_statistics(sponsor_id=current_user.id)
 
     return SponsorInviteeStats(
-        total_invitees=stats.get("total", 0),
-        confirmed_count=stats.get("confirmed", 0),
-        unconfirmed_count=stats.get("unconfirmed", 0),
-        with_vpn_count=stats.get("with_vpn", 0),
-        without_vpn_count=stats.get("without_vpn", 0),
-        active_count=stats.get("active", 0),
-        inactive_count=stats.get("inactive", 0)
+        total_invitees=stats.get("total_invitees", 0),
+        confirmed_count=stats.get("confirmed_count", 0),
+        unconfirmed_count=stats.get("unconfirmed_count", 0),
+        with_vpn_count=stats.get("with_vpn_count", 0),
+        without_vpn_count=stats.get("without_vpn_count", 0),
+        active_count=stats.get("active_count", 0),
+        inactive_count=stats.get("inactive_count", 0)
     )
 
 
