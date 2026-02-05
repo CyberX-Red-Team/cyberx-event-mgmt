@@ -315,8 +315,11 @@
 
 <!-- Footer -->
 <footer class="bg-dark text-white-50 py-3 mt-auto">
-    <div class="container text-center">
-        <small>Copyright &copy; CyberX Red Team {{ now.year if now else '2024' }}</small>
+    <div class="container">
+        <div class="d-flex align-items-center justify-content-between">
+            <small>Copyright &copy; CyberX Red Team {{ now.year if now else '2026' }}</small>
+            <small>{{ app_version }}</small>
+        </div>
     </div>
 </footer>
 {% endblock %}
