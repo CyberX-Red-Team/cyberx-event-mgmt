@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     POWERDNS_USERNAME: str = ""
     POWERDNS_PASSWORD: str = ""
 
+    # Render API (optional - only needed for deployment automation)
+    RENDER_API_KEY: str = ""
+
     # VPN Server Configuration (optional - only needed if using VPN features)
     VPN_SERVER_PUBLIC_KEY: str = ""
     VPN_SERVER_ENDPOINT: str = ""
