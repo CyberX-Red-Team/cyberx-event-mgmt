@@ -14,6 +14,7 @@ from app.api.exceptions import not_found, forbidden, bad_request, conflict, unau
 from app.api.utils.pagination import calculate_pagination
 from app.api.utils.dependencies import get_event_service
 from app.models.user import User
+from app.models.event import generate_slug
 from app.services.event_service import EventService
 from app.schemas.event import (
     EventCreate,
@@ -132,16 +133,22 @@ async def create_event(
     service: EventService = Depends(get_event_service)
 ):
     """Create a new event. Admin only."""
-    # Check if year already exists
-    existing = await service.get_event_by_year(data.year)
+    # Auto-generate slug from name if not provided
+    slug = data.slug if data.slug else generate_slug(data.name)
+
+    # Check if slug already exists
+    existing = await service.get_event_by_slug(slug)
     if existing:
-        raise bad_request(f"An event for year {data.year} already exists")
+        raise bad_request(f"An event with slug '{slug}' already exists. Please choose a different name or provide a custom slug.")
 
     event = await service.create_event(
         year=data.year,
         name=data.name,
+        slug=slug,
         start_date=data.start_date,
         end_date=data.end_date,
+        event_time=data.event_time,
+        event_location=data.event_location,
         terms_version=data.terms_version,
         terms_content=data.terms_content,
         is_active=data.is_active
@@ -151,6 +158,7 @@ async def create_event(
         id=event.id,
         year=event.year,
         name=event.name,
+        slug=event.slug,
         start_date=event.start_date,
         end_date=event.end_date,
         event_time=event.event_time,

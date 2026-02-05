@@ -114,6 +114,13 @@ class EventService:
         )
         return result.scalar_one_or_none()
 
+    async def get_event_by_slug(self, slug: str) -> Optional[Event]:
+        """Get an event by slug."""
+        result = await self.session.execute(
+            select(Event).where(Event.slug == slug)
+        )
+        return result.scalar_one_or_none()
+
     async def create_event(self, **kwargs) -> Event:
         """
         Create a new event.
