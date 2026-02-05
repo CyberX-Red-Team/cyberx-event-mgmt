@@ -12,7 +12,10 @@ engine = create_async_engine(
     pool_size=20,
     max_overflow=50,
     pool_pre_ping=True,
-    connect_args={"statement_cache_size": 0},  # Required for pgbouncer compatibility
+    connect_args={
+        "statement_cache_size": 0,  # SQLAlchemy parameter
+        "prepared_statement_cache_size": 0,  # asyncpg-specific parameter
+    },
 )
 
 # Create session factory
