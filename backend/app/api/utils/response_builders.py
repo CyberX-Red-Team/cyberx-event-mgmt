@@ -50,6 +50,7 @@ async def build_auth_user_response(
         is_active=user.is_active,
         confirmed=user.confirmed,
         email_status=user.email_status,
+        theme_preference=user.theme_preference,
         pandas_username=user.pandas_username,
         discord_username=user.discord_username,
         snowflake_id=user.snowflake_id,
