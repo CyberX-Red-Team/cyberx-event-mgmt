@@ -416,10 +416,17 @@ Co-Authored-By: Name <email>
 
 Additional documentation available:
 
+### Administrator Documentation
+- **[Wiki - Administrator Guide](https://github.com/CyberX-Red-Team/cyberx-event-mgmt/wiki/Administrator-Guide)** - Comprehensive guide covering database schema, field reference, workflows, email management, VPN credentials, and troubleshooting
+- [ADMIN_GUIDE.md](ADMIN_GUIDE.md) - Administrator guide (also available in repository)
+
+### Setup & Operations
 - [SETUP.md](SETUP.md) - Detailed setup instructions
 - [EVENT_MANAGEMENT.md](EVENT_MANAGEMENT.md) - Event lifecycle guide
 - [TESTING_EMAIL_GUIDE.md](TESTING_EMAIL_GUIDE.md) - Email testing procedures
 - [GIT_SETUP.md](GIT_SETUP.md) - Git repository guidelines
+
+### Technical Documentation
 - [backend/docs/](backend/docs/) - Technical design documents
 
 ---
