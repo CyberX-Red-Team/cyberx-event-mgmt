@@ -1,5 +1,8 @@
 # CyberX Event Management System
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
 **Status**: 🌐 Open Source - Pre-Production Beta Testing
 
 A comprehensive event management system designed for CyberX Red Team cybersecurity events, handling participant invitations, VPN credential management, email workflows, and event lifecycle coordination.
