@@ -1109,31 +1109,50 @@ async def list_scheduler_jobs(
 
 @router.get("/scheduler/status")
 async def get_scheduler_status(
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """
-    Get overall scheduler health and status.
+    Get overall scheduler health and status from background worker.
 
     Requires admin role.
+
+    The background worker updates its status in the database every 60 seconds.
+    This endpoint reads that status.
     """
-    from app.tasks.scheduler import get_scheduler
+    from app.models.scheduler_status import SchedulerStatus
+    from datetime import datetime, timezone, timedelta
 
-    scheduler = get_scheduler()
+    # Get latest status from database
+    result = await db.execute(
+        select(SchedulerStatus).where(SchedulerStatus.service_name == "web-service")
+    )
+    status = result.scalar_one_or_none()
 
-    # Get all jobs
-    jobs = []
-    for job in scheduler.get_jobs():
-        jobs.append({
-            "id": job.id,
-            "name": job.name,
-            "next_run_time": str(job.next_run_time) if job.next_run_time else None,
-            "trigger": str(job.trigger),
-        })
+    if not status:
+        # Scheduler hasn't started yet or hasn't written status
+        return {
+            "running": False,
+            "total_jobs": 0,
+            "jobs": [],
+            "last_heartbeat": None,
+            "healthy": False,
+            "message": "Scheduler has not reported status yet. It may still be starting up."
+        }
+
+    # Check if heartbeat is recent (within last 2 minutes)
+    now = datetime.now(timezone.utc)
+    heartbeat_age = now - status.last_heartbeat
+    is_healthy = heartbeat_age < timedelta(minutes=2)
 
     return {
-        "running": scheduler.running,
-        "total_jobs": len(jobs),
-        "jobs": jobs
+        "running": status.is_running,
+        "total_jobs": len(status.jobs),
+        "jobs": status.jobs,
+        "last_heartbeat": status.last_heartbeat.isoformat(),
+        "heartbeat_age_seconds": heartbeat_age.total_seconds(),
+        "healthy": is_healthy,
+        "message": "Healthy" if is_healthy else f"Warning: Last heartbeat was {int(heartbeat_age.total_seconds())} seconds ago"
     }
 
 

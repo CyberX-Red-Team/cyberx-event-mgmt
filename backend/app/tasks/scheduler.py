@@ -62,9 +62,22 @@ async def start_scheduler():
     schedule_session_cleanup_job(sched)
     schedule_invitation_reminder_job(sched)
 
+    # Register status heartbeat job (updates database every 60 seconds)
+    sched.add_job(
+        update_scheduler_status,
+        'interval',
+        seconds=60,
+        id='scheduler_status_heartbeat',
+        name='Scheduler Status Heartbeat',
+        replace_existing=True
+    )
+
     # Start the scheduler
     sched.start()
     logger.info("Scheduler started with %d jobs", len(sched.get_jobs()))
+
+    # Update status immediately on startup
+    await update_scheduler_status()
 
     # Log registered jobs
     for job in sched.get_jobs():
@@ -92,6 +105,58 @@ def list_jobs() -> list[dict]:
             "trigger": str(job.trigger),
         })
     return jobs
+
+
+async def update_scheduler_status():
+    """Update scheduler status in database for web service to read."""
+    from app.database import AsyncSessionLocal
+    from app.models.scheduler_status import SchedulerStatus
+    from sqlalchemy import select
+    from datetime import datetime, timezone
+
+    sched = get_scheduler()
+
+    # Collect job information
+    jobs = []
+    for job in sched.get_jobs():
+        jobs.append({
+            "id": job.id,
+            "name": job.name,
+            "next_run_time": str(job.next_run_time) if job.next_run_time else None,
+            "trigger": str(job.trigger),
+        })
+
+    # Update database
+    async with AsyncSessionLocal() as session:
+        try:
+            # Try to get existing status record
+            result = await session.execute(
+                select(SchedulerStatus).where(SchedulerStatus.service_name == "web-service")
+            )
+            status = result.scalar_one_or_none()
+
+            if status:
+                # Update existing record
+                status.is_running = sched.running
+                status.jobs = jobs
+                status.last_heartbeat = datetime.now(timezone.utc)
+                status.updated_at = datetime.now(timezone.utc)
+            else:
+                # Create new record
+                status = SchedulerStatus(
+                    service_name="web-service",
+                    is_running=sched.running,
+                    jobs=jobs,
+                    last_heartbeat=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc)
+                )
+                session.add(status)
+
+            await session.commit()
+            logger.debug(f"Updated scheduler status: running={sched.running}, jobs={len(jobs)}")
+        except Exception as e:
+            logger.error(f"Failed to update scheduler status: {e}")
+            await session.rollback()
 
 
 if __name__ == "__main__":

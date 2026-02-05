@@ -110,21 +110,25 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("  Admin bootstrap: Skipped (ADMIN_EMAIL not configured)")
 
-    # Start the background scheduler (only in local development)
-    # In production, use the dedicated background worker service instead
-    import os
-    if os.getenv('ENABLE_SCHEDULER_IN_WEB', 'false').lower() == 'true':
-        logger.info("  Background scheduler: Starting (ENABLE_SCHEDULER_IN_WEB=true)")
+    # Start the background scheduler
+    # Runs scheduled jobs for email processing, session cleanup, and reminders
+    logger.info("  Background scheduler: Starting...")
+    try:
         await start_scheduler()
-    else:
-        logger.info("  Background scheduler: Disabled (use dedicated worker service)")
+        logger.info("  Background scheduler: Started successfully")
+    except Exception as e:
+        logger.error("  Background scheduler: Failed to start - %s", e)
+        # Don't fail startup if scheduler fails
 
     yield  # Application runs
 
     # Shutdown
     logger.info("CyberX Event Management API shutting down...")
-    if os.getenv('ENABLE_SCHEDULER_IN_WEB', 'false').lower() == 'true':
+    try:
         await stop_scheduler()
+        logger.info("  Background scheduler: Stopped")
+    except Exception as e:
+        logger.error("  Background scheduler: Error during shutdown - %s", e)
 
 
 # Create FastAPI application
