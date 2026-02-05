@@ -24,9 +24,15 @@ config = context.config
 
 # Get database URL from environment
 settings = get_settings()
+# Add pgbouncer compatibility parameter to database URL
+database_url = settings.async_database_url
+if "?" in database_url:
+    database_url += "&prepared_statement_cache_size=0"
+else:
+    database_url += "?prepared_statement_cache_size=0"
 # Escape % characters for ConfigParser (% is used for interpolation in INI files)
 # URL-encoded characters like %40 need to be escaped as %%40
-escaped_url = settings.async_database_url.replace('%', '%%')
+escaped_url = database_url.replace('%', '%%')
 config.set_main_option("sqlalchemy.url", escaped_url)
 
 # Interpret the config file for Python logging.
@@ -78,15 +84,8 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
-    configuration = config.get_section(config.config_ini_section, {})
-    # Add pgbouncer compatibility - both parameters needed for asyncpg
-    configuration["connect_args"] = {
-        "statement_cache_size": 0,
-        "prepared_statement_cache_size": 0,
-    }
-
     connectable = async_engine_from_config(
-        configuration,
+        config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

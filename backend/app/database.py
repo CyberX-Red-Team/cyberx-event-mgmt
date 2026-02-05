@@ -5,17 +5,21 @@ from app.config import get_settings
 
 settings = get_settings()
 
+# Add pgbouncer compatibility parameter to database URL
+# asyncpg requires prepared_statement_cache_size=0 in URL for pgbouncer
+database_url = settings.async_database_url
+if "?" in database_url:
+    database_url += "&prepared_statement_cache_size=0"
+else:
+    database_url += "?prepared_statement_cache_size=0"
+
 # Create async engine
 engine = create_async_engine(
-    settings.async_database_url,
+    database_url,
     echo=False,  # Disable SQL query logging (too verbose)
     pool_size=20,
     max_overflow=50,
     pool_pre_ping=True,
-    connect_args={
-        "statement_cache_size": 0,  # SQLAlchemy parameter
-        "prepared_statement_cache_size": 0,  # asyncpg-specific parameter
-    },
 )
 
 # Create session factory
