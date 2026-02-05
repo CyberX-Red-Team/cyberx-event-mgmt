@@ -25,9 +25,9 @@ jobs:
       - name: Trigger Render Deploy via Deploy Hook
         env:
           STAGING_DEPLOY_HOOK_URL: ${{ secrets.STAGING_DEPLOY_HOOK_URL }}
-          STAGING_WORKER_DEPLOY_HOOK_URL: ${{ secrets.STAGING_WORKER_DEPLOY_HOOK_URL }}
         run: |
-          echo "🚀 Triggering Render deployment for staging web service..."
+          echo "🚀 Triggering Render deployment for staging service..."
+          echo "Note: Scheduler now runs within the web service (consolidated)"
 
           # Trigger web service deployment and capture response
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${STAGING_DEPLOY_HOOK_URL}")
@@ -40,34 +40,11 @@ jobs:
           DEPLOY_ID=$(echo "$BODY" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && [ -n "$DEPLOY_ID" ]; then
-            echo "✅ Web service deployment triggered (Deploy ID: $DEPLOY_ID)"
+            echo "✅ Deployment triggered (Deploy ID: $DEPLOY_ID)"
           else
-            echo "❌ Web service deployment failed (HTTP $HTTP_CODE)"
+            echo "❌ Deployment failed (HTTP $HTTP_CODE)"
             exit 1
           fi
-
-          echo ""
-          echo "🚀 Triggering Render deployment for staging worker service..."
-
-          # Trigger worker service deployment and capture response
-          WORKER_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${STAGING_WORKER_DEPLOY_HOOK_URL}")
-          WORKER_HTTP_CODE=$(echo "$WORKER_RESPONSE" | tail -n1)
-          WORKER_BODY=$(echo "$WORKER_RESPONSE" | head -n-1)
-
-          echo "Response: $WORKER_BODY"
-
-          # Extract deploy ID from JSON response
-          WORKER_DEPLOY_ID=$(echo "$WORKER_BODY" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
-
-          if [ "$WORKER_HTTP_CODE" -ge 200 ] && [ "$WORKER_HTTP_CODE" -lt 300 ] && [ -n "$WORKER_DEPLOY_ID" ]; then
-            echo "✅ Worker service deployment triggered (Deploy ID: $WORKER_DEPLOY_ID)"
-          else
-            echo "❌ Worker service deployment failed (HTTP $WORKER_HTTP_CODE)"
-            exit 1
-          fi
-
-          echo ""
-          echo "✅ Both services deployment triggered successfully!"
 
       - name: Wait for deployment
         run: |
