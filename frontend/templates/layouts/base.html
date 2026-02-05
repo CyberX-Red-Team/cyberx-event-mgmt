@@ -665,6 +665,161 @@
             border-color: var(--border-color);
             opacity: 1;
         }
+
+        /* Main Content & Layout */
+        main {
+            background-color: var(--bg-secondary);
+        }
+
+        #layoutSidenav_content {
+            background-color: var(--bg-secondary);
+        }
+
+        /* Footer */
+        .footer {
+            background-color: var(--bg-card);
+            border-top: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .footer a {
+            color: var(--text-secondary);
+        }
+
+        .footer a:hover {
+            color: var(--text-primary);
+        }
+
+        /* Sidenav Footer */
+        .sidenav-footer {
+            background-color: var(--sidebar-bg);
+            border-top-color: var(--border-color) !important;
+            color: var(--sidebar-text);
+        }
+
+        .sidenav-footer .fw-bold {
+            color: var(--sidebar-text-active);
+        }
+
+        /* Nav Tabs */
+        .nav-tabs {
+            border-bottom-color: var(--border-color);
+        }
+
+        .nav-tabs .nav-link {
+            color: var(--text-secondary);
+            background-color: transparent;
+            border-color: transparent;
+        }
+
+        .nav-tabs .nav-link:hover {
+            color: var(--text-primary);
+            border-color: var(--border-color);
+            background-color: var(--hover-bg);
+        }
+
+        .nav-tabs .nav-link.active {
+            color: var(--primary-color);
+            background-color: var(--bg-card);
+            border-color: var(--border-color) var(--border-color) var(--bg-card);
+        }
+
+        /* Nav Pills */
+        .nav-pills .nav-link {
+            color: var(--text-secondary);
+        }
+
+        .nav-pills .nav-link:hover {
+            background-color: var(--hover-bg);
+            color: var(--text-primary);
+        }
+
+        .nav-pills .nav-link.active {
+            background-color: var(--primary-color);
+            color: #fff;
+        }
+
+        /* Input Groups */
+        .input-group-text {
+            background-color: var(--bg-secondary);
+            border-color: var(--input-border);
+            color: var(--text-primary);
+        }
+
+        /* Accordion */
+        .accordion-item {
+            background-color: var(--bg-card);
+            border-color: var(--border-color);
+        }
+
+        .accordion-button {
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .accordion-button:not(.collapsed) {
+            background-color: var(--bg-secondary);
+            color: var(--primary-color);
+        }
+
+        .accordion-body {
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        /* Offcanvas */
+        .offcanvas {
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        .offcanvas-header {
+            border-bottom-color: var(--border-color);
+        }
+
+        /* Toast */
+        .toast {
+            background-color: var(--bg-card);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .toast-header {
+            background-color: var(--bg-secondary);
+            border-bottom-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        /* Spinner */
+        .spinner-border,
+        .spinner-grow {
+            color: var(--primary-color);
+        }
+
+        /* Close buttons */
+        .btn-close {
+            filter: var(--text-primary) == #e6edf3 ? invert(1) grayscale(100%) brightness(200%) : none;
+        }
+
+        [data-theme="dark"] .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+
+        /* Container backgrounds */
+        .container,
+        .container-fluid {
+            background-color: transparent;
+        }
+
+        /* Small text */
+        .small,
+        small {
+            color: var(--text-secondary);
+        }
+
+        .text-small {
+            color: var(--text-secondary);
+        }
     </style>
 
     {% block extra_css %}{% endblock %}
