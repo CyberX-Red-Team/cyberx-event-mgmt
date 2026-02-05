@@ -922,6 +922,48 @@
         [data-theme="dark"] .page-header-subtitle {
             color: rgba(255, 255, 255, 0.8) !important;
         }
+
+        /* Override sidenav-light in dark mode */
+        [data-theme="dark"] .sidenav,
+        [data-theme="dark"] .sidenav-light {
+            background-color: var(--sidebar-bg) !important;
+        }
+
+        [data-theme="dark"] .sidenav .nav-link,
+        [data-theme="dark"] .sidenav-light .nav-link {
+            color: var(--sidebar-text) !important;
+        }
+
+        [data-theme="dark"] .sidenav .nav-link:hover,
+        [data-theme="dark"] .sidenav-light .nav-link:hover {
+            color: var(--sidebar-text-active) !important;
+            background-color: var(--hover-bg) !important;
+        }
+
+        [data-theme="dark"] .sidenav .nav-link.active,
+        [data-theme="dark"] .sidenav-light .nav-link.active {
+            color: var(--sidebar-text-active) !important;
+            background-color: var(--hover-bg) !important;
+        }
+
+        [data-theme="dark"] .sidenav-menu-heading,
+        [data-theme="dark"] .sidenav-light .sidenav-menu-heading {
+            color: var(--text-muted) !important;
+        }
+
+        [data-theme="dark"] .sidenav-footer,
+        [data-theme="dark"] .sidenav-light .sidenav-footer {
+            background-color: var(--sidebar-bg) !important;
+            border-top-color: var(--border-color) !important;
+        }
+
+        [data-theme="dark"] .sidenav-footer .text-muted {
+            color: var(--sidebar-text) !important;
+        }
+
+        [data-theme="dark"] .sidenav-footer .fw-bold {
+            color: var(--sidebar-text-active) !important;
+        }
     </style>
 
     {% block extra_css %}{% endblock %}
