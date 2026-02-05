@@ -17,6 +17,7 @@ class EventBase(BaseModel):
     """Base event schema."""
     year: int = Field(..., ge=2020, le=2100)
     name: str = Field(..., min_length=1, max_length=255)
+    slug: Optional[str] = Field(None, min_length=1, max_length=255, description="URL-friendly identifier (auto-generated from name if not provided)")
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     event_time: Optional[str] = Field(None, max_length=255)
@@ -33,6 +34,7 @@ class EventCreate(EventBase):
 class EventUpdate(BaseModel):
     """Schema for updating an event."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
+    slug: Optional[str] = Field(None, min_length=1, max_length=255, description="URL-friendly identifier")
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     event_time: Optional[str] = Field(None, max_length=255)
@@ -49,6 +51,7 @@ class EventResponse(BaseModel):
     id: int
     year: int
     name: str
+    slug: str
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     event_time: Optional[str] = None

@@ -25,10 +25,16 @@
         display: flex;
         flex-direction: column;
         min-height: 100vh;
+        background: transparent !important;
     }
 
     #layoutAuthentication #layoutAuthentication_content {
         min-height: calc(100vh - 60px);
+        background: transparent !important;
+    }
+
+    #layoutAuthentication #layoutAuthentication_content main {
+        background: transparent !important;
     }
 
     #layoutAuthentication #layoutAuthentication_footer {
@@ -36,6 +42,11 @@
     }
 
     .bg-primary {
+        background: linear-gradient(135deg, #0061f2 0%, #6900c7 100%) !important;
+    }
+
+    /* Ensure body gradient shows through all auth page elements */
+    body.bg-primary {
         background: linear-gradient(135deg, #0061f2 0%, #6900c7 100%) !important;
     }
 </style>

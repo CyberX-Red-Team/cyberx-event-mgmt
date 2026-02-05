@@ -313,9 +313,11 @@ async def active_event(db_session: AsyncSession) -> Event:
     Create and return an active event for testing.
     """
     from datetime import datetime, timezone, timedelta
+    from app.models.event import generate_slug
 
     event = Event(
         name="Test CyberX 2026",
+        slug=generate_slug("Test CyberX 2026"),
         year=2026,
         start_date=datetime.now(timezone.utc) + timedelta(days=30),
         end_date=datetime.now(timezone.utc) + timedelta(days=37),
