@@ -34,6 +34,9 @@
             <span class="navbar-text text-white me-3">
                 Welcome, {{ current_user.first_name }}
             </span>
+            <a class="btn btn-outline-light btn-sm me-2" href="/profile" title="Profile Settings">
+                <i data-feather="settings" class="me-1"></i>Settings
+            </a>
             <a class="btn btn-outline-light btn-sm" href="#" onclick="logout()">
                 <i data-feather="log-out" class="me-1"></i>Logout
             </a>
@@ -220,70 +223,23 @@
                 </div>
             </div>
 
-            <!-- Credentials Card -->
+            <!-- Authentication Information Card -->
             <div class="card shadow-sm mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0"><i data-feather="key" class="me-2"></i>Your Credentials</h5>
+                    <h5 class="mb-0"><i data-feather="key" class="me-2"></i>Authentication</h5>
                 </div>
                 <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6 mb-3 mb-md-0">
-                            <label class="form-label small text-muted">Username</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" value="{{ current_user.pandas_username or 'Not assigned' }}" readonly>
-                                <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard('{{ current_user.pandas_username }}')">
-                                    <i data-feather="copy"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small text-muted">Password</label>
-                            <div class="input-group">
-                                <input type="password" class="form-control" id="passwordField" value="{{ current_user.pandas_password or '********' }}" readonly>
-                                <button class="btn btn-outline-secondary" type="button" onclick="togglePassword()">
-                                    <i data-feather="eye" id="eyeIcon"></i>
-                                </button>
-                                <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard('{{ current_user.pandas_password }}')">
-                                    <i data-feather="copy"></i>
-                                </button>
-                            </div>
+                    <div class="alert alert-info mb-0">
+                        <i data-feather="info" class="me-2"></i>
+                        <div>
+                            <strong>Single Sign-On (SSO) Enabled</strong>
+                            <p class="mb-2 mt-2">Your website login password is automatically synchronized with Keycloak, which provides authentication for all in-game services and resources.</p>
+                            <p class="mb-0">
+                                <i data-feather="settings" class="me-1" style="width: 14px; height: 14px;"></i>
+                                To change your password, visit the <a href="/profile" class="alert-link">Settings</a> page.
+                            </p>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Change Password Card -->
-            <div class="card shadow-sm mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><i data-feather="lock" class="me-2"></i>Change Password</h5>
-                </div>
-                <div class="card-body">
-                    <form id="passwordChangeForm">
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label for="currentPassword" class="form-label">Current Password</label>
-                                <input type="password" class="form-control" id="currentPassword" required>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="newPassword" class="form-label">New Password</label>
-                                <input type="password" class="form-control" id="newPassword" minlength="8" required>
-                                <div class="form-text">Minimum 8 characters</div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="confirmPassword" class="form-label">Confirm New Password</label>
-                                <input type="password" class="form-control" id="confirmPassword" minlength="8" required>
-                            </div>
-                        </div>
-                        <div id="passwordChangeAlert" class="d-none mb-3"></div>
-                        <button type="submit" class="btn btn-primary">
-                            <i data-feather="save" class="me-1"></i> Change Password
-                        </button>
-                        <button type="button" class="btn btn-secondary ms-2" onclick="resetPasswordForm()">
-                            Cancel
-                        </button>
-                    </form>
                 </div>
             </div>
 
@@ -378,36 +334,6 @@ async function logout() {
     } catch (error) {
         console.error('Logout failed:', error);
     }
-}
-
-function togglePassword() {
-    const field = document.getElementById('passwordField');
-    const icon = document.getElementById('eyeIcon');
-
-    if (field.type === 'password') {
-        field.type = 'text';
-        icon.setAttribute('data-feather', 'eye-off');
-    } else {
-        field.type = 'password';
-        icon.setAttribute('data-feather', 'eye');
-    }
-    if (typeof refreshFeatherIcons === 'function') {
-        refreshFeatherIcons();
-    } else if (typeof feather !== 'undefined') {
-        feather.replace();
-    }
-}
-
-function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(function() {
-        // Show brief feedback
-        var toast = document.createElement('div');
-        toast.className = 'position-fixed bottom-0 end-0 p-3';
-        toast.style.zIndex = '1050';
-        toast.innerHTML = '<div class="toast show" role="alert"><div class="toast-body"><i class="fas fa-check me-2 text-success"></i>Copied to clipboard!</div></div>';
-        document.body.appendChild(toast);
-        setTimeout(function() { toast.remove(); }, 2000);
-    });
 }
 
 let currentEvent = null;  // Store current event data globally
@@ -760,70 +686,6 @@ function refreshFeatherIcons() {
     }
 }
 
-function resetPasswordForm() {
-    document.getElementById('passwordChangeForm').reset();
-    const alertDiv = document.getElementById('passwordChangeAlert');
-    alertDiv.classList.add('d-none');
-}
-
-async function handlePasswordChange(e) {
-    e.preventDefault();
-
-    const currentPassword = document.getElementById('currentPassword').value;
-    const newPassword = document.getElementById('newPassword').value;
-    const confirmPassword = document.getElementById('confirmPassword').value;
-    const alertDiv = document.getElementById('passwordChangeAlert');
-
-    // Validate passwords match
-    if (newPassword !== confirmPassword) {
-        alertDiv.className = 'alert alert-danger';
-        alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>New passwords do not match';
-        alertDiv.classList.remove('d-none');
-        refreshFeatherIcons();
-        return;
-    }
-
-    // Validate password length
-    if (newPassword.length < 8) {
-        alertDiv.className = 'alert alert-danger';
-        alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>Password must be at least 8 characters';
-        alertDiv.classList.remove('d-none');
-        refreshFeatherIcons();
-        return;
-    }
-
-    try {
-        const response = await csrfFetch('/api/auth/password/change', {
-            method: 'POST',
-            body: {
-                current_password: currentPassword,
-                new_password: newPassword
-            }
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            alertDiv.className = 'alert alert-success';
-            alertDiv.innerHTML = '<i data-feather="check-circle" class="me-2"></i>' + data.message;
-            alertDiv.classList.remove('d-none');
-            refreshFeatherIcons();
-            resetPasswordForm();
-        } else {
-            alertDiv.className = 'alert alert-danger';
-            alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>' + data.detail;
-            alertDiv.classList.remove('d-none');
-            refreshFeatherIcons();
-        }
-    } catch (error) {
-        console.error('Error changing password:', error);
-        alertDiv.className = 'alert alert-danger';
-        alertDiv.innerHTML = '<i data-feather="alert-circle" class="me-2"></i>Failed to change password. Please try again.';
-        alertDiv.classList.remove('d-none');
-        refreshFeatherIcons();
-    }
-}
-
 function showVPNInstructions() {
     var modal = document.createElement('div');
     modal.className = 'modal fade show';
@@ -841,12 +703,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Then load VPN status (which depends on event data)
     loadVPNStatus();
     loadAvailableCount();
-
-    // Attach password change form handler
-    const passwordForm = document.getElementById('passwordChangeForm');
-    if (passwordForm) {
-        passwordForm.addEventListener('submit', handlePasswordChange);
-    }
 
     // Ensure icons are rendered after initial load
     setTimeout(function() {
