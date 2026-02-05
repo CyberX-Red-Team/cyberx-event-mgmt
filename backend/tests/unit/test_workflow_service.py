@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.workflow_service import WorkflowService
 from app.models.email_workflow import EmailWorkflow, WorkflowTriggerEvent
 from app.models.user import User, UserRole
-from app.models.event import Event
+from app.models.event import Event, generate_slug
 
 
 @pytest.mark.unit
@@ -482,6 +482,7 @@ class TestWorkflowServiceTestMode:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True,
@@ -529,6 +530,7 @@ class TestWorkflowServiceTestMode:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True,
@@ -576,6 +578,7 @@ class TestWorkflowServiceTestMode:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True,
