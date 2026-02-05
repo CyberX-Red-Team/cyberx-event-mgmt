@@ -30,16 +30,30 @@
         <a class="navbar-brand" href="/portal">
             <i data-feather="shield" class="me-2"></i>CyberX Portal
         </a>
-        <div class="navbar-nav ms-auto">
-            <span class="navbar-text text-white me-3">
-                Welcome, {{ current_user.first_name }}
-            </span>
-            <a class="btn btn-outline-light btn-sm me-2" href="/profile" title="Profile Settings">
-                <i data-feather="settings" class="me-1"></i>Settings
-            </a>
-            <a class="btn btn-outline-light btn-sm" href="#" onclick="logout()">
-                <i data-feather="log-out" class="me-1"></i>Logout
-            </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle text-white" href="#" role="button" data-bs-toggle="dropdown">
+                        <i data-feather="user" class="me-1"></i>
+                        {{ current_user.first_name }} {{ current_user.last_name }}
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="/profile"><i data-feather="settings" class="me-2"></i>Settings</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <button class="dropdown-item" id="themeToggle" onclick="toggleTheme()" type="button">
+                                <i data-feather="moon" class="me-2" id="themeIcon"></i>
+                                <span id="themeLabel">Dark Mode</span>
+                            </button>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="logout()"><i data-feather="log-out" class="me-2"></i>Logout</a></li>
+                    </ul>
+                </li>
+            </ul>
         </div>
     </div>
 </nav>
