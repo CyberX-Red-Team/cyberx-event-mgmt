@@ -160,3 +160,36 @@ class EventService:
             .where(Event.id != except_event_id)
             .values(is_active=False)
         )
+
+    async def get_event_statistics(self, event_id: int) -> dict:
+        """
+        Get participation statistics for an event.
+
+        Args:
+            event_id: ID of the event
+
+        Returns:
+            Dictionary with counts for each participation status:
+            - total_invited: Total number of invited participants
+            - total_confirmed: Number of confirmed participants
+            - total_declined: Number of declined participants
+            - total_no_response: Number of participants who haven't responded
+        """
+        # Count by status
+        result = await self.session.execute(
+            select(
+                EventParticipation.status,
+                func.count(EventParticipation.id).label('count')
+            )
+            .where(EventParticipation.event_id == event_id)
+            .group_by(EventParticipation.status)
+        )
+
+        status_counts = {row.status: row.count for row in result.all()}
+
+        return {
+            "total_invited": sum(status_counts.values()),
+            "total_confirmed": status_counts.get(ParticipationStatus.CONFIRMED.value, 0),
+            "total_declined": status_counts.get(ParticipationStatus.DECLINED.value, 0),
+            "total_no_response": status_counts.get(ParticipationStatus.NO_RESPONSE.value, 0)
+        }
