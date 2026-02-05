@@ -10,7 +10,7 @@ from datetime import datetime, timezone, date
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.event_service import EventService
-from app.models.event import Event
+from app.models.event import Event, generate_slug
 
 
 @pytest.mark.unit
@@ -26,6 +26,7 @@ class TestEventServiceRetrieval:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True
@@ -54,12 +55,14 @@ class TestEventServiceRetrieval:
         event_2025 = Event(
             year=2025,
             name="CyberX 2025",
+            slug=generate_slug("CyberX 2025"),
             start_date=date(2025, 6, 1),
             end_date=date(2025, 6, 7)
         )
         event_2026 = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7)
         )
@@ -80,6 +83,7 @@ class TestEventServiceRetrieval:
         inactive_event = Event(
             year=2025,
             name="CyberX 2025",
+            slug=generate_slug("CyberX 2025"),
             start_date=date(2025, 6, 1),
             end_date=date(2025, 6, 7),
             is_active=False
@@ -87,6 +91,7 @@ class TestEventServiceRetrieval:
         active_event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True
@@ -108,6 +113,7 @@ class TestEventServiceRetrieval:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=False
@@ -127,6 +133,7 @@ class TestEventServiceRetrieval:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True
@@ -150,6 +157,7 @@ class TestEventServiceRetrieval:
         active_event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_archived=False
@@ -157,6 +165,7 @@ class TestEventServiceRetrieval:
         archived_event = Event(
             year=2024,
             name="CyberX 2024",
+            slug=generate_slug("CyberX 2024"),
             start_date=date(2024, 6, 1),
             end_date=date(2024, 6, 7),
             is_archived=True
@@ -179,6 +188,7 @@ class TestEventServiceRetrieval:
         active_event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_archived=False
@@ -186,6 +196,7 @@ class TestEventServiceRetrieval:
         archived_event = Event(
             year=2024,
             name="CyberX 2024",
+            slug=generate_slug("CyberX 2024"),
             start_date=date(2024, 6, 1),
             end_date=date(2024, 6, 7),
             is_archived=True
@@ -214,6 +225,7 @@ class TestEventServiceBusinessLogic:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True
@@ -232,6 +244,7 @@ class TestEventServiceBusinessLogic:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=False
@@ -250,6 +263,7 @@ class TestEventServiceBusinessLogic:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True,
@@ -271,6 +285,7 @@ class TestEventServiceBusinessLogic:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True,
@@ -292,6 +307,7 @@ class TestEventServiceBusinessLogic:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=False,
@@ -316,6 +332,7 @@ class TestEventServiceMutation:
         event = await service.create_event(
             year=2027,
             name="CyberX 2027",
+            slug=generate_slug("CyberX 2027"),
             start_date=date(2027, 6, 1),
             end_date=date(2027, 6, 7),
             event_time="9:00 AM",
@@ -336,6 +353,7 @@ class TestEventServiceMutation:
         event = await service.create_event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=False
@@ -369,6 +387,7 @@ class TestEventServiceMutation:
         event = await service.create_event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7)
         )
@@ -397,6 +416,7 @@ class TestEventServiceMutation:
         event_2025 = Event(
             year=2025,
             name="CyberX 2025",
+            slug=generate_slug("CyberX 2025"),
             start_date=date(2025, 6, 1),
             end_date=date(2025, 6, 7),
             is_active=True
@@ -404,6 +424,7 @@ class TestEventServiceMutation:
         event_2026 = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True
@@ -411,6 +432,7 @@ class TestEventServiceMutation:
         event_2027 = Event(
             year=2027,
             name="CyberX 2027",
+            slug=generate_slug("CyberX 2027"),
             start_date=date(2027, 6, 1),
             end_date=date(2027, 6, 7),
             is_active=True
@@ -442,6 +464,7 @@ class TestEventServiceMutation:
         inactive_event = Event(
             year=2025,
             name="CyberX 2025",
+            slug=generate_slug("CyberX 2025"),
             start_date=date(2025, 6, 1),
             end_date=date(2025, 6, 7),
             is_active=False
@@ -449,6 +472,7 @@ class TestEventServiceMutation:
         active_event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=True
@@ -484,6 +508,7 @@ class TestEventServiceMutation:
         archived_event = Event(
             year=2024,
             name="CyberX 2024",
+            slug=generate_slug("CyberX 2024"),
             start_date=date(2024, 6, 1),
             end_date=date(2024, 6, 7),
             is_archived=True
@@ -506,6 +531,7 @@ class TestEventServiceMutation:
         event_2025 = await service.create_event(
             year=2025,
             name="CyberX 2025",
+            slug=generate_slug("CyberX 2025"),
             start_date=date(2025, 6, 1),
             end_date=date(2025, 6, 7),
             is_active=True
@@ -513,6 +539,7 @@ class TestEventServiceMutation:
         event_2026 = await service.create_event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             is_active=False
@@ -538,6 +565,7 @@ class TestEventServiceMutation:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7)
         )
@@ -555,6 +583,7 @@ class TestEventServiceMutation:
         event = await service.create_event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7)
         )
@@ -573,6 +602,7 @@ class TestEventServiceMutation:
         event = await service.create_event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
             event_time="9:00 AM",

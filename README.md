@@ -1,6 +1,9 @@
 # CyberX Event Management System
 
-**Status**: 🔒 Private Repository - Pre-Production Beta Testing
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
+**Status**: 🌐 Open Source - Pre-Production Beta Testing
 
 A comprehensive event management system designed for CyberX Red Team cybersecurity events, handling participant invitations, VPN credential management, email workflows, and event lifecycle coordination.
 
@@ -104,9 +107,9 @@ The CyberX Event Management System provides a complete solution for managing cyb
 
 ### Local Development Setup
 
-1. **Clone the repository** (private access required)
+1. **Clone the repository**
    ```bash
-   git clone git@github.com:your-org/cyberx-event-mgmt.git
+   git clone https://github.com/CyberX-Red-Team/cyberx-event-mgmt.git
    cd cyberx-event-mgmt
    ```
 
@@ -379,19 +382,15 @@ curl -X POST http://localhost:8000/api/vpn/assign \
 
 ## 🤝 Contributing
 
-This is a private repository under active development.
+Contributions are welcome! This project is open source under the Apache 2.0 license.
 
-**Current Contributors**:
-- Core development team
-- Beta testers (by invitation)
-
-**Development Workflow**:
-1. Create feature branch from `main`
-2. Make changes with clear commit messages
-3. Test locally
-4. Submit pull request for review
-5. Address feedback
-6. Merge after approval
+**How to Contribute**:
+1. Fork the repository
+2. Create a feature branch from `staging`
+3. Make your changes with clear commit messages
+4. Add or update tests as needed
+5. Submit a pull request
+6. Address any review feedback
 
 **Commit Message Format**:
 ```
@@ -403,6 +402,13 @@ Add feature: brief description
 
 Co-Authored-By: Name <email>
 ```
+
+**Guidelines**:
+- Follow existing code style and patterns
+- Add tests for new features
+- Update documentation as needed
+- Keep pull requests focused and atomic
+- Be respectful in discussions
 
 ---
 
@@ -420,14 +426,8 @@ Additional documentation available:
 
 ## 🐛 Known Issues
 
-See production readiness analysis for comprehensive list.
-
-**Critical**:
-- Password reset email not sent (TODO in auth.py:301)
-- CSRF protection not implemented
-- In-memory rate limiting (not distributed-safe)
-
 **Medium Priority**:
+- In-memory rate limiting (not distributed-safe for multi-instance deployments)
 - Discord integration incomplete (webhooks.py TODOs)
 - Keycloak sync not implemented (participant_service.py:494)
 - Large seed file in repo (19MB seed_hacker_invite_template.py)
@@ -441,19 +441,30 @@ See production readiness analysis for comprehensive list.
 ## 📧 Support & Contact
 
 For questions or issues:
-- **Internal Team**: Contact project lead
-- **Beta Testers**: Use designated communication channel
-- **Security Issues**: Report privately to security team
+- **Issues**: Open an issue on GitHub
+- **Discussions**: Use GitHub Discussions for questions
+- **Security Issues**: Report privately via GitHub Security Advisories
+- **Pull Requests**: Welcome for bug fixes and features
 
 ---
 
 ## 📄 License
 
-**All Rights Reserved** - Private Repository
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
 Copyright © 2026 CyberX Red Team
+
+See [LICENSE](LICENSE) for the full license text.
 
 ---
 

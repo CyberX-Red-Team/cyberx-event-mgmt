@@ -596,17 +596,20 @@ class ParticipantService:
         active_result = await self.session.execute(active_query)
         active = active_result.scalar()
 
-        # With VPN count
+        # With VPN count - count distinct users who have at least one VPN
         if sponsor_id is not None:
-            # Count VPNs assigned to sponsored participants
+            # Count sponsored participants who have at least one VPN
             vpn_result = await self.session.execute(
-                select(func.count(VPNCredential.id))
+                select(func.count(func.distinct(VPNCredential.assigned_to_user_id)))
                 .join(User, VPNCredential.assigned_to_user_id == User.id)
                 .where(User.sponsor_id == sponsor_id)
+                .where(VPNCredential.assigned_to_user_id.isnot(None))
             )
         else:
+            # Count all users who have at least one VPN
             vpn_result = await self.session.execute(
-                select(func.count(VPNCredential.id)).where(VPNCredential.assigned_to_user_id.isnot(None))
+                select(func.count(func.distinct(VPNCredential.assigned_to_user_id)))
+                .where(VPNCredential.assigned_to_user_id.isnot(None))
             )
         with_vpn = vpn_result.scalar()
 

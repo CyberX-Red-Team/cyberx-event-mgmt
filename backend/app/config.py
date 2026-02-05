@@ -1,6 +1,8 @@
 """Application configuration management."""
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+import subprocess
+import logging
 
 
 class Settings(BaseSettings):
@@ -41,12 +43,16 @@ class Settings(BaseSettings):
     SENDGRID_FROM_EMAIL: str = ""
     SENDGRID_FROM_NAME: str = "CyberX Red Team"
     SENDGRID_SANDBOX_MODE: bool = False  # Enable to validate emails without sending
+    SENDGRID_WEBHOOK_VERIFICATION_KEY: str = ""  # Verification key for webhook signature validation
     TEST_EMAIL_OVERRIDE: str = ""  # If set, all emails go to this address instead
 
     # PowerDNS (optional - only needed if using PowerDNS integration)
     POWERDNS_API_URL: str = ""
     POWERDNS_USERNAME: str = ""
     POWERDNS_PASSWORD: str = ""
+
+    # Render API (optional - only needed for deployment automation)
+    RENDER_API_KEY: str = ""
 
     # VPN Server Configuration (optional - only needed if using VPN features)
     VPN_SERVER_PUBLIC_KEY: str = ""
@@ -77,3 +83,33 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+def get_version() -> str:
+    """
+    Get application version string.
+
+    In staging: Returns version with commit hash (e.g., "v1.0.0+abc1234")
+    In production: Returns clean version (e.g., "v1.0.0")
+    """
+    from app.version import VERSION
+
+    settings = get_settings()
+    version_str = f"v{VERSION}"
+
+    # Add commit hash in staging environment
+    if settings.ENVIRONMENT == "staging":
+        try:
+            # Get short commit hash (7 characters)
+            commit_hash = subprocess.check_output(
+                ["git", "rev-parse", "--short=7", "HEAD"],
+                stderr=subprocess.DEVNULL,
+                text=True
+            ).strip()
+            version_str = f"{version_str}+{commit_hash}"
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # If git is not available or not a git repo, just return version
+            logger = logging.getLogger(__name__)
+            logger.warning("Could not retrieve git commit hash for version string")
+
+    return version_str

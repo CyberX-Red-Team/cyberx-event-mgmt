@@ -1,13 +1,15 @@
 """Webhook handlers for external services."""
-import hmac
-import hashlib
-from typing import List
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
 from app.services.email_service import EmailService
 from app.config import get_settings
+from app.utils.webhook_security import (
+    verify_sendgrid_signature,
+    verify_timestamp_freshness
+)
 
 
 settings = get_settings()
@@ -22,10 +24,18 @@ def get_email_service(db: AsyncSession = Depends(get_db)) -> EmailService:
 @router.post("/sendgrid")
 async def sendgrid_webhook(
     request: Request,
+    x_twilio_email_event_webhook_signature: Optional[str] = Header(
+        None,
+        alias="X-Twilio-Email-Event-Webhook-Signature"
+    ),
+    x_twilio_email_event_webhook_timestamp: Optional[str] = Header(
+        None,
+        alias="X-Twilio-Email-Event-Webhook-Timestamp"
+    ),
     email_service: EmailService = Depends(get_email_service)
 ):
     """
-    Handle SendGrid event webhooks.
+    Handle SendGrid event webhooks with signature verification.
 
     SendGrid sends events for:
     - processed: Email accepted for delivery
@@ -37,9 +47,41 @@ async def sendgrid_webhook(
     - spamreport: Recipient marked as spam
     - unsubscribe: Recipient unsubscribed
     - deferred: Email delivery deferred
+
+    Security:
+    - Verifies HMAC-SHA256 signature to ensure webhook authenticity
+    - Checks timestamp to prevent replay attacks
+    - Only processes webhooks from SendGrid
     """
+    # Get raw body for signature verification
+    raw_body = await request.body()
+
+    # Verify signature if verification key is configured
+    if settings.SENDGRID_WEBHOOK_VERIFICATION_KEY:
+        # Check signature
+        if not verify_sendgrid_signature(
+            payload=raw_body,
+            signature=x_twilio_email_event_webhook_signature or "",
+            timestamp=x_twilio_email_event_webhook_timestamp or "",
+            verification_key=settings.SENDGRID_WEBHOOK_VERIFICATION_KEY
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature"
+            )
+
+        # Check timestamp freshness (prevents replay attacks)
+        if not verify_timestamp_freshness(
+            x_twilio_email_event_webhook_timestamp or "",
+            max_age_seconds=600  # 10 minutes
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Webhook timestamp is too old or invalid"
+            )
+
+    # Parse and process events
     try:
-        # Parse JSON body
         events = await request.json()
 
         if not isinstance(events, list):

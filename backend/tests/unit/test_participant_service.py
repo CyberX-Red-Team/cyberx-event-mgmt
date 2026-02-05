@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.participant_service import ParticipantService
 from app.models.user import User, UserRole
-from app.models.event import Event
+from app.models.event import Event, generate_slug
 
 
 @pytest.mark.unit
@@ -1215,6 +1215,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             is_active=True,
             registration_open=True,
             test_mode=False,
@@ -1256,6 +1257,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             is_active=True,
             registration_open=True,
             test_mode=False,
@@ -1303,6 +1305,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026 Test",
+            slug=generate_slug("CyberX 2026 Test"),
             is_active=True,
             registration_open=True,
             test_mode=True,
@@ -1348,6 +1351,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026 Test",
+            slug=generate_slug("CyberX 2026 Test"),
             is_active=True,
             registration_open=True,
             test_mode=True,
@@ -1388,6 +1392,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             is_active=False,
             registration_open=True,
             test_mode=False,
@@ -1420,6 +1425,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             is_active=False,
             registration_open=True,
             test_mode=False,
@@ -1462,6 +1468,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             is_active=True,
             registration_open=True,
             test_mode=False,
@@ -1504,6 +1511,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             is_active=False,
             registration_open=False,
             test_mode=False,
@@ -1696,6 +1704,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             is_active=True,
             registration_open=True,
             test_mode=False,
@@ -1736,6 +1745,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             is_active=False,
             registration_open=False,
             test_mode=False,
@@ -1870,6 +1880,7 @@ class TestParticipantServiceEventIntegration:
         event = Event(
             year=2026,
             name="CyberX 2026",
+            slug=generate_slug("CyberX 2026"),
             is_active=True,
             registration_open=True,
             test_mode=False,

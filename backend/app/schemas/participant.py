@@ -48,13 +48,19 @@ class ParticipantCreate(ParticipantBase):
 
 
 class ParticipantUpdate(BaseModel):
-    """Schema for updating a participant."""
+    """Schema for updating a participant.
+
+    NOTE: The 'confirmed' field is intentionally excluded from this schema.
+    User confirmation status can ONLY be changed through the official confirmation
+    endpoints (/confirm/accept or /confirm/decline), which ensure proper workflow
+    execution including credential generation, terms acceptance, and audit logging.
+    """
 
     email: Optional[EmailStr] = None
     first_name: Optional[str] = Field(None, min_length=1, max_length=255)
     last_name: Optional[str] = Field(None, min_length=1, max_length=255)
     country: Optional[str] = Field(None, max_length=100)
-    confirmed: Optional[str] = None
+    # confirmed: REMOVED - use /confirm/accept or /confirm/decline endpoints instead
     email_status: Optional[str] = None
     future_participation: Optional[str] = None
     remove_permanently: Optional[str] = None

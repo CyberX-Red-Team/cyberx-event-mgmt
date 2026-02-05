@@ -37,6 +37,7 @@ class UserResponse(BaseModel):
     is_active: bool
     confirmed: str
     email_status: str
+    theme_preference: str
 
     # Optional fields
     pandas_username: Optional[str] = None

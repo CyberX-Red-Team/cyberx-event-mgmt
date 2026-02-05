@@ -215,6 +215,7 @@ class TestLoginRoute:
             "is_active": True,
             "confirmed": "YES",
             "email_status": "",
+            "theme_preference": "light",
             "vpn_credentials": None
         }
         mocker.patch('app.api.routes.auth.build_auth_user_response', return_value=mock_user_response)
@@ -330,6 +331,7 @@ class TestGetMeRoute:
             "is_active": True,
             "confirmed": "YES",
             "email_status": "",
+            "theme_preference": "light",
             "vpn_credentials": None
         }
         mocker.patch('app.api.routes.auth.build_auth_user_response', return_value=mock_user_response)

@@ -36,7 +36,8 @@ async def list_my_invitees(
     has_vpn: Optional[bool] = None,
     is_active: Optional[bool] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user)
+    current_user: User = Depends(get_current_sponsor_user),
+    service: ParticipantService = Depends(get_participant_service)
 ):
     """
     List all invitees sponsored by the current user.
@@ -44,8 +45,6 @@ async def list_my_invitees(
     Supports pagination, search, and filtering.
     """
     logger.info(f"Sponsor {current_user.id} listing invitees (page={page}, search={search})")
-
-    service = get_participant_service(db)
 
     # Auto-filter by sponsor_id - sponsors can only see their own invitees
     participants, total = await service.list_participants(
@@ -75,26 +74,25 @@ async def list_my_invitees(
 @router.get("/my-invitees/stats", response_model=SponsorInviteeStats)
 async def get_my_invitees_stats(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user)
+    current_user: User = Depends(get_current_sponsor_user),
+    service: ParticipantService = Depends(get_participant_service)
 ):
     """
     Get statistics for the current sponsor's invitees.
     """
     logger.info(f"Sponsor {current_user.id} fetching invitee statistics")
 
-    service = get_participant_service(db)
-
     # Get stats filtered by sponsor_id
     stats = await service.get_statistics(sponsor_id=current_user.id)
 
     return SponsorInviteeStats(
-        total_invitees=stats.get("total", 0),
-        confirmed_count=stats.get("confirmed", 0),
-        unconfirmed_count=stats.get("unconfirmed", 0),
-        with_vpn_count=stats.get("with_vpn", 0),
-        without_vpn_count=stats.get("without_vpn", 0),
-        active_count=stats.get("active", 0),
-        inactive_count=stats.get("inactive", 0)
+        total_invitees=stats.get("total_invitees", 0),
+        confirmed_count=stats.get("confirmed_count", 0),
+        unconfirmed_count=stats.get("unconfirmed_count", 0),
+        with_vpn_count=stats.get("with_vpn_count", 0),
+        without_vpn_count=stats.get("without_vpn_count", 0),
+        active_count=stats.get("active_count", 0),
+        inactive_count=stats.get("inactive_count", 0)
     )
 
 
@@ -102,7 +100,8 @@ async def get_my_invitees_stats(
 async def get_my_invitee(
     invitee_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user)
+    current_user: User = Depends(get_current_sponsor_user),
+    service: ParticipantService = Depends(get_participant_service)
 ):
     """
     Get details for a specific invitee.
@@ -110,8 +109,6 @@ async def get_my_invitee(
     Only returns the invitee if sponsored by the current user.
     """
     logger.info(f"Sponsor {current_user.id} fetching invitee {invitee_id}")
-
-    service = get_participant_service(db)
     invitee = await service.get_participant(invitee_id)
 
     # Verify ownership - critical security check
@@ -130,7 +127,8 @@ async def create_my_invitee(
     request: Request,
     data: InviteeCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user)
+    current_user: User = Depends(get_current_sponsor_user),
+    service: ParticipantService = Depends(get_participant_service)
 ):
     """
     Create a new invitee with the current user as sponsor.
@@ -141,8 +139,6 @@ async def create_my_invitee(
         f"Sponsor {current_user.id} creating invitee: {data.first_name} {data.last_name} "
         f"({data.email})"
     )
-
-    service = get_participant_service(db)
 
     # Create invitee with auto-assigned sponsor_id
     invitee = await service.create_participant(
@@ -207,7 +203,8 @@ async def update_my_invitee(
     request: Request,
     data: InviteeUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user)
+    current_user: User = Depends(get_current_sponsor_user),
+    service: ParticipantService = Depends(get_participant_service)
 ):
     """
     Update an invitee's information.
@@ -219,7 +216,6 @@ async def update_my_invitee(
     """
     logger.info(f"Sponsor {current_user.id} updating invitee {invitee_id}")
 
-    service = get_participant_service(db)
     permissions = PermissionChecker()
 
     # Get and verify ownership
@@ -284,14 +280,14 @@ async def reset_invitee_password(
     invitee_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user)
+    current_user: User = Depends(get_current_sponsor_user),
+    service: ParticipantService = Depends(get_participant_service)
 ):
     """
     Reset an invitee's password and send them an email.
     """
     logger.info(f"Sponsor {current_user.id} resetting password for invitee {invitee_id}")
 
-    service = get_participant_service(db)
     permissions = PermissionChecker()
 
     # Get and verify ownership
@@ -342,7 +338,8 @@ async def resend_invitee_invitation(
     invitee_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user)
+    current_user: User = Depends(get_current_sponsor_user),
+    service: ParticipantService = Depends(get_participant_service)
 ):
     """
     Resend invitation email to an invitee.
@@ -351,7 +348,6 @@ async def resend_invitee_invitation(
     """
     logger.info(f"Sponsor {current_user.id} resending invitation for invitee {invitee_id}")
 
-    service = get_participant_service(db)
     permissions = PermissionChecker()
 
     # Get and verify ownership

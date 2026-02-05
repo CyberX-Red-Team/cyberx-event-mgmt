@@ -6,6 +6,7 @@ Creates test users for manual testing:
 - 5 admin users
 - 10 sponsor users
 - 20 invitee users (randomly assigned to sponsors)
+- 1 email template (plain invitation)
 - 1000 VPN credentials (for load testing)
 
 All users have predictable passwords for easy testing.
@@ -16,6 +17,7 @@ import random
 import json
 import base64
 import secrets
+import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -26,6 +28,7 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.models.user import User, UserRole
 from app.models.vpn import VPNCredential
+from app.models.email_template import EmailTemplate
 from app.utils.security import hash_password
 
 
@@ -82,6 +85,85 @@ NUM_VPN_CONFIGS = 1000
 VPN_BASE_IP = "10.20.200."
 VPN_ENDPOINT = "staging-vpn.cyberxtest.org:51820"
 
+# Email template configuration (plain invitation email)
+INVITE_EMAIL_TEMPLATE = {
+    "name": "sg_test_hacker_theme",
+    "display_name": "Event Invitation",
+    "description": "Plain invitation email for CyberX events",
+    "subject": "Invitation to {{event_name}}",
+    "html_content": """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+<h1 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">You're Invited!</h1>
+
+<p>Hello {{first_name}},</p>
+
+<p>You have been invited to attend <strong>{{event_name}}</strong>.</p>
+
+<div style="background: #f4f4f4; padding: 20px; margin: 20px 0; border-left: 4px solid #3498db;">
+<h3 style="margin-top: 0; color: #2c3e50;">Event Details</h3>
+<p><strong>Event:</strong> {{event_name}}</p>
+<p><strong>Date:</strong> {{event_date_range}}</p>
+<p><strong>Time:</strong> {{event_time}}</p>
+<p><strong>Location:</strong> {{event_location}}</p>
+</div>
+
+<p>Please confirm your attendance by clicking the button below:</p>
+
+<div style="text-align: center; margin: 30px 0;">
+<a href="{{confirmation_url}}" style="display: inline-block; background: #3498db; color: white; padding: 12px 30px; text-decoration: none; border-radius: 4px; font-weight: bold;">Confirm Attendance</a>
+</div>
+
+<p style="font-size: 14px; color: #7f8c8d;">This invitation link will expire in 14 days. If you have any questions, please contact us at events@cyberxredteam.org</p>
+
+<hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+
+<p style="font-size: 12px; color: #95a5a6; text-align: center;">
+CyberX Red Team<br>
+You are receiving this email because you were invited to {{event_name}}
+</p>
+</body>
+</html>""",
+    "text_content": """You're Invited!
+
+Hello {{first_name}},
+
+You have been invited to attend {{event_name}}.
+
+EVENT DETAILS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Event: {{event_name}}
+Date: {{event_date_range}}
+Time: {{event_time}}
+Location: {{event_location}}
+
+Please confirm your attendance by visiting:
+{{confirmation_url}}
+
+This invitation link will expire in 14 days. If you have any questions, please contact us at events@cyberxredteam.org
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CyberX Red Team
+You are receiving this email because you were invited to {{event_name}}
+""",
+    "available_variables": [
+        "event_name",
+        "event_date_range",
+        "event_time",
+        "event_location",
+        "confirmation_url",
+        "first_name",
+        "last_name",
+        "email"
+    ],
+    "is_active": True,
+    "is_system": True
+}
+
 
 def generate_wireguard_key() -> str:
     """Generate a random WireGuard private key (base64 encoded)."""
@@ -107,6 +189,42 @@ def generate_ipv6_from_ipv4(ipv4: str) -> tuple[str, str]:
     global_ipv6 = f"fd00:a:14:c8:{last_octet:x}:ffff:a14:c8{last_octet:02x}"
 
     return link_local, global_ipv6
+
+
+def generate_wireguard_config_content(
+    interface_ip: str,
+    private_key: str,
+    preshared_key: str,
+    endpoint: str,
+    server_public_key: str = "test-server-public-key",
+    allowed_ips: str = "10.0.0.0/8,fd00:a::/32",
+    dns_servers: str = "10.20.200.1"
+) -> str:
+    """Generate WireGuard configuration file content for testing."""
+    # Parse interface IPs (no spaces after commas)
+    interface_ips = [ip.strip() for ip in interface_ip.split(",")]
+    address_line = ",".join(interface_ips)
+
+    # Build PresharedKey line only if present
+    preshared_line = f"PresharedKey = {preshared_key}\n" if preshared_key else ""
+
+    # Match production format
+    config = f"""[Peer]
+Endpoint = {endpoint}
+PublicKey = {server_public_key}
+{preshared_line}AllowedIPs = {allowed_ips}
+PersistentKeepalive = 25
+[Interface]
+PrivateKey = {private_key}
+Address = {address_line}
+DNS = {dns_servers}
+"""
+    return config
+
+
+def calculate_sha256(content: str) -> str:
+    """Calculate SHA256 hash of string content."""
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
 
 async def seed_test_data():
@@ -219,6 +337,9 @@ async def seed_test_data():
             )
             existing_user = result.scalar_one_or_none()
 
+            # Generate confirmation code for testing
+            confirmation_code = secrets.token_urlsafe(32)
+
             if existing_user:
                 print(f"  ⚠️  Invitee {invitee_data['email']} already exists, updating...")
                 existing_user.password_hash = hash_password(TEST_PASSWORD)
@@ -227,6 +348,9 @@ async def seed_test_data():
                 existing_user.is_active = True
                 existing_user.confirmed = 'UNKNOWN'
                 existing_user.email_status = 'GOOD'
+                existing_user.confirmation_code = confirmation_code
+                existing_user.confirmation_sent_at = datetime.now(timezone.utc)
+                user = existing_user
             else:
                 user = User(
                     email=invitee_data["email"],
@@ -239,6 +363,8 @@ async def seed_test_data():
                     confirmed='UNKNOWN',
                     email_status='GOOD',
                     password_hash=hash_password(TEST_PASSWORD),
+                    confirmation_code=confirmation_code,
+                    confirmation_sent_at=datetime.now(timezone.utc)
                 )
                 session.add(user)
                 print(f"  ✅ Created invitee: {invitee_data['email']}")
@@ -253,8 +379,34 @@ async def seed_test_data():
                 "email": invitee_data["email"],
                 "role": "invitee",
                 "name": f"{invitee_data['first_name']} {invitee_data['last_name']}",
-                "sponsor": sponsor.email
+                "sponsor": sponsor.email,
+                "confirmation_code": confirmation_code,
+                "confirmation_url": f"http://localhost:8000/confirm?code={confirmation_code}"
             })
+
+        await session.commit()
+
+        # Create email template
+        print("\nCreating email templates...")
+        result = await session.execute(
+            select(EmailTemplate).where(EmailTemplate.name == "sg_test_hacker_theme")
+        )
+        existing_template = result.scalar_one_or_none()
+
+        if existing_template:
+            print("  ⚠️  'sg_test_hacker_theme' template already exists, updating...")
+            existing_template.display_name = INVITE_EMAIL_TEMPLATE["display_name"]
+            existing_template.description = INVITE_EMAIL_TEMPLATE["description"]
+            existing_template.subject = INVITE_EMAIL_TEMPLATE["subject"]
+            existing_template.html_content = INVITE_EMAIL_TEMPLATE["html_content"]
+            existing_template.text_content = INVITE_EMAIL_TEMPLATE["text_content"]
+            existing_template.available_variables = INVITE_EMAIL_TEMPLATE["available_variables"]
+            existing_template.is_active = INVITE_EMAIL_TEMPLATE["is_active"]
+            existing_template.is_system = INVITE_EMAIL_TEMPLATE["is_system"]
+        else:
+            template = EmailTemplate(**INVITE_EMAIL_TEMPLATE)
+            session.add(template)
+            print("  ✅ Created plain invitation email template")
 
         await session.commit()
 
@@ -273,6 +425,15 @@ async def seed_test_data():
             private_key = generate_wireguard_key()
             preshared_key = generate_wireguard_key()  # Optional but we'll generate it
 
+            # Generate WireGuard config content and calculate SHA256 hash
+            config_content = generate_wireguard_config_content(
+                interface_ip=interface_ip,
+                private_key=private_key,
+                preshared_key=preshared_key,
+                endpoint=VPN_ENDPOINT
+            )
+            file_hash = calculate_sha256(config_content)
+
             # Check if VPN config already exists for this IP
             result = await session.execute(
                 select(VPNCredential).where(VPNCredential.ipv4_address == ipv4)
@@ -287,6 +448,7 @@ async def seed_test_data():
                 existing_vpn.private_key = private_key
                 existing_vpn.preshared_key = preshared_key
                 existing_vpn.endpoint = VPN_ENDPOINT
+                existing_vpn.file_hash = file_hash
                 existing_vpn.is_available = True
                 existing_vpn.is_active = True
                 vpn_updated += 1
@@ -300,6 +462,7 @@ async def seed_test_data():
                     private_key=private_key,
                     preshared_key=preshared_key,
                     endpoint=VPN_ENDPOINT,
+                    file_hash=file_hash,
                     key_type="cyber",  # Default to cyber type
                     is_available=True,
                     is_active=True
@@ -322,6 +485,7 @@ async def seed_test_data():
     print(f"  - Admins: {len(ADMIN_USERS)}")
     print(f"  - Sponsors: {len(SPONSOR_USERS)}")
     print(f"  - Invitees: {len(INVITEE_USERS)}")
+    print(f"  - Email Templates: 1 (plain invitation)")
     print(f"  - VPN Configs: {NUM_VPN_CONFIGS} ({vpn_created} new, {vpn_updated} updated)")
     print(f"\nShared password for ALL test users: {TEST_PASSWORD}")
     print()
@@ -347,11 +511,21 @@ async def seed_test_data():
     for sponsor in credentials["sponsors"]:
         print(f"  • {sponsor['email']} - {sponsor['name']}")
     print()
-    print("INVITEES (Regular users):")
+    print("INVITEES (Regular users - Status: UNKNOWN, needs confirmation):")
     for invitee in credentials["invitees"]:
         print(f"  • {invitee['email']} - {invitee['name']} (sponsored by {invitee['sponsor']})")
     print()
     print(f"PASSWORD (all users): {TEST_PASSWORD}")
+    print()
+    print("=" * 80)
+    print("CONFIRMATION LINKS (for testing invitee confirmation flow)")
+    print("=" * 80)
+    print("All invitees have status UNKNOWN and need to confirm via these links:")
+    print()
+    for invitee in credentials["invitees"]:
+        print(f"{invitee['name']} ({invitee['email']}):")
+        print(f"  {invitee['confirmation_url']}")
+        print()
     print("=" * 80)
 
     return credentials

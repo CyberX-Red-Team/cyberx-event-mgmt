@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 from app.dependencies import get_optional_user, get_current_active_user, get_current_admin_user, get_current_sponsor_user
 from app.models.user import User
+from app.config import get_version
 
 
 router = APIRouter(tags=["Views"])
@@ -15,6 +16,9 @@ router = APIRouter(tags=["Views"])
 # Configure Jinja2 templates - path is relative to backend directory
 templates_path = Path(__file__).parent.parent.parent.parent.parent / "frontend" / "templates"
 templates = Jinja2Templates(directory=str(templates_path))
+
+# Add global context processor for version
+templates.env.globals["app_version"] = get_version()
 
 
 # Authentication pages

@@ -1,5 +1,6 @@
 """Event and participation tracking models."""
 import enum
+import re
 from sqlalchemy import (
     Column, Integer, String, Boolean, TIMESTAMP, Date,
     ForeignKey, Index, Text, UniqueConstraint
@@ -7,6 +8,25 @@ from sqlalchemy import (
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
+
+
+def generate_slug(name: str) -> str:
+    """
+    Generate a URL-friendly slug from an event name.
+
+    Examples:
+        "CyberX Red Team Exercise 2026" -> "cyberx-red-team-exercise-2026"
+        "Spring Event 2026!" -> "spring-event-2026"
+    """
+    # Convert to lowercase
+    slug = name.lower()
+    # Remove special characters (keep alphanumeric, spaces, and hyphens)
+    slug = re.sub(r'[^a-z0-9\s-]', '', slug)
+    # Replace multiple spaces/hyphens with single hyphen
+    slug = re.sub(r'[\s-]+', '-', slug)
+    # Remove leading/trailing hyphens
+    slug = slug.strip('-')
+    return slug
 
 
 class ParticipationStatus(str, enum.Enum):
@@ -29,8 +49,9 @@ class Event(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # Event identification
-    year = Column(Integer, unique=True, nullable=False, index=True)
+    year = Column(Integer, nullable=False, index=True)  # No longer unique - allows multiple events per year
     name = Column(String(255), nullable=False)
+    slug = Column(String(255), unique=True, nullable=False, index=True)  # URL-friendly unique identifier
 
     # Event dates
     start_date = Column(Date, nullable=True)
@@ -84,7 +105,7 @@ class Event(Base):
 
     def __repr__(self):
         return (
-            f"<Event(id={self.id}, year={self.year}, "
+            f"<Event(id={self.id}, slug={self.slug}, year={self.year}, "
             f"name={self.name}, is_active={self.is_active})>"
         )
 

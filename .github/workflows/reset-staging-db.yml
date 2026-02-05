@@ -1,0 +1,143 @@
+name: Reset Staging Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "DELETE ALL DATA" to confirm'
+        required: true
+        type: string
+
+jobs:
+  reset-database:
+    name: Drop All Tables in Staging DB
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "DELETE ALL DATA" ]; then
+            echo "❌ Confirmation text does not match. Aborting."
+            echo "You must type exactly: DELETE ALL DATA"
+            exit 1
+          fi
+          echo "✅ Confirmation validated"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install psycopg2-binary python-dotenv
+
+      - name: Drop all application tables
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          cd backend
+          python << 'EOF'
+          import os
+          import psycopg2
+          from urllib.parse import urlparse
+
+          # Parse DATABASE_URL
+          database_url = os.getenv('DATABASE_URL')
+          if not database_url:
+              print("❌ DATABASE_URL not set")
+              exit(1)
+
+          # Convert async URL to sync for psycopg2
+          if database_url.startswith("postgresql+asyncpg://"):
+              database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+          result = urlparse(database_url)
+          username = result.username
+          password = result.password
+          database = result.path[1:]
+          hostname = result.hostname
+          port = result.port
+
+          print(f"Connecting to database: {hostname}:{port}/{database}")
+          print(f"User: {username}")
+          print()
+
+          # Connect to database
+          conn = psycopg2.connect(
+              dbname=database,
+              user=username,
+              password=password,
+              host=hostname,
+              port=port
+          )
+          conn.autocommit = True
+          cursor = conn.cursor()
+
+          # Get list of all tables in public schema (excluding system tables)
+          cursor.execute("""
+              SELECT tablename
+              FROM pg_tables
+              WHERE schemaname = 'public'
+              AND tablename NOT LIKE 'pg_%'
+              AND tablename NOT LIKE 'sql_%'
+              ORDER BY tablename;
+          """)
+          tables = cursor.fetchall()
+
+          if not tables:
+              print("✅ No tables found to drop")
+              cursor.close()
+              conn.close()
+              exit(0)
+
+          print(f"Found {len(tables)} table(s) to drop:")
+          for (table,) in tables:
+              print(f"  - {table}")
+          print()
+
+          # Drop all tables
+          print("Dropping tables...")
+          for (table,) in tables:
+              try:
+                  cursor.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE;')
+                  print(f"  ✅ Dropped table: {table}")
+              except Exception as e:
+                  print(f"  ❌ Failed to drop {table}: {e}")
+
+          # Also drop alembic version table if it exists
+          try:
+              cursor.execute('DROP TABLE IF EXISTS "alembic_version" CASCADE;')
+              print(f"  ✅ Dropped table: alembic_version")
+          except Exception as e:
+              print(f"  ⚠️  Could not drop alembic_version: {e}")
+
+          cursor.close()
+          conn.close()
+
+          print()
+          print("=" * 80)
+          print("✅ All application tables have been dropped from staging database")
+          print("=" * 80)
+          print()
+          print("Next steps:")
+          print("  1. Run migrations: alembic upgrade head")
+          print("  2. Seed test data: python scripts/seed_test_data.py")
+          print()
+          EOF
+
+      - name: Summary
+        run: |
+          echo "✅ Staging database has been reset"
+          echo ""
+          echo "⚠️  WARNING: All data has been permanently deleted"
+          echo ""
+          echo "To set up the database again:"
+          echo "  1. Deploy to staging to run migrations"
+          echo "  2. Run the 'Seed Staging Test Data' workflow"

@@ -190,7 +190,7 @@
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <label class="form-label small">Status</label>
+                            <label class="form-label small">Invitee Status</label>
                             <select class="form-select" id="userStatusFilter">
                                 <option value="">All</option>
                                 <option value="true">Active</option>
@@ -198,7 +198,7 @@
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <label class="form-label small">Status</label>
+                            <label class="form-label small">Confirmation Status</label>
                             <select class="form-select" id="userConfirmedFilter">
                                 <option value="" selected>All</option>
                                 <option value="YES">Confirmed</option>
@@ -427,11 +427,15 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Confirmation Status</label>
-                            <select class="form-select" id="userConfirmed">
+                            <select class="form-select" id="userConfirmed" disabled>
                                 <option value="UNKNOWN">Unknown</option>
                                 <option value="YES">Confirmed</option>
                                 <option value="NO">Not Confirmed</option>
                             </select>
+                            <div class="form-text text-muted">
+                                <i data-feather="info" class="feather-xs"></i>
+                                Confirmation status can only be changed through the confirmation flow (invite → confirm/decline).
+                            </div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Active Status</label>
@@ -949,6 +953,7 @@ window.openCreateUserModal = function() {
         document.getElementById('userId').value = '';
         document.getElementById('userForm').reset();
         document.getElementById('userActive').checked = true;
+        document.getElementById('userConfirmed').value = 'UNKNOWN';  // Default for new users
         document.getElementById('credentialsSection').style.display = 'none';
         document.getElementById('emailStatusSection').style.display = 'none';
         updateSponsorDropdown();
@@ -1034,7 +1039,7 @@ window.saveUser = async function() {
         email: document.getElementById('userEmail').value.trim().toLowerCase(),
         country: document.getElementById('userCountry').value.trim() || 'USA',
         role: document.getElementById('userRole').value,
-        confirmed: document.getElementById('userConfirmed').value,
+        // confirmed: REMOVED - can only be changed through /confirm/accept or /confirm/decline endpoints
         is_active: document.getElementById('userActive').checked,
         sponsor_id: sponsorId
     };

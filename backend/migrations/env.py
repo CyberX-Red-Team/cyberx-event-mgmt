@@ -78,10 +78,17 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
+    # Get configuration and add pgbouncer-compatible connect_args
+    configuration = config.get_section(config.config_ini_section, {})
+
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args={
+            "server_settings": {"jit": "off"},
+            "prepared_statement_cache_size": 0,
+        },
     )
 
     async with connectable.connect() as connection:
