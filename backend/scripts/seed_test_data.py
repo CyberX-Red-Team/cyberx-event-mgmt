@@ -6,6 +6,7 @@ Creates test users for manual testing:
 - 5 admin users
 - 10 sponsor users
 - 20 invitee users (randomly assigned to sponsors)
+- 1 email template (plain invitation)
 - 1000 VPN credentials (for load testing)
 
 All users have predictable passwords for easy testing.
@@ -26,6 +27,7 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.models.user import User, UserRole
 from app.models.vpn import VPNCredential
+from app.models.email_template import EmailTemplate
 from app.utils.security import hash_password
 
 
@@ -81,6 +83,85 @@ TEST_PASSWORD = "CyberX2026!"
 NUM_VPN_CONFIGS = 1000
 VPN_BASE_IP = "10.20.200."
 VPN_ENDPOINT = "staging-vpn.cyberxtest.org:51820"
+
+# Email template configuration (plain invitation email)
+INVITE_EMAIL_TEMPLATE = {
+    "name": "sg_test_hacker_theme",
+    "display_name": "Event Invitation",
+    "description": "Plain invitation email for CyberX events",
+    "subject": "Invitation to {{event_name}}",
+    "html_content": """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+<h1 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">You're Invited!</h1>
+
+<p>Hello {{first_name}},</p>
+
+<p>You have been invited to attend <strong>{{event_name}}</strong>.</p>
+
+<div style="background: #f4f4f4; padding: 20px; margin: 20px 0; border-left: 4px solid #3498db;">
+<h3 style="margin-top: 0; color: #2c3e50;">Event Details</h3>
+<p><strong>Event:</strong> {{event_name}}</p>
+<p><strong>Date:</strong> {{event_date_range}}</p>
+<p><strong>Time:</strong> {{event_time}}</p>
+<p><strong>Location:</strong> {{event_location}}</p>
+</div>
+
+<p>Please confirm your attendance by clicking the button below:</p>
+
+<div style="text-align: center; margin: 30px 0;">
+<a href="{{confirmation_url}}" style="display: inline-block; background: #3498db; color: white; padding: 12px 30px; text-decoration: none; border-radius: 4px; font-weight: bold;">Confirm Attendance</a>
+</div>
+
+<p style="font-size: 14px; color: #7f8c8d;">This invitation link will expire in 14 days. If you have any questions, please contact us at events@cyberxredteam.org</p>
+
+<hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+
+<p style="font-size: 12px; color: #95a5a6; text-align: center;">
+CyberX Red Team<br>
+You are receiving this email because you were invited to {{event_name}}
+</p>
+</body>
+</html>""",
+    "text_content": """You're Invited!
+
+Hello {{first_name}},
+
+You have been invited to attend {{event_name}}.
+
+EVENT DETAILS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Event: {{event_name}}
+Date: {{event_date_range}}
+Time: {{event_time}}
+Location: {{event_location}}
+
+Please confirm your attendance by visiting:
+{{confirmation_url}}
+
+This invitation link will expire in 14 days. If you have any questions, please contact us at events@cyberxredteam.org
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CyberX Red Team
+You are receiving this email because you were invited to {{event_name}}
+""",
+    "available_variables": [
+        "event_name",
+        "event_date_range",
+        "event_time",
+        "event_location",
+        "confirmation_url",
+        "first_name",
+        "last_name",
+        "email"
+    ],
+    "is_active": True,
+    "is_system": True
+}
 
 
 def generate_wireguard_key() -> str:
@@ -258,6 +339,30 @@ async def seed_test_data():
 
         await session.commit()
 
+        # Create email template
+        print("\nCreating email templates...")
+        result = await session.execute(
+            select(EmailTemplate).where(EmailTemplate.name == "sg_test_hacker_theme")
+        )
+        existing_template = result.scalar_one_or_none()
+
+        if existing_template:
+            print("  ⚠️  'sg_test_hacker_theme' template already exists, updating...")
+            existing_template.display_name = INVITE_EMAIL_TEMPLATE["display_name"]
+            existing_template.description = INVITE_EMAIL_TEMPLATE["description"]
+            existing_template.subject = INVITE_EMAIL_TEMPLATE["subject"]
+            existing_template.html_content = INVITE_EMAIL_TEMPLATE["html_content"]
+            existing_template.text_content = INVITE_EMAIL_TEMPLATE["text_content"]
+            existing_template.available_variables = INVITE_EMAIL_TEMPLATE["available_variables"]
+            existing_template.is_active = INVITE_EMAIL_TEMPLATE["is_active"]
+            existing_template.is_system = INVITE_EMAIL_TEMPLATE["is_system"]
+        else:
+            template = EmailTemplate(**INVITE_EMAIL_TEMPLATE)
+            session.add(template)
+            print("  ✅ Created plain invitation email template")
+
+        await session.commit()
+
         # Create VPN credentials
         print(f"\nCreating {NUM_VPN_CONFIGS} VPN credentials...")
         vpn_created = 0
@@ -322,6 +427,7 @@ async def seed_test_data():
     print(f"  - Admins: {len(ADMIN_USERS)}")
     print(f"  - Sponsors: {len(SPONSOR_USERS)}")
     print(f"  - Invitees: {len(INVITEE_USERS)}")
+    print(f"  - Email Templates: 1 (plain invitation)")
     print(f"  - VPN Configs: {NUM_VPN_CONFIGS} ({vpn_created} new, {vpn_updated} updated)")
     print(f"\nShared password for ALL test users: {TEST_PASSWORD}")
     print()
