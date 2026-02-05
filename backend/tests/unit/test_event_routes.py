@@ -55,6 +55,7 @@ class TestEventListingRoutes:
         mock_event1.id = 1
         mock_event1.year = 2025
         mock_event1.name = "CyberX 2025"
+        mock_event1.slug = "cyberx-2025"
         mock_event1.start_date = datetime(2025, 7, 1, tzinfo=timezone.utc)
         mock_event1.end_date = datetime(2025, 7, 7, tzinfo=timezone.utc)
         mock_event1.event_time = "10:00 AM - 6:00 PM"
@@ -68,6 +69,7 @@ class TestEventListingRoutes:
         mock_event2.id = 2
         mock_event2.year = 2026
         mock_event2.name = "CyberX 2026"
+        mock_event2.slug = "cyberx-2026"
         mock_event2.start_date = datetime(2026, 7, 1, tzinfo=timezone.utc)
         mock_event2.end_date = datetime(2026, 7, 7, tzinfo=timezone.utc)
         mock_event2.event_time = "10:00 AM - 6:00 PM"
@@ -110,6 +112,7 @@ class TestEventListingRoutes:
         mock_event.id = 1
         mock_event.year = 2026
         mock_event.name = "CyberX 2026"
+        mock_event.slug = "cyberx-2026"
         mock_event.start_date = datetime(2026, 7, 1, tzinfo=timezone.utc)
         mock_event.end_date = datetime(2026, 7, 7, tzinfo=timezone.utc)
         mock_event.event_time = "10:00 AM - 6:00 PM"
@@ -164,6 +167,7 @@ class TestEventListingRoutes:
         mock_event.id = 1
         mock_event.year = 2026
         mock_event.name = "CyberX 2026"
+        mock_event.slug = "cyberx-2026"
         mock_event.start_date = datetime(2026, 7, 1, tzinfo=timezone.utc)
         mock_event.end_date = datetime(2026, 7, 7, tzinfo=timezone.utc)
         mock_event.event_time = "10:00 AM - 6:00 PM"
@@ -233,6 +237,7 @@ class TestEventManagementRoutes:
         mock_event.id = 1
         mock_event.year = 2027
         mock_event.name = "CyberX 2027"
+        mock_event.slug = "cyberx-2027"
         mock_event.start_date = data.start_date
         mock_event.end_date = data.end_date
         mock_event.event_time = None
@@ -245,7 +250,7 @@ class TestEventManagementRoutes:
         mock_event.updated_at = datetime.now(timezone.utc)
 
         mock_service = mocker.Mock()
-        mock_service.get_event_by_year = mocker.AsyncMock(return_value=None)
+        mock_service.get_event_by_slug = mocker.AsyncMock(return_value=None)
         mock_service.create_event = mocker.AsyncMock(return_value=mock_event)
 
         result = await create_event(data=data, current_user=mock_user, service=mock_service)
@@ -276,10 +281,10 @@ class TestEventManagementRoutes:
             is_active=False
         )
 
-        existing_event = Mock(id=1, year=2026)
+        existing_event = Mock(id=1, year=2026, slug="cyberx-2026")
 
         mock_service = mocker.Mock()
-        mock_service.get_event_by_year = mocker.AsyncMock(return_value=existing_event)
+        mock_service.get_event_by_slug = mocker.AsyncMock(return_value=existing_event)
 
         with pytest.raises(Exception) as exc_info:
             await create_event(data=data, current_user=mock_user, service=mock_service)
@@ -313,6 +318,7 @@ class TestEventManagementRoutes:
         updated_event.id = 1
         updated_event.year = 2026
         updated_event.name = "Updated Event Name"
+        updated_event.slug = "updated-event-name"
         updated_event.start_date = datetime(2026, 7, 1, tzinfo=timezone.utc)
         updated_event.end_date = datetime(2026, 7, 7, tzinfo=timezone.utc)
         updated_event.event_time = "10:00 AM - 6:00 PM"
@@ -415,6 +421,7 @@ class TestParticipationManagementRoutes:
         mock_event.id = 1
         mock_event.year = 2026
         mock_event.name = "CyberX 2026"
+        mock_event.slug = "cyberx-2026"
 
         mock_participation = Mock()
         mock_participation.id = 1
@@ -463,7 +470,7 @@ class TestParticipationManagementRoutes:
             user_ids=[2, 3, 4, 5]
         )
 
-        mock_event = Mock(id=1, year=2026, name="CyberX 2026")
+        mock_event = Mock(id=1, year=2026, name="CyberX 2026", slug="cyberx-2026")
 
         mock_service = mocker.Mock()
         mock_service.get_event = mocker.AsyncMock(return_value=mock_event)
@@ -527,6 +534,7 @@ class TestParticipantSelfServiceRoutes:
         mock_event.id = 1
         mock_event.year = 2026
         mock_event.name = "CyberX 2026"
+        mock_event.slug = "cyberx-2026"
 
         mock_participation = Mock()
         mock_participation.id = 1
