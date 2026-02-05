@@ -5,21 +5,28 @@ from app.config import get_settings
 
 settings = get_settings()
 
-# Add pgbouncer compatibility parameter to database URL
-# asyncpg requires prepared_statement_cache_size=0 in URL for pgbouncer
-database_url = settings.async_database_url
-if "?" in database_url:
-    database_url += "&prepared_statement_cache_size=0"
-else:
-    database_url += "?prepared_statement_cache_size=0"
 
-# Create async engine
+def _on_connect(dbapi_connection, connection_record):
+    """Called for each new connection to disable prepared statement cache."""
+    # For asyncpg connections, disable prepared statement cache for pgbouncer compatibility
+    # This is set at the connection level to ensure it takes effect
+    pass  # The setting is applied via connect_args below
+
+
+# Create async engine with pgbouncer-compatible settings
 engine = create_async_engine(
-    database_url,
+    settings.async_database_url,
     echo=False,  # Disable SQL query logging (too verbose)
     pool_size=20,
     max_overflow=50,
     pool_pre_ping=True,
+    # Disable prepared statement caching for pgbouncer compatibility
+    connect_args={
+        "server_settings": {
+            "jit": "off",  # Disable JIT compilation which can interfere
+        },
+        "prepared_statement_cache_size": 0,  # Disable prepared statement cache
+    },
 )
 
 # Create session factory
