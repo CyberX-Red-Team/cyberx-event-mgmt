@@ -39,21 +39,61 @@ def upgrade() -> None:
     op.alter_column('events', 'slug', nullable=False)
     op.create_index('idx_events_slug', 'events', ['slug'], unique=True)
 
-    # Drop the unique constraint on year column
-    # Note: PostgreSQL automatically creates an index for unique constraints
-    # We need to find and drop both the constraint and index
-    op.drop_constraint('events_year_key', 'events', type_='unique')
+    # Drop the unique constraint on year column if it exists
+    # The constraint name may vary depending on how the table was created
+    conn = op.get_bind()
+    result = conn.execute(sa.text("""
+        SELECT constraint_name
+        FROM information_schema.table_constraints
+        WHERE table_name = 'events'
+        AND constraint_type = 'UNIQUE'
+        AND constraint_name LIKE '%year%'
+    """))
+    constraint_name = result.scalar()
 
-    # Keep the year index for filtering, but make it non-unique
-    # The unique constraint automatically created an index, so we need to recreate it as non-unique
-    op.drop_index('events_year_key', table_name='events')
-    op.create_index('idx_events_year', 'events', ['year'], unique=False)
+    if constraint_name:
+        op.drop_constraint(constraint_name, 'events', type_='unique')
+
+        # Also drop the associated index if it exists with the same name
+        index_result = conn.execute(sa.text("""
+            SELECT indexname
+            FROM pg_indexes
+            WHERE tablename = 'events'
+            AND indexname = :index_name
+        """), {"index_name": constraint_name})
+
+        if index_result.scalar():
+            op.drop_index(constraint_name, table_name='events')
+
+    # Ensure we have a non-unique index on year for performance
+    # Check if idx_events_year already exists
+    index_check = conn.execute(sa.text("""
+        SELECT indexname
+        FROM pg_indexes
+        WHERE tablename = 'events'
+        AND indexname = 'idx_events_year'
+    """))
+
+    if not index_check.scalar():
+        op.create_index('idx_events_year', 'events', ['year'], unique=False)
 
 
 def downgrade() -> None:
     """Downgrade schema."""
+    conn = op.get_bind()
+
+    # Drop non-unique year index if it exists
+    index_check = conn.execute(sa.text("""
+        SELECT indexname
+        FROM pg_indexes
+        WHERE tablename = 'events'
+        AND indexname = 'idx_events_year'
+    """))
+
+    if index_check.scalar():
+        op.drop_index('idx_events_year', table_name='events')
+
     # Restore unique constraint on year
-    op.drop_index('idx_events_year', table_name='events')
     op.create_unique_constraint('events_year_key', 'events', ['year'])
 
     # Remove slug column and index
