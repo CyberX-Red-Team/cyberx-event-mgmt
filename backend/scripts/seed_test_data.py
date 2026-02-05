@@ -17,6 +17,7 @@ import random
 import json
 import base64
 import secrets
+import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -188,6 +189,42 @@ def generate_ipv6_from_ipv4(ipv4: str) -> tuple[str, str]:
     global_ipv6 = f"fd00:a:14:c8:{last_octet:x}:ffff:a14:c8{last_octet:02x}"
 
     return link_local, global_ipv6
+
+
+def generate_wireguard_config_content(
+    interface_ip: str,
+    private_key: str,
+    preshared_key: str,
+    endpoint: str,
+    server_public_key: str = "test-server-public-key",
+    allowed_ips: str = "10.0.0.0/8,fd00:a::/32",
+    dns_servers: str = "10.20.200.1"
+) -> str:
+    """Generate WireGuard configuration file content for testing."""
+    # Parse interface IPs (no spaces after commas)
+    interface_ips = [ip.strip() for ip in interface_ip.split(",")]
+    address_line = ",".join(interface_ips)
+
+    # Build PresharedKey line only if present
+    preshared_line = f"PresharedKey = {preshared_key}\n" if preshared_key else ""
+
+    # Match production format
+    config = f"""[Peer]
+Endpoint = {endpoint}
+PublicKey = {server_public_key}
+{preshared_line}AllowedIPs = {allowed_ips}
+PersistentKeepalive = 25
+[Interface]
+PrivateKey = {private_key}
+Address = {address_line}
+DNS = {dns_servers}
+"""
+    return config
+
+
+def calculate_sha256(content: str) -> str:
+    """Calculate SHA256 hash of string content."""
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
 
 async def seed_test_data():
@@ -388,6 +425,15 @@ async def seed_test_data():
             private_key = generate_wireguard_key()
             preshared_key = generate_wireguard_key()  # Optional but we'll generate it
 
+            # Generate WireGuard config content and calculate SHA256 hash
+            config_content = generate_wireguard_config_content(
+                interface_ip=interface_ip,
+                private_key=private_key,
+                preshared_key=preshared_key,
+                endpoint=VPN_ENDPOINT
+            )
+            file_hash = calculate_sha256(config_content)
+
             # Check if VPN config already exists for this IP
             result = await session.execute(
                 select(VPNCredential).where(VPNCredential.ipv4_address == ipv4)
@@ -402,6 +448,7 @@ async def seed_test_data():
                 existing_vpn.private_key = private_key
                 existing_vpn.preshared_key = preshared_key
                 existing_vpn.endpoint = VPN_ENDPOINT
+                existing_vpn.file_hash = file_hash
                 existing_vpn.is_available = True
                 existing_vpn.is_active = True
                 vpn_updated += 1
@@ -415,6 +462,7 @@ async def seed_test_data():
                     private_key=private_key,
                     preshared_key=preshared_key,
                     endpoint=VPN_ENDPOINT,
+                    file_hash=file_hash,
                     key_type="cyber",  # Default to cyber type
                     is_available=True,
                     is_active=True
