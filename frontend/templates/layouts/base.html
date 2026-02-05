@@ -1031,6 +1031,68 @@
             border-color: var(--primary-color) !important;
             color: #fff !important;
         }
+
+        /* Dropzone / File Upload Area */
+        [data-theme="dark"] .dropzone {
+            background-color: var(--bg-secondary) !important;
+            border-color: var(--border-color) !important;
+        }
+
+        [data-theme="dark"] .dropzone:hover,
+        [data-theme="dark"] .dropzone.dragover {
+            background-color: rgba(0, 207, 213, 0.1) !important;
+            border-color: var(--primary-color) !important;
+        }
+
+        [data-theme="dark"] .dropzone i {
+            color: var(--text-secondary) !important;
+        }
+
+        [data-theme="dark"] .dropzone.dragover i {
+            color: var(--primary-color) !important;
+        }
+
+        /* Button Groups - ensure borders are visible */
+        [data-theme="dark"] .btn-group .btn,
+        [data-theme="dark"] .btn-group-sm .btn {
+            border-color: var(--border-color) !important;
+        }
+
+        [data-theme="dark"] .btn-group .btn:not(:last-child),
+        [data-theme="dark"] .btn-group-sm .btn:not(:last-child) {
+            border-right-color: var(--border-color) !important;
+        }
+
+        [data-theme="dark"] .btn-outline-primary {
+            border-color: var(--primary-color) !important;
+            color: var(--primary-color) !important;
+        }
+
+        [data-theme="dark"] .btn-outline-primary:hover {
+            background-color: var(--primary-color) !important;
+            color: #fff !important;
+        }
+
+        [data-theme="dark"] .btn-outline-secondary {
+            border-color: var(--border-color) !important;
+            color: var(--text-secondary) !important;
+        }
+
+        [data-theme="dark"] .btn-outline-secondary:hover {
+            background-color: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--text-secondary) !important;
+        }
+
+        [data-theme="dark"] .btn-outline-danger {
+            border-color: var(--danger-color) !important;
+            color: var(--danger-color) !important;
+        }
+
+        [data-theme="dark"] .btn-outline-danger:hover {
+            background-color: var(--danger-color) !important;
+            color: #fff !important;
+        }
     </style>
 
     {% block extra_css %}{% endblock %}
