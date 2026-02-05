@@ -300,6 +300,9 @@ async def seed_test_data():
             )
             existing_user = result.scalar_one_or_none()
 
+            # Generate confirmation code for testing
+            confirmation_code = secrets.token_urlsafe(32)
+
             if existing_user:
                 print(f"  ⚠️  Invitee {invitee_data['email']} already exists, updating...")
                 existing_user.password_hash = hash_password(TEST_PASSWORD)
@@ -308,6 +311,9 @@ async def seed_test_data():
                 existing_user.is_active = True
                 existing_user.confirmed = 'UNKNOWN'
                 existing_user.email_status = 'GOOD'
+                existing_user.confirmation_code = confirmation_code
+                existing_user.confirmation_sent_at = datetime.now(timezone.utc)
+                user = existing_user
             else:
                 user = User(
                     email=invitee_data["email"],
@@ -320,6 +326,8 @@ async def seed_test_data():
                     confirmed='UNKNOWN',
                     email_status='GOOD',
                     password_hash=hash_password(TEST_PASSWORD),
+                    confirmation_code=confirmation_code,
+                    confirmation_sent_at=datetime.now(timezone.utc)
                 )
                 session.add(user)
                 print(f"  ✅ Created invitee: {invitee_data['email']}")
@@ -334,7 +342,9 @@ async def seed_test_data():
                 "email": invitee_data["email"],
                 "role": "invitee",
                 "name": f"{invitee_data['first_name']} {invitee_data['last_name']}",
-                "sponsor": sponsor.email
+                "sponsor": sponsor.email,
+                "confirmation_code": confirmation_code,
+                "confirmation_url": f"http://localhost:8000/confirm?code={confirmation_code}"
             })
 
         await session.commit()
@@ -453,11 +463,21 @@ async def seed_test_data():
     for sponsor in credentials["sponsors"]:
         print(f"  • {sponsor['email']} - {sponsor['name']}")
     print()
-    print("INVITEES (Regular users):")
+    print("INVITEES (Regular users - Status: UNKNOWN, needs confirmation):")
     for invitee in credentials["invitees"]:
         print(f"  • {invitee['email']} - {invitee['name']} (sponsored by {invitee['sponsor']})")
     print()
     print(f"PASSWORD (all users): {TEST_PASSWORD}")
+    print()
+    print("=" * 80)
+    print("CONFIRMATION LINKS (for testing invitee confirmation flow)")
+    print("=" * 80)
+    print("All invitees have status UNKNOWN and need to confirm via these links:")
+    print()
+    for invitee in credentials["invitees"]:
+        print(f"{invitee['name']} ({invitee['email']}):")
+        print(f"  {invitee['confirmation_url']}")
+        print()
     print("=" * 80)
 
     return credentials
