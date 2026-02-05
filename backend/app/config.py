@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # Application
     ENVIRONMENT: str = "development"  # development, staging, or production
-    SECRET_KEY: str
+    SECRET_KEY: str = ""  # Required for web service, optional for scripts
     CSRF_SECRET_KEY: str = ""  # If empty, uses SECRET_KEY
     ENCRYPTION_KEY: str = ""  # Field-level encryption key (Fernet), if empty uses SECRET_KEY
     DEBUG: bool = False
@@ -36,9 +36,9 @@ class Settings(BaseSettings):
     ADMIN_FIRST_NAME: str = "Admin"
     ADMIN_LAST_NAME: str = "User"
 
-    # SendGrid
-    SENDGRID_API_KEY: str
-    SENDGRID_FROM_EMAIL: str
+    # SendGrid (optional - only needed for sending emails)
+    SENDGRID_API_KEY: str = ""
+    SENDGRID_FROM_EMAIL: str = ""
     SENDGRID_FROM_NAME: str = "CyberX Red Team"
     SENDGRID_SANDBOX_MODE: bool = False  # Enable to validate emails without sending
     TEST_EMAIL_OVERRIDE: str = ""  # If set, all emails go to this address instead
