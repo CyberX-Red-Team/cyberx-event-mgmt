@@ -35,6 +35,68 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          cd backend
+          python << 'EOF'
+          import os
+          import subprocess
+          from urllib.parse import urlparse, unquote
+
+          # Parse DATABASE_URL
+          database_url = os.getenv('DATABASE_URL')
+          if not database_url:
+              print("❌ DATABASE_URL not set")
+              exit(1)
+
+          # Convert async URL to sync for alembic
+          if database_url.startswith("postgresql+asyncpg://"):
+              database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+          result = urlparse(database_url)
+          # URL decode the password and username to handle special characters
+          username = unquote(result.username) if result.username else None
+          password = unquote(result.password) if result.password else None
+          database = result.path[1:]
+          hostname = result.hostname
+          port = result.port
+
+          # Reconstruct the URL for alembic (it expects the sync driver)
+          alembic_url = f"postgresql://{username}:{password}@{hostname}:{port}/{database}"
+
+          # Set the URL for alembic
+          os.environ['DATABASE_URL'] = alembic_url
+
+          print("🔗 Connecting to database for migrations...")
+          print(f"   Database: {hostname}:{port}/{database}")
+          print(f"   User: {username}")
+          print()
+          print("🚀 Running database migrations...")
+          print()
+
+          # Run alembic upgrade head
+          result = subprocess.run(
+              ['alembic', 'upgrade', 'head'],
+              capture_output=True,
+              text=True
+          )
+
+          print(result.stdout)
+          if result.stderr:
+              print(result.stderr)
+
+          if result.returncode == 0:
+              print()
+              print("✅ Migrations completed successfully")
+              print()
+          else:
+              print()
+              print("❌ Migrations failed")
+              exit(1)
+          EOF
+
       - name: Run test data seeder
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
