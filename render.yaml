@@ -91,6 +91,6 @@ services:
       - key: ADMIN_PASSWORD
         sync: false  # Set manually in Render dashboard
       - key: ADMIN_FIRST_NAME
-        value: "Admin"
+        sync: false  # Set manually in Render dashboard
       - key: ADMIN_LAST_NAME
-        value: "User"
+        sync: false  # Set manually in Render dashboard
