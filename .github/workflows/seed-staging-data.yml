@@ -117,6 +117,9 @@ jobs:
         run: |
           cd backend
           echo "🌱 Seeding test data to staging database..."
+          echo "📍 Debug - STAGING_FRONTEND_URL from vars: ${{ vars.STAGING_FRONTEND_URL }}"
+          echo "📍 Debug - FRONTEND_URL env: ${FRONTEND_URL}"
+          echo "📍 Debug - FRONTEND_URL length: ${#FRONTEND_URL}"
           python scripts/seed_test_data.py
 
       - name: Upload test credentials

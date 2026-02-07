@@ -236,8 +236,15 @@ async def seed_test_data():
     print()
 
     # Get frontend URL from environment (strip whitespace and trailing slashes)
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8000").strip().rstrip('/')
-    print(f"Using frontend URL: {frontend_url}")
+    frontend_url_raw = os.getenv("FRONTEND_URL", "")
+    print(f"📍 Debug - FRONTEND_URL env var raw value: '{frontend_url_raw}'")
+
+    if not frontend_url_raw or frontend_url_raw.strip() == "":
+        frontend_url = "http://localhost:8000"
+        print(f"⚠️  WARNING: FRONTEND_URL not set, defaulting to: {frontend_url}")
+    else:
+        frontend_url = frontend_url_raw.strip().rstrip('/')
+        print(f"✅ Using frontend URL from environment: {frontend_url}")
     print()
 
     credentials = {
