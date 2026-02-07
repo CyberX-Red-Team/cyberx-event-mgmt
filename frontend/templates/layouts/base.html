@@ -840,6 +840,53 @@
             color: var(--text-primary) !important;
         }
 
+        /* Preserve colored backgrounds on stats cards in dark mode */
+        [data-theme="dark"] .card.bg-primary,
+        [data-theme="dark"] .card.bg-primary .card-body {
+            background-color: #0061f2 !important;
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .card.bg-success,
+        [data-theme="dark"] .card.bg-success .card-body {
+            background-color: #00ac69 !important;
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .card.bg-info,
+        [data-theme="dark"] .card.bg-info .card-body {
+            background-color: #00cfd5 !important;
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .card.bg-warning,
+        [data-theme="dark"] .card.bg-warning .card-body {
+            background-color: #f4a100 !important;
+            color: #212529 !important;
+        }
+
+        [data-theme="dark"] .card.bg-danger,
+        [data-theme="dark"] .card.bg-danger .card-body {
+            background-color: #e81500 !important;
+            color: #ffffff !important;
+        }
+
+        /* Ensure card footers on colored cards also maintain colors */
+        [data-theme="dark"] .card.bg-primary .card-footer,
+        [data-theme="dark"] .card.bg-success .card-footer,
+        [data-theme="dark"] .card.bg-info .card-footer,
+        [data-theme="dark"] .card.bg-danger .card-footer {
+            background-color: rgba(0, 0, 0, 0.1) !important;
+            border-color: rgba(0, 0, 0, 0.125) !important;
+            color: rgba(255, 255, 255, 0.8) !important;
+        }
+
+        [data-theme="dark"] .card.bg-warning .card-footer {
+            background-color: rgba(0, 0, 0, 0.1) !important;
+            border-color: rgba(0, 0, 0, 0.125) !important;
+            color: rgba(0, 0, 0, 0.7) !important;
+        }
+
         [data-theme="dark"] .table {
             color: var(--text-primary) !important;
             background-color: transparent !important;
