@@ -419,7 +419,7 @@
         }
 
         .navbar-light .navbar-brand {
-            color: var(--primary-color) !important;
+            color: #d32f2f !important;
         }
 
         .navbar-light .navbar-nav .nav-link {
@@ -838,6 +838,75 @@
         [data-theme="dark"] .card-body {
             background-color: var(--bg-card) !important;
             color: var(--text-primary) !important;
+        }
+
+        /* Preserve colored backgrounds on stats cards in BOTH light and dark modes */
+        /* Light mode overrides */
+        .card.bg-primary,
+        .card.bg-primary .card-body {
+            background-color: #0061f2 !important;
+            color: #ffffff !important;
+        }
+
+        .card.bg-success,
+        .card.bg-success .card-body {
+            background-color: #00ac69 !important;
+            color: #ffffff !important;
+        }
+
+        .card.bg-info,
+        .card.bg-info .card-body {
+            background-color: #00cfd5 !important;
+            color: #ffffff !important;
+        }
+
+        .card.bg-warning,
+        .card.bg-warning .card-body {
+            background-color: #f4a100 !important;
+            color: #ffffff !important;
+        }
+
+        .card.bg-danger,
+        .card.bg-danger .card-body {
+            background-color: #e81500 !important;
+            color: #ffffff !important;
+        }
+
+        /* Ensure card footers on colored cards maintain appropriate colors */
+        .card.bg-primary .card-footer,
+        .card.bg-success .card-footer,
+        .card.bg-info .card-footer,
+        .card.bg-danger .card-footer,
+        .card.bg-warning .card-footer {
+            background-color: rgba(0, 0, 0, 0.1) !important;
+            border-color: rgba(0, 0, 0, 0.125) !important;
+            color: rgba(255, 255, 255, 0.8) !important;
+        }
+
+        /* Ensure text helper classes work on colored cards */
+        .card.bg-primary .text-white-75,
+        .card.bg-success .text-white-75,
+        .card.bg-info .text-white-75,
+        .card.bg-danger .text-white-75,
+        .card.bg-warning .text-white-75 {
+            color: rgba(255, 255, 255, 0.75) !important;
+        }
+
+        .card.bg-primary .text-white-50,
+        .card.bg-success .text-white-50,
+        .card.bg-info .text-white-50,
+        .card.bg-danger .text-white-50,
+        .card.bg-warning .text-white-50 {
+            color: rgba(255, 255, 255, 0.5) !important;
+        }
+
+        /* Ensure .text-white class works on colored cards */
+        .card.bg-primary .text-white,
+        .card.bg-success .text-white,
+        .card.bg-info .text-white,
+        .card.bg-danger .text-white,
+        .card.bg-warning .text-white {
+            color: #ffffff !important;
         }
 
         [data-theme="dark"] .table {

@@ -18,6 +18,7 @@ import json
 import base64
 import secrets
 import hashlib
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -234,6 +235,18 @@ async def seed_test_data():
     print("=" * 80)
     print()
 
+    # Get frontend URL from environment (strip whitespace and trailing slashes)
+    frontend_url_raw = os.getenv("FRONTEND_URL", "")
+    print(f"📍 Debug - FRONTEND_URL env var raw value: '{frontend_url_raw}'")
+
+    if not frontend_url_raw or frontend_url_raw.strip() == "":
+        frontend_url = "http://localhost:8000"
+        print(f"⚠️  WARNING: FRONTEND_URL not set, defaulting to: {frontend_url}")
+    else:
+        frontend_url = frontend_url_raw.strip().rstrip('/')
+        print(f"✅ Using frontend URL from environment: {frontend_url}")
+    print()
+
     credentials = {
         "admins": [],
         "sponsors": [],
@@ -381,7 +394,7 @@ async def seed_test_data():
                 "name": f"{invitee_data['first_name']} {invitee_data['last_name']}",
                 "sponsor": sponsor.email,
                 "confirmation_code": confirmation_code,
-                "confirmation_url": f"http://localhost:8000/confirm?code={confirmation_code}"
+                "confirmation_url": f"{frontend_url}/confirm?code={confirmation_code}"
             })
 
         await session.commit()

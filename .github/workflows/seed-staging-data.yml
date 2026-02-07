@@ -35,12 +35,91 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run test data seeder
+      - name: Run database migrations
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: |
           cd backend
+          python << 'EOF'
+          import os
+          import subprocess
+          from urllib.parse import urlparse, unquote, quote, urlunparse
+
+          # Parse DATABASE_URL
+          database_url = os.getenv('DATABASE_URL')
+          if not database_url:
+              print("❌ DATABASE_URL not set")
+              exit(1)
+
+          result = urlparse(database_url)
+          # URL decode the password and username to handle special characters
+          username = unquote(result.username) if result.username else None
+          password = unquote(result.password) if result.password else None
+          database = result.path[1:]
+          hostname = result.hostname
+          port = result.port
+
+          # Re-encode credentials to handle special characters like @ in password
+          # safe='' means encode all special characters
+          encoded_username = quote(username, safe='') if username else ''
+          encoded_password = quote(password, safe='') if password else ''
+
+          # Reconstruct the URL with properly encoded credentials (keeping async driver)
+          # netloc format: username:password@hostname:port
+          netloc = f"{encoded_username}:{encoded_password}@{hostname}"
+          if port:
+              netloc += f":{port}"
+
+          alembic_url = urlunparse((
+              result.scheme,  # Keep postgresql+asyncpg
+              netloc,
+              result.path,
+              result.params,
+              result.query,
+              result.fragment
+          ))
+
+          # Set the URL for alembic
+          os.environ['DATABASE_URL'] = alembic_url
+
+          print("🔗 Connecting to database for migrations...")
+          print(f"   Database: {hostname}:{port}/{database}")
+          print(f"   User: {username}")
+          print()
+          print("🚀 Running database migrations...")
+          print()
+
+          # Run alembic upgrade head
+          result = subprocess.run(
+              ['alembic', 'upgrade', 'head'],
+              capture_output=True,
+              text=True
+          )
+
+          print(result.stdout)
+          if result.stderr:
+              print(result.stderr)
+
+          if result.returncode == 0:
+              print()
+              print("✅ Migrations completed successfully")
+              print()
+          else:
+              print()
+              print("❌ Migrations failed")
+              exit(1)
+          EOF
+
+      - name: Run test data seeder
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          FRONTEND_URL: ${{ vars.STAGING_FRONTEND_URL }}
+        run: |
+          cd backend
           echo "🌱 Seeding test data to staging database..."
+          echo "📍 Debug - STAGING_FRONTEND_URL from vars: ${{ vars.STAGING_FRONTEND_URL }}"
+          echo "📍 Debug - FRONTEND_URL env: ${FRONTEND_URL}"
+          echo "📍 Debug - FRONTEND_URL length: ${#FRONTEND_URL}"
           python scripts/seed_test_data.py
 
       - name: Upload test credentials
