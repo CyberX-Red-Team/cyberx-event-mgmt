@@ -863,7 +863,7 @@
         .card.bg-warning,
         .card.bg-warning .card-body {
             background-color: #f4a100 !important;
-            color: #212529 !important;
+            color: #ffffff !important;
         }
 
         .card.bg-danger,
@@ -876,16 +876,11 @@
         .card.bg-primary .card-footer,
         .card.bg-success .card-footer,
         .card.bg-info .card-footer,
-        .card.bg-danger .card-footer {
-            background-color: rgba(0, 0, 0, 0.1) !important;
-            border-color: rgba(0, 0, 0, 0.125) !important;
-            color: rgba(255, 255, 255, 0.8) !important;
-        }
-
+        .card.bg-danger .card-footer,
         .card.bg-warning .card-footer {
             background-color: rgba(0, 0, 0, 0.1) !important;
             border-color: rgba(0, 0, 0, 0.125) !important;
-            color: rgba(0, 0, 0, 0.7) !important;
+            color: rgba(255, 255, 255, 0.8) !important;
         }
 
         /* Ensure text helper classes work on colored cards */
@@ -905,24 +900,13 @@
             color: rgba(255, 255, 255, 0.5) !important;
         }
 
-        .card.bg-warning .text-white-75 {
-            color: rgba(33, 37, 41, 0.75) !important;
-        }
-
-        .card.bg-warning .text-white-50 {
-            color: rgba(33, 37, 41, 0.5) !important;
-        }
-
         /* Ensure .text-white class works on colored cards */
         .card.bg-primary .text-white,
         .card.bg-success .text-white,
         .card.bg-info .text-white,
-        .card.bg-danger .text-white {
-            color: #ffffff !important;
-        }
-
+        .card.bg-danger .text-white,
         .card.bg-warning .text-white {
-            color: #212529 !important;
+            color: #ffffff !important;
         }
 
         [data-theme="dark"] .table {
