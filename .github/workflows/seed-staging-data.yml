@@ -43,7 +43,7 @@ jobs:
           python << 'EOF'
           import os
           import subprocess
-          from urllib.parse import urlparse, unquote, urlunparse
+          from urllib.parse import urlparse, unquote, quote, urlunparse
 
           # Parse DATABASE_URL
           database_url = os.getenv('DATABASE_URL')
@@ -59,9 +59,14 @@ jobs:
           hostname = result.hostname
           port = result.port
 
-          # Reconstruct the URL with decoded credentials (keeping async driver)
+          # Re-encode credentials to handle special characters like @ in password
+          # safe='' means encode all special characters
+          encoded_username = quote(username, safe='') if username else ''
+          encoded_password = quote(password, safe='') if password else ''
+
+          # Reconstruct the URL with properly encoded credentials (keeping async driver)
           # netloc format: username:password@hostname:port
-          netloc = f"{username}:{password}@{hostname}"
+          netloc = f"{encoded_username}:{encoded_password}@{hostname}"
           if port:
               netloc += f":{port}"
 
