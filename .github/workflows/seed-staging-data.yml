@@ -43,17 +43,13 @@ jobs:
           python << 'EOF'
           import os
           import subprocess
-          from urllib.parse import urlparse, unquote
+          from urllib.parse import urlparse, unquote, urlunparse
 
           # Parse DATABASE_URL
           database_url = os.getenv('DATABASE_URL')
           if not database_url:
               print("❌ DATABASE_URL not set")
               exit(1)
-
-          # Convert async URL to sync for alembic
-          if database_url.startswith("postgresql+asyncpg://"):
-              database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
           result = urlparse(database_url)
           # URL decode the password and username to handle special characters
@@ -63,8 +59,20 @@ jobs:
           hostname = result.hostname
           port = result.port
 
-          # Reconstruct the URL for alembic (it expects the sync driver)
-          alembic_url = f"postgresql://{username}:{password}@{hostname}:{port}/{database}"
+          # Reconstruct the URL with decoded credentials (keeping async driver)
+          # netloc format: username:password@hostname:port
+          netloc = f"{username}:{password}@{hostname}"
+          if port:
+              netloc += f":{port}"
+
+          alembic_url = urlunparse((
+              result.scheme,  # Keep postgresql+asyncpg
+              netloc,
+              result.path,
+              result.params,
+              result.query,
+              result.fragment
+          ))
 
           # Set the URL for alembic
           os.environ['DATABASE_URL'] = alembic_url
