@@ -235,6 +235,11 @@ async def seed_test_data():
     print("=" * 80)
     print()
 
+    # Get frontend URL from environment (strip whitespace and trailing slashes)
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8000").strip().rstrip('/')
+    print(f"Using frontend URL: {frontend_url}")
+    print()
+
     credentials = {
         "admins": [],
         "sponsors": [],
@@ -375,9 +380,6 @@ async def seed_test_data():
                 select(User).where(User.id == sponsor_id)
             )
             sponsor = sponsor_result.scalar_one()
-
-            # Get frontend URL from environment or default to localhost
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8000")
 
             credentials["invitees"].append({
                 "email": invitee_data["email"],
