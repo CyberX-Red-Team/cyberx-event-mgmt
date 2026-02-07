@@ -113,6 +113,7 @@ jobs:
       - name: Run test data seeder
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          FRONTEND_URL: ${{ vars.STAGING_FRONTEND_URL }}
         run: |
           cd backend
           echo "🌱 Seeding test data to staging database..."

@@ -18,6 +18,7 @@ import json
 import base64
 import secrets
 import hashlib
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -375,13 +376,16 @@ async def seed_test_data():
             )
             sponsor = sponsor_result.scalar_one()
 
+            # Get frontend URL from environment or default to localhost
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8000")
+
             credentials["invitees"].append({
                 "email": invitee_data["email"],
                 "role": "invitee",
                 "name": f"{invitee_data['first_name']} {invitee_data['last_name']}",
                 "sponsor": sponsor.email,
                 "confirmation_code": confirmation_code,
-                "confirmation_url": f"http://localhost:8000/confirm?code={confirmation_code}"
+                "confirmation_url": f"{frontend_url}/confirm?code={confirmation_code}"
             })
 
         await session.commit()
