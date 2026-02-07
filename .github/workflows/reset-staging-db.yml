@@ -46,7 +46,7 @@ jobs:
           python << 'EOF'
           import os
           import psycopg2
-          from urllib.parse import urlparse
+          from urllib.parse import urlparse, unquote
 
           # Parse DATABASE_URL
           database_url = os.getenv('DATABASE_URL')
@@ -59,14 +59,16 @@ jobs:
               database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
           result = urlparse(database_url)
-          username = result.username
-          password = result.password
+          # URL decode the password and username to handle special characters
+          username = unquote(result.username) if result.username else None
+          password = unquote(result.password) if result.password else None
           database = result.path[1:]
           hostname = result.hostname
           port = result.port
 
           print(f"Connecting to database: {hostname}:{port}/{database}")
           print(f"User: {username}")
+          print(f"Password length: {len(password) if password else 0} characters")
           print()
 
           # Connect to database
