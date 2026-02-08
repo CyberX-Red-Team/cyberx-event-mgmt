@@ -18,66 +18,94 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def normalize_email_sql(email: str) -> str:
+def normalize_email(email: str) -> str:
     """
-    SQL function to normalize email addresses.
+    Normalize email address for consistent storage.
 
     - Lowercase
     - Strip whitespace
     - Gmail-specific: remove periods from local part
     - Preserve plus addressing
     """
-    # This will be done in Python in the data migration step
-    pass
+    if not email:
+        return email
+
+    email = email.strip().lower()
+
+    if '@' not in email:
+        return email
+
+    local_part, domain = email.rsplit('@', 1)
+
+    # Gmail normalization: remove periods
+    gmail_domains = {'gmail.com', 'googlemail.com'}
+    if domain in gmail_domains or domain.endswith('.google.com'):
+        local_part = local_part.replace('.', '')
+
+    return f"{local_part}@{domain}"
 
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Step 1: Add email_normalized column as nullable
-    op.add_column('users', sa.Column('email_normalized', sa.String(255), nullable=True))
-
-    # Step 2: Populate email_normalized with normalized emails using Python
-    # We need to fetch all users and normalize their emails
     connection = op.get_bind()
 
-    # Define normalization function inline
-    def normalize_email(email):
-        if not email:
-            return email
-        email = email.strip().lower()
-        if '@' not in email:
-            return email
-        local_part, domain = email.rsplit('@', 1)
-        # Gmail normalization: remove periods
-        gmail_domains = {'gmail.com', 'googlemail.com'}
-        if domain in gmail_domains or domain.endswith('.google.com'):
-            local_part = local_part.replace('.', '')
-        return f"{local_part}@{domain}"
+    # Step 1: Add email_normalized column as nullable
+    print("Adding email_normalized column...")
+    op.add_column('users', sa.Column('email_normalized', sa.String(255), nullable=True))
 
-    # Fetch all users
-    result = connection.execute(sa.text("SELECT id, email FROM users"))
-    users = result.fetchall()
+    # Step 2: Populate email_normalized with normalized emails
+    print("Populating email_normalized from existing emails...")
+    try:
+        # Fetch all users
+        result = connection.execute(sa.text("SELECT id, email FROM users"))
+        users = result.fetchall()
 
-    # Update each user with normalized email
-    for user_id, email in users:
-        normalized = normalize_email(email)
-        connection.execute(
-            sa.text("UPDATE users SET email_normalized = :normalized WHERE id = :id"),
-            {"normalized": normalized, "id": user_id}
-        )
+        print(f"Found {len(users)} users to update")
 
-    # Step 3: Make email_normalized non-nullable and add unique constraint
+        # Update each user with normalized email
+        for user_id, email in users:
+            try:
+                normalized = normalize_email(email)
+                connection.execute(
+                    sa.text("UPDATE users SET email_normalized = :normalized WHERE id = :id"),
+                    {"normalized": normalized, "id": user_id}
+                )
+            except Exception as e:
+                print(f"Error normalizing email for user {user_id}: {e}")
+                # Set to original email if normalization fails
+                connection.execute(
+                    sa.text("UPDATE users SET email_normalized = :email WHERE id = :id"),
+                    {"email": email.lower() if email else '', "id": user_id}
+                )
+
+        # Note: Alembic manages the transaction, don't commit here
+        print("Email normalization complete")
+
+    except Exception as e:
+        print(f"Error during email normalization: {e}")
+        raise
+
+    # Step 3: Make email_normalized non-nullable
+    print("Making email_normalized non-nullable...")
     op.alter_column('users', 'email_normalized', nullable=False)
+
+    # Step 4: Add index and unique constraint on email_normalized
+    print("Adding index and unique constraint...")
     op.create_index('ix_users_email_normalized', 'users', ['email_normalized'])
     op.create_unique_constraint('uq_users_email_normalized', 'users', ['email_normalized'])
 
-    # Step 4: Remove unique constraint from email field (keep it indexed for sending)
-    # Note: The constraint name might vary, let's try to drop it
-    try:
-        op.drop_constraint('users_email_key', 'users', type_='unique')
-    except Exception:
-        # Constraint might have different name or not exist
-        pass
+    # Step 5: Remove unique constraint from email field
+    print("Removing unique constraint from email field...")
+    # Try common constraint names
+    for constraint_name in ['users_email_key', 'uq_users_email', 'users_email_unique']:
+        try:
+            op.drop_constraint(constraint_name, 'users', type_='unique')
+            print(f"Dropped constraint: {constraint_name}")
+            break
+        except Exception:
+            continue
+
+    print("Migration complete!")
 
 
 def downgrade() -> None:
