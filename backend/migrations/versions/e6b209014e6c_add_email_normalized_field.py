@@ -99,7 +99,7 @@ def upgrade() -> None:
 
     # Query to find unique constraints on the email column
     constraint_query = sa.text("""
-        SELECT constraint_name
+        SELECT tc.constraint_name
         FROM information_schema.table_constraints tc
         JOIN information_schema.constraint_column_usage ccu
           ON tc.constraint_name = ccu.constraint_name
