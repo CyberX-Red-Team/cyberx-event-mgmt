@@ -16,6 +16,7 @@ from app.models.event import EventParticipation
 from app.models.audit_log import VPNRequest
 from app.utils.security import hash_password
 from app.services.email_queue_service import EmailQueueService
+from app.api.utils.validation import normalize_email
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +63,10 @@ class ParticipantService:
         return result.scalar_one_or_none()
 
     async def get_participant_by_email(self, email: str) -> Optional[User]:
-        """Get a participant by email."""
+        """Get a participant by email (case-insensitive, Gmail alias aware)."""
+        normalized_email = normalize_email(email)
         result = await self.session.execute(
-            select(User).where(User.email == email)
+            select(User).where(User.email_normalized == normalized_email)
         )
         return result.scalar_one_or_none()
 
@@ -187,6 +189,10 @@ class ParticipantService:
         is_admin: bool = False
     ) -> User:
         """Create a new participant."""
+        # Store original email for sending, calculate normalized for lookups
+        email_original = email.strip()  # Remove leading/trailing whitespace only
+        email_normalized = normalize_email(email)
+
         # IMPORTANT: Only generate credentials if explicitly provided OR if user is already confirmed
         # For new invitees with UNKNOWN status, credentials are generated AFTER they accept terms (USER_CONFIRMED workflow)
         # Sponsors and admins always get immediate credentials
@@ -218,7 +224,8 @@ class ParticipantService:
         from app.api.routes.public import generate_phonetic_password
 
         participant = User(
-            email=email,
+            email=email_original,
+            email_normalized=email_normalized,
             first_name=first_name,
             last_name=last_name,
             country=country,

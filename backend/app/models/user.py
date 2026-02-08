@@ -32,7 +32,8 @@ class User(Base):
     sharepoint_id = Column(String(50), unique=True, nullable=True)
 
     # Basic Information
-    email = Column(String(255), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)  # Original email for sending
+    email_normalized = Column(String(255), unique=True, nullable=False, index=True)  # Normalized for lookups
     first_name = Column(String(255), nullable=False)
     last_name = Column(String(255), nullable=False)
     country = Column(String(100), nullable=False)

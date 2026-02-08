@@ -15,6 +15,7 @@ from app.services.auth_service import AuthService
 from app.services.audit_service import AuditService
 from app.models.user import User
 from app.models.vpn import VPNCredential
+from app.api.utils.validation import normalize_email
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -353,9 +354,10 @@ async def request_password_reset(
     Note:
         Always returns success to prevent email enumeration
     """
-    # Find user by email
+    # Find user by email_normalized (case-insensitive and Gmail alias aware)
+    normalized_email_value = normalize_email(data.email)
     result = await db.execute(
-        select(User).where(User.email == data.email)
+        select(User).where(User.email_normalized == normalized_email_value)
     )
     user = result.scalar_one_or_none()
 
