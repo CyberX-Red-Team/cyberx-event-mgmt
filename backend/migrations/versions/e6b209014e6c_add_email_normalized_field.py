@@ -94,16 +94,30 @@ def upgrade() -> None:
     op.create_index('ix_users_email_normalized', 'users', ['email_normalized'])
     op.create_unique_constraint('uq_users_email_normalized', 'users', ['email_normalized'])
 
-    # Step 5: Remove unique constraint from email field
-    print("Removing unique constraint from email field...")
-    # Try common constraint names
-    for constraint_name in ['users_email_key', 'uq_users_email', 'users_email_unique']:
-        try:
-            op.drop_constraint(constraint_name, 'users', type_='unique')
-            print(f"Dropped constraint: {constraint_name}")
-            break
-        except Exception:
-            continue
+    # Step 5: Remove unique constraint from email field (if it exists)
+    print("Checking for unique constraint on email field...")
+
+    # Query to find unique constraints on the email column
+    constraint_query = sa.text("""
+        SELECT constraint_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.constraint_column_usage ccu
+          ON tc.constraint_name = ccu.constraint_name
+        WHERE tc.table_name = 'users'
+          AND tc.constraint_type = 'UNIQUE'
+          AND ccu.column_name = 'email'
+    """)
+
+    result = connection.execute(constraint_query)
+    constraint_rows = result.fetchall()
+
+    if constraint_rows:
+        constraint_name = constraint_rows[0][0]
+        print(f"Found unique constraint '{constraint_name}' on email field, dropping...")
+        op.drop_constraint(constraint_name, 'users', type_='unique')
+        print(f"Dropped constraint: {constraint_name}")
+    else:
+        print("No unique constraint found on email field (may only have index), skipping...")
 
     print("Migration complete!")
 

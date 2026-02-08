@@ -28,6 +28,7 @@ from app.models.event import Event
 from app.config import Settings, get_settings
 from app.utils.security import hash_password
 from app.utils.encryption import init_encryptor, generate_encryption_key
+from app.api.utils.validation import normalize_email
 
 
 # ============================================================================
@@ -193,6 +194,7 @@ async def admin_user(db_session: AsyncSession) -> User:
     """
     user = User(
         email="admin@test.com",
+        email_normalized=normalize_email("admin@test.com"),
         first_name="Admin",
         last_name="User",
         country="USA",
@@ -215,6 +217,7 @@ async def sponsor_user(db_session: AsyncSession) -> User:
     """
     user = User(
         email="sponsor@test.com",
+        email_normalized=normalize_email("sponsor@test.com"),
         first_name="Sponsor",
         last_name="User",
         country="USA",
@@ -236,6 +239,7 @@ async def invitee_user(db_session: AsyncSession, sponsor_user: User) -> User:
     """
     user = User(
         email="invitee@test.com",
+        email_normalized=normalize_email("invitee@test.com"),
         first_name="Invitee",
         last_name="User",
         country="USA",
