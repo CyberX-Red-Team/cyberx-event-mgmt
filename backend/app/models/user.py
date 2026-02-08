@@ -273,3 +273,21 @@ class User(Base):
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, role={self.role}, name={self.full_name})>"
+
+
+# Event listener to automatically set email_normalized from email
+from sqlalchemy import event
+
+
+@event.listens_for(User, 'before_insert')
+@event.listens_for(User, 'before_update')
+def normalize_user_email(mapper, connection, target):
+    """
+    Automatically normalize email when User is created or updated.
+
+    This ensures email_normalized is always set correctly, even when
+    tests or code create User objects without explicitly setting it.
+    """
+    if target.email and not target.email_normalized:
+        from app.api.utils.validation import normalize_email
+        target.email_normalized = normalize_email(target.email)
