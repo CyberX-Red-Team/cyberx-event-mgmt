@@ -312,7 +312,7 @@ function previewTemplate() {
         event_name: 'CyberX 2026',
     };
     for (const [key, val] of Object.entries(sampleVars)) {
-        rendered = rendered.replaceAll(`{{${key}}}`, val);
+        rendered = rendered.replaceAll('{{' + key + '}}', val);
     }
 
     document.getElementById('previewContent').textContent = rendered;
