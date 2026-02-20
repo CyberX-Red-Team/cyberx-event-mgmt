@@ -14,6 +14,7 @@ class InstanceCreate(BaseModel):
     cloud_init_template_id: Optional[int] = None
     event_id: Optional[int] = None
     assigned_to_user_id: Optional[int] = None
+    ssh_public_key: Optional[str] = None
 
 
 class InstanceBulkCreate(BaseModel):
@@ -25,6 +26,7 @@ class InstanceBulkCreate(BaseModel):
     key_name: Optional[str] = None
     cloud_init_template_id: Optional[int] = None
     event_id: Optional[int] = None
+    ssh_public_key: Optional[str] = None
 
 
 class InstanceResponse(BaseModel):

@@ -310,6 +310,7 @@ class OpenStackService:
         assigned_to_user_id: int | None = None,
         created_by_user_id: int | None = None,
         user_data: str | None = None,
+        ssh_public_key: str | None = None,
     ) -> Instance:
         """Create an OpenStack instance and track it in the DB."""
         # Fall back to defaults
@@ -320,6 +321,30 @@ class OpenStackService:
 
         if not all([flavor_id, image_id, network_id]):
             raise ValueError("flavor_id, image_id, and network_id are required")
+
+        # Render cloud-init template if provided
+        if template_id and not user_data:
+            from app.services.cloud_init_service import CloudInitService
+            from app.services.license_service import LicenseService
+            from app.services.download_service import DownloadService
+
+            cloud_init_svc = CloudInitService(self.session)
+            template = await cloud_init_svc.get_template(template_id)
+
+            if template:
+                # Prepare template variables
+                variables = {
+                    "hostname": name,
+                    "instance_name": name,
+                }
+
+                # Add SSH public key if provided
+                if ssh_public_key:
+                    variables["ssh_public_key"] = ssh_public_key
+
+                # Render template
+                user_data = cloud_init_svc.render_template(template.content, variables)
+                logger.info("Rendered cloud-init template %d for instance %s", template_id, name)
 
         # Create on OpenStack
         server = await self.create_instance_on_openstack(
@@ -467,6 +492,7 @@ class OpenStackService:
         event_id: int | None = None,
         created_by_user_id: int | None = None,
         user_data: str | None = None,
+        ssh_public_key: str | None = None,
     ) -> tuple[int, list[str]]:
         """Bulk-create instances. Returns (success_count, error_messages)."""
         successes = 0
@@ -485,6 +511,7 @@ class OpenStackService:
                     event_id=event_id,
                     created_by_user_id=created_by_user_id,
                     user_data=user_data,
+                    ssh_public_key=ssh_public_key,
                 )
                 successes += 1
             except Exception as e:

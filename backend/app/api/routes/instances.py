@@ -75,6 +75,7 @@ async def create_instance(
             event_id=data.event_id,
             assigned_to_user_id=data.assigned_to_user_id,
             created_by_user_id=current_user.id,
+            ssh_public_key=data.ssh_public_key,
         )
     except ValueError as e:
         raise bad_request(str(e))
@@ -103,6 +104,7 @@ async def bulk_create_instances(
             template_id=data.cloud_init_template_id,
             event_id=data.event_id,
             created_by_user_id=current_user.id,
+            ssh_public_key=data.ssh_public_key,
         )
     except ValueError as e:
         raise bad_request(str(e))

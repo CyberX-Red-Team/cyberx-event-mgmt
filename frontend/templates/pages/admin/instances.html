@@ -203,6 +203,11 @@
                     <label class="form-label">Key Name</label>
                     <input type="text" class="form-control" id="createKeyName" placeholder="Optional SSH key name">
                 </div>
+                <div class="mb-3">
+                    <label class="form-label">SSH Public Key</label>
+                    <textarea class="form-control" id="createSshKey" rows="3" placeholder="Optional: Paste SSH public key (e.g., ssh-rsa AAAA...)"></textarea>
+                    <div class="form-text">This key will be added to the instance via cloud-init template</div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -251,6 +256,11 @@
                         <label class="form-label">Cloud-Init Template</label>
                         <select class="form-select" id="bulkTemplate"><option value="">None</option></select>
                     </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">SSH Public Key</label>
+                    <textarea class="form-control" id="bulkSshKey" rows="3" placeholder="Optional: Paste SSH public key (e.g., ssh-rsa AAAA...)"></textarea>
+                    <div class="form-text">This key will be added to all instances via cloud-init template</div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -416,6 +426,7 @@ function showCreateModal() {
     loadResources();
     document.getElementById('createName').value = '';
     document.getElementById('createKeyName').value = '';
+    document.getElementById('createSshKey').value = '';
     new bootstrap.Modal(document.getElementById('createModal')).show();
 }
 
@@ -423,6 +434,7 @@ function showBulkCreateModal() {
     loadResources();
     document.getElementById('bulkPrefix').value = '';
     document.getElementById('bulkCount').value = 5;
+    document.getElementById('bulkSshKey').value = '';
     new bootstrap.Modal(document.getElementById('bulkCreateModal')).show();
 }
 
@@ -436,11 +448,13 @@ async function createInstance() {
     const network = document.getElementById('createNetwork').value;
     const template = document.getElementById('createTemplate').value;
     const keyName = document.getElementById('createKeyName').value.trim();
+    const sshKey = document.getElementById('createSshKey').value.trim();
     if (flavor) body.flavor_id = flavor;
     if (image) body.image_id = image;
     if (network) body.network_id = network;
     if (template) body.cloud_init_template_id = parseInt(template);
     if (keyName) body.key_name = keyName;
+    if (sshKey) body.ssh_public_key = sshKey;
 
     try {
         const resp = await csrfFetch('/api/instances', { method: 'POST', body });
@@ -466,10 +480,12 @@ async function bulkCreate() {
     const image = document.getElementById('bulkImage').value;
     const network = document.getElementById('bulkNetwork').value;
     const template = document.getElementById('bulkTemplate').value;
+    const sshKey = document.getElementById('bulkSshKey').value.trim();
     if (flavor) body.flavor_id = flavor;
     if (image) body.image_id = image;
     if (network) body.network_id = network;
     if (template) body.cloud_init_template_id = parseInt(template);
+    if (sshKey) body.ssh_public_key = sshKey;
 
     try {
         const resp = await csrfFetch('/api/instances/bulk', { method: 'POST', body });
