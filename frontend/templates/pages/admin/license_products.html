@@ -1,0 +1,399 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}License Products{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-fluid px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="key"></i></div>
+                        License Products
+                    </h1>
+                    <div class="page-header-subtitle">Manage licensed products, tokens, and install queues</div>
+                </div>
+                <div class="col-auto mt-4">
+                    <button class="btn btn-white btn-sm" onclick="showCreateModal()">
+                        <i data-feather="plus" class="me-1"></i> New Product
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-fluid px-4 mt-n10">
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-primary text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Total Tokens</div>
+                            <div class="text-lg fw-bold" id="statTotalTokens">-</div>
+                        </div>
+                        <i data-feather="hash" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Tokens Used</div>
+                            <div class="text-lg fw-bold" id="statTokensUsed">-</div>
+                        </div>
+                        <i data-feather="check-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-warning text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Tokens Expired</div>
+                            <div class="text-lg fw-bold" id="statTokensExpired">-</div>
+                        </div>
+                        <i data-feather="clock" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-info text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Active Install Slots</div>
+                            <div class="text-lg fw-bold" id="statActiveSlots">-</div>
+                        </div>
+                        <i data-feather="activity" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Products Table -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div><i data-feather="package" class="me-2"></i> Products</div>
+            <span class="small text-muted"><span id="totalCount">0</span> product(s)</span>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Concurrent</th>
+                            <th>Slot TTL</th>
+                            <th>Token TTL</th>
+                            <th>Status</th>
+                            <th width="120">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productBody">
+                        <tr><td colspan="7" class="text-center py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading products...
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Queue Monitor -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div><i data-feather="activity" class="me-2"></i> Install Queue Monitor</div>
+            <button class="btn btn-sm btn-outline-primary" onclick="loadQueueStatus()">
+                <i data-feather="refresh-cw" class="me-1"></i> Refresh
+            </button>
+        </div>
+        <div class="card-body" id="queueMonitor">
+            <p class="text-muted text-center py-3">Loading queue status...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit Product Modal -->
+<div class="modal fade" id="productModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="productModalTitle">New Product</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editProductId">
+                <div class="row">
+                    <div class="col-md-8 mb-3">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="productName" required>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Status</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" id="productActive" checked>
+                            <label class="form-check-label" for="productActive">Active</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <input type="text" class="form-control" id="productDescription" placeholder="Optional description">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">License Blob <span class="text-danger">*</span></label>
+                    <textarea class="form-control font-monospace" id="productBlob" rows="4" placeholder="License content to distribute to instances"></textarea>
+                </div>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Max Concurrent Installs</label>
+                        <input type="number" class="form-control" id="productMaxConcurrent" value="2" min="1" max="100">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Slot TTL (seconds)</label>
+                        <input type="number" class="form-control" id="productSlotTTL" value="7200" min="60">
+                        <div class="form-text">Default: 7200 (2 hours)</div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Token TTL (seconds)</label>
+                        <input type="number" class="form-control" id="productTokenTTL" value="7200" min="60">
+                        <div class="form-text">Default: 7200 (2 hours)</div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Download Filename</label>
+                    <input type="text" class="form-control" id="productDownloadFilename" placeholder="e.g. toolname.1.0.0.tar (optional)">
+                    <div class="form-text">Filename in R2/download storage to generate signed URLs for</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveProduct()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+// ── Stats ──
+async function loadStats() {
+    try {
+        const resp = await csrfFetch('/api/license/stats');
+        if (resp.ok) {
+            const d = await resp.json();
+            document.getElementById('statTotalTokens').textContent = d.total_tokens_generated;
+            document.getElementById('statTokensUsed').textContent = d.tokens_used;
+            document.getElementById('statTokensExpired').textContent = d.tokens_expired;
+            document.getElementById('statActiveSlots').textContent = d.active_slots;
+        }
+    } catch (e) { console.error('Failed to load stats:', e); }
+}
+
+// ── Load Products ──
+async function loadProducts() {
+    try {
+        const resp = await csrfFetch('/api/license/products?page_size=100');
+        if (resp.status === 401) { window.location.href = '/login'; return; }
+        if (!resp.ok) throw new Error('Failed to load');
+
+        const data = await resp.json();
+        document.getElementById('totalCount').textContent = data.total;
+        renderProducts(data.items);
+    } catch (e) {
+        console.error(e);
+        document.getElementById('productBody').innerHTML =
+            '<tr><td colspan="7" class="text-center text-danger py-4">Failed to load products.</td></tr>';
+    }
+}
+
+function formatTTL(seconds) {
+    if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)}h`;
+    if (seconds >= 60) return `${Math.floor(seconds / 60)}m`;
+    return `${seconds}s`;
+}
+
+function renderProducts(items) {
+    const tbody = document.getElementById('productBody');
+    if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No products found. Create one to get started.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = items.map(p => `
+        <tr>
+            <td><strong>${p.name}</strong>${p.download_filename ? `<br><small class="text-muted">${p.download_filename}</small>` : ''}</td>
+            <td class="text-muted small">${p.description || '-'}</td>
+            <td><span class="badge bg-secondary">${p.max_concurrent}</span></td>
+            <td>${formatTTL(p.slot_ttl)}</td>
+            <td>${formatTTL(p.token_ttl)}</td>
+            <td>${p.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="editProduct(${p.id})" title="Edit"><i data-feather="edit"></i></button>
+                    <button class="btn btn-outline-danger" onclick="deleteProduct(${p.id}, '${p.name}')" title="Delete"><i data-feather="trash-2"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+    feather.replace();
+}
+
+// ── Queue Monitor ──
+async function loadQueueStatus() {
+    try {
+        const resp = await csrfFetch('/api/license/queue/status');
+        if (!resp.ok) throw new Error('Failed');
+        const statuses = await resp.json();
+
+        const container = document.getElementById('queueMonitor');
+        if (!statuses.length) {
+            container.innerHTML = '<p class="text-muted text-center py-3">No active products with queue data.</p>';
+            return;
+        }
+
+        container.innerHTML = statuses.map(s => `
+            <div class="mb-4">
+                <h6 class="fw-bold">${s.product_name}</h6>
+                <div class="d-flex align-items-center mb-2">
+                    <div class="progress flex-grow-1 me-3" style="height: 20px;">
+                        <div class="progress-bar ${s.active_slots >= s.max_concurrent ? 'bg-danger' : 'bg-success'}"
+                             style="width: ${s.max_concurrent > 0 ? (s.active_slots / s.max_concurrent * 100) : 0}%">
+                            ${s.active_slots} / ${s.max_concurrent}
+                        </div>
+                    </div>
+                    <span class="small text-muted">${s.active_slots} active of ${s.max_concurrent} max</span>
+                </div>
+                ${s.recent_completions.length ? `
+                    <details class="small">
+                        <summary class="text-muted">Recent completions (${s.recent_completions.length})</summary>
+                        <table class="table table-sm mt-2">
+                            <thead><tr><th>Hostname</th><th>Result</th><th>Duration</th><th>Released</th></tr></thead>
+                            <tbody>
+                                ${s.recent_completions.map(c => `
+                                    <tr>
+                                        <td>${c.hostname || '-'}</td>
+                                        <td><span class="badge bg-${c.result === 'success' ? 'success' : c.result === 'expired' ? 'warning' : 'danger'}">${c.result || '-'}</span></td>
+                                        <td>${c.elapsed_seconds ? formatTTL(c.elapsed_seconds) : '-'}</td>
+                                        <td>${c.released_at ? formatDateTime(c.released_at) : '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </details>
+                ` : '<small class="text-muted">No recent completions</small>'}
+            </div>
+        `).join('<hr>');
+    } catch (e) {
+        document.getElementById('queueMonitor').innerHTML = '<p class="text-danger text-center py-3">Failed to load queue status.</p>';
+    }
+}
+
+// ── Create / Edit ──
+function showCreateModal() {
+    document.getElementById('productModalTitle').textContent = 'New Product';
+    document.getElementById('editProductId').value = '';
+    document.getElementById('productName').value = '';
+    document.getElementById('productDescription').value = '';
+    document.getElementById('productBlob').value = '';
+    document.getElementById('productMaxConcurrent').value = 2;
+    document.getElementById('productSlotTTL').value = 7200;
+    document.getElementById('productTokenTTL').value = 7200;
+    document.getElementById('productDownloadFilename').value = '';
+    document.getElementById('productActive').checked = true;
+    new bootstrap.Modal(document.getElementById('productModal')).show();
+}
+
+async function editProduct(id) {
+    try {
+        const resp = await csrfFetch(`/api/license/products/${id}`);
+        if (!resp.ok) throw new Error('Failed');
+        const p = await resp.json();
+
+        document.getElementById('productModalTitle').textContent = 'Edit Product';
+        document.getElementById('editProductId').value = p.id;
+        document.getElementById('productName').value = p.name;
+        document.getElementById('productDescription').value = p.description || '';
+        document.getElementById('productBlob').value = p.license_blob || '';
+        document.getElementById('productMaxConcurrent').value = p.max_concurrent;
+        document.getElementById('productSlotTTL').value = p.slot_ttl;
+        document.getElementById('productTokenTTL').value = p.token_ttl;
+        document.getElementById('productDownloadFilename').value = p.download_filename || '';
+        document.getElementById('productActive').checked = p.is_active;
+        new bootstrap.Modal(document.getElementById('productModal')).show();
+    } catch (e) { alert('Failed to load product'); }
+}
+
+async function saveProduct() {
+    const id = document.getElementById('editProductId').value;
+    const name = document.getElementById('productName').value.trim();
+    const blob = document.getElementById('productBlob').value.trim();
+
+    if (!name) { alert('Name is required'); return; }
+    if (!id && !blob) { alert('License blob is required'); return; }
+
+    const body = { name };
+    const desc = document.getElementById('productDescription').value.trim();
+    if (desc) body.description = desc;
+    if (blob) body.license_blob = blob;
+    body.max_concurrent = parseInt(document.getElementById('productMaxConcurrent').value);
+    body.slot_ttl = parseInt(document.getElementById('productSlotTTL').value);
+    body.token_ttl = parseInt(document.getElementById('productTokenTTL').value);
+    const filename = document.getElementById('productDownloadFilename').value.trim();
+    if (filename) body.download_filename = filename;
+    body.is_active = document.getElementById('productActive').checked;
+
+    try {
+        const url = id ? `/api/license/products/${id}` : '/api/license/products';
+        const method = id ? 'PUT' : 'POST';
+        const resp = await csrfFetch(url, { method, body });
+
+        if (resp.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
+            loadProducts();
+            loadStats();
+            showToast(`Product ${id ? 'updated' : 'created'} successfully`, 'success');
+        } else {
+            const err = await resp.json();
+            alert(err.detail || 'Failed to save product');
+        }
+    } catch (e) { alert('Failed to save product'); }
+}
+
+// ── Delete ──
+async function deleteProduct(id, name) {
+    if (!confirm(`Delete product "${name}"? This will also remove all associated tokens and slots.`)) return;
+    try {
+        const resp = await csrfFetch(`/api/license/products/${id}`, { method: 'DELETE' });
+        if (resp.ok) {
+            loadProducts();
+            loadStats();
+            loadQueueStatus();
+            showToast('Product deleted', 'success');
+        }
+    } catch (e) { showToast('Delete failed', 'danger'); }
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadProducts();
+    loadQueueStatus();
+});
+</script>
+{% endblock %}

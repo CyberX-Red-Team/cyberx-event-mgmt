@@ -1,0 +1,338 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Cloud-Init Templates{% endblock %}
+
+{% block extra_css %}
+<style>
+.template-editor {
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    tab-size: 2;
+    min-height: 300px;
+    resize: vertical;
+}
+.variable-ref code {
+    cursor: pointer;
+    user-select: all;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-fluid px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="file-text"></i></div>
+                        Cloud-Init Templates
+                    </h1>
+                    <div class="page-header-subtitle">Manage cloud-init configuration templates for instance provisioning</div>
+                </div>
+                <div class="col-auto mt-4">
+                    <button class="btn btn-white btn-sm" onclick="showCreateModal()">
+                        <i data-feather="plus" class="me-1"></i> New Template
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-fluid px-4 mt-n10">
+    <!-- Templates Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div><i data-feather="list" class="me-2"></i> Templates</div>
+            <span class="small text-muted"><span id="totalCount">0</span> template(s)</span>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Default</th>
+                            <th>Updated</th>
+                            <th width="150">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="templateBody">
+                        <tr><td colspan="5" class="text-center py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading templates...
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Variable Reference -->
+    <div class="card mt-4">
+        <div class="card-header"><i data-feather="info" class="me-2"></i> Available Template Variables</div>
+        <div class="card-body variable-ref">
+            <p class="text-muted small mb-2">Use double curly braces in your templates. These are replaced when rendering.</p>
+            <div class="row">
+                <div class="col-md-4">
+                    <code>&#123;&#123;download_url&#125;&#125;</code> - Signed download URL<br>
+                    <code>&#123;&#123;license_token&#125;&#125;</code> - Single-use license token<br>
+                    <code>&#123;&#123;license_server&#125;&#125;</code> - License server URL
+                </div>
+                <div class="col-md-4">
+                    <code>&#123;&#123;hostname&#125;&#125;</code> - Instance hostname<br>
+                    <code>&#123;&#123;ip_address&#125;&#125;</code> - Instance IP address<br>
+                    <code>&#123;&#123;instance_name&#125;&#125;</code> - Instance name
+                </div>
+                <div class="col-md-4">
+                    <code>&#123;&#123;product_name&#125;&#125;</code> - License product name<br>
+                    <code>&#123;&#123;event_name&#125;&#125;</code> - Event name<br>
+                    <code>&#123;&#123;custom_var&#125;&#125;</code> - Any custom variable
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit Template Modal -->
+<div class="modal fade" id="templateModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="templateModalTitle">New Template</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editTemplateId">
+                <div class="row">
+                    <div class="col-md-8 mb-3">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="templateName" required>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Default Template</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" id="templateDefault">
+                            <label class="form-check-label" for="templateDefault">Set as default</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <input type="text" class="form-control" id="templateDescription" placeholder="Optional description">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Content (YAML) <span class="text-danger">*</span></label>
+                    <textarea class="form-control template-editor" id="templateContent" rows="15" placeholder="#cloud-config&#10;..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-info" onclick="previewTemplate()">
+                    <i data-feather="eye" class="me-1"></i> Preview
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveTemplate()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Template Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow: auto;"><code id="previewContent"></code></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+// ── Load Templates ──
+async function loadTemplates() {
+    try {
+        const resp = await csrfFetch('/api/cloud-init/templates?page_size=100');
+        if (resp.status === 401) { window.location.href = '/login'; return; }
+        if (!resp.ok) throw new Error('Failed to load');
+
+        const data = await resp.json();
+        document.getElementById('totalCount').textContent = data.total;
+        renderTemplates(data.items);
+    } catch (e) {
+        console.error(e);
+        document.getElementById('templateBody').innerHTML =
+            '<tr><td colspan="5" class="text-center text-danger py-4">Failed to load templates.</td></tr>';
+    }
+}
+
+function renderTemplates(items) {
+    const tbody = document.getElementById('templateBody');
+    if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No templates found. Create one to get started.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = items.map(t => `
+        <tr>
+            <td><strong>${t.name}</strong></td>
+            <td class="text-muted small">${t.description || '-'}</td>
+            <td>${t.is_default ? '<span class="badge bg-primary">Default</span>' : ''}</td>
+            <td>${formatDateTime(t.updated_at)}</td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="editTemplate(${t.id})" title="Edit"><i data-feather="edit"></i></button>
+                    <button class="btn btn-outline-info" onclick="previewSaved(${t.id})" title="Preview"><i data-feather="eye"></i></button>
+                    <button class="btn btn-outline-danger" onclick="deleteTemplate(${t.id}, '${t.name}')" title="Delete"><i data-feather="trash-2"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+    feather.replace();
+}
+
+// ── Create / Edit ──
+function showCreateModal() {
+    document.getElementById('templateModalTitle').textContent = 'New Template';
+    document.getElementById('editTemplateId').value = '';
+    document.getElementById('templateName').value = '';
+    document.getElementById('templateDescription').value = '';
+    document.getElementById('templateContent').value = '';
+    document.getElementById('templateDefault').checked = false;
+    new bootstrap.Modal(document.getElementById('templateModal')).show();
+}
+
+async function editTemplate(id) {
+    try {
+        const resp = await csrfFetch(`/api/cloud-init/templates/${id}`);
+        if (!resp.ok) throw new Error('Failed to load template');
+        const t = await resp.json();
+
+        document.getElementById('templateModalTitle').textContent = 'Edit Template';
+        document.getElementById('editTemplateId').value = t.id;
+        document.getElementById('templateName').value = t.name;
+        document.getElementById('templateDescription').value = t.description || '';
+        document.getElementById('templateContent').value = t.content;
+        document.getElementById('templateDefault').checked = t.is_default;
+        new bootstrap.Modal(document.getElementById('templateModal')).show();
+    } catch (e) { alert('Failed to load template'); }
+}
+
+async function saveTemplate() {
+    const id = document.getElementById('editTemplateId').value;
+    const name = document.getElementById('templateName').value.trim();
+    const content = document.getElementById('templateContent').value.trim();
+    if (!name || !content) { alert('Name and content are required'); return; }
+
+    const body = {
+        name,
+        content,
+        description: document.getElementById('templateDescription').value.trim() || null,
+        is_default: document.getElementById('templateDefault').checked,
+    };
+
+    try {
+        const url = id ? `/api/cloud-init/templates/${id}` : '/api/cloud-init/templates';
+        const method = id ? 'PUT' : 'POST';
+        const resp = await csrfFetch(url, { method, body });
+
+        if (resp.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('templateModal')).hide();
+            loadTemplates();
+            showToast(`Template ${id ? 'updated' : 'created'} successfully`, 'success');
+        } else {
+            const err = await resp.json();
+            alert(err.detail || 'Failed to save template');
+        }
+    } catch (e) { alert('Failed to save template'); }
+}
+
+// ── Delete ──
+async function deleteTemplate(id, name) {
+    if (!confirm(`Delete template "${name}"?`)) return;
+    try {
+        const resp = await csrfFetch(`/api/cloud-init/templates/${id}`, { method: 'DELETE' });
+        if (resp.ok) {
+            loadTemplates();
+            showToast('Template deleted', 'success');
+        }
+    } catch (e) { showToast('Delete failed', 'danger'); }
+}
+
+// ── Preview ──
+async function previewSaved(id) {
+    try {
+        const resp = await csrfFetch(`/api/cloud-init/templates/${id}/preview`, {
+            method: 'POST',
+            body: {
+                variables: {
+                    download_url: 'https://example.com/download/file.tar',
+                    license_token: 'sample-token-abc123',
+                    license_server: 'https://license.example.com',
+                    hostname: 'participant-vm-001',
+                    ip_address: '10.0.0.100',
+                    instance_name: 'participant-vm-001',
+                }
+            }
+        });
+        if (!resp.ok) throw new Error('Preview failed');
+        const data = await resp.json();
+        document.getElementById('previewContent').textContent = data.rendered;
+        new bootstrap.Modal(document.getElementById('previewModal')).show();
+    } catch (e) { alert('Preview failed'); }
+}
+
+function previewTemplate() {
+    const content = document.getElementById('templateContent').value;
+    if (!content.trim()) { alert('Template content is empty'); return; }
+
+    // Client-side preview with sample values
+    let rendered = content;
+    const sampleVars = {
+        download_url: 'https://example.com/download/file.tar',
+        license_token: 'sample-token-abc123',
+        license_server: 'https://license.example.com',
+        hostname: 'participant-vm-001',
+        ip_address: '10.0.0.100',
+        instance_name: 'participant-vm-001',
+        product_name: 'Sample Product',
+        event_name: 'CyberX 2026',
+    };
+    for (const [key, val] of Object.entries(sampleVars)) {
+        rendered = rendered.replaceAll(`{{${key}}}`, val);
+    }
+
+    document.getElementById('previewContent').textContent = rendered;
+    new bootstrap.Modal(document.getElementById('previewModal')).show();
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+    loadTemplates();
+
+    // Tab key support in textarea
+    document.getElementById('templateContent').addEventListener('keydown', function(e) {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
+            this.value = this.value.substring(0, start) + '  ' + this.value.substring(end);
+            this.selectionStart = this.selectionEnd = start + 2;
+        }
+    });
+});
+</script>
+{% endblock %}

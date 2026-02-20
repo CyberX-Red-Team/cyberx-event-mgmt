@@ -66,6 +66,39 @@ class Settings(BaseSettings):
     # Email Job
     BULK_EMAIL_INTERVAL_MINUTES: int = 45
 
+    # OpenStack Integration (optional - only needed for instance provisioning)
+    OS_AUTH_URL: str = ""
+    OS_AUTH_TYPE: str = "v3applicationcredential"  # or "password"
+    OS_APPLICATION_CREDENTIAL_ID: str = ""
+    OS_APPLICATION_CREDENTIAL_SECRET: str = ""
+    OS_USERNAME: str = ""
+    OS_PASSWORD: str = ""
+    OS_PROJECT_NAME: str = ""
+    OS_USER_DOMAIN_NAME: str = "Default"
+    OS_PROJECT_DOMAIN_NAME: str = "Default"
+    OS_NOVA_URL: str = ""      # Optional, auto-discovered from Keystone catalog
+    OS_NEUTRON_URL: str = ""   # Optional, auto-discovered from Keystone catalog
+    OS_GLANCE_URL: str = ""    # Optional, auto-discovered from Keystone catalog
+
+    # Default Instance Configuration (optional - can be overridden per-request)
+    OS_DEFAULT_FLAVOR_ID: str = ""
+    OS_DEFAULT_IMAGE_ID: str = ""
+    OS_DEFAULT_NETWORK_ID: str = ""
+    OS_DEFAULT_KEY_NAME: str = ""
+
+    # Download Link Generation - Cloudflare R2 (optional)
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET: str = ""
+    R2_CUSTOM_DOMAIN: str = ""
+
+    # Download Link Generation - nginx secure_link alternative (optional)
+    DOWNLOAD_SECRET: str = ""
+    DOWNLOAD_BASE_URL: str = ""
+    DOWNLOAD_LINK_MODE: str = "r2"     # "r2" or "nginx"
+    DOWNLOAD_LINK_EXPIRY: int = 3600   # Default 1 hour
+
     # Invitation Reminder Configuration
     REMINDER_1_DAYS_AFTER_INVITE: int = 7  # First reminder: 7 days after initial invitation
     REMINDER_1_MIN_DAYS_BEFORE_EVENT: int = 14  # Don't send if event is less than 14 days away

@@ -1,0 +1,529 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Instance Management{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-fluid px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="server"></i></div>
+                        Instance Management
+                    </h1>
+                    <div class="page-header-subtitle">Provision and manage OpenStack instances</div>
+                </div>
+                <div class="col-auto mt-4">
+                    <button class="btn btn-white btn-sm me-2" onclick="showCreateModal()">
+                        <i data-feather="plus" class="me-1"></i> Create Instance
+                    </button>
+                    <button class="btn btn-outline-white btn-sm" onclick="showBulkCreateModal()">
+                        <i data-feather="layers" class="me-1"></i> Bulk Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-fluid px-4 mt-n10">
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-primary text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Total Instances</div>
+                            <div class="text-lg fw-bold" id="statTotal">-</div>
+                        </div>
+                        <i data-feather="server" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Active</div>
+                            <div class="text-lg fw-bold" id="statActive">-</div>
+                        </div>
+                        <i data-feather="check-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-warning text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Building</div>
+                            <div class="text-lg fw-bold" id="statBuilding">-</div>
+                        </div>
+                        <i data-feather="loader" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-danger text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Error</div>
+                            <div class="text-lg fw-bold" id="statError">-</div>
+                        </div>
+                        <i data-feather="alert-triangle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="filter" class="me-2"></i> Filters
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label small">Search</label>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Name, IP, OpenStack ID...">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Status</label>
+                    <select class="form-select" id="statusFilter">
+                        <option value="">All</option>
+                        <option value="ACTIVE">Active</option>
+                        <option value="BUILDING">Building</option>
+                        <option value="ERROR">Error</option>
+                        <option value="SHUTOFF">Shutoff</option>
+                    </select>
+                </div>
+                <div class="col-md-5 d-flex align-items-end">
+                    <button class="btn btn-primary me-2" onclick="applyFilters()">
+                        <i data-feather="search" class="me-1"></i> Search
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="clearFilters()">
+                        <i data-feather="x" class="me-1"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instances Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div><i data-feather="list" class="me-2"></i> Instances</div>
+            <div>
+                <button class="btn btn-sm btn-danger" id="deleteSelectedBtn" onclick="deleteSelectedInstances()" style="display: none;">
+                    <i data-feather="trash-2" class="me-1"></i> Delete Selected (<span id="selectedCount">0</span>)
+                </button>
+                <span class="small text-muted ms-3">
+                    Showing <span id="showingCount">0</span> of <span id="totalCount">0</span>
+                </span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th width="30"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleSelectAll()"></th>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>IP Address</th>
+                            <th>Event</th>
+                            <th>Created</th>
+                            <th width="120">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="instanceBody">
+                        <tr><td colspan="7" class="text-center py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading instances...
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <!-- Pagination -->
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <select class="form-select form-select-sm" style="width: auto;" id="pageSizeSelect" onchange="loadInstances(1)">
+                    <option value="25">25 per page</option>
+                    <option value="50" selected>50 per page</option>
+                    <option value="100">100 per page</option>
+                </select>
+                <nav><ul class="pagination pagination-sm mb-0" id="pagination"></ul></nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Instance Modal -->
+<div class="modal fade" id="createModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create Instance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="createName" required>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Flavor</label>
+                        <select class="form-select" id="createFlavor"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Image</label>
+                        <select class="form-select" id="createImage"><option value="">Default</option></select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Network</label>
+                        <select class="form-select" id="createNetwork"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Cloud-Init Template</label>
+                        <select class="form-select" id="createTemplate"><option value="">None</option></select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Key Name</label>
+                    <input type="text" class="form-control" id="createKeyName" placeholder="Optional SSH key name">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createInstance()">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Create Modal -->
+<div class="modal fade" id="bulkCreateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bulk Create Instances</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8 mb-3">
+                        <label class="form-label">Name Prefix <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="bulkPrefix" placeholder="e.g. participant-vm">
+                        <div class="form-text">Instances will be named prefix-001, prefix-002, etc.</div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Count <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="bulkCount" value="5" min="1" max="50">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Flavor</label>
+                        <select class="form-select" id="bulkFlavor"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Image</label>
+                        <select class="form-select" id="bulkImage"><option value="">Default</option></select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Network</label>
+                        <select class="form-select" id="bulkNetwork"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Cloud-Init Template</label>
+                        <select class="form-select" id="bulkTemplate"><option value="">None</option></select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="bulkCreate()">Create Instances</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+let currentPage = 1;
+
+// ── Stats ──
+async function loadStats() {
+    try {
+        const resp = await csrfFetch('/api/instances/stats');
+        if (resp.ok) {
+            const d = await resp.json();
+            document.getElementById('statTotal').textContent = d.total;
+            document.getElementById('statActive').textContent = d.active;
+            document.getElementById('statBuilding').textContent = d.building;
+            document.getElementById('statError').textContent = d.error;
+        }
+    } catch (e) { console.error('Failed to load stats:', e); }
+}
+
+// ── Load Instances ──
+async function loadInstances(page = 1) {
+    currentPage = page;
+    const pageSize = document.getElementById('pageSizeSelect').value;
+    const search = document.getElementById('searchInput').value;
+    const status = document.getElementById('statusFilter').value;
+
+    let url = `/api/instances?page=${page}&page_size=${pageSize}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (status) url += `&status=${encodeURIComponent(status)}`;
+
+    try {
+        const resp = await csrfFetch(url);
+        if (resp.status === 401) { window.location.href = '/login'; return; }
+        if (!resp.ok) throw new Error('Failed to load');
+
+        const data = await resp.json();
+        renderInstances(data.items);
+        renderPagination(data.page, data.total_pages);
+        document.getElementById('showingCount').textContent = data.items.length;
+        document.getElementById('totalCount').textContent = data.total;
+    } catch (e) {
+        console.error(e);
+        document.getElementById('instanceBody').innerHTML =
+            '<tr><td colspan="7" class="text-center text-danger py-4">Failed to load instances.</td></tr>';
+    }
+}
+
+function statusBadge(status) {
+    const map = {
+        ACTIVE: 'success', BUILDING: 'warning', ERROR: 'danger',
+        SHUTOFF: 'secondary', DELETED: 'dark'
+    };
+    return `<span class="badge bg-${map[status] || 'info'}">${status}</span>`;
+}
+
+function renderInstances(items) {
+    const tbody = document.getElementById('instanceBody');
+    if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No instances found.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = items.map(i => `
+        <tr>
+            <td><input type="checkbox" class="form-check-input inst-cb" value="${i.id}" onchange="updateSelectionCount()"></td>
+            <td><strong>${i.name}</strong><br><small class="text-muted">${i.openstack_id || '-'}</small></td>
+            <td>${statusBadge(i.status)}</td>
+            <td><code>${i.ip_address || '-'}</code></td>
+            <td>${i.event_id || '-'}</td>
+            <td>${formatDateTime(i.created_at)}</td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="syncInstance(${i.id})" title="Sync Status"><i data-feather="refresh-cw"></i></button>
+                    <button class="btn btn-outline-danger" onclick="deleteInstance(${i.id}, '${i.name}')" title="Delete"><i data-feather="trash-2"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+    feather.replace();
+    updateSelectionCount();
+}
+
+// ── Pagination ──
+function renderPagination(current, totalPages) {
+    const el = document.getElementById('pagination');
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    let html = `<li class="page-item ${current === 1 ? 'disabled' : ''}"><a class="page-link" href="#" onclick="loadInstances(${current - 1}); return false;">&laquo;</a></li>`;
+    const start = Math.max(1, current - 2), end = Math.min(totalPages, start + 4);
+    for (let i = start; i <= end; i++) {
+        html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" onclick="loadInstances(${i}); return false;">${i}</a></li>`;
+    }
+    html += `<li class="page-item ${current === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" onclick="loadInstances(${current + 1}); return false;">&raquo;</a></li>`;
+    el.innerHTML = html;
+}
+
+// ── Filters ──
+function applyFilters() { loadInstances(1); }
+function clearFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('statusFilter').value = '';
+    loadInstances(1);
+}
+
+// ── Selection ──
+function toggleSelectAll() {
+    const checked = document.getElementById('selectAll').checked;
+    document.querySelectorAll('.inst-cb').forEach(cb => cb.checked = checked);
+    updateSelectionCount();
+}
+function updateSelectionCount() {
+    const count = document.querySelectorAll('.inst-cb:checked').length;
+    const btn = document.getElementById('deleteSelectedBtn');
+    document.getElementById('selectedCount').textContent = count;
+    btn.style.display = count > 0 ? 'inline-block' : 'none';
+}
+
+// ── Create ──
+let resourcesLoaded = false;
+async function loadResources() {
+    if (resourcesLoaded) return;
+    try {
+        const [flavors, images, networks, templates] = await Promise.all([
+            csrfFetch('/api/instances/resources/flavors').then(r => r.json()),
+            csrfFetch('/api/instances/resources/images').then(r => r.json()),
+            csrfFetch('/api/instances/resources/networks').then(r => r.json()),
+            csrfFetch('/api/cloud-init/templates?page_size=100').then(r => r.json()),
+        ]);
+
+        const populateSelect = (ids, items, labelFn) => {
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                items.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.id;
+                    opt.textContent = labelFn(item);
+                    el.appendChild(opt);
+                });
+            });
+        };
+
+        populateSelect(['createFlavor', 'bulkFlavor'], flavors.flavors || [], f => `${f.name} (${f.vcpus}vCPU, ${f.ram}MB)`);
+        populateSelect(['createImage', 'bulkImage'], images.images || [], i => i.name);
+        populateSelect(['createNetwork', 'bulkNetwork'], networks.networks || [], n => n.name);
+        populateSelect(['createTemplate', 'bulkTemplate'], templates.items || [], t => t.name);
+
+        resourcesLoaded = true;
+    } catch (e) {
+        console.error('Failed to load resources:', e);
+    }
+}
+
+function showCreateModal() {
+    loadResources();
+    document.getElementById('createName').value = '';
+    document.getElementById('createKeyName').value = '';
+    new bootstrap.Modal(document.getElementById('createModal')).show();
+}
+
+function showBulkCreateModal() {
+    loadResources();
+    document.getElementById('bulkPrefix').value = '';
+    document.getElementById('bulkCount').value = 5;
+    new bootstrap.Modal(document.getElementById('bulkCreateModal')).show();
+}
+
+async function createInstance() {
+    const name = document.getElementById('createName').value.trim();
+    if (!name) { alert('Name is required'); return; }
+
+    const body = { name };
+    const flavor = document.getElementById('createFlavor').value;
+    const image = document.getElementById('createImage').value;
+    const network = document.getElementById('createNetwork').value;
+    const template = document.getElementById('createTemplate').value;
+    const keyName = document.getElementById('createKeyName').value.trim();
+    if (flavor) body.flavor_id = flavor;
+    if (image) body.image_id = image;
+    if (network) body.network_id = network;
+    if (template) body.cloud_init_template_id = parseInt(template);
+    if (keyName) body.key_name = keyName;
+
+    try {
+        const resp = await csrfFetch('/api/instances', { method: 'POST', body });
+        if (resp.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('createModal')).hide();
+            loadInstances(1);
+            loadStats();
+            showToast('Instance created successfully', 'success');
+        } else {
+            const err = await resp.json();
+            alert(err.detail || 'Failed to create instance');
+        }
+    } catch (e) { alert('Failed to create instance'); }
+}
+
+async function bulkCreate() {
+    const prefix = document.getElementById('bulkPrefix').value.trim();
+    const count = parseInt(document.getElementById('bulkCount').value);
+    if (!prefix) { alert('Name prefix is required'); return; }
+
+    const body = { name_prefix: prefix, count };
+    const flavor = document.getElementById('bulkFlavor').value;
+    const image = document.getElementById('bulkImage').value;
+    const network = document.getElementById('bulkNetwork').value;
+    const template = document.getElementById('bulkTemplate').value;
+    if (flavor) body.flavor_id = flavor;
+    if (image) body.image_id = image;
+    if (network) body.network_id = network;
+    if (template) body.cloud_init_template_id = parseInt(template);
+
+    try {
+        const resp = await csrfFetch('/api/instances/bulk', { method: 'POST', body });
+        const data = await resp.json();
+        bootstrap.Modal.getInstance(document.getElementById('bulkCreateModal')).hide();
+        loadInstances(1);
+        loadStats();
+        showToast(`Created ${data.success_count} instance(s)${data.errors.length ? `, ${data.errors.length} failed` : ''}`, data.errors.length ? 'warning' : 'success');
+    } catch (e) { alert('Bulk create failed'); }
+}
+
+// ── Actions ──
+async function syncInstance(id) {
+    try {
+        const resp = await csrfFetch(`/api/instances/${id}/sync`, { method: 'POST' });
+        if (resp.ok) {
+            loadInstances(currentPage);
+            loadStats();
+            showToast('Instance synced', 'success');
+        }
+    } catch (e) { showToast('Sync failed', 'danger'); }
+}
+
+async function deleteInstance(id, name) {
+    if (!confirm(`Delete instance "${name}"? This will terminate it on OpenStack.`)) return;
+    try {
+        const resp = await csrfFetch(`/api/instances/${id}`, { method: 'DELETE' });
+        if (resp.ok) {
+            loadInstances(currentPage);
+            loadStats();
+            showToast('Instance deleted', 'success');
+        }
+    } catch (e) { showToast('Delete failed', 'danger'); }
+}
+
+async function deleteSelectedInstances() {
+    const ids = Array.from(document.querySelectorAll('.inst-cb:checked')).map(cb => parseInt(cb.value));
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} instance(s)? This will terminate them on OpenStack.`)) return;
+
+    try {
+        const resp = await csrfFetch('/api/instances/bulk-delete', { method: 'POST', body: { instance_ids: ids } });
+        const data = await resp.json();
+        loadInstances(currentPage);
+        loadStats();
+        showToast(`Deleted ${data.success_count} instance(s)`, data.errors.length ? 'warning' : 'success');
+    } catch (e) { showToast('Bulk delete failed', 'danger'); }
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadInstances(1);
+    document.getElementById('searchInput').addEventListener('keypress', e => { if (e.key === 'Enter') applyFilters(); });
+});
+</script>
+{% endblock %}

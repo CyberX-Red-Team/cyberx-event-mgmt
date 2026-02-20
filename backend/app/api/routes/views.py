@@ -215,6 +215,57 @@ async def admin_events_page(
     )
 
 
+@router.get("/admin/instances", response_class=HTMLResponse)
+async def admin_instances_page(
+    request: Request,
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Render instance management page (admin only)."""
+    return templates.TemplateResponse(
+        "pages/admin/instances.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "active_page": "instances",
+            "now": datetime.now()
+        }
+    )
+
+
+@router.get("/admin/cloud-init", response_class=HTMLResponse)
+async def admin_cloud_init_page(
+    request: Request,
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Render cloud-init template management page (admin only)."""
+    return templates.TemplateResponse(
+        "pages/admin/cloud_init.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "active_page": "cloud_init",
+            "now": datetime.now()
+        }
+    )
+
+
+@router.get("/admin/licenses", response_class=HTMLResponse)
+async def admin_licenses_page(
+    request: Request,
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Render license products management page (admin only)."""
+    return templates.TemplateResponse(
+        "pages/admin/license_products.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "active_page": "licenses",
+            "now": datetime.now()
+        }
+    )
+
+
 # Sponsor pages
 @router.get("/sponsor/invitees", response_class=HTMLResponse)
 async def sponsor_invitees_page(

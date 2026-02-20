@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.middleware.csrf import CSRFMiddleware
 from app.api.routes import auth, admin, vpn, email, webhooks, views, event, public, sponsor, user
+from app.api.routes import instances as instances_routes, cloud_init as cloud_init_routes, license as license_routes
 from app.tasks import start_scheduler, stop_scheduler, list_jobs
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
@@ -159,6 +160,9 @@ csrf_exempt_urls = [
     "/api/public/confirm",     # Public confirmation endpoint
     "/api/public/decline",     # Public decline endpoint
     "/health",                 # Health check
+    "/api/license/blob",       # VM-facing license endpoint (Bearer token auth)
+    "/api/license/queue/acquire",  # VM-facing queue acquire (Bearer token auth)
+    "/api/license/queue/release",  # VM-facing queue release (Bearer token auth)
 ]
 
 app.add_middleware(
@@ -189,6 +193,9 @@ app.include_router(webhooks.router)
 app.include_router(event.router)
 app.include_router(public.router)
 app.include_router(user.router)
+app.include_router(instances_routes.router)
+app.include_router(cloud_init_routes.router)
+app.include_router(license_routes.router)
 
 # Include view routes (HTML pages)
 app.include_router(views.router)

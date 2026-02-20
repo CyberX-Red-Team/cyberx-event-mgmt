@@ -8,6 +8,9 @@ from app.models.email_template import EmailTemplate
 from app.models.email_queue import EmailQueue, EmailBatchLog, EmailQueueStatus
 from app.models.email_workflow import EmailWorkflow, WorkflowTriggerEvent
 from app.models.app_setting import AppSetting
+from app.models.cloud_init_template import CloudInitTemplate
+from app.models.instance import Instance
+from app.models.license import LicenseProduct, LicenseToken, LicenseSlot
 
 __all__ = [
     "User",
@@ -27,4 +30,9 @@ __all__ = [
     "EmailWorkflow",
     "WorkflowTriggerEvent",
     "AppSetting",
+    "CloudInitTemplate",
+    "Instance",
+    "LicenseProduct",
+    "LicenseToken",
+    "LicenseSlot",
 ]

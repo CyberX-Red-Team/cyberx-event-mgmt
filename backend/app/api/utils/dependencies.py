@@ -7,6 +7,9 @@ from app.services.participant_service import ParticipantService
 from app.services.event_service import EventService
 from app.services.email_service import EmailService
 from app.services.vpn_service import VPNService
+from app.services.openstack_service import OpenStackService
+from app.services.cloud_init_service import CloudInitService
+from app.services.license_service import LicenseService
 
 
 async def get_participant_service(
@@ -67,3 +70,24 @@ async def get_vpn_service(
         Initialized VPNService
     """
     return VPNService(db)
+
+
+async def get_openstack_service(
+    db: AsyncSession = Depends(get_db)
+) -> OpenStackService:
+    """Get OpenStackService instance."""
+    return OpenStackService(db)
+
+
+async def get_cloud_init_service(
+    db: AsyncSession = Depends(get_db)
+) -> CloudInitService:
+    """Get CloudInitService instance."""
+    return CloudInitService(db)
+
+
+async def get_license_service(
+    db: AsyncSession = Depends(get_db)
+) -> LicenseService:
+    """Get LicenseService instance."""
+    return LicenseService(db)
