@@ -1,0 +1,167 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}SSH Key - {{ event_name }}{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-fluid px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="key"></i></div>
+                        SSH Key
+                    </h1>
+                    <div class="page-header-subtitle">SSH access for your event instances</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-fluid px-4 mt-n10">
+    <div class="row">
+        <div class="col-xl-8">
+            <!-- SSH Key Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i data-feather="key" class="me-2"></i>
+                    SSH Private Key for {{ event_name }}
+                </div>
+                <div class="card-body">
+                    <div id="keyLoadingState" class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm me-2"></div> Loading SSH key...
+                    </div>
+
+                    <div id="keyContent" style="display: none;">
+                        <div id="noKeyMessage" class="alert alert-warning" style="display: none;">
+                            <i data-feather="alert-triangle" class="me-2"></i>
+                            No SSH key has been configured for this event yet.
+                        </div>
+
+                        <div id="keyDisplay" style="display: none;">
+                            <p class="text-muted mb-4">
+                                Download the SSH private key for this event to access your instances. Save this key securely and set appropriate permissions (<code>chmod 600</code>).
+                            </p>
+
+                            <div class="text-center py-4">
+                                <button class="btn btn-lg btn-primary" onclick="downloadPrivateKey()">
+                                    <i data-feather="download" class="me-2"></i> Download SSH Private Key
+                                </button>
+                                <div class="mt-3">
+                                    <small class="text-muted">File: <code id="keyFileName"></code></small>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-info mt-4">
+                                <strong>Important:</strong> Keep this private key secure. Anyone with access to this key can SSH into instances that use it.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-4">
+            <!-- Instructions Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i data-feather="help-circle" class="me-2"></i>
+                    How to Use
+                </div>
+                <div class="card-body">
+                    <h6>1. Download the Private Key</h6>
+                    <p class="small text-muted">Click the download button to save the private key to your local machine.</p>
+
+                    <h6 class="mt-3">2. Set Permissions (Linux/Mac)</h6>
+                    <pre class="bg-dark text-light p-2 rounded small"><code>chmod 600 ~/Downloads/*-ssh-key</code></pre>
+
+                    <h6 class="mt-3">3. Connect to Your Instance</h6>
+                    <pre class="bg-dark text-light p-2 rounded small"><code>ssh -i ~/Downloads/*-ssh-key root@YOUR_INSTANCE_IP</code></pre>
+
+                    <div class="alert alert-info mt-3 small">
+                        <strong>Note:</strong> You can also provide your own SSH public key when creating instances if you prefer to use your personal key instead of the shared event key.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+let eventId = {{ event_id }};
+let eventName = "{{ event_name }}";
+let eventSlug = "{{ event_slug }}";
+let privateKeyData = null;
+
+async function loadSSHKey() {
+    const loadingState = document.getElementById('keyLoadingState');
+    const keyContent = document.getElementById('keyContent');
+    const noKeyMessage = document.getElementById('noKeyMessage');
+    const keyDisplay = document.getElementById('keyDisplay');
+
+    try {
+        const response = await csrfFetch(`/api/events/${eventId}/ssh-private-key`);
+
+        if (!response.ok) {
+            throw new Error('Failed to load SSH key');
+        }
+
+        const data = await response.json();
+        loadingState.style.display = 'none';
+        keyContent.style.display = 'block';
+
+        if (data.has_ssh_key && data.ssh_private_key) {
+            privateKeyData = data.ssh_private_key;
+            document.getElementById('keyFileName').textContent = `${eventSlug}-ssh-key`;
+            keyDisplay.style.display = 'block';
+            noKeyMessage.style.display = 'none';
+        } else {
+            keyDisplay.style.display = 'none';
+            noKeyMessage.style.display = 'block';
+        }
+
+        if (typeof feather !== 'undefined') {
+            feather.replace();
+        }
+
+    } catch (error) {
+        console.error('Error loading SSH key:', error);
+        loadingState.style.display = 'none';
+        keyContent.style.display = 'block';
+        keyContent.innerHTML = '<div class="alert alert-danger"><i data-feather="alert-circle"></i> Failed to load SSH key. Please try again later.</div>';
+
+        if (typeof feather !== 'undefined') {
+            feather.replace();
+        }
+    }
+}
+
+function downloadPrivateKey() {
+    if (!privateKeyData) {
+        alert('No private key to download');
+        return;
+    }
+
+    const blob = new Blob([privateKeyData], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${eventSlug}-ssh-key`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    showToast('Private key downloaded', 'success');
+}
+
+// Load SSH key on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadSSHKey();
+});
+</script>
+{% endblock %}

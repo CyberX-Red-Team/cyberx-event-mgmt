@@ -332,3 +332,42 @@ async def participant_vpn_page(
             "now": datetime.now()
         }
     )
+
+
+@router.get("/portal/ssh-key", response_class=HTMLResponse)
+async def participant_ssh_key_page(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Render participant SSH key page."""
+    from app.api.utils.dependencies import get_event_service
+    from app.services.event_service import EventService
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.dependencies import get_db
+
+    db = request.state.db
+    event_service = EventService(db)
+
+    # Get the active event
+    active_event = await event_service.get_active_event()
+    if not active_event:
+        raise HTTPException(status_code=404, detail="No active event found")
+
+    # Check if user is a confirmed participant
+    participation = await event_service.get_participation_by_user_and_event(
+        current_user.id, active_event.id
+    )
+    if not participation or participation.status != "confirmed":
+        raise forbidden("You must be a confirmed participant to access the SSH key")
+
+    return templates.TemplateResponse(
+        "pages/participant/ssh_key.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "event_id": active_event.id,
+            "event_name": active_event.name,
+            "event_slug": active_event.slug,
+            "now": datetime.now()
+        }
+    )

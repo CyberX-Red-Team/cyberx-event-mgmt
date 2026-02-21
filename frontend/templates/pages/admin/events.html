@@ -161,6 +161,36 @@
                         <textarea class="form-control" id="eventTermsContent" rows="8" placeholder="Enter terms and conditions in Markdown format"></textarea>
                         <small class="text-muted">Supports Markdown formatting</small>
                     </div>
+
+                    <!-- SSH Keys Section -->
+                    <div class="border-top pt-3 mt-3">
+                        <h6 class="mb-3">SSH Keys for Participant Instances</h6>
+                        <p class="text-muted small mb-3">
+                            Generate an SSH keypair for this event. Participants can use the private key to access their instances if they don't provide their own.
+                        </p>
+
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="generateEventSSHKeys()">
+                                <i data-feather="key" class="me-1"></i> Generate New SSH Keys
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="downloadSSHKeys()" id="downloadKeysBtn" style="display: none;">
+                                <i data-feather="download" class="me-1"></i> Download Keys
+                            </button>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Public Key</label>
+                                <textarea class="form-control font-monospace" id="eventSshPublicKey" rows="4" readonly style="font-size: 0.75rem;"></textarea>
+                                <small class="text-muted">Injected into instances</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Private Key</label>
+                                <textarea class="form-control font-monospace" id="eventSshPrivateKey" rows="4" readonly style="font-size: 0.75rem;"></textarea>
+                                <small class="text-muted">Shared with participants for SSH access</small>
+                            </div>
+                        </div>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -302,6 +332,11 @@
         document.getElementById('eventTermsVersion').value = `${currentYear + 1}-v1`;
         document.getElementById('eventConfirmationDays').value = 30;
 
+        // Clear SSH keys
+        document.getElementById('eventSshPublicKey').value = '';
+        document.getElementById('eventSshPrivateKey').value = '';
+        document.getElementById('downloadKeysBtn').style.display = 'none';
+
         if (!eventModal) {
             eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
         }
@@ -333,6 +368,12 @@
             document.getElementById('eventTermsVersion').value = event.terms_version || '';
             document.getElementById('eventTermsContent').value = event.terms_content || '';
             document.getElementById('eventRegistrationOpen').checked = event.registration_open;
+            document.getElementById('eventSshPublicKey').value = event.ssh_public_key || '';
+            document.getElementById('eventSshPrivateKey').value = event.ssh_private_key || '';
+
+            // Show download button if keys exist
+            const hasKeys = event.ssh_public_key && event.ssh_private_key;
+            document.getElementById('downloadKeysBtn').style.display = hasKeys ? 'inline-block' : 'none';
 
             if (!eventModal) {
                 eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
@@ -349,6 +390,9 @@
         const eventId = document.getElementById('eventId').value;
         const isEdit = eventId !== '';
 
+        const sshPublicKey = document.getElementById('eventSshPublicKey').value.trim();
+        const sshPrivateKey = document.getElementById('eventSshPrivateKey').value.trim();
+
         const eventData = {
             year: parseInt(document.getElementById('eventYear').value),
             name: document.getElementById('eventName').value,
@@ -360,7 +404,9 @@
             confirmation_expires_days: parseInt(document.getElementById('eventConfirmationDays').value) || 30,
             terms_version: document.getElementById('eventTermsVersion').value || null,
             terms_content: document.getElementById('eventTermsContent').value || null,
-            registration_open: document.getElementById('eventRegistrationOpen').checked
+            registration_open: document.getElementById('eventRegistrationOpen').checked,
+            ssh_public_key: sshPublicKey || null,
+            ssh_private_key: sshPrivateKey || null
         };
 
         const saveBtn = document.getElementById('saveEventBtnText');
@@ -519,6 +565,67 @@
             console.error('Error toggling test mode:', error);
             alert(error.message || 'Failed to update test mode');
         }
+    };
+
+    // SSH Key Management
+    window.generateEventSSHKeys = async function() {
+        if (!confirm('Generate new SSH keys for this event? This will replace any existing keys.')) {
+            return;
+        }
+
+        try {
+            const response = await csrfFetch('/api/events/generate-ssh-keys', {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to generate SSH keys');
+            }
+
+            const data = await response.json();
+            document.getElementById('eventSshPublicKey').value = data.public_key;
+            document.getElementById('eventSshPrivateKey').value = data.private_key;
+            document.getElementById('downloadKeysBtn').style.display = 'inline-block';
+
+            showToast('SSH keys generated successfully', 'success');
+        } catch (error) {
+            console.error('Error generating SSH keys:', error);
+            alert('Failed to generate SSH keys');
+        }
+    };
+
+    window.downloadSSHKeys = function() {
+        const publicKey = document.getElementById('eventSshPublicKey').value;
+        const privateKey = document.getElementById('eventSshPrivateKey').value;
+        const eventName = document.getElementById('eventName').value || 'event';
+        const slug = eventName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+        if (!publicKey || !privateKey) {
+            alert('No SSH keys to download. Generate keys first.');
+            return;
+        }
+
+        // Download public key
+        const publicBlob = new Blob([publicKey], { type: 'text/plain' });
+        const publicUrl = URL.createObjectURL(publicBlob);
+        const publicLink = document.createElement('a');
+        publicLink.href = publicUrl;
+        publicLink.download = `${slug}-ssh-key.pub`;
+        publicLink.click();
+        URL.revokeObjectURL(publicUrl);
+
+        // Download private key
+        setTimeout(() => {
+            const privateBlob = new Blob([privateKey], { type: 'text/plain' });
+            const privateUrl = URL.createObjectURL(privateBlob);
+            const privateLink = document.createElement('a');
+            privateLink.href = privateUrl;
+            privateLink.download = `${slug}-ssh-key`;
+            privateLink.click();
+            URL.revokeObjectURL(privateUrl);
+        }, 100);
+
+        showToast('SSH keys downloaded', 'success');
     };
 
     // Load events on page load

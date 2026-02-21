@@ -206,7 +206,10 @@
                 <div class="mb-3">
                     <label class="form-label">SSH Public Key</label>
                     <textarea class="form-control" id="createSshKey" rows="3" placeholder="Optional: Paste SSH public key (e.g., ssh-rsa AAAA...)"></textarea>
-                    <div class="form-text">This key will be added to the instance via cloud-init template</div>
+                    <div class="form-text">
+                        <i data-feather="info" class="me-1"></i>
+                        If left empty and an event is selected, the event's SSH key will be used automatically
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -260,7 +263,10 @@
                 <div class="mb-3">
                     <label class="form-label">SSH Public Key</label>
                     <textarea class="form-control" id="bulkSshKey" rows="3" placeholder="Optional: Paste SSH public key (e.g., ssh-rsa AAAA...)"></textarea>
-                    <div class="form-text">This key will be added to all instances via cloud-init template</div>
+                    <div class="form-text">
+                        <i data-feather="info" class="me-1"></i>
+                        If left empty and an event is selected, the event's SSH key will be used for all instances
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
