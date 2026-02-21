@@ -4,4 +4,4 @@
 # - MAJOR: Breaking changes or significant architectural changes
 # - MINOR: New features, functionality additions
 # - PATCH: Bug fixes, small improvements
-VERSION = "0.9.0"
+VERSION = "0.9.1"
