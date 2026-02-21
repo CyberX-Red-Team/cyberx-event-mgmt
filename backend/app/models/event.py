@@ -85,6 +85,10 @@ class Event(Base):
     max_participants = Column(Integer, nullable=True)
     confirmation_expires_days = Column(Integer, default=30)
 
+    # SSH Keys (for participant instance access)
+    ssh_public_key = Column(Text, nullable=True)
+    ssh_private_key = Column(Text, nullable=True)
+
     # Timestamps
     created_at = Column(
         TIMESTAMP(timezone=True),

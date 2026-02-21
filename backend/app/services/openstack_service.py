@@ -327,6 +327,7 @@ class OpenStackService:
             from app.services.cloud_init_service import CloudInitService
             from app.services.license_service import LicenseService
             from app.services.download_service import DownloadService
+            from app.models.event import Event
 
             cloud_init_svc = CloudInitService(self.session)
             template = await cloud_init_svc.get_template(template_id)
@@ -338,9 +339,23 @@ class OpenStackService:
                     "instance_name": name,
                 }
 
-                # Add SSH public key if provided
-                if ssh_public_key:
-                    variables["ssh_public_key"] = ssh_public_key
+                # Determine SSH public key to use
+                # Priority: 1) Individual key provided, 2) Event's SSH key (if instance belongs to event)
+                ssh_key_to_use = ssh_public_key
+
+                if not ssh_key_to_use and event_id:
+                    # Fall back to event's SSH key
+                    result = await self.session.execute(
+                        select(Event).where(Event.id == event_id)
+                    )
+                    event = result.scalar_one_or_none()
+                    if event and event.ssh_public_key:
+                        ssh_key_to_use = event.ssh_public_key
+                        logger.info("Using event %d SSH key for instance %s", event_id, name)
+
+                # Add SSH public key if available
+                if ssh_key_to_use:
+                    variables["ssh_public_key"] = ssh_key_to_use
 
                 # Render template
                 user_data = cloud_init_svc.render_template(template.content, variables)

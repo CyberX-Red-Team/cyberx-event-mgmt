@@ -28,7 +28,10 @@ from app.schemas.event import (
     ConfirmParticipationRequest,
     ConfirmParticipationResponse,
     ParticipationHistoryResponse,
+    SSHKeyPairResponse,
+    EventSSHPrivateKeyResponse,
 )
+from app.utils.ssh_keys import generate_ssh_keypair
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/events", tags=["Events"])
@@ -497,3 +500,54 @@ async def get_recommended_removals(
             for u in users
         ]
     }
+
+
+# ============== SSH Key Management ==============
+
+@router.post("/generate-ssh-keys", response_model=SSHKeyPairResponse)
+async def generate_event_ssh_keys(
+    current_user: User = Depends(get_current_admin_user)
+):
+    """
+    Generate a new SSH key pair for event instances (admin only).
+
+    Returns the generated public and private keys that can be saved to an event.
+    """
+    public_key, private_key = generate_ssh_keypair()
+
+    return SSHKeyPairResponse(
+        public_key=public_key,
+        private_key=private_key
+    )
+
+
+@router.get("/{event_id}/ssh-private-key", response_model=EventSSHPrivateKeyResponse)
+async def get_event_ssh_private_key(
+    event_id: int,
+    current_user: User = Depends(get_current_active_user),
+    service: EventService = Depends(get_event_service)
+):
+    """
+    Get the SSH private key for an event (accessible by confirmed participants).
+
+    Participants can use this key to SSH into their event instances if they
+    don't want to provide their own SSH key.
+    """
+    event = await service.get_event(event_id)
+    if not event:
+        raise not_found(f"Event {event_id} not found")
+
+    # Check if user is a confirmed participant for this event (or is admin)
+    if current_user.role != "admin" and current_user.role != "sponsor":
+        participation = await service.get_participation_by_user_and_event(
+            current_user.id, event_id
+        )
+        if not participation or participation.status != "confirmed":
+            raise forbidden("You must be a confirmed participant to access this event's SSH key")
+
+    return EventSSHPrivateKeyResponse(
+        event_id=event.id,
+        event_name=event.name,
+        ssh_private_key=event.ssh_private_key,
+        has_ssh_key=bool(event.ssh_private_key)
+    )
