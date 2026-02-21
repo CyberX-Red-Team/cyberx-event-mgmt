@@ -21,8 +21,11 @@ from app.schemas.license import (
     LicenseProductResponse,
     LicenseProductDetailResponse,
     LicenseProductListResponse,
+    LicenseBlobResponse,
     QueueAcquireRequest,
+    QueueAcquireResponse,
     QueueReleaseRequest,
+    QueueReleaseResponse,
     LicenseQueueStatus,
     LicenseStats,
 )
@@ -138,7 +141,7 @@ async def delete_product(
 
 # ── VM-facing Endpoints (Bearer token auth, CSRF-exempt) ──
 
-@router.get("/blob")
+@router.get("/blob", response_model=LicenseBlobResponse)
 async def get_license_blob(
     request: Request,
     authorization: str = Header(...),
@@ -152,14 +155,15 @@ async def get_license_blob(
     token = _extract_bearer_token(authorization)
     client_ip = request.client.host if request.client else "unknown"
 
-    license_blob = await service.validate_and_consume_token(token, client_ip)
-    if not license_blob:
+    result = await service.validate_and_consume_token(token, client_ip)
+    if not result:
         raise unauthorized("Invalid, expired, or already-used token")
 
-    return {"license": license_blob}
+    license_blob, product_name = result
+    return LicenseBlobResponse(license_blob=license_blob, product_name=product_name)
 
 
-@router.post("/queue/acquire")
+@router.post("/queue/acquire", response_model=QueueAcquireResponse)
 async def acquire_slot(
     data: QueueAcquireRequest,
     request: Request,
@@ -177,16 +181,21 @@ async def acquire_slot(
     result = await service.acquire_slot(
         product_id=data.product_id,
         hostname=data.hostname or "unknown",
-        ip=client_ip,
+        ip=data.ip_address or client_ip,
     )
 
     if result["status"] == "error":
         raise bad_request(result.get("message", "Failed to acquire slot"))
 
-    return result
+    return QueueAcquireResponse(
+        status=result["status"],
+        slot_id=result.get("slot_id"),
+        position=result.get("position"),
+        message=result.get("message"),
+    )
 
 
-@router.post("/queue/release")
+@router.post("/queue/release", response_model=QueueReleaseResponse)
 async def release_slot(
     data: QueueReleaseRequest,
     authorization: str = Header(...),
@@ -201,13 +210,13 @@ async def release_slot(
     ok = await service.release_slot(
         slot_id=data.slot_id,
         result=data.result,
-        elapsed=data.elapsed,
+        elapsed=data.elapsed_seconds,
     )
 
     if not ok:
         raise not_found("Slot not found")
 
-    return {"success": True, "message": "Slot released"}
+    return QueueReleaseResponse(status="success", message="Slot released")
 
 
 # ── Admin Dashboard Endpoints (session auth) ───────────────

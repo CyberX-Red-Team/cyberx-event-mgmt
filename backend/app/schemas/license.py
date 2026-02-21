@@ -60,12 +60,13 @@ class LicenseProductListResponse(BaseModel):
 class QueueAcquireRequest(BaseModel):
     product_id: int
     hostname: Optional[str] = None
+    ip_address: Optional[str] = None
 
 
 class QueueReleaseRequest(BaseModel):
     slot_id: str
     result: str = "unknown"
-    elapsed: int = 0
+    elapsed_seconds: int = 0
 
 
 class LicenseQueueStatus(BaseModel):
@@ -81,3 +82,67 @@ class LicenseStats(BaseModel):
     tokens_used: int
     tokens_expired: int
     active_slots: int
+    total_products: int
+    active_products: int
+    products: list[dict]  # Per-product breakdown
+
+
+# ── Token schemas ───────────────────────────────────────────
+
+class LicenseTokenResponse(BaseModel):
+    """Token details (admin view)."""
+    id: int
+    product_id: int
+    used: bool
+    used_at: Optional[datetime] = None
+    used_by_ip: Optional[str] = None
+    instance_id: Optional[int] = None
+    expires_at: datetime
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class LicenseTokenCreateResponse(BaseModel):
+    """Response when generating a new token (only time raw token is visible)."""
+    token: str
+    product_id: int
+    expires_at: datetime
+
+
+class LicenseBlobResponse(BaseModel):
+    """Response from GET /api/license/blob (VM-facing endpoint)."""
+    license_blob: str
+    product_name: str
+
+
+# ── Queue response schemas ──────────────────────────────────
+
+class QueueAcquireResponse(BaseModel):
+    """Response from POST /api/license/queue/acquire."""
+    status: str  # "granted" or "wait"
+    slot_id: Optional[str] = None
+    position: Optional[int] = None
+    message: Optional[str] = None
+
+
+class QueueReleaseResponse(BaseModel):
+    """Response from POST /api/license/queue/release."""
+    status: str
+    message: str
+
+
+class LicenseSlotResponse(BaseModel):
+    """Slot details (admin view)."""
+    id: int
+    slot_id: str
+    product_id: int
+    hostname: Optional[str] = None
+    ip_address: Optional[str] = None
+    acquired_at: datetime
+    released_at: Optional[datetime] = None
+    result: Optional[str] = None
+    elapsed_seconds: Optional[int] = None
+    is_active: bool
+
+    model_config = {"from_attributes": True}

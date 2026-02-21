@@ -12,6 +12,7 @@ class InstanceCreate(BaseModel):
     network_id: Optional[str] = None
     key_name: Optional[str] = None
     cloud_init_template_id: Optional[int] = None
+    license_product_id: Optional[int] = None
     event_id: Optional[int] = None
     assigned_to_user_id: Optional[int] = None
     ssh_public_key: Optional[str] = None
@@ -25,6 +26,7 @@ class InstanceBulkCreate(BaseModel):
     network_id: Optional[str] = None
     key_name: Optional[str] = None
     cloud_init_template_id: Optional[int] = None
+    license_product_id: Optional[int] = None
     event_id: Optional[int] = None
     ssh_public_key: Optional[str] = None
 
@@ -35,11 +37,13 @@ class InstanceResponse(BaseModel):
     openstack_id: Optional[str] = None
     status: str
     ip_address: Optional[str] = None
+    vpn_ip: Optional[str] = None
     flavor_id: str
     image_id: str
     network_id: str
     key_name: Optional[str] = None
     cloud_init_template_id: Optional[int] = None
+    license_product_id: Optional[int] = None
     event_id: Optional[int] = None
     assigned_to_user_id: Optional[int] = None
     error_message: Optional[str] = None

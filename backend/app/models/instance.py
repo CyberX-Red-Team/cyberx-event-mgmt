@@ -15,6 +15,7 @@ class Instance(Base):
     openstack_id = Column(String(100), unique=True, nullable=True)  # Nova server UUID
     status = Column(String(50), default="BUILDING", nullable=False)  # BUILDING, ACTIVE, ERROR, SHUTOFF, DELETED
     ip_address = Column(String(50), nullable=True)
+    vpn_ip = Column(String(50), nullable=True)  # VPN IP from cloud-init config (if applicable)
 
     # Configuration used to create
     flavor_id = Column(String(100), nullable=False)
@@ -22,6 +23,7 @@ class Instance(Base):
     network_id = Column(String(100), nullable=False)
     key_name = Column(String(100), nullable=True)
     cloud_init_template_id = Column(Integer, ForeignKey("cloud_init_templates.id", ondelete="SET NULL"), nullable=True)
+    license_product_id = Column(Integer, ForeignKey("license_products.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Optional associations
     event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -39,6 +41,7 @@ class Instance(Base):
     assigned_to = relationship("User", foreign_keys=[assigned_to_user_id], backref="assigned_instances")
     created_by = relationship("User", foreign_keys=[created_by_user_id])
     cloud_init_template = relationship("CloudInitTemplate")
+    license_product = relationship("LicenseProduct", backref="instances")
 
     def __repr__(self):
         return f"<Instance(id={self.id}, name={self.name}, status={self.status})>"

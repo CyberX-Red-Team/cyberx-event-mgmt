@@ -136,10 +136,10 @@ class LicenseService:
 
     async def validate_and_consume_token(
         self, raw_token: str, client_ip: str
-    ) -> Optional[str]:
+    ) -> Optional[tuple[str, str]]:
         """Validate a token and mark it as consumed.
 
-        Returns the product's license_blob if valid, None otherwise.
+        Returns (license_blob, product_name) tuple if valid, None otherwise.
         """
         token_hash = _hash_token(raw_token)
         now = datetime.now(timezone.utc)
@@ -184,7 +184,7 @@ class LicenseService:
             product.name,
             client_ip,
         )
-        return product.license_blob
+        return (product.license_blob, product.name)
 
     # ── Concurrency Queue ───────────────────────────────────────
 
@@ -393,9 +393,61 @@ class LicenseService:
             active_slots_q = active_slots_q.where(*slot_filter)
         active_slots = (await self.session.execute(active_slots_q)).scalar() or 0
 
+        # Product counts
+        total_products_q = select(func.count(LicenseProduct.id))
+        total_products = (await self.session.execute(total_products_q)).scalar() or 0
+
+        active_products_q = select(func.count(LicenseProduct.id)).where(
+            LicenseProduct.is_active == True
+        )
+        active_products = (await self.session.execute(active_products_q)).scalar() or 0
+
+        # Per-product breakdown
+        products_q = select(LicenseProduct)
+        if product_id:
+            products_q = products_q.where(LicenseProduct.id == product_id)
+        products = (await self.session.execute(products_q)).scalars().all()
+
+        product_breakdown = []
+        for product in products:
+            # Tokens for this product
+            product_tokens_q = select(func.count(LicenseToken.id)).where(
+                LicenseToken.product_id == product.id
+            )
+            product_total = (await self.session.execute(product_tokens_q)).scalar() or 0
+
+            product_used_q = select(func.count(LicenseToken.id)).where(
+                and_(
+                    LicenseToken.product_id == product.id,
+                    LicenseToken.used == True,
+                )
+            )
+            product_used = (await self.session.execute(product_used_q)).scalar() or 0
+
+            # Active slots for this product
+            product_slots_q = select(func.count(LicenseSlot.id)).where(
+                and_(
+                    LicenseSlot.product_id == product.id,
+                    LicenseSlot.is_active == True,
+                )
+            )
+            product_active_slots = (await self.session.execute(product_slots_q)).scalar() or 0
+
+            product_breakdown.append({
+                "id": product.id,
+                "name": product.name,
+                "tokens_generated": product_total,
+                "tokens_used": product_used,
+                "active_slots": product_active_slots,
+                "max_concurrent": product.max_concurrent,
+            })
+
         return {
             "total_tokens_generated": total,
             "tokens_used": used,
             "tokens_expired": expired,
             "active_slots": active_slots,
+            "total_products": total_products,
+            "active_products": active_products,
+            "products": product_breakdown,
         }

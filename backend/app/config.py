@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     DOWNLOAD_LINK_MODE: str = "r2"     # "r2" or "nginx"
     DOWNLOAD_LINK_EXPIRY: int = 3600   # Default 1 hour
 
+    # Cloud-Init Template Variables (optional - used for template substitution)
+    LICENSE_SERVER_URL: str = ""  # Base URL for license API (e.g., "https://dev.cyberxredteam.org/api/license")
+    # Note: license_token is auto-generated per-instance (no config needed)
+
     # Invitation Reminder Configuration
     REMINDER_1_DAYS_AFTER_INVITE: int = 7  # First reminder: 7 days after initial invitation
     REMINDER_1_MIN_DAYS_BEFORE_EVENT: int = 14  # Don't send if event is less than 14 days away

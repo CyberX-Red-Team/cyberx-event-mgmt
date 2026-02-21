@@ -5,6 +5,7 @@ using httpx instead of requests and backed by PostgreSQL for instance tracking.
 """
 import base64
 import logging
+import secrets
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse, urlunparse
@@ -306,6 +307,7 @@ class OpenStackService:
         network_id: str | None = None,
         key_name: str | None = None,
         template_id: int | None = None,
+        license_product_id: int | None = None,
         event_id: int | None = None,
         assigned_to_user_id: int | None = None,
         created_by_user_id: int | None = None,
@@ -333,11 +335,44 @@ class OpenStackService:
             template = await cloud_init_svc.get_template(template_id)
 
             if template:
-                # Prepare template variables
+                # Prepare template variables (available for all templates)
                 variables = {
                     "hostname": name,
                     "instance_name": name,
                 }
+
+                # Add license variables (if license product is specified)
+                if license_product_id and self.settings.LICENSE_SERVER_URL:
+                    license_svc = LicenseService(self.session)
+
+                    # Generate a single-use token for this instance
+                    # Note: instance_id is None here since we haven't created the record yet
+                    # The token will be linked to the instance after creation if needed
+                    license_token = await license_svc.generate_token(
+                        product_id=license_product_id,
+                        instance_id=None  # Will be linked after instance creation
+                    )
+
+                    variables["license_server"] = self.settings.LICENSE_SERVER_URL
+                    variables["license_token"] = license_token
+                    logger.info("Generated license token for product %d for instance %s", license_product_id, name)
+                elif self.settings.LICENSE_SERVER_URL:
+                    # Fallback to static token for backward compatibility (deprecated)
+                    variables["license_server"] = self.settings.LICENSE_SERVER_URL
+                    variables["license_token"] = secrets.token_urlsafe(32)
+                    logger.warning("Using fallback token generation (no product specified) for instance %s", name)
+                if self.settings.DOWNLOAD_BASE_URL:
+                    variables["download_base_url"] = self.settings.DOWNLOAD_BASE_URL
+
+                # Add VPN variables (if configured)
+                if self.settings.VPN_SERVER_PUBLIC_KEY:
+                    variables["vpn_server_public_key"] = self.settings.VPN_SERVER_PUBLIC_KEY
+                if self.settings.VPN_SERVER_ENDPOINT:
+                    variables["vpn_server_endpoint"] = self.settings.VPN_SERVER_ENDPOINT
+                if self.settings.VPN_DNS_SERVERS:
+                    variables["vpn_dns_servers"] = self.settings.VPN_DNS_SERVERS
+                if self.settings.VPN_ALLOWED_IPS:
+                    variables["vpn_allowed_ips"] = self.settings.VPN_ALLOWED_IPS
 
                 # Collect all available SSH keys (both individual and event keys)
                 ssh_keys = []
@@ -399,6 +434,7 @@ class OpenStackService:
             network_id=network_id,
             key_name=key_name,
             cloud_init_template_id=template_id,
+            license_product_id=license_product_id,
             event_id=event_id,
             assigned_to_user_id=assigned_to_user_id,
             created_by_user_id=created_by_user_id,
@@ -522,6 +558,7 @@ class OpenStackService:
         network_id: str | None = None,
         key_name: str | None = None,
         template_id: int | None = None,
+        license_product_id: int | None = None,
         event_id: int | None = None,
         created_by_user_id: int | None = None,
         user_data: str | None = None,
@@ -541,6 +578,7 @@ class OpenStackService:
                     network_id=network_id,
                     key_name=key_name,
                     template_id=template_id,
+                    license_product_id=license_product_id,
                     event_id=event_id,
                     created_by_user_id=created_by_user_id,
                     user_data=user_data,
