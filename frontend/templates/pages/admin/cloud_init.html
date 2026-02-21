@@ -250,14 +250,18 @@ async function saveTemplate() {
         const resp = await csrfFetch(url, { method, body });
 
         if (resp.ok) {
-            bootstrap.Modal.getInstance(document.getElementById('templateModal')).hide();
+            const modal = bootstrap.Modal.getInstance(document.getElementById('templateModal'));
+            if (modal) modal.hide();
             loadTemplates();
             showToast(`Template ${id ? 'updated' : 'created'} successfully`, 'success');
         } else {
             const err = await resp.json();
             alert(err.detail || 'Failed to save template');
         }
-    } catch (e) { alert('Failed to save template'); }
+    } catch (e) {
+        console.error('Save template error:', e);
+        alert('Failed to save template: ' + e.message);
+    }
 }
 
 // ── Delete ──

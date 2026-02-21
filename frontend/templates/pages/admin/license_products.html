@@ -364,7 +364,8 @@ async function saveProduct() {
         const resp = await csrfFetch(url, { method, body });
 
         if (resp.ok) {
-            bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
+            const modal = bootstrap.Modal.getInstance(document.getElementById('productModal'));
+            if (modal) modal.hide();
             loadProducts();
             loadStats();
             showToast(`Product ${id ? 'updated' : 'created'} successfully`, 'success');
@@ -372,7 +373,10 @@ async function saveProduct() {
             const err = await resp.json();
             alert(err.detail || 'Failed to save product');
         }
-    } catch (e) { alert('Failed to save product'); }
+    } catch (e) {
+        console.error('Save product error:', e);
+        alert('Failed to save product: ' + e.message);
+    }
 }
 
 // ── Delete ──
