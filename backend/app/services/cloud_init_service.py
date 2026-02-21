@@ -123,6 +123,47 @@ class CloudInitService:
                 ", ".join(remaining),
             )
 
+        # Clean up invalid YAML: remove list items that are empty or contain unsubstituted placeholders
+        # Cases to handle:
+        #   1. "  - " (empty list items after substitution)
+        #   2. "  - {{ssh_public_key}}" (unsubstituted placeholders - variable not provided)
+        # This prevents YAML parsing errors in cloud-init
+        lines = rendered.split('\n')
+        cleaned_lines = []
+        lines_to_remove_parent = set()  # Track which parent keys should be removed
+
+        for i, line in enumerate(lines):
+            # Skip empty list items (just whitespace and "- ")
+            if re.match(r'^\s*-\s*$', line):
+                logger.debug("Removing empty list item from rendered template: %r", line)
+                # Mark previous line (parent key) for potential removal
+                if i > 0 and cleaned_lines:
+                    lines_to_remove_parent.add(len(cleaned_lines) - 1)
+                continue
+
+            # Skip list items with unsubstituted placeholders (e.g., "  - {{ssh_public_key}}")
+            if re.match(r'^\s*-\s+\{\{[\w_]+\}\}\s*$', line):
+                logger.debug("Removing list item with unsubstituted placeholder: %r", line)
+                # Mark previous line (parent key) for potential removal
+                if i > 0 and cleaned_lines:
+                    lines_to_remove_parent.add(len(cleaned_lines) - 1)
+                continue
+
+            cleaned_lines.append(line)
+
+        # Remove parent keys that have no child items
+        # (e.g., "ssh_authorized_keys:" with no following list items)
+        final_lines = []
+        for i, line in enumerate(cleaned_lines):
+            if i in lines_to_remove_parent:
+                # Check if this is a key with no value (ends with ":")
+                if re.match(r'^\s*[\w_]+:\s*$', line):
+                    logger.debug("Removing empty parent key: %r", line)
+                    continue
+            final_lines.append(line)
+
+        rendered = '\n'.join(final_lines)
+
         return rendered
 
     @staticmethod

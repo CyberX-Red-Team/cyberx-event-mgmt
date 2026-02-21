@@ -339,23 +339,41 @@ class OpenStackService:
                     "instance_name": name,
                 }
 
-                # Determine SSH public key to use
-                # Priority: 1) Individual key provided, 2) Event's SSH key (if instance belongs to event)
-                ssh_key_to_use = ssh_public_key
+                # Collect all available SSH keys (both individual and event keys)
+                ssh_keys = []
 
-                if not ssh_key_to_use and event_id:
-                    # Fall back to event's SSH key
+                # 1. Add individual SSH key if provided
+                if ssh_public_key:
+                    ssh_keys.append(ssh_public_key)
+                    logger.info("Using individual SSH key for instance %s", name)
+
+                # 2. Add event SSH key if available (and not duplicate)
+                if event_id:
                     result = await self.session.execute(
                         select(Event).where(Event.id == event_id)
                     )
                     event = result.scalar_one_or_none()
                     if event and event.ssh_public_key:
-                        ssh_key_to_use = event.ssh_public_key
-                        logger.info("Using event %d SSH key for instance %s", event_id, name)
+                        # Only add if it's different from individual key
+                        if event.ssh_public_key not in ssh_keys:
+                            ssh_keys.append(event.ssh_public_key)
+                            logger.info("Using event %d SSH key for instance %s", event_id, name)
 
-                # Add SSH public key if available
-                if ssh_key_to_use:
-                    variables["ssh_public_key"] = ssh_key_to_use
+                # Format SSH keys for cloud-init template
+                if ssh_keys:
+                    # For templates with "  - {{ssh_public_key}}", support multiple keys
+                    # by joining them with newline and proper indentation
+                    if len(ssh_keys) == 1:
+                        variables["ssh_public_key"] = ssh_keys[0]
+                    else:
+                        # Multiple keys: first key replaces placeholder, rest added as new list items
+                        # Template: "  - {{ssh_public_key}}" becomes "  - key1\n  - key2"
+                        variables["ssh_public_key"] = ssh_keys[0] + "\n  - " + "\n  - ".join(ssh_keys[1:])
+                    logger.info("Added %d SSH key(s) to cloud-init template for instance %s", len(ssh_keys), name)
+                else:
+                    # No SSH keys available - don't add variable
+                    # Cleanup logic in render_template will remove ssh_authorized_keys section
+                    logger.info("No SSH keys available for instance %s - ssh_authorized_keys section will be removed", name)
 
                 # Render template
                 user_data = cloud_init_svc.render_template(template.content, variables)
