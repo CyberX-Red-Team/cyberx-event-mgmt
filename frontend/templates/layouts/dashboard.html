@@ -243,5 +243,38 @@ window.logout = async function() {
         window.location.href = '/login';
     }
 }
+
+// Global toast notification function
+window.showToast = function(message, type = 'info') {
+    // Map type to Bootstrap alert classes
+    const typeMap = {
+        'success': 'alert-success',
+        'danger': 'alert-danger',
+        'warning': 'alert-warning',
+        'info': 'alert-info'
+    };
+
+    const alertClass = typeMap[type] || 'alert-info';
+
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = 'alert ' + alertClass + ' alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
+    toast.style.zIndex = '9999';
+    toast.style.minWidth = '300px';
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+
+    document.body.appendChild(toast);
+
+    // Auto-remove after 5 seconds
+    setTimeout(function() {
+        toast.classList.remove('show');
+        setTimeout(function() {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 150);
+    }, 5000);
+}
 </script>
 {% endblock %}
