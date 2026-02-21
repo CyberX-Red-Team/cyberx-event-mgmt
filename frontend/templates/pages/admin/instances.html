@@ -199,9 +199,16 @@
                         <select class="form-select" id="createTemplate"><option value="">None</option></select>
                     </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Key Name</label>
-                    <input type="text" class="form-control" id="createKeyName" placeholder="Optional SSH key name">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">License Product</label>
+                        <select class="form-select" id="createLicenseProduct"><option value="">None</option></select>
+                        <div class="form-text">Product to generate license token for</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Key Name</label>
+                        <input type="text" class="form-control" id="createKeyName" placeholder="Optional SSH key name">
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">SSH Public Key</label>
@@ -209,6 +216,68 @@
                     <div class="form-text">
                         <i data-feather="info" class="me-1"></i>
                         If left empty and an event is selected, the event's SSH key will be used automatically
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createInstance()">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Create Modal -->
+<div class="modal fade" id="bulkCreateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bulk Create Instances</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8 mb-3">
+                        <label class="form-label">Name Prefix <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="bulkPrefix" placeholder="e.g. participant-vm">
+                        <div class="form-text">Instances will be named prefix-001, prefix-002, etc.</div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Count <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="bulkCount" value="5" min="1" max="50">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Flavor</label>
+                        <select class="form-select" id="bulkFlavor"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Image</label>
+                        <select class="form-select" id="bulkImage"><option value="">Default</option></select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Network</label>
+                        <select class="form-select" id="bulkNetwork"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Cloud-Init Template</label>
+                        <select class="form-select" id="bulkTemplate"><option value="">None</option></select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">License Product</label>
+                    <select class="form-select" id="bulkLicenseProduct"><option value="">None</option></select>
+                    <div class="form-text">Product to generate license token for (same product for all instances)</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">SSH Public Key</label>
+                    <textarea class="form-control" id="bulkSshKey" rows="3" placeholder="Optional: Paste SSH public key (e.g., ssh-rsa AAAA...)"></textarea>
+                    <div class="form-text">
+                        <i data-feather="info" class="me-1"></i>
+                        If left empty and an event is selected, the event's SSH key will be used for all instances
                     </div>
                 </div>
             </div>
@@ -398,11 +467,12 @@ let resourcesLoaded = false;
 async function loadResources() {
     if (resourcesLoaded) return;
     try {
-        const [flavors, images, networks, templates] = await Promise.all([
+        const [flavors, images, networks, templates, products] = await Promise.all([
             csrfFetch('/api/instances/resources/flavors').then(r => r.json()),
             csrfFetch('/api/instances/resources/images').then(r => r.json()),
             csrfFetch('/api/instances/resources/networks').then(r => r.json()),
             csrfFetch('/api/cloud-init/templates?page_size=100').then(r => r.json()),
+            csrfFetch('/api/license/products?page_size=100').then(r => r.json()),
         ]);
 
         const populateSelect = (ids, items, labelFn) => {
@@ -421,6 +491,7 @@ async function loadResources() {
         populateSelect(['createImage', 'bulkImage'], images.images || [], i => i.name);
         populateSelect(['createNetwork', 'bulkNetwork'], networks.networks || [], n => n.name);
         populateSelect(['createTemplate', 'bulkTemplate'], templates.items || [], t => t.name);
+        populateSelect(['createLicenseProduct', 'bulkLicenseProduct'], products.items || [], p => p.name);
 
         resourcesLoaded = true;
     } catch (e) {
@@ -453,12 +524,14 @@ async function createInstance() {
     const image = document.getElementById('createImage').value;
     const network = document.getElementById('createNetwork').value;
     const template = document.getElementById('createTemplate').value;
+    const licenseProduct = document.getElementById('createLicenseProduct').value;
     const keyName = document.getElementById('createKeyName').value.trim();
     const sshKey = document.getElementById('createSshKey').value.trim();
     if (flavor) body.flavor_id = flavor;
     if (image) body.image_id = image;
     if (network) body.network_id = network;
     if (template) body.cloud_init_template_id = parseInt(template);
+    if (licenseProduct) body.license_product_id = parseInt(licenseProduct);
     if (keyName) body.key_name = keyName;
     if (sshKey) body.ssh_public_key = sshKey;
 
@@ -486,11 +559,13 @@ async function bulkCreate() {
     const image = document.getElementById('bulkImage').value;
     const network = document.getElementById('bulkNetwork').value;
     const template = document.getElementById('bulkTemplate').value;
+    const licenseProduct = document.getElementById('bulkLicenseProduct').value;
     const sshKey = document.getElementById('bulkSshKey').value.trim();
     if (flavor) body.flavor_id = flavor;
     if (image) body.image_id = image;
     if (network) body.network_id = network;
     if (template) body.cloud_init_template_id = parseInt(template);
+    if (licenseProduct) body.license_product_id = parseInt(licenseProduct);
     if (sshKey) body.ssh_public_key = sshKey;
 
     try {
