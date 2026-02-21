@@ -79,14 +79,15 @@
             <p class="text-muted small mb-2">Use double curly braces in your templates. These are replaced when rendering.</p>
             <div class="row">
                 <div class="col-md-4">
+                    <code>&#123;&#123;hostname&#125;&#125;</code> - Instance hostname<br>
+                    <code>&#123;&#123;instance_name&#125;&#125;</code> - Instance name<br>
+                    <code>&#123;&#123;ip_address&#125;&#125;</code> - Instance IP address<br>
+                    <code>&#123;&#123;ssh_public_key&#125;&#125;</code> - SSH public key (if provided)
+                </div>
+                <div class="col-md-4">
                     <code>&#123;&#123;download_url&#125;&#125;</code> - Signed download URL<br>
                     <code>&#123;&#123;license_token&#125;&#125;</code> - Single-use license token<br>
                     <code>&#123;&#123;license_server&#125;&#125;</code> - License server URL
-                </div>
-                <div class="col-md-4">
-                    <code>&#123;&#123;hostname&#125;&#125;</code> - Instance hostname<br>
-                    <code>&#123;&#123;ip_address&#125;&#125;</code> - Instance IP address<br>
-                    <code>&#123;&#123;instance_name&#125;&#125;</code> - Instance name
                 </div>
                 <div class="col-md-4">
                     <code>&#123;&#123;product_name&#125;&#125;</code> - License product name<br>
@@ -94,6 +95,32 @@
                     <code>&#123;&#123;custom_var&#125;&#125;</code> - Any custom variable
                 </div>
             </div>
+            <details class="mt-3">
+                <summary class="text-primary" style="cursor: pointer;"><strong>Show Example Template</strong></summary>
+                <pre class="bg-dark text-light p-3 rounded mt-2" style="font-size: 0.85rem;"><code>#cloud-config
+# Basic VM configuration with SSH key injection
+users:
+  - name: root
+    lock_passwd: false
+    plain_text_passwd: 'password123'
+    ssh_authorized_keys:
+      - &#123;&#123;ssh_public_key&#125;&#125;
+
+ssh_pwauth: true
+disable_root: false
+
+chpasswd:
+  list: |
+    root:password123
+  expire: false
+
+runcmd:
+  # SSH service
+  - systemctl enable ssh || systemctl enable sshd
+  - systemctl start ssh || systemctl start sshd
+
+final_message: "System ready. SSH key deployed."</code></pre>
+            </details>
         </div>
     </div>
 </div>
@@ -283,12 +310,13 @@ async function previewSaved(id) {
             method: 'POST',
             body: {
                 variables: {
+                    hostname: 'participant-vm-001',
+                    instance_name: 'participant-vm-001',
+                    ip_address: '10.0.0.100',
+                    ssh_public_key: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... user@example.com',
                     download_url: 'https://example.com/download/file.tar',
                     license_token: 'sample-token-abc123',
                     license_server: 'https://license.example.com',
-                    hostname: 'participant-vm-001',
-                    ip_address: '10.0.0.100',
-                    instance_name: 'participant-vm-001',
                 }
             }
         });
@@ -306,12 +334,13 @@ function previewTemplate() {
     // Client-side preview with sample values
     let rendered = content;
     const sampleVars = {
+        hostname: 'participant-vm-001',
+        instance_name: 'participant-vm-001',
+        ip_address: '10.0.0.100',
+        ssh_public_key: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... user@example.com',
         download_url: 'https://example.com/download/file.tar',
         license_token: 'sample-token-abc123',
         license_server: 'https://license.example.com',
-        hostname: 'participant-vm-001',
-        ip_address: '10.0.0.100',
-        instance_name: 'participant-vm-001',
         product_name: 'Sample Product',
         event_name: 'CyberX 2026',
     };
