@@ -26,7 +26,7 @@ These variables are available if configured in `.env` or environment:
 
 | Variable | Config Setting | Description |
 |----------|----------------|-------------|
-| `{{license_server}}` | `LICENSE_SERVER_URL` | Base URL for license API |
+| `{{license_server}}` | _(auto: `FRONTEND_URL/api/license`)_ | License API endpoint (automatically derived from FRONTEND_URL) |
 | `{{license_token}}` | _(auto-generated)_ | **Unique per-instance** - Cryptographically-secure 43-character token, generated fresh for each instance |
 | `{{download_base_url}}` | `DOWNLOAD_BASE_URL` | Base URL for file downloads |
 | `{{vpn_server_public_key}}` | `VPN_SERVER_PUBLIC_KEY` | WireGuard server public key |
@@ -42,8 +42,9 @@ Add to your `.env` file:
 
 ```bash
 # License Configuration
-LICENSE_SERVER_URL=https://dev.cyberxredteam.org/api/license
-# Note: license_token is auto-generated per instance - no config needed
+# License server URL is automatically derived from FRONTEND_URL + "/api/license"
+# No additional configuration needed - just ensure FRONTEND_URL is set correctly
+FRONTEND_URL=https://dev.cyberxredteam.org
 
 # Download URLs
 DOWNLOAD_BASE_URL=https://files.example.com
@@ -122,7 +123,7 @@ Example error:
 ```
 ValueError: unknown url type: '{{license_server}}/blob'
 ```
-This means `LICENSE_SERVER_URL` is not set in `.env`.
+This means `FRONTEND_URL` is not set in `.env`, or a license product was not selected during instance creation.
 
 ### YAML Parsing Errors
 

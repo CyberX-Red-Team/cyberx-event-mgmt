@@ -99,8 +99,8 @@ class Settings(BaseSettings):
     DOWNLOAD_LINK_MODE: str = "r2"     # "r2" or "nginx"
     DOWNLOAD_LINK_EXPIRY: int = 3600   # Default 1 hour
 
-    # Cloud-Init Template Variables (optional - used for template substitution)
-    LICENSE_SERVER_URL: str = ""  # Base URL for license API (e.g., "https://dev.cyberxredteam.org/api/license")
+    # Cloud-Init Template Variables
+    # Note: License server URL is derived from FRONTEND_URL + "/api/license"
     # Note: license_token is auto-generated per-instance (no config needed)
 
     # Invitation Reminder Configuration

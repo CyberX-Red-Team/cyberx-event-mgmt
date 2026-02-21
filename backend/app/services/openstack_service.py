@@ -342,7 +342,7 @@ class OpenStackService:
                 }
 
                 # Add license variables (if license product is specified)
-                if license_product_id and self.settings.LICENSE_SERVER_URL:
+                if license_product_id:
                     license_svc = LicenseService(self.session)
 
                     # Generate a single-use token for this instance
@@ -353,14 +353,10 @@ class OpenStackService:
                         instance_id=None  # Will be linked after instance creation
                     )
 
-                    variables["license_server"] = self.settings.LICENSE_SERVER_URL
+                    # Use integrated license server (FRONTEND_URL/api/license)
+                    variables["license_server"] = f"{self.settings.FRONTEND_URL}/api/license"
                     variables["license_token"] = license_token
                     logger.info("Generated license token for product %d for instance %s", license_product_id, name)
-                elif self.settings.LICENSE_SERVER_URL:
-                    # Fallback to static token for backward compatibility (deprecated)
-                    variables["license_server"] = self.settings.LICENSE_SERVER_URL
-                    variables["license_token"] = secrets.token_urlsafe(32)
-                    logger.warning("Using fallback token generation (no product specified) for instance %s", name)
                 if self.settings.DOWNLOAD_BASE_URL:
                     variables["download_base_url"] = self.settings.DOWNLOAD_BASE_URL
 
