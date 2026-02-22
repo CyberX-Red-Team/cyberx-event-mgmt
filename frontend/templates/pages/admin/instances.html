@@ -142,12 +142,13 @@
                             <th>Status</th>
                             <th>IP Address</th>
                             <th>Event</th>
+                            <th>Created By</th>
                             <th>Created</th>
                             <th width="120">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="instanceBody">
-                        <tr><td colspan="7" class="text-center py-4">
+                        <tr><td colspan="8" class="text-center py-4">
                             <div class="spinner-border spinner-border-sm me-2"></div> Loading instances...
                         </td></tr>
                     </tbody>
@@ -419,7 +420,7 @@ function statusBadge(status) {
 function renderInstances(items) {
     const tbody = document.getElementById('instanceBody');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No instances found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No instances found.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(i => `
@@ -428,7 +429,8 @@ function renderInstances(items) {
             <td><strong>${i.name}</strong><br><small class="text-muted">${i.openstack_id || '-'}</small></td>
             <td>${statusBadge(i.status)}</td>
             <td><code>${i.ip_address || '-'}</code></td>
-            <td>${i.event_id || '-'}</td>
+            <td>${i.event_name || '<span class="text-muted">-</span>'}</td>
+            <td>${i.created_by_username || '<span class="text-muted">-</span>'}</td>
             <td>${formatDateTime(i.created_at)}</td>
             <td>
                 <div class="btn-group btn-group-sm">

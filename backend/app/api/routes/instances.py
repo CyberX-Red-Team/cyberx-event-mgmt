@@ -48,8 +48,20 @@ async def list_instances(
 
     total_pages = (total + page_size - 1) // page_size
 
+    # Build response items with event_name and created_by_username
+    items = []
+    for instance in instances:
+        item_dict = InstanceResponse.model_validate(instance).model_dump()
+        # Add event name if event exists
+        if instance.event:
+            item_dict["event_name"] = f"{instance.event.year} - {instance.event.name}"
+        # Add creator username if exists
+        if instance.created_by:
+            item_dict["created_by_username"] = instance.created_by.username
+        items.append(InstanceResponse(**item_dict))
+
     return InstanceListResponse(
-        items=[InstanceResponse.model_validate(i) for i in instances],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,

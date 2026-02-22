@@ -482,10 +482,14 @@ class OpenStackService:
         count_q = select(func.count(Instance.id)).where(*conditions)
         total = (await self.session.execute(count_q)).scalar() or 0
 
-        # Fetch
+        # Fetch with relationships
         offset = (page - 1) * page_size
         q = (
             select(Instance)
+            .options(
+                selectinload(Instance.event),
+                selectinload(Instance.created_by),
+            )
             .where(*conditions)
             .order_by(Instance.created_at.desc())
             .offset(offset)

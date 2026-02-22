@@ -45,9 +45,11 @@ class InstanceResponse(BaseModel):
     cloud_init_template_id: Optional[int] = None
     license_product_id: Optional[int] = None
     event_id: Optional[int] = None
+    event_name: Optional[str] = None  # Computed: event year + name
     assigned_to_user_id: Optional[int] = None
     error_message: Optional[str] = None
     created_by_user_id: Optional[int] = None
+    created_by_username: Optional[str] = None  # Computed: creator's username
     created_at: datetime
     updated_at: datetime
 
