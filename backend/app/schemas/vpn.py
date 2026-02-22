@@ -17,6 +17,7 @@ class VPNCredentialResponse(BaseModel):
     interface_ip: str
     ipv4_address: Optional[str]
     endpoint: str
+    assignment_type: str = "USER_REQUESTABLE"
     file_hash: Optional[str] = None
     request_batch_id: Optional[str] = None
     is_available: bool

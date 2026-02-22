@@ -58,6 +58,7 @@ class VPNService:
         page: int = 1,
         page_size: int = 50,
         is_available: Optional[bool] = None,
+        assignment_type: Optional[str] = None,
         assigned_to_user_id: Optional[int] = None,
         search: Optional[str] = None
     ) -> Tuple[List[VPNCredential], int]:
@@ -69,6 +70,10 @@ class VPNService:
         if is_available is not None:
             query = query.where(VPNCredential.is_available == is_available)
             count_query = count_query.where(VPNCredential.is_available == is_available)
+
+        if assignment_type is not None:
+            query = query.where(VPNCredential.assignment_type == assignment_type)
+            count_query = count_query.where(VPNCredential.assignment_type == assignment_type)
 
         if assigned_to_user_id is not None:
             query = query.where(VPNCredential.assigned_to_user_id == assigned_to_user_id)

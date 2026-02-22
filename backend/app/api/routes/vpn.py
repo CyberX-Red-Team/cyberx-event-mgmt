@@ -80,6 +80,7 @@ async def build_vpn_response(
         interface_ip=vpn.interface_ip,
         ipv4_address=vpn.ipv4_address,
         endpoint=vpn.endpoint,
+        assignment_type=vpn.assignment_type,
         file_hash=vpn.file_hash,
         request_batch_id=vpn.request_batch_id,
         is_available=vpn.is_available,
@@ -155,6 +156,7 @@ async def list_vpn_credentials(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
     is_available: Optional[bool] = Query(None, description="Filter by availability"),
+    assignment_type: Optional[str] = Query(None, description="Filter by assignment type"),
     search: Optional[str] = Query(None, description="Search by IP or username"),
     current_user: User = Depends(get_current_sponsor_user),
     service: VPNService = Depends(get_vpn_service),
@@ -165,6 +167,7 @@ async def list_vpn_credentials(
         page=page,
         page_size=page_size,
         is_available=is_available,
+        assignment_type=assignment_type,
         search=search
     )
 
