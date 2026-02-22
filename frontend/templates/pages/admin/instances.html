@@ -201,10 +201,17 @@
                 </div>
                 <div class="row">
                     <div class="col-md-6 mb-3">
+                        <label class="form-label">Event</label>
+                        <select class="form-select" id="createEvent"><option value="">None</option></select>
+                        <div class="form-text">Auto-uses event's SSH key if configured</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
                         <label class="form-label">License Product</label>
                         <select class="form-select" id="createLicenseProduct"><option value="">None</option></select>
                         <div class="form-text">Product to generate license token for</div>
                     </div>
+                </div>
+                <div class="row">
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Key Name</label>
                         <input type="text" class="form-control" id="createKeyName" placeholder="Optional SSH key name">
@@ -267,10 +274,17 @@
                         <select class="form-select" id="bulkTemplate"><option value="">None</option></select>
                     </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">License Product</label>
-                    <select class="form-select" id="bulkLicenseProduct"><option value="">None</option></select>
-                    <div class="form-text">Product to generate license token for (same product for all instances)</div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Event</label>
+                        <select class="form-select" id="bulkEvent"><option value="">None</option></select>
+                        <div class="form-text">Auto-uses event's SSH key if configured</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">License Product</label>
+                        <select class="form-select" id="bulkLicenseProduct"><option value="">None</option></select>
+                        <div class="form-text">Generate license token for all instances</div>
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">SSH Public Key</label>
@@ -467,12 +481,13 @@ let resourcesLoaded = false;
 async function loadResources() {
     if (resourcesLoaded) return;
     try {
-        const [flavors, images, networks, templates, products] = await Promise.all([
+        const [flavors, images, networks, templates, products, events] = await Promise.all([
             csrfFetch('/api/instances/resources/flavors').then(r => r.json()),
             csrfFetch('/api/instances/resources/images').then(r => r.json()),
             csrfFetch('/api/instances/resources/networks').then(r => r.json()),
             csrfFetch('/api/cloud-init/templates?page_size=100').then(r => r.json()),
             csrfFetch('/api/license/products?page_size=100').then(r => r.json()),
+            csrfFetch('/api/admin/events').then(r => r.json()),
         ]);
 
         const populateSelect = (ids, items, labelFn) => {
@@ -492,6 +507,7 @@ async function loadResources() {
         populateSelect(['createNetwork', 'bulkNetwork'], networks.networks || [], n => n.name);
         populateSelect(['createTemplate', 'bulkTemplate'], templates.items || [], t => t.name);
         populateSelect(['createLicenseProduct', 'bulkLicenseProduct'], products.items || [], p => p.name);
+        populateSelect(['createEvent', 'bulkEvent'], events.events || [], e => `${e.year} - ${e.name}${e.is_active ? ' ⭐' : ''}`);
 
         resourcesLoaded = true;
     } catch (e) {
@@ -524,6 +540,7 @@ async function createInstance() {
     const image = document.getElementById('createImage').value;
     const network = document.getElementById('createNetwork').value;
     const template = document.getElementById('createTemplate').value;
+    const event = document.getElementById('createEvent').value;
     const licenseProduct = document.getElementById('createLicenseProduct').value;
     const keyName = document.getElementById('createKeyName').value.trim();
     const sshKey = document.getElementById('createSshKey').value.trim();
@@ -531,6 +548,7 @@ async function createInstance() {
     if (image) body.image_id = image;
     if (network) body.network_id = network;
     if (template) body.cloud_init_template_id = parseInt(template);
+    if (event) body.event_id = parseInt(event);
     if (licenseProduct) body.license_product_id = parseInt(licenseProduct);
     if (keyName) body.key_name = keyName;
     if (sshKey) body.ssh_public_key = sshKey;
@@ -559,12 +577,14 @@ async function bulkCreate() {
     const image = document.getElementById('bulkImage').value;
     const network = document.getElementById('bulkNetwork').value;
     const template = document.getElementById('bulkTemplate').value;
+    const event = document.getElementById('bulkEvent').value;
     const licenseProduct = document.getElementById('bulkLicenseProduct').value;
     const sshKey = document.getElementById('bulkSshKey').value.trim();
     if (flavor) body.flavor_id = flavor;
     if (image) body.image_id = image;
     if (network) body.network_id = network;
     if (template) body.cloud_init_template_id = parseInt(template);
+    if (event) body.event_id = parseInt(event);
     if (licenseProduct) body.license_product_id = parseInt(licenseProduct);
     if (sshKey) body.ssh_public_key = sshKey;
 
