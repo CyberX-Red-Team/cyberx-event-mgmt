@@ -55,9 +55,9 @@ async def list_instances(
         # Add event name if event exists
         if instance.event:
             item_dict["event_name"] = f"{instance.event.year} - {instance.event.name}"
-        # Add creator username if exists
+        # Add creator username if exists (fallback to email if pandas_username not set)
         if instance.created_by:
-            item_dict["created_by_username"] = instance.created_by.username
+            item_dict["created_by_username"] = instance.created_by.pandas_username or instance.created_by.email
         items.append(InstanceResponse(**item_dict))
 
     return InstanceListResponse(
