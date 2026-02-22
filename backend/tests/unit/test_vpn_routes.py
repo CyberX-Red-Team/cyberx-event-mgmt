@@ -55,6 +55,7 @@ class TestListVPNCredentials:
             page=1,
             page_size=50,
             is_available=None,
+            assignment_type=None,
             search=None,
             current_user=mock_admin_user,
             service=mock_vpn_service,
@@ -74,6 +75,7 @@ class TestListVPNCredentials:
             page=1,
             page_size=10,
             is_available=True,
+            assignment_type=None,
             search="10.0",
             current_user=mock_admin_user,
             service=mock_vpn_service,
@@ -84,6 +86,7 @@ class TestListVPNCredentials:
             page=1,
             page_size=10,
             is_available=True,
+            assignment_type=None,
             search="10.0"
         )
 
