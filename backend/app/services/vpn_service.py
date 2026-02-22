@@ -544,10 +544,21 @@ class VPNService:
         Raises:
             ValueError: If config is missing required fields
         """
+        # Required fields
         private_key = None
-        preshared_key = None  # Optional
         addresses = []
         parsed_endpoint = None
+
+        # Optional fields (preserve from original config)
+        preshared_key = None
+        mtu = None
+        dns = None
+        public_key = None
+        allowed_ips = None
+        persistent_keepalive = None
+        table = None
+        save_config = None
+        fwmark = None
 
         # Parse the config
         for line in config_content.split('\n'):
@@ -570,6 +581,38 @@ class VPNService:
                 match = re.match(r'Endpoint\s*=\s*(.+)', line)
                 if match:
                     parsed_endpoint = match.group(1).strip()
+            elif line.startswith('MTU'):
+                match = re.match(r'MTU\s*=\s*(.+)', line)
+                if match:
+                    mtu = match.group(1).strip()
+            elif line.startswith('DNS'):
+                match = re.match(r'DNS\s*=\s*(.+)', line)
+                if match:
+                    dns = match.group(1).strip()
+            elif line.startswith('PublicKey'):
+                match = re.match(r'PublicKey\s*=\s*(.+)', line)
+                if match:
+                    public_key = match.group(1).strip()
+            elif line.startswith('AllowedIPs'):
+                match = re.match(r'AllowedIPs\s*=\s*(.+)', line)
+                if match:
+                    allowed_ips = match.group(1).strip()
+            elif line.startswith('PersistentKeepalive'):
+                match = re.match(r'PersistentKeepalive\s*=\s*(.+)', line)
+                if match:
+                    persistent_keepalive = match.group(1).strip()
+            elif line.startswith('Table'):
+                match = re.match(r'Table\s*=\s*(.+)', line)
+                if match:
+                    table = match.group(1).strip()
+            elif line.startswith('SaveConfig'):
+                match = re.match(r'SaveConfig\s*=\s*(.+)', line)
+                if match:
+                    save_config = match.group(1).strip()
+            elif line.startswith('FwMark'):
+                match = re.match(r'FwMark\s*=\s*(.+)', line)
+                if match:
+                    fwmark = match.group(1).strip()
 
         # Use provided endpoint or parsed endpoint
         final_endpoint = endpoint or parsed_endpoint
@@ -612,7 +655,7 @@ class VPNService:
         if existing.scalar_one_or_none():
             return None  # Skip duplicate
 
-        # Create the credential
+        # Create the credential (preserve all fields from original config)
         vpn = VPNCredential(
             interface_ip=interface_ip,
             ipv4_address=ipv4_address,
@@ -622,6 +665,15 @@ class VPNService:
             preshared_key=preshared_key,
             endpoint=final_endpoint,
             key_type="vpn",  # Generic type
+            # Optional fields from original config (NULL if not present)
+            mtu=mtu,
+            dns=dns,
+            public_key=public_key,
+            allowed_ips=allowed_ips,
+            persistent_keepalive=persistent_keepalive,
+            table=table,
+            save_config=save_config,
+            fwmark=fwmark,
             file_hash=file_hash,
             assignment_type=assignment_type,  # Assignment type from import
             is_available=True,
@@ -631,26 +683,91 @@ class VPNService:
         self.session.add(vpn)
         return vpn
 
-    def generate_wireguard_config(self, vpn: VPNCredential) -> str:
-        """Generate WireGuard configuration file content."""
+    async def get_server_settings(self) -> dict:
+        """
+        Get VPN server settings from database, falling back to environment defaults.
+
+        Returns:
+            Dict with public_key, dns_servers, allowed_ips, and mtu
+        """
+        from app.models.app_setting import AppSetting
+
+        result = await self.session.execute(
+            select(AppSetting).where(
+                AppSetting.key.in_([
+                    'vpn_server_public_key',
+                    'vpn_dns_servers',
+                    'vpn_allowed_ips',
+                    'vpn_mtu'
+                ])
+            )
+        )
+        settings_dict = {s.key: s.value for s in result.scalars().all()}
+
+        return {
+            'public_key': settings_dict.get('vpn_server_public_key', settings.VPN_SERVER_PUBLIC_KEY),
+            'dns_servers': settings_dict.get('vpn_dns_servers', settings.VPN_DNS_SERVERS),
+            'allowed_ips': settings_dict.get('vpn_allowed_ips', settings.VPN_ALLOWED_IPS),
+            'mtu': settings_dict.get('vpn_mtu', '1420')
+        }
+
+    async def generate_wireguard_config(
+        self,
+        vpn: VPNCredential,
+        public_key: str = None,
+        dns_servers: str = None,
+        allowed_ips: str = None,
+        mtu: str = None
+    ) -> str:
+        """
+        Generate WireGuard configuration file content.
+
+        Args:
+            vpn: VPN credential object
+            public_key: Optional override for server public key (fetched from DB if None)
+            dns_servers: Optional override for DNS servers (fetched from DB if None)
+            allowed_ips: Optional override for allowed IPs (fetched from DB if None)
+            mtu: Optional override for MTU size (fetched from DB if None)
+        """
+        # Fetch settings from database if not provided
+        if public_key is None or dns_servers is None or allowed_ips is None or mtu is None:
+            server_settings = await self.get_server_settings()
+            public_key = public_key or server_settings['public_key']
+            dns_servers = dns_servers or server_settings['dns_servers']
+            allowed_ips = allowed_ips or server_settings['allowed_ips']
+            mtu = mtu or server_settings['mtu']
+
         # Parse interface IPs (no spaces after commas to match import format)
         interface_ips = [ip.strip() for ip in vpn.interface_ip.split(",")]
         address_line = ",".join(interface_ips)
 
-        # Build PresharedKey line only if present (omit if None)
-        preshared_line = f"PresharedKey = {vpn.preshared_key}\n" if vpn.preshared_key else ""
+        # Use values from original config if present, otherwise fall back to server defaults
+        # This ensures generated config matches uploaded config structure for hash verification
+        final_dns = vpn.dns if vpn.dns is not None else dns_servers
+        final_mtu = vpn.mtu if vpn.mtu is not None else mtu
+        final_public_key = vpn.public_key if vpn.public_key is not None else public_key
+        final_allowed_ips = vpn.allowed_ips if vpn.allowed_ips is not None else allowed_ips
+        final_keepalive = vpn.persistent_keepalive if vpn.persistent_keepalive is not None else "25"
 
-        # Match import format: [Peer] section first, then [Interface]
-        config = f"""[Peer]
-Endpoint = {vpn.endpoint}
-PublicKey = {settings.VPN_SERVER_PUBLIC_KEY}
-{preshared_line}AllowedIPs = {settings.VPN_ALLOWED_IPS}
-PersistentKeepalive = 25
-[Interface]
+        # Build optional lines only if they were present in original config
+        dns_line = f"DNS = {final_dns}\n" if vpn.dns is not None else ""
+        mtu_line = f"MTU = {final_mtu}\n" if vpn.mtu is not None else ""
+        table_line = f"Table = {vpn.table}\n" if vpn.table is not None else ""
+        save_config_line = f"SaveConfig = {vpn.save_config}\n" if vpn.save_config is not None else ""
+        fwmark_line = f"FwMark = {vpn.fwmark}\n" if vpn.fwmark is not None else ""
+        preshared_line = f"PresharedKey = {vpn.preshared_key}\n" if vpn.preshared_key else ""
+        allowed_ips_line = f"AllowedIPs = {final_allowed_ips}\n" if vpn.allowed_ips is not None else ""
+        keepalive_line = f"PersistentKeepalive = {final_keepalive}\n" if vpn.persistent_keepalive is not None else ""
+
+        # Standard WireGuard format: [Interface] section first, then [Peer]
+        config = f"""[Interface]
 PrivateKey = {vpn.private_key}
 Address = {address_line}
-DNS = {settings.VPN_DNS_SERVERS}
-"""
+{dns_line}{mtu_line}{table_line}{save_config_line}{fwmark_line}
+[Peer]
+PublicKey = {final_public_key}
+{preshared_line}Endpoint = {vpn.endpoint}
+{allowed_ips_line}{keepalive_line}"""
         return config
 
     def get_config_filename(self, user: User, vpn: VPNCredential) -> str:

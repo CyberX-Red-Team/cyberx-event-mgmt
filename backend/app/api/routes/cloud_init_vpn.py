@@ -96,7 +96,7 @@ async def get_instance_vpn_config(
         raise not_found("No VPN assigned to this instance")
 
     # Generate WireGuard config
-    config = service.generate_wireguard_config(vpn)
+    config = await service.generate_wireguard_config(vpn)
 
     logger.info("VPN config retrieved by instance %d (name: %s) from IP: %s",
                instance.id, instance.name, request.client.host if request.client else "unknown")

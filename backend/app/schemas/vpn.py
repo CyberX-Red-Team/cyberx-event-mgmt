@@ -25,9 +25,15 @@ class VPNCredentialResponse(BaseModel):
     assigned_at: Optional[datetime]
     created_at: datetime
 
-    # Assigned user info (if assigned)
+    # Assigned user info (if assigned to user)
     assigned_to_email: Optional[str] = None
     assigned_to_name: Optional[str] = None
+
+    # Assigned instance info (if assigned to instance)
+    assigned_to_instance_id: Optional[int] = None
+    assigned_instance_name: Optional[str] = None
+    assigned_instance_created_by_email: Optional[str] = None
+    assigned_instance_created_by_name: Optional[str] = None
 
     model_config = {
         "from_attributes": True

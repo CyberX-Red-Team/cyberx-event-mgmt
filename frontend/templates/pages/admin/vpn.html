@@ -450,7 +450,12 @@ function renderVPNCredentials(credentials) {
             <td>
                 ${v.assigned_to_name
                     ? `<a href="/admin/participants/${v.assigned_to_user_id}" title="${v.assigned_to_email || ''}">${v.assigned_to_name}</a>`
-                    : '-'}
+                    : v.assigned_instance_name
+                        ? `<div>
+                            <strong>Instance:</strong> <a href="/admin/instances" title="Instance ID: ${v.assigned_to_instance_id}">${v.assigned_instance_name}</a><br>
+                            <small class="text-muted">Created by: ${v.assigned_instance_created_by_name || 'Unknown'}</small>
+                           </div>`
+                        : '-'}
             </td>
             <td>${v.assigned_at ? formatDateTime(v.assigned_at) : '-'}</td>
             <td>
@@ -615,7 +620,17 @@ async function viewVPN(id) {
                 </tr>
                 <tr>
                     <th>Assigned To</th>
-                    <td>${vpn.assigned_to_name ? `${vpn.assigned_to_name}${vpn.assigned_to_email ? ` <span class="text-muted">(${vpn.assigned_to_email})</span>` : ''}` : '<span class="text-muted">Not assigned</span>'}</td>
+                    <td>
+                        ${vpn.assigned_to_name
+                            ? `${vpn.assigned_to_name}${vpn.assigned_to_email ? ` <span class="text-muted">(${vpn.assigned_to_email})</span>` : ''}`
+                            : vpn.assigned_instance_name
+                                ? `<div>
+                                    <strong>Instance:</strong> ${vpn.assigned_instance_name} <span class="text-muted">(ID: ${vpn.assigned_to_instance_id})</span><br>
+                                    <strong>Created by:</strong> ${vpn.assigned_instance_created_by_name || 'Unknown'}
+                                    ${vpn.assigned_instance_created_by_email ? `<span class="text-muted">(${vpn.assigned_instance_created_by_email})</span>` : ''}
+                                   </div>`
+                                : '<span class="text-muted">Not assigned</span>'}
+                    </td>
                 </tr>
                 <tr>
                     <th>Assigned At</th>

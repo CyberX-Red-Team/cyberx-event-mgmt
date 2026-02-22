@@ -141,6 +141,7 @@
                             <th>Name</th>
                             <th>Status</th>
                             <th>IP Address</th>
+                            <th>VPN IP</th>
                             <th>Event</th>
                             <th>Created By</th>
                             <th>Created</th>
@@ -148,7 +149,7 @@
                         </tr>
                     </thead>
                     <tbody id="instanceBody">
-                        <tr><td colspan="8" class="text-center py-4">
+                        <tr><td colspan="9" class="text-center py-4">
                             <div class="spinner-border spinner-border-sm me-2"></div> Loading instances...
                         </td></tr>
                     </tbody>
@@ -405,7 +406,7 @@ async function loadInstances(page = 1) {
     } catch (e) {
         console.error(e);
         document.getElementById('instanceBody').innerHTML =
-            '<tr><td colspan="7" class="text-center text-danger py-4">Failed to load instances.</td></tr>';
+            '<tr><td colspan="9" class="text-center text-danger py-4">Failed to load instances.</td></tr>';
     }
 }
 
@@ -420,7 +421,7 @@ function statusBadge(status) {
 function renderInstances(items) {
     const tbody = document.getElementById('instanceBody');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No instances found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">No instances found.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(i => `
@@ -429,6 +430,7 @@ function renderInstances(items) {
             <td><strong>${i.name}</strong><br><small class="text-muted">${i.openstack_id || '-'}</small></td>
             <td>${statusBadge(i.status)}</td>
             <td><code>${i.ip_address || '-'}</code></td>
+            <td>${i.vpn_ip ? `<code class="text-success">${i.vpn_ip}</code>` : '<span class="text-muted">-</span>'}</td>
             <td>${i.event_name || '<span class="text-muted">-</span>'}</td>
             <td>${i.created_by_username || '<span class="text-muted">-</span>'}</td>
             <td>${formatDateTime(i.created_at)}</td>

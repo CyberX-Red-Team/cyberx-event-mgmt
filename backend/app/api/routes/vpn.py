@@ -24,6 +24,7 @@ from app.models.vpn import VPNCredential
 from app.models.event import Event
 from app.models.app_setting import AppSetting
 from app.models.audit_log import AuditLog
+from app.models.instance import Instance
 from app.services.vpn_service import VPNService
 from app.services.participant_service import ParticipantService
 from app.schemas.vpn import (
@@ -62,10 +63,15 @@ async def build_vpn_response(
     vpn: VPNCredential,
     db: AsyncSession
 ) -> VPNCredentialResponse:
-    """Build VPN credential response with user info."""
+    """Build VPN credential response with user and instance info."""
     assigned_email = None
     assigned_name = None
+    assigned_instance_id = None
+    assigned_instance_name = None
+    assigned_instance_created_by_email = None
+    assigned_instance_created_by_name = None
 
+    # Fetch user info if assigned to user
     if vpn.assigned_to_user_id:
         result = await db.execute(
             select(User).where(User.id == vpn.assigned_to_user_id)
@@ -74,6 +80,26 @@ async def build_vpn_response(
         if user:
             assigned_email = user.email
             assigned_name = f"{user.first_name} {user.last_name}"
+
+    # Fetch instance info if assigned to instance
+    if vpn.assigned_to_instance_id:
+        result = await db.execute(
+            select(Instance).where(Instance.id == vpn.assigned_to_instance_id)
+        )
+        instance = result.scalar_one_or_none()
+        if instance:
+            assigned_instance_id = instance.id
+            assigned_instance_name = instance.name
+
+            # Fetch the user who created the instance
+            if instance.created_by_user_id:
+                user_result = await db.execute(
+                    select(User).where(User.id == instance.created_by_user_id)
+                )
+                creator = user_result.scalar_one_or_none()
+                if creator:
+                    assigned_instance_created_by_email = creator.email
+                    assigned_instance_created_by_name = f"{creator.first_name} {creator.last_name}"
 
     return VPNCredentialResponse(
         id=vpn.id,
@@ -88,7 +114,11 @@ async def build_vpn_response(
         assigned_at=vpn.assigned_at,
         created_at=vpn.created_at,
         assigned_to_email=assigned_email,
-        assigned_to_name=assigned_name
+        assigned_to_name=assigned_name,
+        assigned_to_instance_id=assigned_instance_id,
+        assigned_instance_name=assigned_instance_name,
+        assigned_instance_created_by_email=assigned_instance_created_by_email,
+        assigned_instance_created_by_name=assigned_instance_created_by_name
     )
 
 
@@ -384,7 +414,7 @@ async def download_participant_vpn_configs(
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for i, vpn in enumerate(credentials, 1):
-            config = vpn_service.generate_wireguard_config(vpn)
+            config = await vpn_service.generate_wireguard_config(vpn)
             filename = vpn_service.format_filename(naming_pattern, vpn, participant, i)
             zf.writestr(filename, config)
 
@@ -533,7 +563,7 @@ async def get_my_vpn_config(
     if not vpn:
         raise not_found("You do not have any VPN credentials")
 
-    config = service.generate_wireguard_config(vpn)
+    config = await service.generate_wireguard_config(vpn)
     filename = service.get_config_filename(current_user, vpn)
 
     return VPNConfigResponse(config=config, filename=filename)
@@ -560,7 +590,7 @@ async def download_my_vpn_config(
         if not vpn:
             raise not_found("You do not have any VPN credentials")
 
-    config = service.generate_wireguard_config(vpn)
+    config = await service.generate_wireguard_config(vpn)
     filename = service.get_config_filename(current_user, vpn)
 
     return PlainTextResponse(
@@ -592,7 +622,7 @@ async def download_all_my_vpn_configs(
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for i, vpn in enumerate(credentials, 1):
-            config = service.generate_wireguard_config(vpn)
+            config = await service.generate_wireguard_config(vpn)
             filename = service.format_filename(naming_pattern, vpn, current_user, i)
             zf.writestr(filename, config)
 
@@ -661,7 +691,7 @@ async def download_batch_configs(
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for i, vpn in enumerate(credentials, 1):
-            config = service.generate_wireguard_config(vpn)
+            config = await service.generate_wireguard_config(vpn)
             filename = service.format_filename(naming_pattern, vpn, current_user, i)
             zf.writestr(filename, config)
 
