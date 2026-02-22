@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.models.instance import Instance
+from app.models.vpn import VPNCredential
 
 logger = logging.getLogger(__name__)
 
