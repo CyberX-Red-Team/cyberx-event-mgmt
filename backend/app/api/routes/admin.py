@@ -1407,6 +1407,10 @@ async def update_event(
         track_field("max_participants", data["max_participants"])
     if "confirmation_expires_days" in data:
         track_field("confirmation_expires_days", data["confirmation_expires_days"])
+    if "ssh_public_key" in data:
+        track_field("ssh_public_key", data["ssh_public_key"])
+    if "ssh_private_key" in data:
+        track_field("ssh_private_key", data["ssh_private_key"])
 
     # Handle is_active separately (requires deactivating other events)
     if "is_active" in data and data["is_active"] != event.is_active:
