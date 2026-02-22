@@ -1225,6 +1225,8 @@ def _build_event_dict(event):
         "terms_content": event.terms_content,
         "max_participants": event.max_participants,
         "confirmation_expires_days": event.confirmation_expires_days,
+        "ssh_public_key": event.ssh_public_key,
+        "ssh_private_key": event.ssh_private_key,
         "created_at": event.created_at.isoformat() if event.created_at else None,
         "updated_at": event.updated_at.isoformat() if event.updated_at else None
     }
