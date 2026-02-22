@@ -45,3 +45,11 @@ class CloudInitPreviewRequest(BaseModel):
 
 class CloudInitPreviewResponse(BaseModel):
     rendered: str
+
+
+class CloudInitVPNConfigResponse(BaseModel):
+    """Response schema for cloud-init VPN config retrieval."""
+    config: str = Field(..., description="Full WireGuard configuration file content")
+    ipv4_address: str = Field(..., description="IPv4 address of the VPN")
+    interface_ip: str = Field(..., description="Full interface IP (CSV format)")
+    endpoint: str = Field(..., description="VPN server endpoint")

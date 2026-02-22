@@ -31,9 +31,12 @@ class VPNCredential(Base):
     key_type = Column(String(20), nullable=False)   # cyber/kinetic
 
     # Assignment
+    assignment_type = Column(String(30), default="USER_REQUESTABLE", nullable=False)  # USER_REQUESTABLE, INSTANCE_AUTO_ASSIGN, RESERVED
     assigned_to_username = Column(String(255), nullable=True)
     assigned_to_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     assigned_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    assigned_to_instance_id = Column(Integer, ForeignKey('instances.id', ondelete='SET NULL'), nullable=True)
+    assigned_instance_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # Tracking
     file_hash = Column(String(64), nullable=True)
@@ -51,6 +54,7 @@ class VPNCredential(Base):
 
     # Relationships
     assigned_to_user = relationship("User", backref="vpn_credentials", foreign_keys=[assigned_to_user_id])
+    assigned_to_instance = relationship("Instance", backref="vpn_credentials", foreign_keys=[assigned_to_instance_id])
 
     # Indexes
     __table_args__ = (
@@ -59,6 +63,8 @@ class VPNCredential(Base):
         Index('idx_vpn_key_type', 'key_type'),
         Index('idx_vpn_assigned_to_username', 'assigned_to_username'),
         Index('idx_vpn_request_batch_id', 'request_batch_id'),
+        Index('idx_vpn_assignment_type', 'assignment_type'),
+        Index('idx_vpn_assigned_to_instance_id', 'assigned_to_instance_id'),
     )
 
     def __repr__(self):

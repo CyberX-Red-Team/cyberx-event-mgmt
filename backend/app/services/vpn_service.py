@@ -113,7 +113,10 @@ class VPNService:
         # skip_locked=True: Skip rows locked by other transactions (prevents deadlocks)
         result = await self.session.execute(
             select(VPNCredential)
-            .where(VPNCredential.is_available == True)
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assignment_type == "USER_REQUESTABLE"  # Only user-requestable VPNs
+            )
             .order_by(func.random())
             .limit(1)
             .with_for_update(skip_locked=True)
@@ -166,7 +169,10 @@ class VPNService:
         # This prevents race conditions during concurrent bulk assignments
         result = await self.session.execute(
             select(VPNCredential)
-            .where(VPNCredential.is_available == True)
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assignment_type == "USER_REQUESTABLE"  # Only user-requestable VPNs
+            )
             .order_by(func.random())
             .limit(count)
             .with_for_update(skip_locked=True)
@@ -256,10 +262,190 @@ class VPNService:
             "assigned_count": total - available
         }
 
+    # ─── Instance VPN Assignment Methods ────────────────────────────────────
+
+    async def assign_vpn_to_instance(
+        self,
+        instance_id: int
+    ) -> Tuple[bool, str, Optional[VPNCredential]]:
+        """
+        Assign an available INSTANCE_AUTO_ASSIGN VPN to an instance.
+
+        Uses SELECT FOR UPDATE with skip_locked to prevent race conditions
+        when multiple instances are being created concurrently.
+
+        Args:
+            instance_id: Instance ID to assign VPN to
+
+        Returns:
+            Tuple of (success, message, vpn_credential)
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Find available INSTANCE_AUTO_ASSIGN credential with row-level lock
+        result = await self.session.execute(
+            select(VPNCredential)
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assignment_type == "INSTANCE_AUTO_ASSIGN"
+            )
+            .order_by(func.random())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        vpn = result.scalar_one_or_none()
+
+        if not vpn:
+            logger.warning("No available INSTANCE_AUTO_ASSIGN VPN credentials for instance %d", instance_id)
+            return False, "No available INSTANCE_AUTO_ASSIGN VPN credentials", None
+
+        # Assign to instance (row is now locked until commit)
+        vpn.assigned_to_instance_id = instance_id
+        vpn.assigned_instance_at = datetime.now(timezone.utc)
+        vpn.is_available = False
+
+        await self.session.commit()
+        await self.session.refresh(vpn)
+
+        logger.info("Assigned VPN %d to instance %d", vpn.id, instance_id)
+        return True, "VPN assigned to instance successfully", vpn
+
+    async def get_instance_vpn(self, instance_id: int) -> Optional[VPNCredential]:
+        """
+        Get VPN credential assigned to an instance.
+
+        Args:
+            instance_id: Instance ID to look up
+
+        Returns:
+            VPNCredential if found, None otherwise
+        """
+        result = await self.session.execute(
+            select(VPNCredential)
+            .where(VPNCredential.assigned_to_instance_id == instance_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_available_instance_vpn_count(self) -> int:
+        """
+        Get count of available INSTANCE_AUTO_ASSIGN VPN credentials.
+
+        Returns:
+            Number of available instance VPN credentials
+        """
+        result = await self.session.execute(
+            select(func.count(VPNCredential.id))
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assignment_type == "INSTANCE_AUTO_ASSIGN"
+            )
+        )
+        return result.scalar() or 0
+
+    async def update_assignment_type(
+        self,
+        vpn_id: int,
+        assignment_type: str
+    ) -> Tuple[bool, str]:
+        """
+        Update VPN assignment type.
+
+        Can only change if VPN is not currently assigned to a user or instance.
+
+        Args:
+            vpn_id: VPN credential ID
+            assignment_type: New type (USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED)
+
+        Returns:
+            Tuple of (success, message)
+        """
+        # Validate assignment type
+        valid_types = ["USER_REQUESTABLE", "INSTANCE_AUTO_ASSIGN", "RESERVED"]
+        if assignment_type not in valid_types:
+            return False, f"Invalid assignment type. Must be one of: {', '.join(valid_types)}"
+
+        # Get the VPN credential
+        vpn = await self.get_credential(vpn_id)
+        if not vpn:
+            return False, "VPN credential not found"
+
+        # Check if VPN is currently assigned
+        if not vpn.is_available:
+            return False, "Cannot change assignment type while VPN is assigned to a user or instance"
+
+        # Update assignment type
+        vpn.assignment_type = assignment_type
+        await self.session.commit()
+
+        return True, f"Assignment type updated to {assignment_type}"
+
+    async def bulk_update_assignment_type(
+        self,
+        vpn_ids: List[int],
+        assignment_type: str
+    ) -> Tuple[int, int, List[str]]:
+        """
+        Bulk update assignment type for multiple VPN credentials.
+
+        Args:
+            vpn_ids: List of VPN credential IDs
+            assignment_type: New type for all VPNs
+
+        Returns:
+            Tuple of (success_count, skipped_count, error_messages)
+        """
+        success_count = 0
+        skipped_count = 0
+        errors = []
+
+        for vpn_id in vpn_ids:
+            success, message = await self.update_assignment_type(vpn_id, assignment_type)
+            if success:
+                success_count += 1
+            else:
+                skipped_count += 1
+                errors.append(f"VPN {vpn_id}: {message}")
+
+        return success_count, skipped_count, errors
+
+    async def get_instance_pool_stats(self) -> dict:
+        """
+        Get statistics for INSTANCE_AUTO_ASSIGN VPN pool.
+
+        Returns:
+            Dict with total, available, and assigned counts
+        """
+        # Total INSTANCE_AUTO_ASSIGN VPNs
+        total_result = await self.session.execute(
+            select(func.count(VPNCredential.id))
+            .where(VPNCredential.assignment_type == "INSTANCE_AUTO_ASSIGN")
+        )
+        total = total_result.scalar() or 0
+
+        # Available INSTANCE_AUTO_ASSIGN VPNs
+        available_result = await self.session.execute(
+            select(func.count(VPNCredential.id))
+            .where(
+                VPNCredential.assignment_type == "INSTANCE_AUTO_ASSIGN",
+                VPNCredential.is_available == True
+            )
+        )
+        available = available_result.scalar() or 0
+
+        return {
+            "total": total,
+            "available": available,
+            "assigned": total - available
+        }
+
+    # ────────────────────────────────────────────────────────────────────────
+
     async def import_from_zip(
         self,
         zip_content: bytes,
-        endpoint: Optional[str] = None
+        endpoint: Optional[str] = None,
+        assignment_type: str = "USER_REQUESTABLE"
     ) -> Tuple[int, int, List[str]]:
         """
         Import VPN credentials from a ZIP file containing WireGuard configuration files.
@@ -271,6 +457,7 @@ class VPNService:
             zip_content: Raw bytes of the ZIP file
             endpoint: Optional VPN server endpoint override for all imported configs
                      (if not provided, will be parsed from each config file)
+            assignment_type: Type of assignment (USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED)
 
         Returns:
             Tuple of (imported_count, skipped_count, error_messages)
@@ -297,7 +484,7 @@ class VPNService:
 
                         # Validate and parse WireGuard config by content
                         vpn = await self._parse_and_create_vpn(
-                            config_content, filename, endpoint
+                            config_content, filename, endpoint, assignment_type
                         )
                         if vpn:
                             imported_count += 1
@@ -322,7 +509,8 @@ class VPNService:
         self,
         config_content: str,
         filename: str,
-        endpoint: Optional[str] = None
+        endpoint: Optional[str] = None,
+        assignment_type: str = "USER_REQUESTABLE"
     ) -> Optional[VPNCredential]:
         """
         Parse a WireGuard config file and create a VPN credential.
@@ -337,6 +525,7 @@ class VPNService:
             config_content: Raw text content of the config file
             filename: Name of the file (for error reporting)
             endpoint: VPN server endpoint to use (optional, will be parsed from config if not provided)
+            assignment_type: Type of assignment (USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED)
 
         Returns:
             VPNCredential object if valid, None if invalid or duplicate
@@ -423,6 +612,7 @@ class VPNService:
             endpoint=final_endpoint,
             key_type="vpn",  # Generic type
             file_hash=file_hash,
+            assignment_type=assignment_type,  # Assignment type from import
             is_available=True,
             is_active=True
         )

@@ -135,6 +135,19 @@
                 </div>
                 <div class="col-lg-4">
                     <div class="mb-3">
+                        <label class="form-label fw-bold">VPN Assignment Type</label>
+                        <select class="form-select" id="assignmentType">
+                            <option value="USER_REQUESTABLE" selected>User Requestable (Self-Service)</option>
+                            <option value="INSTANCE_AUTO_ASSIGN">Instance Auto-Assign</option>
+                            <option value="RESERVED">Reserved</option>
+                        </select>
+                        <div class="form-text small mt-2">
+                            <strong>USER_REQUESTABLE:</strong> Participants can request these VPNs themselves<br>
+                            <strong>INSTANCE_AUTO_ASSIGN:</strong> Automatically assigned to instances in VPN-enabled events<br>
+                            <strong>RESERVED:</strong> Held in reserve, not available for auto-assignment
+                        </div>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label fw-bold">Download File Naming Pattern</label>
                         <input type="text" class="form-control form-control-sm font-monospace" id="namingPattern" placeholder="simnet_{ipv4_address}.conf" value="simnet_{ipv4_address}.conf">
                         <div class="form-text small mt-2">
@@ -704,11 +717,17 @@ async function handleFileUpload(file) {
     document.getElementById('uploadProgress').style.display = 'block';
     document.getElementById('uploadResult').style.display = 'none';
 
+    // Get assignment type from dropdown
+    const assignmentType = document.getElementById('assignmentType').value;
+
     const formData = new FormData();
     formData.append('file', file);
 
+    // Build URL with assignment_type query parameter
+    const url = `/api/vpn/import?assignment_type=${encodeURIComponent(assignmentType)}`;
+
     try {
-        const response = await csrfFetch('/api/vpn/import', {
+        const response = await csrfFetch(url, {
             method: 'POST',
             body: formData
         });

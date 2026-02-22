@@ -16,6 +16,8 @@ class Instance(Base):
     status = Column(String(50), default="BUILDING", nullable=False)  # BUILDING, ACTIVE, ERROR, SHUTOFF, DELETED
     ip_address = Column(String(50), nullable=True)
     vpn_ip = Column(String(50), nullable=True)  # VPN IP from cloud-init config (if applicable)
+    vpn_config_token = Column(String(255), nullable=True)  # SHA-256 hash of single-use token for cloud-init
+    vpn_config_token_expires_at = Column(TIMESTAMP(timezone=True), nullable=True)  # Token expiry (3 minutes)
 
     # Configuration used to create
     flavor_id = Column(String(100), nullable=False)

@@ -152,3 +152,43 @@ class VPNRequestBatchesResponse(BaseModel):
 
     batches: List[VPNRequestBatch]
     total_batches: int
+
+
+class VPNUpdateAssignmentTypeRequest(BaseModel):
+    """Request to update VPN assignment type."""
+
+    assignment_type: str = Field(..., description="USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED")
+
+
+class VPNUpdateAssignmentTypeResponse(BaseModel):
+    """Response for VPN assignment type update."""
+
+    success: bool
+    message: str
+    vpn_id: int
+    new_assignment_type: str
+
+
+class VPNBulkUpdateAssignmentTypeRequest(BaseModel):
+    """Request to bulk update VPN assignment types."""
+
+    vpn_ids: List[int] = Field(..., description="List of VPN credential IDs")
+    assignment_type: str = Field(..., description="USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED")
+
+
+class VPNBulkUpdateAssignmentTypeResponse(BaseModel):
+    """Response for bulk VPN assignment type update."""
+
+    success: bool
+    message: str
+    success_count: int
+    skipped_count: int
+    errors: List[str] = []
+
+
+class VPNInstancePoolStats(BaseModel):
+    """Statistics for INSTANCE_AUTO_ASSIGN VPN pool."""
+
+    total: int = Field(..., description="Total INSTANCE_AUTO_ASSIGN VPNs")
+    available: int = Field(..., description="Available INSTANCE_AUTO_ASSIGN VPNs")
+    assigned: int = Field(..., description="Assigned INSTANCE_AUTO_ASSIGN VPNs")

@@ -422,6 +422,57 @@ class OpenStackService:
                 user_data = cloud_init_svc.render_template(template.content, variables)
                 logger.info("Rendered cloud-init template %d for instance %s", template_id, name)
 
+        # VPN assignment (event-based)
+        vpn_token_hash = None
+        vpn_token_expires_at = None
+        vpn_ip = None
+        assigned_vpn_id = None
+
+        if event_id:
+            # Fetch event to check vpn_available flag
+            from app.models.event import Event
+            event_result = await self.session.execute(
+                select(Event).where(Event.id == event_id)
+            )
+            event = event_result.scalar_one_or_none()
+
+            if event and event.vpn_available:
+                logger.info("Event %d has VPN enabled, assigning VPN to instance %s", event_id, name)
+
+                # Assign VPN from INSTANCE_AUTO_ASSIGN pool
+                from app.services.vpn_service import VPNService
+                import secrets
+                import hashlib
+                from datetime import timedelta
+
+                vpn_svc = VPNService(self.session)
+
+                # Temporarily assign VPN with instance_id=None (will update after instance creation)
+                # We need to reserve the VPN before rendering the template
+                success, message, vpn = await vpn_svc.assign_vpn_to_instance(instance_id=0)  # Placeholder
+
+                if success and vpn:
+                    # Generate single-use token for cloud-init
+                    raw_token = secrets.token_urlsafe(48)
+                    vpn_token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+                    vpn_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=3)
+                    vpn_ip = vpn.ipv4_address
+                    assigned_vpn_id = vpn.id
+
+                    logger.info("Generated VPN token for instance %s, VPN ID: %d, IP: %s", name, vpn.id, vpn_ip)
+
+                    # Add VPN variables to cloud-init template
+                    if template_id and template:
+                        # Add variables for cloud-init to fetch VPN config
+                        variables["vpn_config_token"] = raw_token  # Raw token (unhashed) for cloud-init
+                        variables["vpn_config_endpoint"] = f"{self.settings.FRONTEND_URL}/api/cloud-init/vpn-config"
+
+                        # Re-render template with VPN variables
+                        user_data = cloud_init_svc.render_template(template.content, variables)
+                        logger.info("Re-rendered cloud-init template with VPN variables for instance %s", name)
+                else:
+                    logger.warning("Failed to assign VPN to instance %s: %s", name, message)
+
         # Create on OpenStack
         server = await self.create_instance_on_openstack(
             name=name,
@@ -447,10 +498,24 @@ class OpenStackService:
             assigned_to_user_id=assigned_to_user_id,
             created_by_user_id=created_by_user_id,
             error_message=None if server else "Failed to create on OpenStack",
+            vpn_ip=vpn_ip,  # VPN IP from assigned VPN
+            vpn_config_token=vpn_token_hash,  # Hashed token for cloud-init
+            vpn_config_token_expires_at=vpn_token_expires_at,  # Token expiry
         )
         self.session.add(instance)
         await self.session.commit()
         await self.session.refresh(instance)
+
+        # Update VPN assignment with actual instance_id
+        if assigned_vpn_id:
+            vpn_update_result = await self.session.execute(
+                select(VPNCredential).where(VPNCredential.id == assigned_vpn_id)
+            )
+            vpn_to_update = vpn_update_result.scalar_one_or_none()
+            if vpn_to_update:
+                vpn_to_update.assigned_to_instance_id = instance.id
+                await self.session.commit()
+                logger.info("Updated VPN %d with instance ID %d", assigned_vpn_id, instance.id)
 
         return instance
 

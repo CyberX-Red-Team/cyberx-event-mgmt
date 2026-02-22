@@ -42,6 +42,11 @@ from app.schemas.vpn import (
     VPNBulkDeleteRequest,
     VPNBulkDeleteResponse,
     VPNRequestBatchesResponse,
+    VPNUpdateAssignmentTypeRequest,
+    VPNUpdateAssignmentTypeResponse,
+    VPNBulkUpdateAssignmentTypeRequest,
+    VPNBulkUpdateAssignmentTypeResponse,
+    VPNInstancePoolStats,
 )
 from app.config import get_settings
 
@@ -264,6 +269,7 @@ async def bulk_assign_vpn(
 async def import_vpn_configs(
     file: UploadFile = File(..., description="ZIP file containing WireGuard .conf files"),
     endpoint: Optional[str] = Query(None, description="Optional VPN server endpoint override (ip:port)"),
+    assignment_type: str = Query("USER_REQUESTABLE", description="Assignment type: USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED"),
     current_user: User = Depends(get_current_admin_user),
     service: VPNService = Depends(get_vpn_service)
 ):
@@ -272,7 +278,17 @@ async def import_vpn_configs(
 
     The ZIP file should contain WireGuard .conf files with [Interface], [Peer], and Endpoint sections.
     The endpoint will be parsed from each config file unless an override is provided.
+
+    Assignment types:
+    - USER_REQUESTABLE: VPNs available for participant self-service requests (default)
+    - INSTANCE_AUTO_ASSIGN: VPNs automatically assigned to instances in events with vpn_available=true
+    - RESERVED: VPNs held in reserve, not available for auto-assignment
     """
+    # Validate assignment_type
+    valid_types = ["USER_REQUESTABLE", "INSTANCE_AUTO_ASSIGN", "RESERVED"]
+    if assignment_type not in valid_types:
+        raise bad_request(f"Invalid assignment_type. Must be one of: {', '.join(valid_types)}")
+
     if not file.filename.endswith('.zip'):
         raise bad_request("File must be a ZIP archive")
 
@@ -283,7 +299,7 @@ async def import_vpn_configs(
     if len(content) > 50 * 1024 * 1024:
         raise bad_request("File too large (max 50MB)")
 
-    imported, skipped, errors = await service.import_from_zip(content, endpoint)
+    imported, skipped, errors = await service.import_from_zip(content, endpoint, assignment_type)
 
     return VPNImportResponse(
         success=imported > 0,
@@ -776,3 +792,84 @@ async def set_vpn_naming_pattern(
     await db.commit()
 
     return {"success": True, "pattern": pattern}
+
+
+# ─── VPN Assignment Type Management ─────────────────────────────────────────
+
+
+@router.patch("/credentials/{vpn_id}/assignment-type", response_model=VPNUpdateAssignmentTypeResponse)
+async def update_vpn_assignment_type(
+    vpn_id: int,
+    data: VPNUpdateAssignmentTypeRequest,
+    current_user: User = Depends(get_current_admin_user),
+    service: VPNService = Depends(get_vpn_service)
+):
+    """
+    Update VPN credential assignment type (admin only).
+
+    Can only change assignment type if VPN is not currently assigned to a user or instance.
+
+    Assignment types:
+    - USER_REQUESTABLE: Available for participant self-service requests
+    - INSTANCE_AUTO_ASSIGN: Automatically assigned to instances in events with vpn_available=true
+    - RESERVED: Held in reserve, not available for auto-assignment
+    """
+    success, message = await service.update_assignment_type(vpn_id, data.assignment_type)
+
+    if not success:
+        if "not found" in message.lower():
+            raise not_found("VPN credential", vpn_id)
+        raise bad_request(message)
+
+    return VPNUpdateAssignmentTypeResponse(
+        success=True,
+        message=message,
+        vpn_id=vpn_id,
+        new_assignment_type=data.assignment_type
+    )
+
+
+@router.post("/bulk-update-assignment-type", response_model=VPNBulkUpdateAssignmentTypeResponse)
+async def bulk_update_vpn_assignment_type(
+    data: VPNBulkUpdateAssignmentTypeRequest,
+    current_user: User = Depends(get_current_admin_user),
+    service: VPNService = Depends(get_vpn_service)
+):
+    """
+    Bulk update VPN credential assignment types (admin only).
+
+    Updates multiple VPN credentials to the same assignment type.
+    Skips VPNs that are currently assigned to users or instances.
+    """
+    success_count, skipped_count, errors = await service.bulk_update_assignment_type(
+        data.vpn_ids,
+        data.assignment_type
+    )
+
+    return VPNBulkUpdateAssignmentTypeResponse(
+        success=success_count > 0,
+        message=f"Updated {success_count} VPN(s), skipped {skipped_count}",
+        success_count=success_count,
+        skipped_count=skipped_count,
+        errors=errors[:10]  # Limit error messages
+    )
+
+
+@router.get("/stats/instance-pool", response_model=VPNInstancePoolStats)
+async def get_instance_pool_stats(
+    current_user: User = Depends(get_current_admin_user),
+    service: VPNService = Depends(get_vpn_service)
+):
+    """
+    Get statistics for INSTANCE_AUTO_ASSIGN VPN pool (admin only).
+
+    Returns counts of total, available, and assigned INSTANCE_AUTO_ASSIGN VPNs.
+    Useful for monitoring VPN pool capacity before creating events.
+    """
+    stats = await service.get_instance_pool_stats()
+
+    return VPNInstancePoolStats(
+        total=stats["total"],
+        available=stats["available"],
+        assigned=stats["assigned"]
+    )
