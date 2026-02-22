@@ -306,14 +306,20 @@ class VPNService:
             return False, "No available INSTANCE_AUTO_ASSIGN VPN credentials", None
 
         # Assign to instance (row is now locked until commit)
-        vpn.assigned_to_instance_id = instance_id
+        # Only set instance_id if it's a real ID (> 0)
+        # For placeholder (0), we reserve the VPN without setting FK
+        if instance_id > 0:
+            vpn.assigned_to_instance_id = instance_id
         vpn.assigned_instance_at = datetime.now(timezone.utc)
         vpn.is_available = False
 
         await self.session.commit()
         await self.session.refresh(vpn)
 
-        logger.info("Assigned VPN %d to instance %d", vpn.id, instance_id)
+        if instance_id > 0:
+            logger.info("Assigned VPN %d to instance %d", vpn.id, instance_id)
+        else:
+            logger.info("Reserved VPN %d for instance (ID pending)", vpn.id)
         return True, "VPN assigned to instance successfully", vpn
 
     async def get_instance_vpn(self, instance_id: int) -> Optional[VPNCredential]:
