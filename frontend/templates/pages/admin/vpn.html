@@ -68,7 +68,7 @@
 <div class="container-fluid px-4 mt-n10">
     <!-- Stats Cards -->
     <div class="row mb-4">
-        <div class="col-xl-4 col-md-6">
+        <div class="col-xl-3 col-md-6 mb-4">
             <div class="card bg-primary text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -81,7 +81,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-xl-4 col-md-6">
+        <div class="col-xl-3 col-md-6 mb-4">
             <div class="card bg-success text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -94,7 +94,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-xl-4 col-md-6">
+        <div class="col-xl-3 col-md-6 mb-4">
             <div class="card bg-warning text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -103,6 +103,19 @@
                             <div class="text-lg fw-bold" id="statAssigned">-</div>
                         </div>
                         <i data-feather="user-check" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-info text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Instance Pool Available</div>
+                            <div class="text-lg fw-bold" id="statInstancePoolAvailable">-</div>
+                        </div>
+                        <i data-feather="server" class="feather-xl text-white-50"></i>
                     </div>
                 </div>
             </div>
@@ -175,11 +188,11 @@
         </div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label small">Search</label>
                     <input type="text" class="form-control" id="searchInput" placeholder="IP address, username...">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label small">Status</label>
                     <select class="form-select" id="availableFilter">
                         <option value="">All</option>
@@ -187,7 +200,16 @@
                         <option value="false">Assigned</option>
                     </select>
                 </div>
-                <div class="col-md-5 d-flex align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small">Assignment Type</label>
+                    <select class="form-select" id="assignmentTypeFilter">
+                        <option value="">All Types</option>
+                        <option value="USER_REQUESTABLE">User Requestable</option>
+                        <option value="INSTANCE_AUTO_ASSIGN">Instance Auto-Assign</option>
+                        <option value="RESERVED">Reserved</option>
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
                     <button class="btn btn-primary me-2" onclick="applyFilters()">
                         <i data-feather="search" class="me-1"></i> Search
                     </button>
@@ -230,6 +252,7 @@
                             <th>IPv4 Address</th>
                             <th>Interface IP</th>
                             <th>Endpoint</th>
+                            <th>Type</th>
                             <th>SHA256 Hash</th>
                             <th>Request ID</th>
                             <th>Status</th>
@@ -240,7 +263,7 @@
                     </thead>
                     <tbody id="vpnBody">
                         <tr>
-                            <td colspan="10" class="text-center py-4">
+                            <td colspan="12" class="text-center py-4">
                                 <div class="spinner-border spinner-border-sm me-2"></div>
                                 Loading VPN credentials...
                             </td>
@@ -331,6 +354,13 @@ async function loadStats() {
             document.getElementById('statAvailable').textContent = data.available_count;
             document.getElementById('statAssigned').textContent = data.assigned_count;
         }
+
+        // Load instance pool stats
+        const poolResponse = await csrfFetch('/api/vpn/stats/instance-pool');
+        if (poolResponse.ok) {
+            const poolData = await poolResponse.json();
+            document.getElementById('statInstancePoolAvailable').textContent = poolData.available;
+        }
     } catch (error) {
         console.error('Failed to load stats:', error);
     }
@@ -342,10 +372,12 @@ async function loadVPNCredentials(page = 1) {
     const pageSize = document.getElementById('pageSizeSelect').value;
     const search = document.getElementById('searchInput').value;
     const isAvailable = document.getElementById('availableFilter').value;
+    const assignmentType = document.getElementById('assignmentTypeFilter').value;
 
     let url = `/api/vpn/credentials?page=${page}&page_size=${pageSize}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (isAvailable) url += `&is_available=${isAvailable}`;
+    if (assignmentType) url += `&assignment_type=${encodeURIComponent(assignmentType)}`;
 
     try {
         const response = await csrfFetch(url);
@@ -367,7 +399,7 @@ async function loadVPNCredentials(page = 1) {
     } catch (error) {
         console.error('Error:', error);
         document.getElementById('vpnBody').innerHTML = `
-            <tr><td colspan="10" class="text-center text-danger py-4">
+            <tr><td colspan="12" class="text-center text-danger py-4">
                 Failed to load VPN credentials. Please try again.
             </td></tr>
         `;
@@ -379,11 +411,23 @@ function renderVPNCredentials(credentials) {
 
     if (credentials.length === 0) {
         tbody.innerHTML = `
-            <tr><td colspan="10" class="text-center py-4 text-muted">
+            <tr><td colspan="12" class="text-center py-4 text-muted">
                 No VPN credentials found matching your criteria.
             </td></tr>
         `;
         return;
+    }
+
+    // Helper function to format assignment type
+    function formatAssignmentType(type) {
+        if (type === 'USER_REQUESTABLE') {
+            return '<span class="badge bg-primary" title="User Requestable">User</span>';
+        } else if (type === 'INSTANCE_AUTO_ASSIGN') {
+            return '<span class="badge bg-info" title="Instance Auto-Assign">Instance</span>';
+        } else if (type === 'RESERVED') {
+            return '<span class="badge bg-secondary" title="Reserved">Reserved</span>';
+        }
+        return '<span class="badge bg-secondary">Unknown</span>';
     }
 
     tbody.innerHTML = credentials.map(v => `
@@ -395,6 +439,7 @@ function renderVPNCredentials(credentials) {
             <td><code class="vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.ipv4_address || 'N/A'}">${v.ipv4_address || '-'}</code></td>
             <td><code class="small vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.interface_ip || 'N/A'}">${truncate(v.interface_ip, 30)}</code></td>
             <td><code class="vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.endpoint || 'N/A'}">${v.endpoint}</code></td>
+            <td>${formatAssignmentType(v.assignment_type || 'USER_REQUESTABLE')}</td>
             <td><code class="small text-muted vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.file_hash || 'No hash'}">${v.file_hash ? truncate(v.file_hash, 16) : '-'}</code></td>
             <td><code class="small text-muted vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.request_batch_id || 'No batch ID'}">${v.request_batch_id ? v.request_batch_id.substring(0, 8) : '-'}</code></td>
             <td>
@@ -510,6 +555,7 @@ function applyFilters() {
 function clearFilters() {
     document.getElementById('searchInput').value = '';
     document.getElementById('availableFilter').value = '';
+    document.getElementById('assignmentTypeFilter').value = '';
     loadVPNCredentials(1);
 }
 
@@ -520,6 +566,18 @@ async function viewVPN(id) {
         if (!response.ok) throw new Error('Failed to load VPN details');
 
         const vpn = await response.json();
+
+        // Helper function to format assignment type
+        const formatAssignmentType = (type) => {
+            if (type === 'USER_REQUESTABLE') {
+                return '<span class="badge bg-primary">User Requestable</span>';
+            } else if (type === 'INSTANCE_AUTO_ASSIGN') {
+                return '<span class="badge bg-info">Instance Auto-Assign</span>';
+            } else if (type === 'RESERVED') {
+                return '<span class="badge bg-secondary">Reserved</span>';
+            }
+            return '<span class="badge bg-secondary">Unknown</span>';
+        };
 
         document.getElementById('vpnDetailsBody').innerHTML = `
             <table class="table table-sm">
@@ -538,6 +596,10 @@ async function viewVPN(id) {
                 <tr>
                     <th>Endpoint</th>
                     <td><code>${vpn.endpoint || 'N/A'}</code></td>
+                </tr>
+                <tr>
+                    <th>Assignment Type</th>
+                    <td>${formatAssignmentType(vpn.assignment_type || 'USER_REQUESTABLE')}</td>
                 </tr>
                 <tr>
                     <th>SHA256 Hash</th>
