@@ -384,11 +384,23 @@ class OpenStackService:
                         select(Event).where(Event.id == event_id)
                     )
                     event = result.scalar_one_or_none()
-                    if event and event.ssh_public_key:
-                        # Only add if it's different from individual key
-                        if event.ssh_public_key not in ssh_keys:
-                            ssh_keys.append(event.ssh_public_key)
-                            logger.info("Using event %d SSH key for instance %s", event_id, name)
+                    if event:
+                        logger.info("Event %d found: is_active=%s, has_ssh_key=%s",
+                                    event_id, event.is_active, bool(event.ssh_public_key))
+                        # Only add SSH key if event is active and has a key configured
+                        if event.is_active and event.ssh_public_key:
+                            # Only add if it's different from individual key
+                            if event.ssh_public_key not in ssh_keys:
+                                ssh_keys.append(event.ssh_public_key)
+                                logger.info("Added event %d SSH key to instance %s", event_id, name)
+                            else:
+                                logger.info("Event %d SSH key already in list (duplicate), skipping", event_id)
+                        elif not event.is_active:
+                            logger.warning("Event %d is inactive, not adding SSH key to instance %s", event_id, name)
+                        elif not event.ssh_public_key:
+                            logger.warning("Event %d has no SSH key configured", event_id)
+                    else:
+                        logger.warning("Event %d not found", event_id)
 
                 # Format SSH keys for cloud-init template
                 if ssh_keys:
