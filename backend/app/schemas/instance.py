@@ -77,6 +77,13 @@ class InstanceResponse(BaseModel):
     error_message: Optional[str] = None
     created_by_user_id: Optional[int] = None
     created_by_username: Optional[str] = None  # Computed: creator's username
+
+    # Participant self-service fields
+    visibility: Optional[str] = "private"
+    notes: Optional[str] = None
+    instance_template_id: Optional[int] = None
+    instance_template_name: Optional[str] = None  # Computed: template name
+
     created_at: datetime
     updated_at: datetime
 

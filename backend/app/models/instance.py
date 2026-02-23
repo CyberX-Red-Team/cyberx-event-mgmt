@@ -42,6 +42,7 @@ class Instance(Base):
     key_name = Column(String(100), nullable=True)
     cloud_init_template_id = Column(Integer, ForeignKey("cloud_init_templates.id", ondelete="SET NULL"), nullable=True)
     license_product_id = Column(Integer, ForeignKey("license_products.id", ondelete="SET NULL"), nullable=True, index=True)
+    instance_template_id = Column(Integer, ForeignKey("instance_templates.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Optional associations
     event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -50,6 +51,11 @@ class Instance(Base):
     # Metadata
     error_message = Column(Text, nullable=True)
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Participant self-service fields
+    visibility = Column(String(20), default="private", nullable=False, index=True)  # private, share, public
+    notes = Column(Text, nullable=True)
+
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(TIMESTAMP(timezone=True), nullable=True)  # Soft delete
@@ -60,6 +66,7 @@ class Instance(Base):
     created_by = relationship("User", foreign_keys=[created_by_user_id])
     cloud_init_template = relationship("CloudInitTemplate")
     license_product = relationship("LicenseProduct", backref="instances")
+    instance_template = relationship("InstanceTemplate", backref="instances")
 
     def __repr__(self):
         return f"<Instance(id={self.id}, name={self.name}, status={self.status})>"

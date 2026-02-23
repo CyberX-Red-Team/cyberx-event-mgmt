@@ -373,6 +373,79 @@ class InstanceService:
             await self.session.commit()
             logger.info("Updated VPN %d with instance ID %d", vpn_id, instance_id)
 
+    async def create_from_template(
+        self,
+        template_id: int,
+        name: str,
+        assigned_to_user_id: int,
+        created_by_user_id: int,
+        visibility: str = "private",
+        notes: Optional[str] = None,
+        ssh_public_key: Optional[str] = None,
+    ) -> Instance:
+        """Create instance from a template.
+
+        Args:
+            template_id: Instance template ID
+            name: Instance name
+            assigned_to_user_id: User to assign instance to
+            created_by_user_id: User creating the instance
+            visibility: Instance visibility (private, share, public)
+            notes: Optional notes
+            ssh_public_key: Optional individual SSH key
+
+        Returns:
+            Created Instance object
+
+        Raises:
+            ValueError: If template not found or cannot provision
+        """
+        from app.models.instance_template import InstanceTemplate
+
+        # Fetch template
+        result = await self.session.execute(
+            select(InstanceTemplate).where(InstanceTemplate.id == template_id)
+        )
+        template = result.scalar_one_or_none()
+
+        if not template:
+            raise ValueError(f"Template {template_id} not found")
+
+        # Validate visibility
+        if visibility not in ["private", "share", "public"]:
+            raise ValueError("Invalid visibility. Must be private, share, or public")
+
+        # Create instance using template configuration
+        instance = await self.create_and_track_instance(
+            name=name,
+            provider=template.provider,
+            size=template.flavor_id or template.provider_size_slug,
+            image=template.image_id,
+            region=template.provider_region,
+            network=template.network_id,
+            template_id=template.cloud_init_template_id,
+            license_product_id=template.license_product_id,
+            event_id=template.event_id,
+            assigned_to_user_id=assigned_to_user_id,
+            created_by_user_id=created_by_user_id,
+            ssh_public_key=ssh_public_key,
+        )
+
+        # Update instance with template reference and participant fields
+        instance.instance_template_id = template_id
+        instance.visibility = visibility
+        instance.notes = notes
+
+        await self.session.commit()
+        await self.session.refresh(instance)
+
+        logger.info(
+            "Created instance %s from template %d (visibility=%s)",
+            name, template_id, visibility
+        )
+
+        return instance
+
     async def list_tracked_instances(
         self,
         page: int = 1,
@@ -380,6 +453,9 @@ class InstanceService:
         event_id: int | None = None,
         status: str | None = None,
         search: str | None = None,
+        assigned_to_user_id: int | None = None,
+        visibility: str | None = None,
+        created_by_user_id: int | None = None,
     ) -> tuple[list[Instance], int]:
         """List tracked instances with filtering and pagination (all providers)."""
         from sqlalchemy.orm import selectinload
@@ -390,6 +466,12 @@ class InstanceService:
             conditions.append(Instance.event_id == event_id)
         if status:
             conditions.append(Instance.status == status)
+        if assigned_to_user_id is not None:
+            conditions.append(Instance.assigned_to_user_id == assigned_to_user_id)
+        if visibility:
+            conditions.append(Instance.visibility == visibility)
+        if created_by_user_id is not None:
+            conditions.append(Instance.created_by_user_id == created_by_user_id)
         if search:
             conditions.append(
                 or_(
