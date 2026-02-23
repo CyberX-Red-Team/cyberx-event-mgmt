@@ -13,7 +13,7 @@
                         <div class="page-header-icon"><i data-feather="server"></i></div>
                         Instance Management
                     </h1>
-                    <div class="page-header-subtitle">Provision and manage OpenStack instances</div>
+                    <div class="page-header-subtitle">Provision and manage cloud instances</div>
                 </div>
                 <div class="col-auto mt-4">
                     <button class="btn btn-white btn-sm me-2" onclick="showCreateModal()">
@@ -95,7 +95,7 @@
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label small">Search</label>
-                    <input type="text" class="form-control" id="searchInput" placeholder="Name, IP, OpenStack ID...">
+                    <input type="text" class="form-control" id="searchInput" placeholder="Name, IP, Provider ID...">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small">Status</label>
@@ -472,6 +472,20 @@ function statusBadge(status) {
     return `<span class="badge bg-${map[status] || 'info'}">${status}</span>`;
 }
 
+function providerIcon(provider) {
+    if (provider === 'digitalocean') {
+        return `<svg width="20" height="20" viewBox="0 0 100 100" style="vertical-align: middle; margin-right: 6px;" title="DigitalOcean">
+            <path fill="#0080FF" d="M50 100v-19.2h19.2c0 10.6-8.6 19.2-19.2 19.2zm0-19.2V61.6H30.8c0 10.6 8.6 19.2 19.2 19.2zM30.8 61.6H11.6c0-21.2 17.2-38.4 38.4-38.4v19.2c-10.6 0-19.2 8.6-19.2 19.2zM50 42.4V23.2c10.6 0 19.2 8.6 19.2 19.2H50z"/>
+        </svg>`;
+    } else if (provider === 'openstack') {
+        return `<svg width="20" height="20" viewBox="0 0 100 100" style="vertical-align: middle; margin-right: 6px;" title="OpenStack">
+            <path fill="#DA1A32" d="M10 30h20v40H10z M70 30h20v40H70z M30 10h40v20H30z M30 70h40v20H30z"/>
+            <path fill="#DA1A32" opacity="0.6" d="M30 30h40v40H30z"/>
+        </svg>`;
+    }
+    return '';
+}
+
 function renderInstances(items) {
     const tbody = document.getElementById('instanceBody');
     if (!items.length) {
@@ -481,7 +495,7 @@ function renderInstances(items) {
     tbody.innerHTML = items.map(i => `
         <tr>
             <td><input type="checkbox" class="form-check-input inst-cb" value="${i.id}" onchange="updateSelectionCount()"></td>
-            <td><strong>${i.name}</strong><br><small class="text-muted">${i.openstack_id || '-'}</small></td>
+            <td>${providerIcon(i.provider)}<strong>${i.name}</strong><br><small class="text-muted">${i.provider_instance_id || '-'}</small></td>
             <td>${statusBadge(i.status)}</td>
             <td><code>${i.ip_address || '-'}</code></td>
             <td>${i.vpn_ip ? `<code class="text-success">${i.vpn_ip}</code>` : '<span class="text-muted">-</span>'}</td>
@@ -738,7 +752,7 @@ async function syncInstance(id) {
 }
 
 async function deleteInstance(id, name) {
-    if (!confirm(`Delete instance "${name}"? This will terminate it on OpenStack.`)) return;
+    if (!confirm(`Delete instance "${name}"? This will terminate it on the cloud provider.`)) return;
     try {
         const resp = await csrfFetch(`/api/instances/${id}`, { method: 'DELETE' });
         if (resp.ok) {
@@ -752,7 +766,7 @@ async function deleteInstance(id, name) {
 async function deleteSelectedInstances() {
     const ids = Array.from(document.querySelectorAll('.inst-cb:checked')).map(cb => parseInt(cb.value));
     if (!ids.length) return;
-    if (!confirm(`Delete ${ids.length} instance(s)? This will terminate them on OpenStack.`)) return;
+    if (!confirm(`Delete ${ids.length} instance(s)? This will terminate them on their cloud providers.`)) return;
 
     try {
         const resp = await csrfFetch('/api/instances/bulk-delete', { method: 'POST', body: { instance_ids: ids } });
