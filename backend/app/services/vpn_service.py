@@ -211,10 +211,13 @@ class VPNService:
         return len(assigned_vpns), f"Assigned {len(assigned_vpns)} VPN credentials", assigned_vpns
 
     async def get_available_count(self) -> int:
-        """Get count of available VPN credentials."""
+        """Get count of available VPN credentials (excludes instance-assigned VPNs)."""
         result = await self.session.execute(
             select(func.count(VPNCredential.id))
-            .where(VPNCredential.is_available == True)
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assigned_to_instance_id.is_(None)
+            )
         )
         return result.scalar() or 0
 
