@@ -341,9 +341,13 @@ class InstanceService:
         # Add VPN variables to already-rendered template by doing a second pass
         # We already have user_data with all variables rendered, just add VPN ones
         if user_data:
+            # Ensure all strings are properly encoded as ASCII-safe strings
+            vpn_token = str(raw_token).encode('ascii', errors='ignore').decode('ascii')
+            vpn_endpoint = f"{self.settings.FRONTEND_URL}/api/cloud-init/vpn-config"
+
             # Simply replace VPN placeholders in the already-rendered template
-            user_data = user_data.replace("{{vpn_config_token}}", raw_token)
-            user_data = user_data.replace("{{vpn_config_endpoint}}", f"{self.settings.FRONTEND_URL}/api/cloud-init/vpn-config")
+            user_data = user_data.replace("{{vpn_config_token}}", vpn_token)
+            user_data = user_data.replace("{{vpn_config_endpoint}}", vpn_endpoint)
             logger.info("Added VPN variables to cloud-init template for instance %s", name)
 
         return {
