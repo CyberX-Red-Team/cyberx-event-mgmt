@@ -371,16 +371,10 @@ async def participant_vpn_page(
 @router.get("/portal/ssh-key", response_class=HTMLResponse)
 async def participant_ssh_key_page(
     request: Request,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    event_service: EventService = Depends(get_event_service)
 ):
     """Render participant SSH key page."""
-    from app.api.utils.dependencies import get_event_service
-    from app.services.event_service import EventService
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from app.dependencies import get_db
-
-    db = request.state.db
-    event_service = EventService(db)
 
     # Get the active event
     active_event = await event_service.get_active_event()
