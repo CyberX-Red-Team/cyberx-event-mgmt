@@ -585,41 +585,42 @@ async function viewVPN(id) {
         };
 
         document.getElementById('vpnDetailsBody').innerHTML = `
-            <table class="table table-sm">
+            <table class="table table-sm table-borderless">
+                <tbody>
                 <tr>
-                    <th style="width: 140px;">ID</th>
+                    <th class="text-body-secondary" style="width: 140px;">ID</th>
                     <td>${vpn.id}</td>
                 </tr>
                 <tr>
-                    <th>IPv4 Address</th>
+                    <th class="text-body-secondary">IPv4 Address</th>
                     <td><code>${vpn.ipv4_address || 'N/A'}</code></td>
                 </tr>
                 <tr>
-                    <th>Interface IP</th>
+                    <th class="text-body-secondary">Interface IP</th>
                     <td><code class="small" style="word-break: break-all;">${vpn.interface_ip || 'N/A'}</code></td>
                 </tr>
                 <tr>
-                    <th>Endpoint</th>
+                    <th class="text-body-secondary">Endpoint</th>
                     <td><code>${vpn.endpoint || 'N/A'}</code></td>
                 </tr>
                 <tr>
-                    <th>Assignment Type</th>
+                    <th class="text-body-secondary">Assignment Type</th>
                     <td>${formatAssignmentType(vpn.assignment_type || 'USER_REQUESTABLE')}</td>
                 </tr>
                 <tr>
-                    <th>SHA256 Hash</th>
+                    <th class="text-body-secondary">SHA256 Hash</th>
                     <td>${vpn.file_hash ? `<code class="small text-muted" style="word-break: break-all; user-select: all;">${vpn.file_hash}</code>` : '<span class="text-muted">Not available</span>'}</td>
                 </tr>
                 <tr>
-                    <th>Request ID</th>
+                    <th class="text-body-secondary">Request ID</th>
                     <td>${vpn.request_batch_id ? `<code class="small text-muted" style="user-select: all;">${vpn.request_batch_id}</code>` : '<span class="text-muted">Not available</span>'}</td>
                 </tr>
                 <tr>
-                    <th>Status</th>
+                    <th class="text-body-secondary">Status</th>
                     <td>${vpn.is_available ? '<span class="badge bg-success">Available</span>' : '<span class="badge bg-warning">Assigned</span>'}</td>
                 </tr>
                 <tr>
-                    <th>Assigned To</th>
+                    <th class="text-body-secondary">Assigned To</th>
                     <td>
                         ${vpn.assigned_to_name
                             ? `${vpn.assigned_to_name}${vpn.assigned_to_email ? ` <span class="text-muted">(${vpn.assigned_to_email})</span>` : ''}`
@@ -633,13 +634,14 @@ async function viewVPN(id) {
                     </td>
                 </tr>
                 <tr>
-                    <th>Assigned At</th>
+                    <th class="text-body-secondary">Assigned At</th>
                     <td>${vpn.assigned_at ? formatDateTime(vpn.assigned_at) : '<span class="text-muted">N/A</span>'}</td>
                 </tr>
                 <tr>
-                    <th>Created At</th>
+                    <th class="text-body-secondary">Created At</th>
                     <td>${formatDateTime(vpn.created_at)}</td>
                 </tr>
+                </tbody>
             </table>
         `;
 
