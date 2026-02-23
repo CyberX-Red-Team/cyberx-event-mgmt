@@ -41,9 +41,9 @@ async def list_instances(
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     current_user: User = Depends(get_current_admin_user),
-    service: OpenStackService = Depends(get_openstack_service),
+    service: InstanceService = Depends(get_instance_service),
 ):
-    """List instances (paginated, filterable)."""
+    """List instances from all cloud providers (paginated, filterable)."""
     instances, total = await service.list_tracked_instances(
         page=page,
         page_size=page_size,

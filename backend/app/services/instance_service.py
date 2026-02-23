@@ -378,3 +378,51 @@ class InstanceService:
             vpn.assigned_to_instance_id = instance_id
             await self.session.commit()
             logger.info("Updated VPN %d with instance ID %d", vpn_id, instance_id)
+
+    async def list_tracked_instances(
+        self,
+        page: int = 1,
+        page_size: int = 50,
+        event_id: int | None = None,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> tuple[list[Instance], int]:
+        """List tracked instances with filtering and pagination (all providers)."""
+        from sqlalchemy.orm import selectinload
+
+        conditions = [Instance.deleted_at.is_(None)]
+
+        if event_id is not None:
+            conditions.append(Instance.event_id == event_id)
+        if status:
+            conditions.append(Instance.status == status)
+        if search:
+            conditions.append(
+                or_(
+                    Instance.name.ilike(f"%{search}%"),
+                    Instance.ip_address.ilike(f"%{search}%"),
+                    Instance.provider_instance_id.ilike(f"%{search}%"),
+                )
+            )
+
+        # Count
+        count_q = select(func.count(Instance.id)).where(*conditions)
+        total = (await self.session.execute(count_q)).scalar() or 0
+
+        # Fetch with relationships
+        offset = (page - 1) * page_size
+        q = (
+            select(Instance)
+            .options(
+                selectinload(Instance.event),
+                selectinload(Instance.created_by),
+            )
+            .where(*conditions)
+            .order_by(Instance.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        result = await self.session.execute(q)
+        instances = list(result.scalars().all())
+
+        return instances, total
