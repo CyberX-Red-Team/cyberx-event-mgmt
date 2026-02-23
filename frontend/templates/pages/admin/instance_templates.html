@@ -199,12 +199,6 @@
                             <option value="">None</option>
                         </select>
                     </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Max Instances</label>
-                        <input type="number" class="form-control" id="templateMaxInstances" value="0" min="0">
-                        <div class="form-text">0 = unlimited</div>
-                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -480,7 +474,7 @@ function renderTemplates(items) {
     }
 
     tbody.innerHTML = items.map(t => {
-        const usage = t.max_instances > 0 ? `${t.current_instance_count} / ${t.max_instances}` : t.current_instance_count;
+        const usage = t.current_instance_count || 0;
         const statusBadge = t.is_active ?
             '<span class="badge bg-success">Active</span>' :
             '<span class="badge bg-secondary">Inactive</span>';
@@ -590,7 +584,6 @@ async function editTemplate(templateId) {
         document.getElementById('templateDescription').value = template.description || '';
         document.getElementById('templateEvent').value = template.event_id;
         document.getElementById('templateProvider').value = template.provider;
-        document.getElementById('templateMaxInstances').value = template.max_instances;
         document.getElementById('templateCloudInit').value = template.cloud_init_template_id || '';
         document.getElementById('templateLicense').value = template.license_product_id || '';
 
@@ -626,8 +619,7 @@ async function saveTemplate() {
         cloud_init_template_id: document.getElementById('templateCloudInit').value ?
             parseInt(document.getElementById('templateCloudInit').value) : null,
         license_product_id: document.getElementById('templateLicense').value ?
-            parseInt(document.getElementById('templateLicense').value) : null,
-        max_instances: parseInt(document.getElementById('templateMaxInstances').value)
+            parseInt(document.getElementById('templateLicense').value) : null
     };
 
     if (provider === 'openstack') {
@@ -649,8 +641,7 @@ async function saveTemplate() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: data.name,
-                    description: data.description,
-                    max_instances: data.max_instances
+                    description: data.description
                 })
             });
         } else {
