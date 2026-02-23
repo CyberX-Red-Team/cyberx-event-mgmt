@@ -338,23 +338,13 @@ class InstanceService:
             vpn.ipv4_address
         )
 
-        # Add VPN variables to cloud-init template and re-render
-        if template_id and user_data:
-            cloud_init_svc = CloudInitService(self.session)
-            template = await cloud_init_svc.get_template(template_id)
-
-            if template:
-                # Re-parse original template with VPN variables
-                # This is a simplified approach - in production you'd want to
-                # preserve all variables from the first render
-                variables = {
-                    "hostname": name,
-                    "instance_name": name,
-                    "vpn_config_token": raw_token,
-                    "vpn_config_endpoint": f"{self.settings.FRONTEND_URL}/api/cloud-init/vpn-config",
-                }
-                user_data = cloud_init_svc.render_template(template.content, variables)
-                logger.info("Re-rendered cloud-init template with VPN variables for instance %s", name)
+        # Add VPN variables to already-rendered template by doing a second pass
+        # We already have user_data with all variables rendered, just add VPN ones
+        if user_data:
+            # Simply replace VPN placeholders in the already-rendered template
+            user_data = user_data.replace("{{vpn_config_token}}", raw_token)
+            user_data = user_data.replace("{{vpn_config_endpoint}}", f"{self.settings.FRONTEND_URL}/api/cloud-init/vpn-config")
+            logger.info("Added VPN variables to cloud-init template for instance %s", name)
 
         return {
             "token_hash": token_hash,
