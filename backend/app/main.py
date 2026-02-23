@@ -11,7 +11,8 @@ from app.config import get_settings
 from app.middleware.csrf import CSRFMiddleware
 from app.api.routes import auth, admin, vpn, email, webhooks, views, event, public, sponsor, user
 from app.api.routes import instances as instances_routes, cloud_init as cloud_init_routes, license as license_routes, cloud_init_vpn
-from app.api.routes import instance_templates, participant_instances, settings
+from app.api.routes import instance_templates, participant_instances
+from app.api.routes import settings as settings_routes
 from app.tasks import start_scheduler, stop_scheduler, list_jobs
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
@@ -222,7 +223,7 @@ app.include_router(cloud_init_vpn.router)  # Cloud-init VPN config endpoint
 app.include_router(license_routes.router)
 app.include_router(instance_templates.router)  # Admin instance templates management
 app.include_router(participant_instances.router)  # Participant self-service provisioning
-app.include_router(settings.router)  # Admin system settings
+app.include_router(settings_routes.router)  # Admin system settings
 
 # Include view routes (HTML pages)
 app.include_router(views.router)
