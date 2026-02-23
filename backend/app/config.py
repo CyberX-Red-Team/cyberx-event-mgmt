@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     OS_DEFAULT_NETWORK_ID: str = ""
     OS_DEFAULT_KEY_NAME: str = ""
 
+    # DigitalOcean Integration (optional - only needed for DO provisioning)
+    DO_API_TOKEN: str = ""
+    DO_DEFAULT_REGION: str = "nyc1"
+    DO_DEFAULT_SIZE: str = "s-1vcpu-1gb"
+    DO_DEFAULT_IMAGE: str = "ubuntu-22-04-x64"
+    DO_SSH_KEY_ID: str = ""  # Optional: DigitalOcean SSH key ID or fingerprint
+
     # Download Link Generation - Cloudflare R2 (optional)
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""

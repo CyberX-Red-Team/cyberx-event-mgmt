@@ -8,6 +8,8 @@ from app.services.event_service import EventService
 from app.services.email_service import EmailService
 from app.services.vpn_service import VPNService
 from app.services.openstack_service import OpenStackService
+from app.services.digitalocean_service import DigitalOceanService
+from app.services.instance_service import InstanceService
 from app.services.cloud_init_service import CloudInitService
 from app.services.license_service import LicenseService
 
@@ -91,3 +93,17 @@ async def get_license_service(
 ) -> LicenseService:
     """Get LicenseService instance."""
     return LicenseService(db)
+
+
+async def get_digitalocean_service(
+    db: AsyncSession = Depends(get_db)
+) -> DigitalOceanService:
+    """Get DigitalOceanService instance."""
+    return DigitalOceanService(db)
+
+
+async def get_instance_service(
+    db: AsyncSession = Depends(get_db)
+) -> InstanceService:
+    """Get InstanceService instance (provider-agnostic)."""
+    return InstanceService(db)

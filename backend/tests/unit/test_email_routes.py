@@ -287,7 +287,7 @@ class TestSendVPNConfigEmailRoute:
 
         mock_vpn_service = mocker.Mock()
         mock_vpn_service.get_user_credential = mocker.AsyncMock(return_value=mock_vpn)
-        mock_vpn_service.generate_wireguard_config = mocker.Mock(return_value="[Interface]\n...")
+        mock_vpn_service.generate_wireguard_config = mocker.AsyncMock(return_value="[Interface]\n...")
         mock_vpn_service.get_config_filename = mocker.Mock(return_value="test_user.conf")
 
         mock_email_service = mocker.Mock()

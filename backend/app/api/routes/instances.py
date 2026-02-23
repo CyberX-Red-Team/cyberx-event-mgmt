@@ -7,9 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, get_current_admin_user
 from app.api.exceptions import not_found, bad_request, server_error
-from app.api.utils.dependencies import get_openstack_service
+from app.api.utils.dependencies import (
+    get_openstack_service,
+    get_digitalocean_service,
+    get_instance_service,
+)
 from app.models.user import User
 from app.services.openstack_service import OpenStackService
+from app.services.digitalocean_service import DigitalOceanService
+from app.services.instance_service import InstanceService
 from app.schemas.instance import (
     InstanceCreate,
     InstanceBulkCreate,
@@ -73,15 +79,20 @@ async def list_instances(
 async def create_instance(
     data: InstanceCreate,
     current_user: User = Depends(get_current_admin_user),
-    service: OpenStackService = Depends(get_openstack_service),
+    service: InstanceService = Depends(get_instance_service),
 ):
-    """Create a single instance."""
+    """Create a single instance on any cloud provider."""
     try:
+        # Normalize size parameter (support both flavor_id and size_slug)
+        size = data.size_slug or data.flavor_id
+
         instance = await service.create_and_track_instance(
             name=data.name,
-            flavor_id=data.flavor_id,
-            image_id=data.image_id,
-            network_id=data.network_id,
+            provider=data.provider,
+            size=size,
+            image=data.image_id,
+            region=data.region,  # DigitalOcean only
+            network=data.network_id,  # OpenStack only
             key_name=data.key_name,
             template_id=data.cloud_init_template_id,
             license_product_id=data.license_product_id,
@@ -177,6 +188,48 @@ async def list_networks(
         logger.error("Failed to list networks: %s", e)
         raise server_error("Failed to fetch networks from OpenStack")
     return {"networks": networks}
+
+
+@router.get("/resources/digitalocean/sizes")
+async def list_do_sizes(
+    current_user: User = Depends(get_current_admin_user),
+    service: DigitalOceanService = Depends(get_digitalocean_service),
+):
+    """List available DigitalOcean sizes."""
+    try:
+        sizes = await service.list_sizes()
+    except Exception as e:
+        logger.error("Failed to list DO sizes: %s", e)
+        raise server_error("Failed to fetch sizes from DigitalOcean")
+    return {"sizes": sizes}
+
+
+@router.get("/resources/digitalocean/images")
+async def list_do_images(
+    current_user: User = Depends(get_current_admin_user),
+    service: DigitalOceanService = Depends(get_digitalocean_service),
+):
+    """List available DigitalOcean images."""
+    try:
+        images = await service.list_images()
+    except Exception as e:
+        logger.error("Failed to list DO images: %s", e)
+        raise server_error("Failed to fetch images from DigitalOcean")
+    return {"images": images}
+
+
+@router.get("/resources/digitalocean/regions")
+async def list_do_regions(
+    current_user: User = Depends(get_current_admin_user),
+    service: DigitalOceanService = Depends(get_digitalocean_service),
+):
+    """List available DigitalOcean regions."""
+    try:
+        regions = await service.list_regions_or_networks()
+    except Exception as e:
+        logger.error("Failed to list DO regions: %s", e)
+        raise server_error("Failed to fetch regions from DigitalOcean")
+    return {"regions": regions}
 
 
 @router.get("/{instance_id}", response_model=InstanceResponse)

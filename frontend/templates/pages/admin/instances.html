@@ -181,20 +181,47 @@
                     <label class="form-label">Name <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="createName" required>
                 </div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Flavor</label>
-                        <select class="form-select" id="createFlavor"><option value="">Default</option></select>
+                <div class="mb-3">
+                    <label class="form-label">Cloud Provider <span class="text-danger">*</span></label>
+                    <select class="form-select" id="createProvider" onchange="handleProviderChange('create')">
+                        <option value="openstack">OpenStack</option>
+                        <option value="digitalocean">DigitalOcean</option>
+                    </select>
+                </div>
+
+                <!-- OpenStack-specific fields -->
+                <div id="createOpenstackFields">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Flavor</label>
+                            <select class="form-select" id="createFlavor"><option value="">Default</option></select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Network</label>
+                            <select class="form-select" id="createNetwork"><option value="">Default</option></select>
+                        </div>
                     </div>
+                </div>
+
+                <!-- DigitalOcean-specific fields -->
+                <div id="createDigitaloceanFields" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Size</label>
+                            <select class="form-select" id="createDoSize"><option value="">Default</option></select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Region</label>
+                            <select class="form-select" id="createDoRegion"><option value="">Default</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Common fields -->
+                <div class="row">
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Image</label>
                         <select class="form-select" id="createImage"><option value="">Default</option></select>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Network</label>
-                        <select class="form-select" id="createNetwork"><option value="">Default</option></select>
                     </div>
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Cloud-Init Template</label>
@@ -256,20 +283,47 @@
                         <input type="number" class="form-control" id="bulkCount" value="5" min="1" max="50">
                     </div>
                 </div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Flavor</label>
-                        <select class="form-select" id="bulkFlavor"><option value="">Default</option></select>
+                <div class="mb-3">
+                    <label class="form-label">Cloud Provider <span class="text-danger">*</span></label>
+                    <select class="form-select" id="bulkProvider" onchange="handleProviderChange('bulk')">
+                        <option value="openstack">OpenStack</option>
+                        <option value="digitalocean">DigitalOcean</option>
+                    </select>
+                </div>
+
+                <!-- OpenStack-specific fields -->
+                <div id="bulkOpenstackFields">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Flavor</label>
+                            <select class="form-select" id="bulkFlavor"><option value="">Default</option></select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Network</label>
+                            <select class="form-select" id="bulkNetwork"><option value="">Default</option></select>
+                        </div>
                     </div>
+                </div>
+
+                <!-- DigitalOcean-specific fields -->
+                <div id="bulkDigitaloceanFields" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Size</label>
+                            <select class="form-select" id="bulkDoSize"><option value="">Default</option></select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Region</label>
+                            <select class="form-select" id="bulkDoRegion"><option value="">Default</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Common fields -->
+                <div class="row">
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Image</label>
                         <select class="form-select" id="bulkImage"><option value="">Default</option></select>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Network</label>
-                        <select class="form-select" id="bulkNetwork"><option value="">Default</option></select>
                     </div>
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Cloud-Init Template</label>
@@ -482,40 +536,86 @@ function updateSelectionCount() {
 
 // ── Create ──
 let resourcesLoaded = false;
-async function loadResources() {
-    if (resourcesLoaded) return;
-    try {
-        const [flavors, images, networks, templates, products, events] = await Promise.all([
-            csrfFetch('/api/instances/resources/flavors').then(r => r.json()),
-            csrfFetch('/api/instances/resources/images').then(r => r.json()),
-            csrfFetch('/api/instances/resources/networks').then(r => r.json()),
-            csrfFetch('/api/cloud-init/templates?page_size=100').then(r => r.json()),
-            csrfFetch('/api/license/products?page_size=100').then(r => r.json()),
-            csrfFetch('/api/admin/events').then(r => r.json()),
-        ]);
+let resourcesLoaded = {openstack: false, digitalocean: false};
 
-        const populateSelect = (ids, items, labelFn) => {
-            ids.forEach(id => {
-                const el = document.getElementById(id);
-                items.forEach(item => {
-                    const opt = document.createElement('option');
-                    opt.value = item.id;
-                    opt.textContent = labelFn(item);
-                    el.appendChild(opt);
-                });
+async function loadResources(provider = 'openstack') {
+    if (resourcesLoaded[provider]) return;
+
+    const populateSelect = (ids, items, labelFn, valueFn = item => item.id) => {
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            // Clear existing options except the default one
+            while (el.options.length > 1) el.remove(1);
+            items.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = valueFn(item);
+                opt.textContent = labelFn(item);
+                el.appendChild(opt);
             });
-        };
+        });
+    };
 
-        populateSelect(['createFlavor', 'bulkFlavor'], flavors.flavors || [], f => `${f.name} (${f.vcpus}vCPU, ${f.ram}MB)`);
-        populateSelect(['createImage', 'bulkImage'], images.images || [], i => i.name);
-        populateSelect(['createNetwork', 'bulkNetwork'], networks.networks || [], n => n.name);
-        populateSelect(['createTemplate', 'bulkTemplate'], templates.items || [], t => t.name);
-        populateSelect(['createLicenseProduct', 'bulkLicenseProduct'], products.items || [], p => p.name);
-        populateSelect(['createEvent', 'bulkEvent'], events.events || [], e => `${e.year} - ${e.name}${e.is_active ? ' ⭐' : ''}`);
+    try {
+        if (provider === 'openstack') {
+            const [flavors, images, networks, templates, products, events] = await Promise.all([
+                csrfFetch('/api/instances/resources/flavors').then(r => r.json()),
+                csrfFetch('/api/instances/resources/images').then(r => r.json()),
+                csrfFetch('/api/instances/resources/networks').then(r => r.json()),
+                csrfFetch('/api/cloud-init/templates?page_size=100').then(r => r.json()),
+                csrfFetch('/api/license/products?page_size=100').then(r => r.json()),
+                csrfFetch('/api/admin/events').then(r => r.json()),
+            ]);
 
-        resourcesLoaded = true;
+            populateSelect(['createFlavor', 'bulkFlavor'], flavors.flavors || [], f => `${f.name} (${f.vcpus}vCPU, ${f.ram}MB)`);
+            populateSelect(['createImage', 'bulkImage'], images.images || [], i => i.name);
+            populateSelect(['createNetwork', 'bulkNetwork'], networks.networks || [], n => n.name);
+            populateSelect(['createTemplate', 'bulkTemplate'], templates.items || [], t => t.name);
+            populateSelect(['createLicenseProduct', 'bulkLicenseProduct'], products.items || [], p => p.name);
+            populateSelect(['createEvent', 'bulkEvent'], events.events || [], e => `${e.year} - ${e.name}${e.is_active ? ' ⭐' : ''}`);
+        } else if (provider === 'digitalocean') {
+            const [sizes, images, regions, templates, products, events] = await Promise.all([
+                csrfFetch('/api/instances/resources/digitalocean/sizes').then(r => r.json()),
+                csrfFetch('/api/instances/resources/digitalocean/images').then(r => r.json()),
+                csrfFetch('/api/instances/resources/digitalocean/regions').then(r => r.json()),
+                csrfFetch('/api/cloud-init/templates?page_size=100').then(r => r.json()),
+                csrfFetch('/api/license/products?page_size=100').then(r => r.json()),
+                csrfFetch('/api/admin/events').then(r => r.json()),
+            ]);
+
+            populateSelect(['createDoSize', 'bulkDoSize'], sizes.sizes || [],
+                s => `${s.slug} (${s.vcpus}vCPU, ${s.memory}MB, $${s.price_monthly}/mo)`,
+                s => s.slug);
+            populateSelect(['createDoImage', 'bulkDoImage'], images.images || [],
+                i => `${i.distribution} ${i.name}`,
+                i => i.slug || i.id);
+            populateSelect(['createDoRegion', 'bulkDoRegion'], regions.regions || [],
+                r => `${r.name} (${r.slug})`,
+                r => r.slug);
+            populateSelect(['createTemplate', 'bulkTemplate'], templates.items || [], t => t.name);
+            populateSelect(['createLicenseProduct', 'bulkLicenseProduct'], products.items || [], p => p.name);
+            populateSelect(['createEvent', 'bulkEvent'], events.events || [], e => `${e.year} - ${e.name}${e.is_active ? ' ⭐' : ''}`);
+        }
+
+        resourcesLoaded[provider] = true;
     } catch (e) {
-        console.error('Failed to load resources:', e);
+        console.error(`Failed to load ${provider} resources:`, e);
+    }
+}
+
+function handleProviderChange(modalType) {
+    const provider = document.getElementById(`${modalType}Provider`).value;
+    const osFields = document.getElementById(`${modalType}OpenstackFields`);
+    const doFields = document.getElementById(`${modalType}DigitaloceanFields`);
+
+    if (provider === 'openstack') {
+        osFields.style.display = 'block';
+        doFields.style.display = 'none';
+        loadResources('openstack');
+    } else if (provider === 'digitalocean') {
+        osFields.style.display = 'none';
+        doFields.style.display = 'block';
+        loadResources('digitalocean');
     }
 }
 
@@ -539,18 +639,30 @@ async function createInstance() {
     const name = document.getElementById('createName').value.trim();
     if (!name) { alert('Name is required'); return; }
 
-    const body = { name };
-    const flavor = document.getElementById('createFlavor').value;
+    const provider = document.getElementById('createProvider').value;
+    const body = { name, provider };
+
+    // Provider-specific fields
+    if (provider === 'openstack') {
+        const flavor = document.getElementById('createFlavor').value;
+        const network = document.getElementById('createNetwork').value;
+        if (flavor) body.flavor_id = flavor;
+        if (network) body.network_id = network;
+    } else if (provider === 'digitalocean') {
+        const size = document.getElementById('createDoSize').value;
+        const region = document.getElementById('createDoRegion').value;
+        if (size) body.size_slug = size;
+        if (region) body.region = region;
+    }
+
+    // Common fields
     const image = document.getElementById('createImage').value;
-    const network = document.getElementById('createNetwork').value;
     const template = document.getElementById('createTemplate').value;
     const event = document.getElementById('createEvent').value;
     const licenseProduct = document.getElementById('createLicenseProduct').value;
     const keyName = document.getElementById('createKeyName').value.trim();
     const sshKey = document.getElementById('createSshKey').value.trim();
-    if (flavor) body.flavor_id = flavor;
     if (image) body.image_id = image;
-    if (network) body.network_id = network;
     if (template) body.cloud_init_template_id = parseInt(template);
     if (event) body.event_id = parseInt(event);
     if (licenseProduct) body.license_product_id = parseInt(licenseProduct);
@@ -576,17 +688,29 @@ async function bulkCreate() {
     const count = parseInt(document.getElementById('bulkCount').value);
     if (!prefix) { alert('Name prefix is required'); return; }
 
-    const body = { name_prefix: prefix, count };
-    const flavor = document.getElementById('bulkFlavor').value;
+    const provider = document.getElementById('bulkProvider').value;
+    const body = { name_prefix: prefix, count, provider };
+
+    // Provider-specific fields
+    if (provider === 'openstack') {
+        const flavor = document.getElementById('bulkFlavor').value;
+        const network = document.getElementById('bulkNetwork').value;
+        if (flavor) body.flavor_id = flavor;
+        if (network) body.network_id = network;
+    } else if (provider === 'digitalocean') {
+        const size = document.getElementById('bulkDoSize').value;
+        const region = document.getElementById('bulkDoRegion').value;
+        if (size) body.size_slug = size;
+        if (region) body.region = region;
+    }
+
+    // Common fields
     const image = document.getElementById('bulkImage').value;
-    const network = document.getElementById('bulkNetwork').value;
     const template = document.getElementById('bulkTemplate').value;
     const event = document.getElementById('bulkEvent').value;
     const licenseProduct = document.getElementById('bulkLicenseProduct').value;
     const sshKey = document.getElementById('bulkSshKey').value.trim();
-    if (flavor) body.flavor_id = flavor;
     if (image) body.image_id = image;
-    if (network) body.network_id = network;
     if (template) body.cloud_init_template_id = parseInt(template);
     if (event) body.event_id = parseInt(event);
     if (licenseProduct) body.license_product_id = parseInt(licenseProduct);

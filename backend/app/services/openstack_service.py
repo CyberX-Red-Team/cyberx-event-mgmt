@@ -298,6 +298,64 @@ class OpenStackService:
 
         return resp.json().get("networks", [])
 
+    # ── CloudProviderInterface Protocol Methods ─────────────────
+
+    async def create_instance(
+        self,
+        name: str,
+        size: str,
+        image: str,
+        region: str | None = None,
+        network: str | None = None,
+        key_name: str | None = None,
+        user_data: str | None = None,
+    ) -> Optional[dict]:
+        """Protocol wrapper for create_instance_on_openstack.
+
+        Maps generic parameters to OpenStack-specific parameters.
+        """
+        return await self.create_instance_on_openstack(
+            name=name,
+            flavor_id=size,  # 'size' maps to 'flavor_id'
+            image_id=image,
+            network_id=network,
+            key_name=key_name,
+            user_data=user_data,
+        )
+
+    async def delete_instance(self, instance_id: str) -> bool:
+        """Protocol wrapper for delete_instance_on_openstack."""
+        return await self.delete_instance_on_openstack(instance_id)
+
+    async def get_instance_status(self, instance_id: str) -> Optional[dict]:
+        """Protocol wrapper for get_instance_status_from_openstack."""
+        return await self.get_instance_status_from_openstack(instance_id)
+
+    async def list_sizes(self) -> list[dict]:
+        """Protocol wrapper for list_flavors."""
+        return await self.list_flavors()
+
+    async def list_regions_or_networks(self) -> list[dict]:
+        """Protocol wrapper for list_networks."""
+        return await self.list_networks()
+
+    def normalize_status(self, provider_status: str) -> str:
+        """Normalize OpenStack status (already matches standard).
+
+        OpenStack uses: BUILDING, ACTIVE, ERROR, SHUTOFF, DELETED
+        These already match our standard status codes.
+        """
+        return provider_status.upper()
+
+    def extract_ip_address(self, server_data: dict) -> str | None:
+        """Extract IP address from OpenStack server data."""
+        addresses = server_data.get("addresses", {})
+        for net_addrs in addresses.values():
+            for addr in net_addrs:
+                if addr.get("version") == 4:
+                    return addr["addr"]
+        return None
+
     # ── DB-backed Instance CRUD ─────────────────────────────────
 
     async def create_and_track_instance(
