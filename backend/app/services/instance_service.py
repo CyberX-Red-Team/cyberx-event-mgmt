@@ -492,6 +492,7 @@ class InstanceService:
             .options(
                 selectinload(Instance.event),
                 selectinload(Instance.created_by),
+                selectinload(Instance.instance_template),
             )
             .where(*conditions)
             .order_by(Instance.created_at.desc())

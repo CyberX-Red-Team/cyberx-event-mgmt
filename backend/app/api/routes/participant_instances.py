@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
+from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_db, get_current_active_user
 from app.api.exceptions import not_found, bad_request, forbidden, server_error
@@ -163,6 +164,11 @@ async def list_my_instances(
     # Get shared/public instances from others
     result = await service.session.execute(
         select(Instance)
+        .options(
+            selectinload(Instance.event),
+            selectinload(Instance.created_by),
+            selectinload(Instance.instance_template)
+        )
         .where(
             and_(
                 Instance.deleted_at.is_(None),
