@@ -5,12 +5,16 @@ from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from sqlalchemy import select
+
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
-from app.dependencies import get_optional_user, get_current_active_user, get_current_admin_user, get_current_sponsor_user
+from app.dependencies import get_optional_user, get_current_active_user, get_current_admin_user, get_current_sponsor_user, get_db
 from app.api.utils.dependencies import get_event_service
 from app.models.user import User
+from app.models.event import EventParticipation
 from app.services.event_service import EventService
 from app.config import get_version
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 router = APIRouter(tags=["Views"])
@@ -374,7 +378,8 @@ async def participant_vpn_page(
 async def participant_ssh_key_page(
     request: Request,
     current_user: User = Depends(get_current_active_user),
-    event_service: EventService = Depends(get_event_service)
+    event_service: EventService = Depends(get_event_service),
+    db: AsyncSession = Depends(get_db)
 ):
     """Render participant SSH key page."""
 
@@ -384,9 +389,14 @@ async def participant_ssh_key_page(
         raise HTTPException(status_code=404, detail="No active event found")
 
     # Check if user is a confirmed participant
-    participation = await event_service.get_participation_by_user_and_event(
-        current_user.id, active_event.id
+    result = await db.execute(
+        select(EventParticipation).where(
+            EventParticipation.user_id == current_user.id,
+            EventParticipation.event_id == active_event.id
+        )
     )
+    participation = result.scalar_one_or_none()
+
     if not participation or participation.status != "confirmed":
         raise forbidden("You must be a confirmed participant to access the SSH key")
 

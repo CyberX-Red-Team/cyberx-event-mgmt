@@ -526,7 +526,8 @@ async def generate_event_ssh_keys(
 async def get_event_ssh_private_key(
     event_id: int,
     current_user: User = Depends(get_current_active_user),
-    service: EventService = Depends(get_event_service)
+    service: EventService = Depends(get_event_service),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get the SSH private key for an event (accessible by confirmed participants).
@@ -540,9 +541,17 @@ async def get_event_ssh_private_key(
 
     # Check if user is a confirmed participant for this event (or is admin)
     if current_user.role != "admin" and current_user.role != "sponsor":
-        participation = await service.get_participation_by_user_and_event(
-            current_user.id, event_id
+        from sqlalchemy import select
+        from app.models.event import EventParticipation
+
+        result = await db.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == current_user.id,
+                EventParticipation.event_id == event_id
+            )
         )
+        participation = result.scalar_one_or_none()
+
         if not participation or participation.status != "confirmed":
             raise forbidden("You must be a confirmed participant to access this event's SSH key")
 
