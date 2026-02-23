@@ -490,7 +490,15 @@ function renderInstances(items) {
     tbody.innerHTML = items.map(i => `
         <tr>
             <td><input type="checkbox" class="form-check-input inst-cb" value="${i.id}" onchange="updateSelectionCount()"></td>
-            <td>${providerIcon(i.provider)}<strong>${i.name}</strong><br><small class="text-muted">${i.provider_instance_id || '-'}</small></td>
+            <td>
+                <div class="d-flex align-items-center">
+                    ${providerIcon(i.provider)}
+                    <div>
+                        <strong>${i.name}</strong><br>
+                        <small class="text-muted">${i.provider_instance_id || '-'}</small>
+                    </div>
+                </div>
+            </td>
             <td>${statusBadge(i.status)}</td>
             <td><code>${i.ip_address || '-'}</code></td>
             <td>${i.vpn_ip ? `<code class="text-success">${i.vpn_ip}</code>` : '<span class="text-muted">-</span>'}</td>
