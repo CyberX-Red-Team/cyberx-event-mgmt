@@ -33,7 +33,7 @@ class InstanceSyncScheduler:
 
         # Create async engine for background tasks
         engine = create_async_engine(
-            settings.DATABASE_URL,
+            settings.async_database_url,
             echo=False,
             pool_pre_ping=True,
         )
