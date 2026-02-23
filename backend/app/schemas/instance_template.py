@@ -23,14 +23,12 @@ class InstanceTemplateCreate(BaseModel):
     cloud_init_template_id: Optional[int] = None
     license_product_id: Optional[int] = None
     event_id: int
-    max_instances: int = Field(default=0, ge=0)
 
 
 class InstanceTemplateUpdate(BaseModel):
     """Schema for updating instance templates."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
-    max_instances: Optional[int] = Field(None, ge=0)
     is_active: Optional[bool] = None
 
 
@@ -51,8 +49,6 @@ class InstanceTemplateResponse(BaseModel):
     license_product_name: Optional[str] = None  # Computed
     event_id: int
     event_name: Optional[str] = None  # Computed
-    max_instances: int
-    current_instance_count: int = 0  # Computed
     created_by_user_id: Optional[int]
     created_by_username: Optional[str] = None  # Computed
     is_active: bool

@@ -94,7 +94,6 @@ async def create_template(
             cloud_init_template_id=data.cloud_init_template_id,
             license_product_id=data.license_product_id,
             event_id=data.event_id,
-            max_instances=data.max_instances,
             created_by_user_id=current_user.id,
         )
     except ValueError as e:

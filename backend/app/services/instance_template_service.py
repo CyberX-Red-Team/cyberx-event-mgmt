@@ -30,7 +30,6 @@ class InstanceTemplateService:
         provider_region: Optional[str] = None,
         cloud_init_template_id: Optional[int] = None,
         license_product_id: Optional[int] = None,
-        max_instances: int = 0,
         description: Optional[str] = None,
         created_by_user_id: Optional[int] = None,
     ) -> InstanceTemplate:
@@ -47,7 +46,6 @@ class InstanceTemplateService:
             provider_region: DigitalOcean region (optional)
             cloud_init_template_id: Cloud-init template to use (optional)
             license_product_id: License product to assign (optional)
-            max_instances: Maximum instances allowed (0 = unlimited)
             description: Template description (optional)
             created_by_user_id: User creating the template (optional)
 
@@ -81,7 +79,6 @@ class InstanceTemplateService:
             cloud_init_template_id=cloud_init_template_id,
             license_product_id=license_product_id,
             event_id=event_id,
-            max_instances=max_instances,
             created_by_user_id=created_by_user_id,
         )
 
@@ -244,6 +241,51 @@ class InstanceTemplateService:
         )
         return result.scalar() or 0
 
+    async def get_provider_instance_count(self, provider: str) -> int:
+        """Get count of instances for a specific provider.
+
+        Args:
+            provider: Cloud provider name (openstack, digitalocean, etc.)
+
+        Returns:
+            Count of active instances for the provider (excludes soft-deleted)
+        """
+        result = await self.session.execute(
+            select(func.count(Instance.id))
+            .where(
+                Instance.provider == provider,
+                Instance.deleted_at.is_(None)
+            )
+        )
+        return result.scalar() or 0
+
+    async def get_provider_max_instances(self, provider: str) -> int:
+        """Get maximum instances allowed for a provider.
+
+        Args:
+            provider: Cloud provider name (openstack, digitalocean, etc.)
+
+        Returns:
+            Maximum instances (0 = unlimited)
+        """
+        from app.models.app_setting import AppSetting
+
+        setting_key = f"provider_max_instances_{provider}"
+        result = await self.session.execute(
+            select(AppSetting).where(AppSetting.key == setting_key)
+        )
+        setting = result.scalar_one_or_none()
+
+        if setting and setting.value:
+            try:
+                return int(setting.value)
+            except ValueError:
+                logger.warning("Invalid value for %s: %s", setting_key, setting.value)
+                return 0
+
+        # Default to unlimited if not set
+        return 0
+
     async def check_can_provision(
         self,
         template_id: int
@@ -272,10 +314,11 @@ class InstanceTemplateService:
         if template.event.is_archived:
             return False, "Event is archived"
 
-        # Check max_instances limit (0 = unlimited)
-        if template.max_instances > 0:
-            current_count = await self.get_instance_count(template_id)
-            if current_count >= template.max_instances:
-                return False, f"Maximum instances ({template.max_instances}) reached for this template"
+        # Check provider-level instance limit
+        provider_max = await self.get_provider_max_instances(template.provider)
+        if provider_max > 0:
+            current_count = await self.get_provider_instance_count(template.provider)
+            if current_count >= provider_max:
+                return False, f"Maximum instances ({provider_max}) reached for {template.provider} provider"
 
         return True, ""
