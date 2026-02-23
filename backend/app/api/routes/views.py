@@ -7,7 +7,9 @@ from fastapi.templating import Jinja2Templates
 
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 from app.dependencies import get_optional_user, get_current_active_user, get_current_admin_user, get_current_sponsor_user
+from app.api.utils.dependencies import get_event_service
 from app.models.user import User
+from app.services.event_service import EventService
 from app.config import get_version
 
 
