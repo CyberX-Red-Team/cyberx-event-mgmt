@@ -468,6 +468,7 @@ let currentEvent = null;  // Store current event data globally
 
 // Current user info from server
 const currentUser = {
+    id: {{ current_user.id }},
     role: '{{ current_user.role }}',
     isSponsor: {{ 'true' if current_user.role == 'sponsor' or current_user.is_sponsor else 'false' }}
 };
