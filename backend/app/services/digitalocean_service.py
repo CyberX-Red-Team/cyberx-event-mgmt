@@ -91,10 +91,24 @@ class DigitalOceanService:
             "monitoring": True,
         }
 
-        # Add SSH keys (if provided)
-        if key_name:
-            # Assume key_name is either an SSH key ID or fingerprint
-            droplet_data["ssh_keys"] = [key_name]
+        # Add SSH keys (required to prevent password authentication)
+        # Use provided key_name or fall back to default DO_SSH_KEY_ID
+        ssh_key = key_name or self.settings.DO_SSH_KEY_ID
+        if ssh_key:
+            # Assume key is either an SSH key ID or fingerprint
+            droplet_data["ssh_keys"] = [ssh_key]
+            logger.info(
+                "Using SSH key for droplet %s: %s (from %s)",
+                name,
+                ssh_key,
+                "key_name parameter" if key_name else "DO_SSH_KEY_ID setting"
+            )
+        else:
+            logger.warning(
+                "No SSH key configured for DigitalOcean - "
+                "droplet will have password authentication enabled. "
+                "Set DO_SSH_KEY_ID in .env or provide key_name parameter."
+            )
 
         # Add user_data (cloud-init)
         if user_data:
