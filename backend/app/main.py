@@ -243,6 +243,28 @@ async def get_scheduled_jobs():
     return {"jobs": list_jobs()}
 
 
+# Instance sync scheduler status endpoint (admin only)
+@app.get("/api/admin/scheduler/instance-sync-status")
+async def get_instance_sync_status():
+    """Get instance sync scheduler status and statistics."""
+    from app.services.instance_sync_scheduler import get_scheduler as get_instance_scheduler
+    instance_scheduler = get_instance_scheduler()
+
+    return {
+        "scheduler_initialized": instance_scheduler.scheduler is not None,
+        "scheduler_running": instance_scheduler.scheduler.running if instance_scheduler.scheduler else False,
+        "stats": instance_scheduler.get_stats(),
+        "jobs": [
+            {
+                "id": job.id,
+                "name": job.name,
+                "next_run": str(job.next_run_time) if job.next_run_time else None
+            }
+            for job in (instance_scheduler.scheduler.get_jobs() if instance_scheduler.scheduler else [])
+        ]
+    }
+
+
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

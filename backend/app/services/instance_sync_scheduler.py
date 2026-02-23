@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 from app.models.instance import Instance
 from app.services.instance_service import InstanceService
-from app.config import settings
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,8 @@ class InstanceSyncScheduler:
 
     def initialize(self):
         """Initialize the scheduler with database connection."""
+        settings = get_settings()
+
         # Create async engine for background tasks
         engine = create_async_engine(
             settings.DATABASE_URL,
