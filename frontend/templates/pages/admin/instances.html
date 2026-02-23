@@ -474,14 +474,9 @@ function statusBadge(status) {
 
 function providerIcon(provider) {
     if (provider === 'digitalocean') {
-        return `<svg width="20" height="20" viewBox="0 0 100 100" style="vertical-align: middle; margin-right: 6px;" title="DigitalOcean">
-            <path fill="#0080FF" d="M50 100v-19.2h19.2c0 10.6-8.6 19.2-19.2 19.2zm0-19.2V61.6H30.8c0 10.6 8.6 19.2 19.2 19.2zM30.8 61.6H11.6c0-21.2 17.2-38.4 38.4-38.4v19.2c-10.6 0-19.2 8.6-19.2 19.2zM50 42.4V23.2c10.6 0 19.2 8.6 19.2 19.2H50z"/>
-        </svg>`;
+        return `<i class="fab fa-digital-ocean me-2" style="color: #0080FF;" title="DigitalOcean"></i>`;
     } else if (provider === 'openstack') {
-        return `<svg width="20" height="20" viewBox="0 0 100 100" style="vertical-align: middle; margin-right: 6px;" title="OpenStack">
-            <path fill="#DA1A32" d="M10 30h20v40H10z M70 30h20v40H70z M30 10h40v20H30z M30 70h40v20H30z"/>
-            <path fill="#DA1A32" opacity="0.6" d="M30 30h40v40H30z"/>
-        </svg>`;
+        return `<i class="fab fa-openstack me-2" style="color: #DA1A32;" title="OpenStack"></i>`;
     }
     return '';
 }
