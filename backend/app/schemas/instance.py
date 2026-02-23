@@ -86,6 +86,7 @@ class InstanceResponse(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+    last_synced_at: Optional[datetime] = None  # Last successful status sync from provider
 
     model_config = {"from_attributes": True}
 

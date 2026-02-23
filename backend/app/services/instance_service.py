@@ -540,6 +540,9 @@ class InstanceService:
                 if ip_address:
                     instance.ip_address = ip_address
 
+                # Mark sync timestamp
+                instance.last_synced_at = func.now()
+
                 await self.session.commit()
                 await self.session.refresh(instance)
 

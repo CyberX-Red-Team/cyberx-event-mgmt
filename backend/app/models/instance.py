@@ -59,6 +59,7 @@ class Instance(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(TIMESTAMP(timezone=True), nullable=True)  # Soft delete
+    last_synced_at = Column(TIMESTAMP(timezone=True), nullable=True)  # Last successful status sync
 
     # Relationships
     event = relationship("Event", backref="instances")

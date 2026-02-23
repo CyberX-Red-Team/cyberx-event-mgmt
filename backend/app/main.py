@@ -122,6 +122,19 @@ async def lifespan(app: FastAPI):
         logger.error("  Background scheduler: Failed to start - %s", e)
         # Don't fail startup if scheduler fails
 
+    # Start the instance sync scheduler
+    # Runs scheduled jobs for syncing instance status from cloud providers
+    logger.info("  Instance sync scheduler: Starting...")
+    try:
+        from app.services.instance_sync_scheduler import get_scheduler
+        instance_scheduler = get_scheduler()
+        instance_scheduler.initialize()
+        instance_scheduler.start()
+        logger.info("  Instance sync scheduler: Started successfully")
+    except Exception as e:
+        logger.error("  Instance sync scheduler: Failed to start - %s", e)
+        # Don't fail startup if scheduler fails
+
     yield  # Application runs
 
     # Shutdown
@@ -131,6 +144,15 @@ async def lifespan(app: FastAPI):
         logger.info("  Background scheduler: Stopped")
     except Exception as e:
         logger.error("  Background scheduler: Error during shutdown - %s", e)
+
+    # Shutdown instance sync scheduler
+    try:
+        from app.services.instance_sync_scheduler import get_scheduler
+        instance_scheduler = get_scheduler()
+        instance_scheduler.shutdown()
+        logger.info("  Instance sync scheduler: Stopped")
+    except Exception as e:
+        logger.error("  Instance sync scheduler: Error during shutdown - %s", e)
 
 
 # Create FastAPI application

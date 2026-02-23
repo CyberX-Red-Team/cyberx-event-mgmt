@@ -1,10 +1,11 @@
 """Participant self-service instance provisioning routes."""
 import logging
-from typing import Optional
+from typing import Optional, List
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_db, get_current_active_user
@@ -22,6 +23,18 @@ from app.schemas.instance import InstanceResponse, InstanceListResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/participants", tags=["Participant Portal"])
+
+
+class ProviderStats(BaseModel):
+    """Provider instance statistics."""
+    provider: str
+    current_count: int
+    max_instances: int  # 0 = unlimited
+
+
+class ProviderStatsResponse(BaseModel):
+    """Response containing provider statistics."""
+    providers: List[ProviderStats]
 
 
 async def get_instance_service(db: AsyncSession = Depends(get_db)) -> InstanceService:
@@ -311,3 +324,30 @@ async def sync_my_instance(
         raise server_error("Failed to sync instance status")
 
     return InstanceResponse.model_validate(synced_instance)
+
+
+@router.get("/provider-stats", response_model=ProviderStatsResponse)
+async def get_provider_stats(
+    current_user: User = Depends(get_current_active_user),
+    template_service: InstanceTemplateService = Depends(get_template_service),
+):
+    """Get provider instance limits and current usage.
+
+    Shows current instance counts and maximum allowed for each provider.
+    Helps participants understand capacity constraints.
+    """
+    # Get unique providers from instance templates
+    providers = ["openstack", "digitalocean"]  # Known providers
+
+    stats = []
+    for provider in providers:
+        current_count = await template_service.get_provider_instance_count(provider)
+        max_instances = await template_service.get_provider_max_instances(provider)
+
+        stats.append(ProviderStats(
+            provider=provider,
+            current_count=current_count,
+            max_instances=max_instances
+        ))
+
+    return ProviderStatsResponse(providers=stats)

@@ -342,11 +342,16 @@
 
                 <!-- My Instances Card -->
                 <div class="card shadow-sm mb-4">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i data-feather="server" class="me-2"></i>My Instances</h5>
-                        <button class="btn btn-sm btn-outline-primary" onclick="refreshInstances()">
-                            <i data-feather="refresh-cw" class="me-1"></i> Refresh
-                        </button>
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="mb-0"><i data-feather="server" class="me-2"></i>My Instances</h5>
+                            <button class="btn btn-sm btn-outline-primary" onclick="refreshInstances()">
+                                <i data-feather="refresh-cw" class="me-1"></i> Refresh
+                            </button>
+                        </div>
+                        <div id="providerStatsInfo" class="small text-muted">
+                            <!-- Provider stats and last sync time loaded here -->
+                        </div>
                     </div>
                     <div class="card-body">
                         <div id="instancesLoading" class="text-center py-4">
@@ -892,9 +897,6 @@ async function loadAvailableTemplates() {
             }
 
             templatesList.innerHTML = templates.map(t => {
-                const usage = t.max_instances > 0 ? `${t.current_instance_count} / ${t.max_instances}` : '';
-                const isMaxed = t.max_instances > 0 && t.current_instance_count >= t.max_instances;
-
                 return `
                     <div class="col-md-6 mb-3">
                         <div class="card h-100">
@@ -905,13 +907,11 @@ async function loadAvailableTemplates() {
                                     <strong>Provider:</strong> ${t.provider}<br>
                                     <strong>Cloud-Init:</strong> ${t.cloud_init_template_name || 'None'}<br>
                                     <strong>License:</strong> ${t.license_product_name || 'None'}
-                                    ${usage ? `<br><strong>Usage:</strong> ${usage}` : ''}
                                 </div>
                             </div>
                             <div class="card-footer">
                                 <button class="btn btn-sm btn-primary w-100"
-                                        onclick="showProvisionModal(${t.id}, '${t.name}')"
-                                        ${isMaxed ? 'disabled' : ''}>
+                                        onclick="showProvisionModal(${t.id}, '${t.name}')">
                                     <i data-feather="plus"></i> Provision
                                 </button>
                             </div>
@@ -926,6 +926,32 @@ async function loadAvailableTemplates() {
         }
     } catch (error) {
         console.error('Failed to load templates:', error);
+    }
+}
+
+async function loadProviderStats() {
+    try {
+        const response = await csrfFetch('/api/participants/provider-stats');
+        if (response.ok) {
+            const data = await response.json();
+            const providerStatsDiv = document.getElementById('providerStatsInfo');
+
+            // Display provider stats
+            const stats = data.providers.map(p => {
+                const limit = p.max_instances > 0 ? `${p.current_count}/${p.max_instances}` : `${p.current_count} (unlimited)`;
+                const badge = p.max_instances > 0 && p.current_count >= p.max_instances ?
+                    '<span class="badge bg-warning text-dark ms-1">At capacity</span>' :
+                    '';
+                return `<strong>${p.provider}:</strong> ${limit}${badge}`;
+            }).join(' | ');
+
+            providerStatsDiv.innerHTML = `
+                <div><i data-feather="activity" class="me-1" style="width: 14px; height: 14px;"></i>Provider Usage: ${stats}</div>
+            `;
+            refreshFeatherIcons();
+        }
+    } catch (error) {
+        console.error('Failed to load provider stats:', error);
     }
 }
 
@@ -984,6 +1010,30 @@ async function loadMyInstances() {
             instancesLoading.classList.add('d-none');
             instancesContent.classList.remove('d-none');
             refreshFeatherIcons();
+
+            // Find most recent sync time
+            const syncTimes = data.items
+                .map(i => i.last_synced_at)
+                .filter(t => t)
+                .sort()
+                .reverse();
+
+            if (syncTimes.length > 0) {
+                const lastSync = new Date(syncTimes[0]);
+                const now = new Date();
+                const diffMinutes = Math.floor((now - lastSync) / 60000);
+                const timeAgo = diffMinutes < 1 ? 'just now' :
+                                diffMinutes === 1 ? '1 minute ago' :
+                                diffMinutes < 60 ? `${diffMinutes} minutes ago` :
+                                `${Math.floor(diffMinutes / 60)} hours ago`;
+
+                // Update provider stats with last sync time
+                const providerStatsDiv = document.getElementById('providerStatsInfo');
+                const currentHtml = providerStatsDiv.innerHTML;
+                if (currentHtml && !currentHtml.includes('Last synced:')) {
+                    providerStatsDiv.innerHTML = currentHtml.replace('</div>', ` | Last synced: ${timeAgo}</div>`);
+                }
+            }
         }
     } catch (error) {
         console.error('Failed to load instances:', error);
@@ -1126,24 +1176,14 @@ async function refreshInstances() {
         // Show loading state
         if (refreshBtn) {
             refreshBtn.disabled = true;
-            refreshBtn.innerHTML = '<i data-feather="refresh-cw" class="me-1 rotating"></i> Syncing...';
+            refreshBtn.innerHTML = '<i data-feather="refresh-cw" class="me-1 rotating"></i> Refreshing...';
             refreshFeatherIcons();
         }
 
-        // Get current instances to sync
-        const response = await csrfFetch('/api/participants/instances');
-        if (response.ok) {
-            const data = await response.json();
-
-            // Sync each instance owned by the user (in parallel)
-            const syncPromises = data.items
-                .filter(i => i.created_by_user_id === currentUser.id)
-                .map(i => csrfFetch(`/api/participants/instances/${i.id}/sync`, { method: 'POST' })
-                    .catch(err => console.warn(`Failed to sync instance ${i.id}:`, err))
-                );
-
-            await Promise.all(syncPromises);
-        }
+        // Just reload the list from database
+        // Background sync task handles cloud provider status updates every 2 minutes
+        await loadProviderStats();
+        await loadMyInstances();
     } catch (error) {
         console.error('Failed to refresh instances:', error);
     } finally {
@@ -1153,9 +1193,6 @@ async function refreshInstances() {
             refreshBtn.innerHTML = originalHtml;
             refreshFeatherIcons();
         }
-
-        // Reload instance list
-        await loadMyInstances();
     }
 }
 
@@ -1173,6 +1210,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('instanceProvisioningSection').style.display = 'block';
         provisionModal = new bootstrap.Modal(document.getElementById('provisionModal'));
         await loadAvailableTemplates();
+        await loadProviderStats();
         await loadMyInstances();
     }
 
