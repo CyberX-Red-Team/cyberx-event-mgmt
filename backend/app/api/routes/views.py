@@ -391,29 +391,30 @@ async def participant_ssh_key_page(
     if not active_event:
         raise HTTPException(status_code=404, detail="No active event found")
 
-    # Check if user is a confirmed participant
-    result = await db.execute(
-        select(EventParticipation).where(
-            EventParticipation.user_id == current_user.id,
-            EventParticipation.event_id == active_event.id
+    # Check if user is a confirmed participant (admins and sponsors bypass this check)
+    if current_user.role != "admin" and current_user.role != "sponsor":
+        result = await db.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == current_user.id,
+                EventParticipation.event_id == active_event.id
+            )
         )
-    )
-    participation = result.scalar_one_or_none()
+        participation = result.scalar_one_or_none()
 
-    if not participation:
-        logger.warning(
-            "No participation record found for user %s (id=%d, role=%s) in event %s (id=%d)",
-            current_user.email, current_user.id, current_user.role,
-            active_event.name, active_event.id
-        )
-        raise forbidden("You must be a confirmed participant to access the SSH key")
+        if not participation:
+            logger.warning(
+                "No participation record found for user %s (id=%d, role=%s) in event %s (id=%d)",
+                current_user.email, current_user.id, current_user.role,
+                active_event.name, active_event.id
+            )
+            raise forbidden("You must be a confirmed participant to access the SSH key")
 
-    if participation.status != "confirmed":
-        logger.warning(
-            "User %s has participation status '%s' (not 'confirmed') for event %s",
-            current_user.email, participation.status, active_event.name
-        )
-        raise forbidden("You must be a confirmed participant to access the SSH key")
+        if participation.status != "confirmed":
+            logger.warning(
+                "User %s has participation status '%s' (not 'confirmed') for event %s",
+                current_user.email, participation.status, active_event.name
+            )
+            raise forbidden("You must be a confirmed participant to access the SSH key")
 
     return templates.TemplateResponse(
         "pages/participant/ssh_key.html",
