@@ -249,9 +249,9 @@ async def get_instance(
 async def delete_instance(
     instance_id: int,
     current_user: User = Depends(get_current_admin_user),
-    service: OpenStackService = Depends(get_openstack_service),
+    service: InstanceService = Depends(get_instance_service),
 ):
-    """Delete (terminate) an instance."""
+    """Delete (terminate) an instance from its cloud provider."""
     ok = await service.delete_and_track_instance(instance_id)
     if not ok:
         raise not_found("Instance", instance_id)
@@ -275,8 +275,8 @@ async def sync_instance(
 async def bulk_delete_instances(
     data: BulkDeleteRequest,
     current_user: User = Depends(get_current_admin_user),
-    service: OpenStackService = Depends(get_openstack_service),
+    service: InstanceService = Depends(get_instance_service),
 ):
-    """Bulk delete instances."""
+    """Bulk delete instances from their cloud providers."""
     success_count, errors = await service.bulk_delete_instances(data.instance_ids)
     return BulkOperationResponse(success_count=success_count, errors=errors)

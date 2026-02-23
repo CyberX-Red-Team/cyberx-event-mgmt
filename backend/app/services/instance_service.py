@@ -472,3 +472,59 @@ class InstanceService:
             )
 
         return instance
+
+    async def delete_and_track_instance(self, instance_id: int) -> bool:
+        """Delete an instance from its cloud provider and soft-delete the DB record.
+
+        Works with any cloud provider (OpenStack, DigitalOcean, etc.).
+        """
+        instance = await self.get_tracked_instance(instance_id)
+        if not instance:
+            return False
+
+        # Delete from cloud provider if it has a provider instance ID
+        if instance.provider_instance_id:
+            try:
+                # Get appropriate provider service
+                provider_service = CloudProviderFactory.get_provider(
+                    instance.provider, self.session
+                )
+
+                # Delete from provider
+                await provider_service.delete_instance(instance.provider_instance_id)
+                logger.info(
+                    "Deleted instance %s (id=%d) from %s provider",
+                    instance.name, instance.id, instance.provider
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to delete instance %d from %s: %s",
+                    instance.id, instance.provider, e
+                )
+                # Continue with soft-delete anyway
+
+        # Soft-delete in database
+        instance.status = "DELETED"
+        instance.deleted_at = datetime.now(timezone.utc)
+        await self.session.commit()
+
+        logger.info("Instance soft-deleted in DB: %s (id=%d)", instance.name, instance.id)
+        return True
+
+    async def bulk_delete_instances(self, instance_ids: list[int]) -> tuple[int, list[str]]:
+        """Bulk-delete instances from their cloud providers. Returns (success_count, error_messages)."""
+        successes = 0
+        errors = []
+
+        for instance_id in instance_ids:
+            try:
+                ok = await self.delete_and_track_instance(instance_id)
+                if ok:
+                    successes += 1
+                else:
+                    errors.append(f"Instance {instance_id}: not found")
+            except Exception as e:
+                errors.append(f"Instance {instance_id}: {e}")
+                logger.error("Failed to delete instance %d: %s", instance_id, e)
+
+        return successes, errors
