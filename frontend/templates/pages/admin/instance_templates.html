@@ -287,7 +287,8 @@ async function loadEvents() {
 async function loadCloudInitTemplates() {
     try {
         const response = await csrfFetch('/api/cloud-init/templates');
-        cloudInitTemplates = await response.json();
+        const data = await response.json();
+        cloudInitTemplates = data.items || [];
 
         const select = document.getElementById('templateCloudInit');
         cloudInitTemplates.forEach(template => {
