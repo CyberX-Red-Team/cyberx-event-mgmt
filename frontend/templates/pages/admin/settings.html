@@ -1,0 +1,254 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}System Settings{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="settings"></i></div>
+                        System Settings
+                    </h1>
+                    <div class="page-header-subtitle">Configure system-wide settings and resource limits</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+    <!-- Provider Instance Limits Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="server" class="me-2"></i>
+            Provider Instance Limits
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-4">
+                Set maximum number of instances allowed per cloud provider. Set to 0 for unlimited instances.
+                These limits apply globally across all events and templates.
+            </p>
+
+            <form id="providerLimitsForm">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">OpenStack Max Instances</label>
+                        <input type="number" class="form-control" id="openstackLimit" min="0" value="0">
+                        <div class="form-text">0 = unlimited</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">DigitalOcean Max Instances</label>
+                        <input type="number" class="form-control" id="digitaloceanLimit" min="0" value="0">
+                        <div class="form-text">0 = unlimited</div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end">
+                    <button type="button" class="btn btn-primary" onclick="saveProviderLimits()">
+                        <i data-feather="save" class="me-1"></i> Save Limits
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Current Usage Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="activity" class="me-2"></i>
+            Current Provider Usage
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Current Instances</th>
+                            <th>Max Allowed</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usageTableBody">
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-3">
+                                <i data-feather="loader" class="mb-2"></i>
+                                <p>Loading usage statistics...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background Sync Info Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="clock" class="me-2"></i>
+            Background Instance Sync
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info mb-0">
+                <div class="d-flex align-items-start">
+                    <i data-feather="info" class="me-3 mt-1"></i>
+                    <div>
+                        <h6 class="alert-heading mb-2">Automatic Status Synchronization</h6>
+                        <p class="mb-2">
+                            Instance statuses are automatically synchronized from cloud providers every <strong>2 minutes</strong>.
+                            This prevents API rate limiting and ensures consistent data across all participants.
+                        </p>
+                        <p class="mb-0 small">
+                            <strong>Benefits:</strong>
+                            <ul class="mb-0">
+                                <li>Single background process handles all instance syncs</li>
+                                <li>Database acts as cache - participant refreshes are instant</li>
+                                <li>Reduced load on cloud provider APIs</li>
+                                <li>Failure tracking for monitoring and adjustment</li>
+                            </ul>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// CSRF token helper
+function getCSRFToken() {
+    return document.cookie.split('; ')
+        .find(row => row.startsWith('csrf_token='))
+        ?.split('=')[1] || '';
+}
+
+// Fetch wrapper with CSRF
+async function csrfFetch(url, options = {}) {
+    return fetch(url, {
+        ...options,
+        headers: {
+            ...options.headers,
+            'X-CSRF-Token': getCSRFToken()
+        }
+    });
+}
+
+// Load provider limits
+async function loadProviderLimits() {
+    try {
+        const response = await csrfFetch('/api/admin/settings/provider-limits');
+        if (response.ok) {
+            const data = await response.json();
+            document.getElementById('openstackLimit').value = data.openstack;
+            document.getElementById('digitaloceanLimit').value = data.digitalocean;
+        }
+    } catch (error) {
+        console.error('Failed to load provider limits:', error);
+    }
+}
+
+// Save provider limits
+async function saveProviderLimits() {
+    const openstackLimit = parseInt(document.getElementById('openstackLimit').value);
+    const digitaloceanLimit = parseInt(document.getElementById('digitaloceanLimit').value);
+
+    try {
+        const response = await csrfFetch('/api/admin/settings/provider-limits', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                openstack: openstackLimit,
+                digitalocean: digitaloceanLimit
+            })
+        });
+
+        if (response.ok) {
+            showSuccess('Provider limits updated successfully');
+            await loadUsageStats();
+        } else {
+            const error = await response.json();
+            showError(error.detail || 'Failed to update provider limits');
+        }
+    } catch (error) {
+        console.error('Failed to save provider limits:', error);
+        showError('Failed to update provider limits');
+    }
+}
+
+// Load usage statistics
+async function loadUsageStats() {
+    try {
+        // Load current limits
+        const limitsResponse = await csrfFetch('/api/admin/settings/provider-limits');
+        const limits = await limitsResponse.json();
+
+        // Load current usage from participant stats endpoint
+        const statsResponse = await csrfFetch('/api/participants/provider-stats');
+        const stats = await statsResponse.json();
+
+        const tbody = document.getElementById('usageTableBody');
+
+        tbody.innerHTML = stats.providers.map(p => {
+            const limit = p.max_instances;
+            const usage = p.current_count;
+            const percentage = limit > 0 ? Math.round((usage / limit) * 100) : 0;
+
+            let statusBadge, statusText;
+            if (limit === 0) {
+                statusBadge = 'bg-secondary';
+                statusText = 'Unlimited';
+            } else if (usage >= limit) {
+                statusBadge = 'bg-danger';
+                statusText = 'At Capacity';
+            } else if (percentage >= 80) {
+                statusBadge = 'bg-warning';
+                statusText = 'Near Capacity';
+            } else {
+                statusBadge = 'bg-success';
+                statusText = 'Available';
+            }
+
+            return `
+                <tr>
+                    <td><strong>${p.provider.charAt(0).toUpperCase() + p.provider.slice(1)}</strong></td>
+                    <td>${usage}</td>
+                    <td>${limit === 0 ? 'Unlimited' : limit}</td>
+                    <td>
+                        <span class="badge ${statusBadge}">${statusText}</span>
+                        ${limit > 0 ? `<small class="ms-2 text-muted">${percentage}% used</small>` : ''}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        feather.replace();
+    } catch (error) {
+        console.error('Failed to load usage stats:', error);
+    }
+}
+
+// Show success message
+function showSuccess(message) {
+    alert(message);
+}
+
+// Show error message
+function showError(message) {
+    alert(message);
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadProviderLimits();
+    await loadUsageStats();
+
+    feather.replace();
+});
+</script>
+
+{% endblock %}

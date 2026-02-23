@@ -56,9 +56,6 @@ class InstanceTemplate(Base):
         index=True
     )
 
-    # Resource limits
-    max_instances = Column(Integer, default=0, nullable=False)  # 0 = unlimited
-
     # Metadata
     created_by_user_id = Column(
         Integer,

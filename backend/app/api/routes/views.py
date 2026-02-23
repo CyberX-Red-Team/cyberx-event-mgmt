@@ -249,6 +249,23 @@ async def admin_instance_templates_page(
     )
 
 
+@router.get("/admin/settings", response_class=HTMLResponse)
+async def admin_settings_page(
+    request: Request,
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Render system settings page (admin only)."""
+    return templates.TemplateResponse(
+        "pages/admin/settings.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "active_page": "settings",
+            "now": datetime.now()
+        }
+    )
+
+
 @router.get("/admin/cloud-init", response_class=HTMLResponse)
 async def admin_cloud_init_page(
     request: Request,
