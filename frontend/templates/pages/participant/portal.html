@@ -424,6 +424,45 @@
                 </div>
             </div>
 
+            <!-- Edit Instance Modal -->
+            <div class="modal fade" id="editInstanceModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Edit Instance</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="editInstanceForm">
+                                <input type="hidden" id="editInstanceId">
+                                <div class="mb-3">
+                                    <label class="form-label">Instance Name</label>
+                                    <input type="text" class="form-control" id="editInstanceName" readonly>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Visibility</label>
+                                    <select class="form-select" id="editInstanceVisibility">
+                                        <option value="private">Private (only I can see it)</option>
+                                        <option value="public">Public (visible to all participants)</option>
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Notes</label>
+                                    <textarea class="form-control" id="editInstanceNotes" rows="3"
+                                              placeholder="Document usage, purpose, or instructions..."></textarea>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-primary" onclick="saveInstanceChanges()">Save Changes</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Help Card -->
             <div class="card shadow-sm">
                 <div class="card-header">
@@ -928,8 +967,11 @@ async function loadMyInstances() {
                             ${i.visibility !== 'private' && i.created_by_username ? `<br><small>by ${i.created_by_username}</small>` : ''}
                         </td>
                         <td>
-                            ${i.notes ? `<button class="btn btn-sm btn-outline-info" onclick="showNotes('${i.notes.replace(/'/g, "\\'")}')"><i data-feather="info"></i></button>` : ''}
+                            ${i.notes ? `<button class="btn btn-sm btn-outline-info me-1" onclick="showNotes('${i.notes.replace(/'/g, "\\'")}')"><i data-feather="info"></i></button>` : ''}
                             ${canDelete ? `
+                                <button class="btn btn-sm btn-outline-primary me-1" onclick="showEditModal(${i.id}, '${i.name.replace(/'/g, "\\'")}', '${i.visibility}', '${(i.notes || '').replace(/'/g, "\\'")}')">
+                                    <i data-feather="edit-2"></i>
+                                </button>
                                 <button class="btn btn-sm btn-outline-danger" onclick="deleteInstance(${i.id})">
                                     <i data-feather="trash-2"></i>
                                 </button>
@@ -1029,6 +1071,51 @@ async function deleteInstance(instanceId) {
 
 function showNotes(notes) {
     alert(notes);
+}
+
+function showEditModal(instanceId, instanceName, visibility, notes) {
+    document.getElementById('editInstanceId').value = instanceId;
+    document.getElementById('editInstanceName').value = instanceName;
+    document.getElementById('editInstanceVisibility').value = visibility;
+    document.getElementById('editInstanceNotes').value = notes;
+
+    const modal = new bootstrap.Modal(document.getElementById('editInstanceModal'));
+    modal.show();
+}
+
+async function saveInstanceChanges() {
+    const instanceId = document.getElementById('editInstanceId').value;
+    const visibility = document.getElementById('editInstanceVisibility').value;
+    const notes = document.getElementById('editInstanceNotes').value;
+
+    try {
+        const response = await csrfFetch(`/api/participants/instances/${instanceId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                visibility: visibility,
+                notes: notes || ''
+            })
+        });
+
+        if (response.ok) {
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editInstanceModal'));
+            modal.hide();
+
+            // Refresh instance list
+            await refreshInstances();
+            alert('Instance updated successfully');
+        } else {
+            const error = await response.json();
+            alert(error.detail || 'Failed to update instance');
+        }
+    } catch (error) {
+        console.error('Failed to update instance:', error);
+        alert('Failed to update instance');
+    }
 }
 
 async function refreshInstances() {

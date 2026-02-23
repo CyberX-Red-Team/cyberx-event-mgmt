@@ -246,6 +246,46 @@ async def delete_my_instance(
     return {"success": True, "message": "Instance deleted"}
 
 
+@router.patch("/instances/{instance_id}", response_model=InstanceResponse)
+async def update_my_instance(
+    instance_id: int,
+    visibility: Optional[str] = None,
+    notes: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+    service: InstanceService = Depends(get_instance_service),
+):
+    """Update instance visibility and notes.
+
+    Permissions:
+    - Only creator can update their instances
+    """
+    instance = await service.get_tracked_instance(instance_id)
+
+    if not instance:
+        raise not_found("Instance", instance_id)
+
+    # Check ownership
+    if instance.created_by_user_id != current_user.id:
+        raise forbidden("You can only update instances you created")
+
+    # Validate visibility if provided
+    if visibility is not None:
+        if visibility not in ["private", "public"]:
+            raise bad_request("Invalid visibility. Must be private or public")
+        instance.visibility = visibility
+
+    # Update notes if provided
+    if notes is not None:
+        instance.notes = notes
+
+    # Save changes
+    await db.commit()
+    await db.refresh(instance)
+
+    return InstanceResponse.model_validate(instance)
+
+
 @router.post("/instances/{instance_id}/sync", response_model=InstanceResponse)
 async def sync_my_instance(
     instance_id: int,
