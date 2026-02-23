@@ -145,6 +145,21 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- SSH Key Download -->
+                        <div id="sshKeySection" class="mt-3 pt-3 border-top" style="display: none;">
+                            <div class="alert alert-info mb-0">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div>
+                                        <i data-feather="key" class="me-2"></i>
+                                        <strong>SSH Key Available</strong>
+                                        <p class="mb-0 mt-1 small">Download the SSH private key to access your instances.</p>
+                                    </div>
+                                    <a href="/portal/ssh-key" class="btn btn-sm btn-primary">
+                                        <i data-feather="download" class="me-1"></i>Download
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div id="eventErrorState" class="d-none">
                         <div class="alert alert-warning mb-0">
@@ -557,6 +572,14 @@ async function loadEventInfo() {
                 document.getElementById('eventDates').textContent = `${startDate} - ${endDate}`;
             } else {
                 document.getElementById('eventDates').textContent = 'Dates TBD';
+            }
+
+            // Show SSH key section if available
+            var sshKeySection = document.getElementById('sshKeySection');
+            if (currentEvent.ssh_public_key) {
+                sshKeySection.style.display = 'block';
+            } else {
+                sshKeySection.style.display = 'none';
             }
 
             loadingState.classList.add('d-none');

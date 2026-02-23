@@ -97,6 +97,7 @@ async def get_active_event(
             is_active=event.is_active,
             vpn_available=getattr(event, 'vpn_available', False),
             test_mode=getattr(event, 'test_mode', False),
+            ssh_public_key="available" if event.ssh_private_key else None,  # Indicate availability without exposing key
             created_at=event.created_at,
             updated_at=event.updated_at
         )
