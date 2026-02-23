@@ -78,10 +78,6 @@ async def list_available_templates(
         if template.license_product:
             item_dict["license_product_name"] = template.license_product.name
 
-        # Get instance count
-        count = await service.get_instance_count(template.id)
-        item_dict["current_instance_count"] = count
-
         items.append(InstanceTemplateResponse(**item_dict))
 
     return items

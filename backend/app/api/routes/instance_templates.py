@@ -59,10 +59,6 @@ async def list_templates(
         if template.created_by:
             item_dict["created_by_username"] = template.created_by.pandas_username or template.created_by.email
 
-        # Get instance count
-        count = await service.get_instance_count(template.id)
-        item_dict["current_instance_count"] = count
-
         items.append(InstanceTemplateResponse(**item_dict))
 
     return InstanceTemplateListResponse(
