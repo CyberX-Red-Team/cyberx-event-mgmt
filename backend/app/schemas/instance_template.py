@@ -76,5 +76,5 @@ class InstanceFromTemplateRequest(BaseModel):
     """Schema for provisioning instance from template."""
     template_id: int
     name: str = Field(..., min_length=1, max_length=255)
-    visibility: str = Field(default="private", pattern="^(private|share|public)$")
+    visibility: str = Field(default="private", pattern="^(private|public)$")
     notes: Optional[str] = None

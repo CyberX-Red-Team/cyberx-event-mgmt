@@ -390,7 +390,7 @@ class InstanceService:
             name: Instance name
             assigned_to_user_id: User to assign instance to
             created_by_user_id: User creating the instance
-            visibility: Instance visibility (private, share, public)
+            visibility: Instance visibility (private, public)
             notes: Optional notes
             ssh_public_key: Optional individual SSH key
 
@@ -412,8 +412,8 @@ class InstanceService:
             raise ValueError(f"Template {template_id} not found")
 
         # Validate visibility
-        if visibility not in ["private", "share", "public"]:
-            raise ValueError("Invalid visibility. Must be private, share, or public")
+        if visibility not in ["private", "public"]:
+            raise ValueError("Invalid visibility. Must be private or public")
 
         # Create instance using template configuration
         instance = await self.create_and_track_instance(

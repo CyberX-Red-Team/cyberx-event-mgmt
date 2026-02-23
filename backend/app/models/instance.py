@@ -53,7 +53,7 @@ class Instance(Base):
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Participant self-service fields
-    visibility = Column(String(20), default="private", nullable=False, index=True)  # private, share, public
+    visibility = Column(String(20), default="private", nullable=False, index=True)  # private, public
     notes = Column(Text, nullable=True)
 
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

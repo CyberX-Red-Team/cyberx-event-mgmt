@@ -18,6 +18,14 @@
         font-family: 'Courier New', monospace;
         font-size: 0.875rem;
     }
+    @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    .rotating {
+        animation: rotate 1s linear infinite;
+        display: inline-block;
+    }
 </style>
 {% endblock %}
 
@@ -397,8 +405,7 @@
                                     <label class="form-label">Visibility</label>
                                     <select class="form-select" id="provisionVisibility">
                                         <option value="private" selected>Private (only I can see it)</option>
-                                        <option value="share">Shared (visible to other participants)</option>
-                                        <option value="public">Public (visible to everyone)</option>
+                                        <option value="public">Public (visible to all participants)</option>
                                     </select>
                                 </div>
 
@@ -955,7 +962,6 @@ function getStatusBadge(status) {
 function getVisibilityBadge(visibility) {
     const map = {
         'private': 'secondary',
-        'share': 'info',
         'public': 'success'
     };
     return map[visibility] || 'secondary';
@@ -1026,7 +1032,44 @@ function showNotes(notes) {
 }
 
 async function refreshInstances() {
-    await loadMyInstances();
+    const refreshBtn = document.querySelector('[onclick="refreshInstances()"]');
+    const originalHtml = refreshBtn ? refreshBtn.innerHTML : '';
+
+    try {
+        // Show loading state
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<i data-feather="refresh-cw" class="me-1 rotating"></i> Syncing...';
+            refreshFeatherIcons();
+        }
+
+        // Get current instances to sync
+        const response = await csrfFetch('/api/participants/instances');
+        if (response.ok) {
+            const data = await response.json();
+
+            // Sync each instance owned by the user (in parallel)
+            const syncPromises = data.items
+                .filter(i => i.created_by_user_id === currentUser.id)
+                .map(i => csrfFetch(`/api/participants/instances/${i.id}/sync`, { method: 'POST' })
+                    .catch(err => console.warn(`Failed to sync instance ${i.id}:`, err))
+                );
+
+            await Promise.all(syncPromises);
+        }
+    } catch (error) {
+        console.error('Failed to refresh instances:', error);
+    } finally {
+        // Restore button state
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = originalHtml;
+            refreshFeatherIcons();
+        }
+
+        // Reload instance list
+        await loadMyInstances();
+    }
 }
 
 // Load event info and VPN status on page load

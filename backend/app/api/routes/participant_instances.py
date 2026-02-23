@@ -173,10 +173,7 @@ async def list_my_instances(
             and_(
                 Instance.deleted_at.is_(None),
                 Instance.created_by_user_id != current_user.id,
-                or_(
-                    Instance.visibility == "share",
-                    Instance.visibility == "public"
-                )
+                Instance.visibility == "public"
             )
         )
         .order_by(Instance.created_at.desc())
@@ -247,3 +244,34 @@ async def delete_my_instance(
         raise server_error("Failed to delete instance")
 
     return {"success": True, "message": "Instance deleted"}
+
+
+@router.post("/instances/{instance_id}/sync", response_model=InstanceResponse)
+async def sync_my_instance(
+    instance_id: int,
+    current_user: User = Depends(get_current_active_user),
+    service: InstanceService = Depends(get_instance_service),
+):
+    """Sync instance status from cloud provider.
+
+    Permissions:
+    - Can sync own instances or public instances
+    """
+    instance = await service.get_tracked_instance(instance_id)
+
+    if not instance:
+        raise not_found("Instance", instance_id)
+
+    # Check if user can access this instance
+    is_owner = instance.created_by_user_id == current_user.id
+    is_public = instance.visibility == "public"
+
+    if not (is_owner or is_public):
+        raise forbidden("You can only sync your own instances or public instances")
+
+    # Sync status
+    synced_instance = await service.sync_instance_status(instance_id)
+    if not synced_instance:
+        raise server_error("Failed to sync instance status")
+
+    return InstanceResponse.model_validate(synced_instance)
