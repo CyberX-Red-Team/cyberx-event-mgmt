@@ -1,4 +1,5 @@
 """Frontend view routes for serving HTML templates."""
+import logging
 from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, Depends, Request, HTTPException
@@ -6,6 +7,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 from app.dependencies import get_optional_user, get_current_active_user, get_current_admin_user, get_current_sponsor_user, get_db
@@ -397,7 +400,19 @@ async def participant_ssh_key_page(
     )
     participation = result.scalar_one_or_none()
 
-    if not participation or participation.status != "confirmed":
+    if not participation:
+        logger.warning(
+            "No participation record found for user %s (id=%d, role=%s) in event %s (id=%d)",
+            current_user.email, current_user.id, current_user.role,
+            active_event.name, active_event.id
+        )
+        raise forbidden("You must be a confirmed participant to access the SSH key")
+
+    if participation.status != "confirmed":
+        logger.warning(
+            "User %s has participation status '%s' (not 'confirmed') for event %s",
+            current_user.email, participation.status, active_event.name
+        )
         raise forbidden("You must be a confirmed participant to access the SSH key")
 
     return templates.TemplateResponse(
