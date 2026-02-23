@@ -262,9 +262,9 @@ async def delete_instance(
 async def sync_instance(
     instance_id: int,
     current_user: User = Depends(get_current_admin_user),
-    service: OpenStackService = Depends(get_openstack_service),
+    service: InstanceService = Depends(get_instance_service),
 ):
-    """Refresh instance status from OpenStack."""
+    """Refresh instance status from its cloud provider."""
     instance = await service.sync_instance_status(instance_id)
     if not instance:
         raise not_found("Instance", instance_id)

@@ -426,3 +426,55 @@ class InstanceService:
         instances = list(result.scalars().all())
 
         return instances, total
+
+    async def get_tracked_instance(self, instance_id: int) -> Optional[Instance]:
+        """Get a single tracked instance by ID."""
+        result = await self.session.execute(
+            select(Instance).where(Instance.id == instance_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def sync_instance_status(self, instance_id: int) -> Optional[Instance]:
+        """Refresh an instance's status from its cloud provider."""
+        instance = await self.get_tracked_instance(instance_id)
+        if not instance or not instance.provider_instance_id:
+            return instance
+
+        try:
+            # Get appropriate provider service
+            provider_service = CloudProviderFactory.get_provider(
+                instance.provider, self.session
+            )
+
+            # Get status from provider
+            provider_data = await provider_service.get_instance_status(
+                instance.provider_instance_id
+            )
+
+            if provider_data:
+                # Update status
+                new_status = provider_service.normalize_status(
+                    provider_data.get("status", "")
+                )
+                instance.status = new_status
+
+                # Update IP if available
+                ip_address = provider_service.extract_ip_address(provider_data)
+                if ip_address:
+                    instance.ip_address = ip_address
+
+                await self.session.commit()
+                await self.session.refresh(instance)
+
+                logger.info(
+                    "Synced instance %d (%s) from %s - status: %s",
+                    instance.id, instance.name, instance.provider, new_status
+                )
+
+        except Exception as e:
+            logger.error(
+                "Failed to sync instance %d (%s, provider=%s): %s",
+                instance.id, instance.name, instance.provider, e
+            )
+
+        return instance
