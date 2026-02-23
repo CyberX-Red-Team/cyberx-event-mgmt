@@ -1,4 +1,4 @@
-"""Instance status sync background job - polls OpenStack for BUILDING instances."""
+"""Instance status sync background job - polls cloud providers for BUILDING instances."""
 import logging
 from datetime import datetime, timezone
 
@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.database import AsyncSessionLocal
 from app.models.instance import Instance
-from app.services.openstack_service import OpenStackService
+from app.services.cloud_provider_factory import CloudProviderFactory
 from app.config import get_settings
 
 
@@ -16,15 +16,11 @@ logger = logging.getLogger(__name__)
 
 async def instance_status_sync_job():
     """
-    Poll OpenStack for status of all non-terminal instances.
+    Poll cloud providers for status of all non-terminal instances.
 
     Syncs status and IP address for instances in BUILDING state.
-    Skips if OpenStack is not configured.
+    Works with both OpenStack and DigitalOcean providers.
     """
-    settings = get_settings()
-    if not settings.OS_AUTH_URL:
-        return  # OpenStack not configured, skip silently
-
     logger.info("Starting instance status sync job...")
     start_time = datetime.now(timezone.utc)
     synced = 0
@@ -37,7 +33,7 @@ async def instance_status_sync_job():
                 select(Instance).where(
                     Instance.status == "BUILDING",
                     Instance.deleted_at.is_(None),
-                    Instance.openstack_id.isnot(None),
+                    Instance.provider_instance_id.isnot(None),
                 )
             )
             building_instances = list(result.scalars().all())
@@ -46,18 +42,44 @@ async def instance_status_sync_job():
                 logger.debug("No BUILDING instances to sync")
                 return
 
-            service = OpenStackService(session)
-
             for instance in building_instances:
                 try:
-                    updated = await service.sync_instance_status(instance.id)
-                    if updated and updated.status != "BUILDING":
-                        synced += 1
+                    # Get appropriate provider service
+                    provider_service = CloudProviderFactory.get_provider(
+                        instance.provider, session
+                    )
+
+                    # Get status from provider
+                    provider_data = await provider_service.get_instance_status(
+                        instance.provider_instance_id
+                    )
+
+                    if provider_data:
+                        # Update status
+                        new_status = provider_service.normalize_status(
+                            provider_data.get("status", "")
+                        )
+                        instance.status = new_status
+
+                        # Update IP if available
+                        ip_address = provider_service.extract_ip_address(provider_data)
+                        if ip_address:
+                            instance.ip_address = ip_address
+
+                        await session.commit()
+
+                        if new_status != "BUILDING":
+                            synced += 1
+                            logger.info(
+                                "Synced instance %d (%s) - %s → %s",
+                                instance.id, instance.name, "BUILDING", new_status
+                            )
+
                 except Exception as e:
                     errors += 1
                     logger.error(
-                        "Failed to sync instance %d (%s): %s",
-                        instance.id, instance.name, e
+                        "Failed to sync instance %d (%s, provider=%s): %s",
+                        instance.id, instance.name, instance.provider, e
                     )
 
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
