@@ -545,7 +545,8 @@ class OpenStackService:
         # Track in DB
         instance = Instance(
             name=name,
-            openstack_id=server["id"] if server else None,
+            provider="openstack",
+            provider_instance_id=server["id"] if server else None,
             status="BUILDING" if server else "ERROR",
             flavor_id=flavor_id,
             image_id=image_id,
@@ -598,7 +599,7 @@ class OpenStackService:
                 or_(
                     Instance.name.ilike(f"%{search}%"),
                     Instance.ip_address.ilike(f"%{search}%"),
-                    Instance.openstack_id.ilike(f"%{search}%"),
+                    Instance.provider_instance_id.ilike(f"%{search}%"),
                 )
             )
 
@@ -638,9 +639,9 @@ class OpenStackService:
             return False
 
         # Delete from OpenStack if it has an ID
-        if instance.openstack_id:
+        if instance.provider_instance_id:
             try:
-                await self.delete_instance_on_openstack(instance.openstack_id)
+                await self.delete_instance_on_openstack(instance.provider_instance_id)
             except Exception as e:
                 logger.error("Failed to delete from OpenStack: %s", e)
                 # Continue with soft-delete anyway
@@ -655,11 +656,11 @@ class OpenStackService:
     async def sync_instance_status(self, instance_id: int) -> Optional[Instance]:
         """Refresh an instance's status from OpenStack."""
         instance = await self.get_tracked_instance(instance_id)
-        if not instance or not instance.openstack_id:
+        if not instance or not instance.provider_instance_id:
             return instance
 
         try:
-            server = await self.get_instance_status_from_openstack(instance.openstack_id)
+            server = await self.get_instance_status_from_openstack(instance.provider_instance_id)
             if server:
                 instance.status = server.get("status", instance.status)
                 # Extract IP
