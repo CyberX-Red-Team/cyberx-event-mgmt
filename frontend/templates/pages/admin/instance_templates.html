@@ -324,9 +324,9 @@ async function loadLicenseProducts() {
 async function loadOpenStackResources() {
     try {
         const [flavorsRes, networksRes, imagesRes] = await Promise.all([
-            csrfFetch('/api/instances/resources/openstack/flavors'),
-            csrfFetch('/api/instances/resources/openstack/networks'),
-            csrfFetch('/api/instances/resources/openstack/images')
+            csrfFetch('/api/instances/resources/flavors'),
+            csrfFetch('/api/instances/resources/networks'),
+            csrfFetch('/api/instances/resources/images')
         ]);
 
         const flavorsData = await flavorsRes.json();
