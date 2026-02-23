@@ -329,7 +329,7 @@ class InstanceService:
         # Generate single-use token for cloud-init
         raw_token = secrets.token_urlsafe(48)
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=3)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)  # Extended for package installation time
 
         logger.info(
             "Generated VPN token for instance %s, VPN ID: %d, IP: %s",
