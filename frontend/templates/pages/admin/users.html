@@ -1346,7 +1346,7 @@ function updateSortIndicator() {
     }
 }
 
-async function resendInvitation(userId, email) {
+window.resendInvitation = async function(userId, email) {
     if (!confirm(`Resend invitation email to ${email}?`)) {
         return;
     }
@@ -1368,9 +1368,9 @@ async function resendInvitation(userId, email) {
         console.error('Error:', error);
         showToast('Failed to resend invitation', 'danger');
     }
-}
+};
 
-async function bulkResendInvitation() {
+window.bulkResendInvitation = async function() {
     if (selectedUsers.size === 0) return;
 
     const confirmMsg = `Resend invitation emails to ${selectedUsers.size} user(s)?\n\n` +
@@ -1420,7 +1420,7 @@ async function bulkResendInvitation() {
         console.error('Error:', error);
         showToast('Bulk resend operation failed', 'danger');
     }
-}
+};
 
 function escapeHtml(text) {
     if (!text) return '';
