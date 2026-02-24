@@ -83,8 +83,12 @@ class ParticipantResponse(BaseModel):
     first_name: str
     last_name: str
     country: str
-    confirmed: str
+    confirmed: str  # DEPRECATED - use event_participation_status
     email_status: str
+
+    # Event-specific participation (for current active event)
+    event_participation_status: Optional[str] = None  # invited/confirmed/declined/no_response
+    event_participation_id: Optional[int] = None
     role: str
     is_admin: bool  # Legacy field
     is_active: bool

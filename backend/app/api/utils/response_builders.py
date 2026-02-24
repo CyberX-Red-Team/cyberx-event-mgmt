@@ -30,6 +30,8 @@ async def build_auth_user_response(
         UserResponse from app.schemas.auth
     """
     has_vpn = False
+    event_participation_status = None
+    event_participation_id = None
 
     if include_vpn_check:
         # Check if user has any VPN credentials
@@ -40,6 +42,12 @@ async def build_auth_user_response(
         vpn_count = vpn_result.scalar() or 0
         has_vpn = vpn_count > 0
 
+    # Get current event participation status
+    participation = await user.get_current_event_participation(db)
+    if participation:
+        event_participation_status = participation.status
+        event_participation_id = participation.id
+
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -48,13 +56,15 @@ async def build_auth_user_response(
         country=user.country,
         is_admin=user.is_admin,
         is_active=user.is_active,
-        confirmed=user.confirmed,
+        confirmed=user.confirmed,  # DEPRECATED - backward compatible
         email_status=user.email_status,
         theme_preference=user.theme_preference,
         pandas_username=user.pandas_username,
         discord_username=user.discord_username,
         snowflake_id=user.snowflake_id,
-        has_vpn=has_vpn
+        has_vpn=has_vpn,
+        event_participation_status=event_participation_status,
+        event_participation_id=event_participation_id
     )
 
 
@@ -109,14 +119,24 @@ async def build_participant_response(
                 full_name=f"{sponsor.first_name} {sponsor.last_name}"
             )
 
+    # Get current event participation status
+    event_participation_status = None
+    event_participation_id = None
+    participation = await user.get_current_event_participation(db)
+    if participation:
+        event_participation_status = participation.status
+        event_participation_id = participation.id
+
     return ParticipantResponse(
         id=user.id,
         email=user.email,
         first_name=user.first_name,
         last_name=user.last_name,
         country=user.country,
-        confirmed=user.confirmed,
+        confirmed=user.confirmed,  # DEPRECATED - backward compatible
         email_status=user.email_status,
+        event_participation_status=event_participation_status,
+        event_participation_id=event_participation_id,
         role=user.role,
         is_admin=user.is_admin,
         is_active=user.is_active,

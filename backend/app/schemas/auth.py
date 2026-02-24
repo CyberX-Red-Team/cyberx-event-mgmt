@@ -35,9 +35,13 @@ class UserResponse(BaseModel):
     country: str
     is_admin: bool
     is_active: bool
-    confirmed: str
+    confirmed: str  # DEPRECATED - use event_participation_status
     email_status: str
     theme_preference: str
+
+    # Event-specific participation (for current active event)
+    event_participation_status: Optional[str] = None  # invited/confirmed/declined/no_response
+    event_participation_id: Optional[int] = None
 
     # Optional fields
     pandas_username: Optional[str] = None
