@@ -822,7 +822,7 @@ function renderUsersTable() {
             <td>${getRoleBadge(user.role)}</td>
             <td>${user.sponsor ? escapeHtml(user.sponsor.first_name + ' ' + user.sponsor.last_name) : '<span class="text-muted">-</span>'}</td>
             <td>${user.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
-            <td>${getConfirmedBadge(user.confirmed)}</td>
+            <td>${getConfirmedBadge(user)}</td>
             <td class="small">${user.confirmed_at ? formatDateTime(user.confirmed_at) : '<span class="text-muted">-</span>'}</td>
             <td>
                 <span class="small" title="Years participated / Years invited">
@@ -839,11 +839,15 @@ function renderUsersTable() {
                     <button class="btn btn-outline-primary" onclick="editUser(${user.id})" title="Edit">
                         <i data-feather="edit-2"></i>
                     </button>
-                    ${user.confirmed !== 'YES' && user.is_active && (user.role === 'invitee' || user.role === 'sponsor')
-                        ? `<button class="btn btn-outline-info" onclick="resendInvitation(${user.id}, '${escapeHtml(user.email)}')" title="Resend Invitation">
-                            <i data-feather="send"></i>
-                           </button>`
-                        : ''}
+                    ${(() => {
+                        const status = user.event_participation_status || user.confirmed;
+                        const notConfirmed = status !== 'YES' && status !== 'confirmed';
+                        return notConfirmed && user.is_active && (user.role === 'invitee' || user.role === 'sponsor')
+                            ? `<button class="btn btn-outline-info" onclick="resendInvitation(${user.id}, '${escapeHtml(user.email)}')" title="Resend Invitation">
+                                <i data-feather="send"></i>
+                               </button>`
+                            : '';
+                    })()}
                     <button class="btn btn-outline-secondary" onclick="openRoleModal(${user.id}, '${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}', '${user.role}')" title="Change Role">
                         <i data-feather="shield"></i>
                     </button>
@@ -901,13 +905,32 @@ function getRoleBadge(role) {
     return badges[role] || '<span class="badge bg-secondary">Unknown</span>';
 }
 
-function getConfirmedBadge(confirmed) {
+function getConfirmedBadge(user) {
+    // Prefer event_participation_status (new), fall back to confirmed (legacy)
+    const status = user.event_participation_status || user.confirmed;
+
+    // Map both new and legacy status values
+    const statusMap = {
+        // New EventParticipation status values
+        'confirmed': 'YES',
+        'declined': 'NO',
+        'invited': 'UNKNOWN',
+        'no_response': 'UNKNOWN',
+        // Legacy values
+        'YES': 'YES',
+        'NO': 'NO',
+        'UNKNOWN': 'UNKNOWN'
+    };
+
+    const mappedStatus = statusMap[status] || 'UNKNOWN';
+
     const badges = {
         'YES': '<span class="badge bg-success">Confirmed</span>',
         'NO': '<span class="badge bg-danger">Declined</span>',
         'UNKNOWN': '<span class="badge bg-warning">Pending</span>'
     };
-    return badges[confirmed] || '<span class="badge bg-secondary">-</span>';
+
+    return badges[mappedStatus] || '<span class="badge bg-secondary">-</span>';
 }
 
 function getEmailStatusBadge(emailStatus) {

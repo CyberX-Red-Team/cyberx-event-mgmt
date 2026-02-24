@@ -444,14 +444,17 @@ function renderTable(invitees) {
             <td>${escapeHtml(invitee.first_name)} ${escapeHtml(invitee.last_name)}</td>
             <td>${escapeHtml(invitee.email)}</td>
             <td>${getCountryFlag(invitee.country)} ${escapeHtml(invitee.country)}</td>
-            <td>${renderStatusBadge(invitee.confirmed)}</td>
+            <td>${renderStatusBadge(invitee)}</td>
             <td>${invitee.has_vpn ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-secondary">No</span>'}</td>
             <td>${invitee.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
             <td>
                 <button class="btn btn-sm btn-primary btn-actions me-1" onclick="openEditInviteeModal(${invitee.id})" title="Edit">
                     <i data-feather="edit-2" class="feather-sm"></i>
                 </button>
-                ${invitee.confirmed === 'NO' ? `
+                ${(() => {
+                    const status = invitee.event_participation_status || invitee.confirmed;
+                    const isDeclined = status === 'NO' || status === 'declined';
+                    return isDeclined ? `
                     <span class="d-inline-block" tabindex="0" title="Actions not available for declined invitees">
                         <button class="btn btn-sm btn-secondary btn-actions" type="button" disabled style="pointer-events: none;">
                             <i data-feather="more-vertical" class="feather-sm"></i>
@@ -471,7 +474,8 @@ function renderTable(invitees) {
                             </a></li>
                         </ul>
                     </div>
-                `}
+                ` : '';
+                })()}
             </td>
         </tr>
     `).join('');
@@ -678,13 +682,30 @@ function showLoading(show) {
     document.getElementById('tableContainer').style.display = show ? 'none' : 'block';
 }
 
-function renderStatusBadge(status) {
+function renderStatusBadge(invitee) {
+    // Prefer event_participation_status (new), fall back to confirmed (legacy)
+    const status = invitee.event_participation_status || invitee.confirmed;
+
+    // Map both new and legacy status values
+    const statusMap = {
+        'confirmed': 'YES',
+        'declined': 'NO',
+        'invited': 'UNKNOWN',
+        'no_response': 'UNKNOWN',
+        'YES': 'YES',
+        'NO': 'NO',
+        'UNKNOWN': 'UNKNOWN'
+    };
+
+    const mappedStatus = statusMap[status] || 'UNKNOWN';
+
     const badges = {
         'YES': '<span class="badge badge-confirmed">Confirmed</span>',
         'NO': '<span class="badge badge-declined">Declined</span>',
         'UNKNOWN': '<span class="badge badge-pending">Pending</span>'
     };
-    return badges[status] || '<span class="badge bg-secondary">Unknown</span>';
+
+    return badges[mappedStatus] || '<span class="badge bg-secondary">Unknown</span>';
 }
 
 function escapeHtml(text) {

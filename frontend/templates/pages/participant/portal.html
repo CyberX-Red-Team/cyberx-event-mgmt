@@ -200,9 +200,10 @@
                                 <div class="ms-3">
                                     <div class="small text-muted">Confirmation Status</div>
                                     <div class="fw-bold">
-                                        {% if current_user.confirmed == 'YES' %}
+                                        {% set status = current_user.event_participation_status or current_user.confirmed %}
+                                        {% if status == 'confirmed' or status == 'YES' %}
                                         <span class="text-success">Confirmed</span>
-                                        {% elif current_user.confirmed == 'NO' %}
+                                        {% elif status == 'declined' or status == 'NO' %}
                                         <span class="text-danger">Not Confirmed</span>
                                         {% else %}
                                         <span class="text-warning">Pending</span>

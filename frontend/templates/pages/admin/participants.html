@@ -238,11 +238,12 @@ function renderParticipants(participants) {
             <td>${p.email}</td>
             <td><code>${p.pandas_username || '-'}</code></td>
             <td>
-                ${p.confirmed === 'YES'
-                    ? '<span class="badge bg-success">Yes</span>'
-                    : p.confirmed === 'NO'
-                    ? '<span class="badge bg-danger">No</span>'
-                    : '<span class="badge bg-secondary">Unknown</span>'}
+                ${(() => {
+                    const status = p.event_participation_status || p.confirmed;
+                    if (status === 'YES' || status === 'confirmed') return '<span class="badge bg-success">Yes</span>';
+                    if (status === 'NO' || status === 'declined') return '<span class="badge bg-danger">No</span>';
+                    return '<span class="badge bg-secondary">Unknown</span>';
+                })()}
             </td>
             <td>
                 ${p.has_vpn
@@ -269,11 +270,15 @@ function renderParticipants(participants) {
                     <a href="/admin/participants/${p.id}" class="btn btn-outline-primary" title="Edit">
                         <i data-feather="edit-2"></i>
                     </a>
-                    ${p.confirmed !== 'YES' && p.is_active && (p.role === 'invitee' || p.role === 'sponsor')
-                        ? `<button class="btn btn-outline-info" onclick="resendInvitation(${p.id}, '${p.email}')" title="Resend Invitation">
-                            <i data-feather="send"></i>
-                           </button>`
-                        : ''}
+                    ${(() => {
+                        const status = p.event_participation_status || p.confirmed;
+                        const notConfirmed = status !== 'YES' && status !== 'confirmed';
+                        return notConfirmed && p.is_active && (p.role === 'invitee' || p.role === 'sponsor')
+                            ? `<button class="btn btn-outline-info" onclick="resendInvitation(${p.id}, '${p.email}')" title="Resend Invitation">
+                                <i data-feather="send"></i>
+                               </button>`
+                            : '';
+                    })()}
                     <button class="btn btn-outline-danger" onclick="deleteInvitee(${p.id})" title="Delete">
                         <i data-feather="trash-2"></i>
                     </button>
