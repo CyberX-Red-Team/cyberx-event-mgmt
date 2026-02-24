@@ -583,6 +583,72 @@ async def resend_participant_invitation(
     }
 
 
+@router.post("/participants/{participant_id}/reset-workflow")
+async def reset_participant_workflow(
+    participant_id: int,
+    reset_event_participation: bool = True,
+    request: Request = None,
+    current_user: User = Depends(get_current_admin_user),
+    service: ParticipantService = Depends(get_participant_service),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reset workflow state for a participant.
+
+    This endpoint resets all workflow-related fields including:
+    - Confirmation code and timestamps
+    - Confirmed status (back to UNKNOWN)
+    - Terms acceptance
+    - All reminder timestamps
+    - Password email timestamp
+    - EventParticipation record for current event (optional)
+
+    Useful for:
+    - Testing invitation flows
+    - Re-inviting users for new event years
+    - Recovering from workflow errors
+
+    Requires admin role.
+    """
+    # Get the participant first
+    participant = await service.get_participant(participant_id)
+    if not participant:
+        raise not_found("Participant")
+
+    # Reset workflow state
+    participant = await service.reset_workflow_state(
+        participant_id=participant_id,
+        reset_event_participation=reset_event_participation
+    )
+
+    # Audit log
+    from app.api.utils.request import get_client_ip, get_user_agent
+    audit_service = AuditService(db)
+    ip_address = get_client_ip(request) if request else None
+    user_agent = get_user_agent(request) if request else None
+
+    await audit_service.log(
+        action="RESET_WORKFLOW",
+        user_id=current_user.id,
+        resource_type="USER",
+        resource_id=participant_id,
+        details={
+            "target_user_id": participant_id,
+            "target_email": participant.email,
+            "reset_event_participation": reset_event_participation
+        },
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    return {
+        "success": True,
+        "message": f"Workflow state reset for {participant.email}",
+        "new_confirmation_code": participant.confirmation_code,
+        "reset_event_participation": reset_event_participation
+    }
+
+
 # ============== Admin-only Role and Sponsor Management ==============
 
 @router.get("/sponsors", response_model=List[ParticipantResponse])

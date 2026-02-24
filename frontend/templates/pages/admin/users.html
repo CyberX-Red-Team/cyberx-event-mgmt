@@ -257,6 +257,7 @@
                                 <li><a class="dropdown-item" href="#" onclick="bulkAction('deactivate')"><i data-feather="x-circle" class="me-2"></i>Deactivate</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item" href="#" onclick="bulkResendInvitation()"><i data-feather="send" class="me-2"></i>Resend Invitation</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="bulkResetWorkflow()"><i data-feather="refresh-cw" class="me-2"></i>Reset Workflow State</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-danger" href="#" onclick="bulkAction('delete')"><i data-feather="trash-2" class="me-2"></i>Delete</a></li>
                             </ul>
@@ -848,6 +849,11 @@ function renderUsersTable() {
                                </button>`
                             : '';
                     })()}
+                    ${user.role === 'invitee' || user.role === 'sponsor'
+                        ? `<button class="btn btn-outline-warning" onclick="resetWorkflow(${user.id}, '${escapeHtml(user.email)}')" title="Reset Workflow State">
+                            <i data-feather="refresh-cw"></i>
+                           </button>`
+                        : ''}
                     <button class="btn btn-outline-secondary" onclick="openRoleModal(${user.id}, '${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}', '${user.role}')" title="Change Role">
                         <i data-feather="shield"></i>
                     </button>
@@ -1442,6 +1448,112 @@ window.bulkResendInvitation = async function() {
     } catch (error) {
         console.error('Error:', error);
         showToast('Bulk resend operation failed', 'danger');
+    }
+};
+
+window.resetWorkflow = async function(userId, email) {
+    if (!confirm(
+        `Reset workflow state for ${email}?\n\n` +
+        `This will:\n` +
+        `• Reset confirmation status to UNKNOWN\n` +
+        `• Clear all reminder timestamps\n` +
+        `• Clear password email timestamp\n` +
+        `• Delete EventParticipation for current event\n` +
+        `• Generate new confirmation code\n\n` +
+        `Use this to re-test invitation flows or re-invite users.`
+    )) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch(`/api/admin/participants/${userId}/reset-workflow`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                reset_event_participation: true
+            })
+        });
+
+        if (!response.ok) {
+            const data = await response.json();
+            showToast(data.detail || 'Failed to reset workflow state', 'danger');
+            return;
+        }
+
+        const data = await response.json();
+        showToast(data.message || 'Workflow state reset successfully', 'success');
+        loadUsers(currentPage); // Reload the current page
+    } catch (error) {
+        console.error('Error resetting workflow:', error);
+        showToast('Network error: Failed to reset workflow state', 'danger');
+    }
+};
+
+window.bulkResetWorkflow = async function() {
+    if (selectedUsers.size === 0) {
+        showToast('Please select users to reset', 'warning');
+        return;
+    }
+
+    const count = selectedUsers.size;
+    if (!confirm(
+        `Reset workflow state for ${count} selected user(s)?\n\n` +
+        `This will:\n` +
+        `• Reset confirmation status to UNKNOWN\n` +
+        `• Clear all reminder timestamps\n` +
+        `• Clear password email timestamp\n` +
+        `• Delete EventParticipation for current event\n` +
+        `• Generate new confirmation codes\n\n` +
+        `Use this to re-test invitation flows or re-invite users.`
+    )) {
+        return;
+    }
+
+    try {
+        let successCount = 0;
+        let failCount = 0;
+        const failedEmails = [];
+
+        // Process each selected user
+        for (const userId of selectedUsers) {
+            try {
+                const response = await csrfFetch(`/api/admin/participants/${userId}/reset-workflow`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        reset_event_participation: true
+                    })
+                });
+
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    failCount++;
+                    const data = await response.json();
+                    failedEmails.push(data.detail || `ID ${userId}`);
+                }
+            } catch (error) {
+                failCount++;
+                failedEmails.push(`ID ${userId}: ${error.message}`);
+            }
+        }
+
+        let message = `Successfully reset ${successCount} user(s)`;
+        if (failCount > 0) {
+            message += `\n\nFailed: ${failCount}\n${failedEmails.join('\n')}`;
+        }
+
+        showToast(message, failCount > 0 ? 'warning' : 'success');
+        loadUsers(currentPage);
+        selectedUsers.clear();
+        updateBulkActionsButton();
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Bulk reset operation failed', 'danger');
     }
 };
 

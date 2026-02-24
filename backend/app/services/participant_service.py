@@ -773,6 +773,102 @@ class ParticipantService:
 
         return participant
 
+    async def reset_workflow_state(
+        self,
+        participant_id: int,
+        reset_event_participation: bool = True
+    ) -> Optional[User]:
+        """
+        Reset workflow-related fields for a participant.
+
+        Useful for:
+        - Testing invitation flows
+        - Re-inviting users for new event years
+        - Recovering from workflow errors
+
+        Resets:
+        - Confirmation code and timestamps
+        - Confirmed status (back to UNKNOWN)
+        - Terms acceptance
+        - All reminder timestamps
+        - Password email timestamp
+        - Optionally: EventParticipation for current event
+
+        Args:
+            participant_id: ID of participant to reset
+            reset_event_participation: If True, deletes EventParticipation for current event
+
+        Returns:
+            Updated participant or None if not found
+        """
+        from app.services.event_service import EventService
+
+        participant = await self.get_participant(participant_id)
+        if not participant:
+            return None
+
+        # Generate new confirmation code
+        participant.confirmation_code = secrets.token_urlsafe(32)
+
+        # Reset confirmation fields
+        participant.confirmation_sent_at = None
+        participant.confirmed = 'UNKNOWN'
+        participant.confirmed_at = None
+        participant.decline_reason = None
+
+        # Reset terms acceptance
+        participant.terms_accepted = False
+        participant.terms_accepted_at = None
+        participant.terms_version = None
+
+        # Reset reminder timestamps
+        participant.reminder_1_sent_at = None
+        participant.reminder_2_sent_at = None
+        participant.reminder_3_sent_at = None
+
+        # Reset email workflow timestamps
+        participant.password_email_sent = None
+        participant.invite_sent = None
+        participant.invite_reminder_sent = None
+        participant.last_invite_sent = None
+
+        # Reset other workflow emails
+        participant.check_microsoft_email_sent = None
+        participant.survey_email_sent = None
+        participant.survey_response_timestamp = None
+        participant.orientation_invite_email_sent = None
+        participant.in_person_email_sent = None
+
+        participant.updated_at = datetime.now(timezone.utc)
+
+        # Optionally reset EventParticipation for current event
+        if reset_event_participation:
+            event_service = EventService(self.session)
+            current_event = await event_service.get_current_event()
+
+            if current_event:
+                # Delete EventParticipation record for current event
+                delete_stmt = delete(EventParticipation).where(
+                    EventParticipation.user_id == participant_id,
+                    EventParticipation.event_id == current_event.id
+                )
+                await self.session.execute(delete_stmt)
+
+                logger.info(
+                    f"Reset workflow state for participant {participant_id}: "
+                    f"deleted EventParticipation for event {current_event.id}"
+                )
+
+        await self.session.commit()
+        await self.session.refresh(participant)
+
+        logger.info(
+            f"Reset workflow state for participant {participant_id} "
+            f"(reset_event_participation={reset_event_participation})"
+        )
+
+        return participant
+
     async def list_sponsors(self) -> List[User]:
         """Get all users who can be sponsors (admins and sponsors)."""
         result = await self.session.execute(
