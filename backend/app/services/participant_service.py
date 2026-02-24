@@ -83,7 +83,8 @@ class ParticipantService:
         sort_order: str = "desc",
         sponsor_id: Optional[int] = None,
         role: Optional[str] = None,
-        country: Optional[str] = None
+        country: Optional[str] = None,
+        event_id: Optional[int] = None
     ) -> Tuple[List[User], int]:
         """
         List participants with filtering and pagination.
@@ -91,6 +92,7 @@ class ParticipantService:
         Args:
             sponsor_id: If provided, only return participants sponsored by this user
             role: If provided, filter by role (admin, sponsor, participant)
+            event_id: If provided with confirmed filter, uses event-specific EventParticipation status
 
         Returns:
             Tuple of (list of users, total count)
@@ -125,8 +127,32 @@ class ParticipantService:
             count_query = count_query.where(search_filter)
 
         if confirmed:
-            query = query.where(User.confirmed == confirmed)
-            count_query = count_query.where(User.confirmed == confirmed)
+            if event_id:
+                # Event-specific filtering via EventParticipation
+                from app.models.event import ParticipationStatus
+                from sqlalchemy import and_
+
+                # Map legacy confirmed values to EventParticipation status values
+                status_map = {
+                    'YES': [ParticipationStatus.CONFIRMED.value],
+                    'NO': [ParticipationStatus.DECLINED.value],
+                    'UNKNOWN': [ParticipationStatus.INVITED.value, ParticipationStatus.NO_RESPONSE.value]
+                }
+
+                if confirmed in status_map:
+                    status_values = status_map[confirmed]
+                    query = query.join(EventParticipation, and_(
+                        EventParticipation.user_id == User.id,
+                        EventParticipation.event_id == event_id
+                    )).where(EventParticipation.status.in_(status_values))
+                    count_query = count_query.join(EventParticipation, and_(
+                        EventParticipation.user_id == User.id,
+                        EventParticipation.event_id == event_id
+                    )).where(EventParticipation.status.in_(status_values))
+            else:
+                # Legacy global filtering (backward compatible)
+                query = query.where(User.confirmed == confirmed)
+                count_query = count_query.where(User.confirmed == confirmed)
 
         if is_active is not None:
             query = query.where(User.is_active == is_active)
@@ -589,12 +615,35 @@ class ParticipantService:
         total_result = await self.session.execute(total_query)
         total = total_result.scalar()
 
-        # Confirmed count
-        confirmed_query = select(func.count(User.id)).where(User.confirmed == "YES")
-        if base_filter:
-            confirmed_query = confirmed_query.where(*base_filter)
-        confirmed_result = await self.session.execute(confirmed_query)
-        confirmed = confirmed_result.scalar()
+        # Confirmed count - use EventParticipation for current event
+        from app.services.event_service import EventService
+        from app.models.event import ParticipationStatus
+        from sqlalchemy import and_
+
+        event_service = EventService(self.session)
+        current_event = await event_service.get_current_event()
+
+        if current_event:
+            # Event-specific confirmed count
+            confirmed_query = (
+                select(func.count(User.id))
+                .join(EventParticipation, and_(
+                    EventParticipation.user_id == User.id,
+                    EventParticipation.event_id == current_event.id
+                ))
+                .where(EventParticipation.status == ParticipationStatus.CONFIRMED.value)
+            )
+            if base_filter:
+                confirmed_query = confirmed_query.where(*base_filter)
+            confirmed_result = await self.session.execute(confirmed_query)
+            confirmed = confirmed_result.scalar()
+        else:
+            # Fallback to legacy field if no active event
+            confirmed_query = select(func.count(User.id)).where(User.confirmed == "YES")
+            if base_filter:
+                confirmed_query = confirmed_query.where(*base_filter)
+            confirmed_result = await self.session.execute(confirmed_query)
+            confirmed = confirmed_result.scalar()
 
         # Active count
         active_query = select(func.count(User.id)).where(User.is_active == True)
