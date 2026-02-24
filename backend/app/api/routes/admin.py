@@ -290,8 +290,10 @@ async def update_participant(
     """
     Update a participant.
 
-    - Admins can update any participant (including username)
-    - Sponsors can update participants they sponsor (except role, sponsor_id, and username)
+    - Admins can update any participant
+    - Sponsors can update participants they sponsor (except role and sponsor_id)
+
+    NOTE: Username (pandas_username) is auto-generated and cannot be manually edited.
     """
     # Get the participant first to check permissions
     participant = await service.get_participant(participant_id)
@@ -301,14 +303,12 @@ async def update_participant(
     # Check permission to edit this participant
     permissions.can_edit_participant(current_user, participant)
 
-    # Sponsors cannot change role, sponsor_id, or username
+    # Sponsors cannot change role or sponsor_id
     if not current_user.is_admin_role:
         if data.role is not None:
             raise forbidden("Only administrators can change user roles")
         if data.sponsor_id is not None:
             raise forbidden("Only administrators can change sponsor assignments")
-        if data.pandas_username is not None:
-            raise forbidden("Only administrators can change usernames")
 
     # Check if email is being changed to one that already exists
     if data.email:

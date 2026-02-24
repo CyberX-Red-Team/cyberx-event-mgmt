@@ -435,7 +435,25 @@ class ParticipantService:
         old_confirmed = participant.confirmed
         was_confirmed = old_confirmed == 'YES'
 
-        # Update fields (allow None values for nullable fields like sponsor_id)
+        # SECURITY: Remove pandas_username from updates if somehow present
+        # Usernames are auto-generated and should never be manually editable
+        if 'pandas_username' in kwargs:
+            logger.warning(f"Attempted to manually update pandas_username for user {participant_id} - ignoring")
+            kwargs = {k: v for k, v in kwargs.items() if k != 'pandas_username'}
+
+        # Special handling for password updates
+        # IMPORTANT: When pandas_password is updated, also update password_hash
+        if 'pandas_password' in kwargs and kwargs['pandas_password'] is not None:
+            new_password = kwargs['pandas_password']
+            participant.pandas_password = new_password
+            participant.password_hash = hash_password(new_password)
+            # Generate phonetic password for the new password
+            from app.api.routes.public import generate_phonetic_password
+            participant.password_phonetic = generate_phonetic_password(new_password)
+            # Remove from kwargs so we don't set it again in the loop below
+            kwargs = {k: v for k, v in kwargs.items() if k != 'pandas_password'}
+
+        # Update remaining fields (allow None values for nullable fields like sponsor_id)
         for key, value in kwargs.items():
             if hasattr(participant, key):
                 setattr(participant, key, value)
