@@ -1009,7 +1009,7 @@ async function loadMyInstances() {
                             <strong>${i.name}</strong>
                             ${i.notes ? `<br><small class="text-muted" title="${i.notes}"><i data-feather="info" class="me-1"></i>Has notes</small>` : ''}
                         </td>
-                        <td>${i.instance_template_name || '-'}</td>
+                        <td>${providerIcon(i.provider)} ${i.instance_template_name || '-'}</td>
                         <td><span class="badge bg-${statusBadge}">${i.status}</span></td>
                         <td>${i.ip_address || '-'}</td>
                         <td>${i.vpn_ip || '-'}</td>
@@ -1074,6 +1074,15 @@ function getStatusBadge(status) {
         'DELETED': 'dark'
     };
     return map[status] || 'secondary';
+}
+
+function providerIcon(provider) {
+    if (provider === 'digitalocean') {
+        return `<i class="fab fa-digital-ocean" style="color: #0080FF; font-size: 16px; width: 20px; display: inline-block;" title="DigitalOcean"></i>`;
+    } else if (provider === 'openstack') {
+        return `<i class="fas fa-cloud" style="color: #DA1A32; font-size: 16px; width: 20px; display: inline-block;" title="OpenStack"></i>`;
+    }
+    return '';
 }
 
 function getVisibilityBadge(visibility) {
