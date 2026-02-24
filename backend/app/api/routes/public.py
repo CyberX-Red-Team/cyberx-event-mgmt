@@ -11,7 +11,10 @@ from app.dependencies import get_db
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 import secrets
 import string
+import logging
 from passlib.context import CryptContext
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/public", tags=["Public"])
 
@@ -240,16 +243,29 @@ async def confirm_participation(
     # - Invitees: Always generate new password each year (for security)
     # - Sponsors: Keep existing password across years (only generate if missing)
     should_generate_password = False
+    password_generation_reason = None
+
     if user.role == 'invitee':
         should_generate_password = True  # Always generate new password for invitees
+        password_generation_reason = "invitee role (always regenerate)"
     elif not user.pandas_password:
         should_generate_password = True  # Generate for sponsors only if missing
+        password_generation_reason = f"missing password (role: {user.role}, has_encrypted: {user._pandas_password_encrypted is not None})"
 
     if should_generate_password:
+        logger.info(
+            f"Generating password during confirmation for user {user.id} ({user.email}, role: {user.role}). "
+            f"Reason: {password_generation_reason}"
+        )
         password = generate_password(12)
         user.pandas_password = password  # Store plaintext for email (will be synced to Keycloak)
         user.password_hash = pwd_context.hash(password)  # Store hash for local auth
         user.password_phonetic = generate_phonetic_password(password)  # For easy communication
+    else:
+        logger.info(
+            f"Keeping existing password for user {user.id} ({user.email}, role: {user.role}) "
+            f"during confirmation"
+        )
 
     await db.commit()
     await db.refresh(user)

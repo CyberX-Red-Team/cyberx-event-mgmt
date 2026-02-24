@@ -237,8 +237,16 @@ class ParticipantService:
             # Generate password if not provided
             if not pandas_password:
                 pandas_password = self._generate_password()
+                logger.info(
+                    f"Generated credentials during user creation for {email} (role: {role}, "
+                    f"confirmed: {confirmed})"
+                )
         else:
             # New invitees: credentials will be generated after confirmation
+            logger.info(
+                f"Deferring credential generation for {email} (role: {role}, confirmed: {confirmed}) "
+                f"until after confirmation"
+            )
             pandas_username = None
             pandas_password = None
 
@@ -272,6 +280,14 @@ class ParticipantService:
         self.session.add(participant)
         await self.session.commit()
         await self.session.refresh(participant)
+
+        # Log final credential state after creation
+        logger.info(
+            f"Created user {participant.id} ({participant.email}, role: {participant.role}). "
+            f"Credentials state: username={participant.pandas_username is not None}, "
+            f"password={participant.pandas_password is not None}, "
+            f"encrypted_password={participant._pandas_password_encrypted is not None}"
+        )
 
         # Check if should send invitation based on role and event status
         is_event_participant = role in [UserRole.INVITEE.value, UserRole.SPONSOR.value]
