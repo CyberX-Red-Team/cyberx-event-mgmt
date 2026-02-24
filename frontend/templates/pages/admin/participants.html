@@ -95,6 +95,9 @@
                 <button class="btn btn-sm btn-outline-primary me-2" onclick="bulkAssignVPN()">
                     <i data-feather="shield" class="me-1"></i> Assign VPN
                 </button>
+                <button class="btn btn-sm btn-outline-info me-2" onclick="bulkResendInvitation()">
+                    <i data-feather="send" class="me-1"></i> Resend Invitation
+                </button>
                 <button class="btn btn-sm btn-outline-info" onclick="bulkSendEmail()">
                     <i data-feather="mail" class="me-1"></i> Send Email
                 </button>
@@ -129,7 +132,7 @@
                             <th>VPN</th>
                             <th>Participation</th>
                             <th>Status</th>
-                            <th width="120">Actions</th>
+                            <th width="150">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="participantsBody">
@@ -266,6 +269,11 @@ function renderParticipants(participants) {
                     <a href="/admin/participants/${p.id}" class="btn btn-outline-primary" title="Edit">
                         <i data-feather="edit-2"></i>
                     </a>
+                    ${p.confirmed !== 'YES' && p.is_active && (p.role === 'invitee' || p.role === 'sponsor')
+                        ? `<button class="btn btn-outline-info" onclick="resendInvitation(${p.id}, '${p.email}')" title="Resend Invitation">
+                            <i data-feather="send"></i>
+                           </button>`
+                        : ''}
                     <button class="btn btn-outline-danger" onclick="deleteInvitee(${p.id})" title="Delete">
                         <i data-feather="trash-2"></i>
                     </button>
@@ -437,6 +445,86 @@ async function deleteInvitee(id) {
     } catch (error) {
         console.error('Error:', error);
         alert('Failed to delete invitee');
+    }
+}
+
+async function resendInvitation(id, email) {
+    if (!confirm(`Resend invitation email to ${email}?`)) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch(`/api/admin/participants/${id}/resend-invitation`, {
+            method: 'POST'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            showToast(data.message || 'Invitation email queued successfully', 'success');
+            loadParticipants(currentPage);
+        } else {
+            const data = await response.json();
+            showToast(data.detail || 'Failed to resend invitation', 'danger');
+        }
+
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Failed to resend invitation', 'danger');
+    }
+}
+
+async function bulkResendInvitation() {
+    if (selectedIds.size === 0) return;
+
+    const confirmMsg = `Resend invitation emails to ${selectedIds.size} invitee(s)?\n\n` +
+                      `This will:\n` +
+                      `- Generate new confirmation codes\n` +
+                      `- Create EventParticipation records if needed\n` +
+                      `- Queue invitation emails`;
+
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
+    try {
+        let successCount = 0;
+        let failCount = 0;
+        const failedEmails = [];
+
+        // Process each participant individually
+        for (const id of selectedIds) {
+            try {
+                const response = await csrfFetch(`/api/admin/participants/${id}/resend-invitation`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    failCount++;
+                    const data = await response.json();
+                    failedEmails.push(data.detail || `ID ${id}`);
+                }
+            } catch (error) {
+                failCount++;
+                failedEmails.push(`ID ${id}: ${error.message}`);
+            }
+        }
+
+        // Show results
+        let message = `Successfully queued ${successCount} invitation(s)`;
+        if (failCount > 0) {
+            message += `\n\nFailed: ${failCount}\n${failedEmails.join('\n')}`;
+        }
+
+        showToast(message, failCount > 0 ? 'warning' : 'success');
+        loadParticipants(currentPage);
+        selectedIds.clear();
+        updateBulkActionsUI();
+
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Bulk resend operation failed', 'danger');
     }
 }
 

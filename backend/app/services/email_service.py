@@ -96,6 +96,40 @@ async def queue_invitation_email_for_user(
         )
     )
 
+    # Create or update EventParticipation record
+    # This ensures invitees have formal participation tracking for access control
+    from app.models.event import EventParticipation, ParticipationStatus
+
+    result = await session.execute(
+        select(EventParticipation).where(
+            EventParticipation.user_id == user.id,
+            EventParticipation.event_id == event.id
+        )
+    )
+    participation = result.scalar_one_or_none()
+
+    if not participation:
+        # Create new EventParticipation record with "invited" status
+        participation = EventParticipation(
+            user_id=user.id,
+            event_id=event.id,
+            status=ParticipationStatus.INVITED.value,
+            invited_at=datetime.now(timezone.utc),
+            invited_by_user_id=None  # Automated invitation (no specific admin)
+        )
+        session.add(participation)
+        logger.info(
+            f"Created EventParticipation record for user {user.id} ({user.email}) "
+            f"in event {event.id} ({event.name})"
+        )
+    else:
+        # Update existing record's invited_at timestamp (for resends)
+        participation.invited_at = datetime.now(timezone.utc)
+        logger.debug(
+            f"Updated EventParticipation invited_at for user {user.id} ({user.email}) "
+            f"in event {event.id} ({event.name})"
+        )
+
     # Build confirmation URL
     confirmation_url = f"{settings.FRONTEND_URL}/confirm?code={confirmation_code}"
 
