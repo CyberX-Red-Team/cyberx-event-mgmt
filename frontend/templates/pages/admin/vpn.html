@@ -457,7 +457,7 @@ function renderVPNCredentials(credentials) {
                            </div>`
                         : '-'}
             </td>
-            <td>${v.assigned_at ? formatDateTime(v.assigned_at) : '-'}</td>
+            <td>${v.assigned_to_instance_id ? (v.assigned_instance_at ? formatDateTime(v.assigned_instance_at) : '-') : (v.assigned_at ? formatDateTime(v.assigned_at) : '-')}</td>
             <td>
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-primary" onclick="viewVPN(${v.id})" title="View Details">
@@ -635,7 +635,7 @@ async function viewVPN(id) {
                 </tr>
                 <tr>
                     <td class="text-muted fw-bold">Assigned At</td>
-                    <td>${vpn.assigned_at ? formatDateTime(vpn.assigned_at) : '<span class="text-muted">N/A</span>'}</td>
+                    <td>${vpn.assigned_to_instance_id ? (vpn.assigned_instance_at ? formatDateTime(vpn.assigned_instance_at) : '<span class="text-muted">N/A</span>') : (vpn.assigned_at ? formatDateTime(vpn.assigned_at) : '<span class="text-muted">N/A</span>')}</td>
                 </tr>
                 <tr>
                     <td class="text-muted fw-bold">Created At</td>

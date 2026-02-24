@@ -31,6 +31,7 @@ class VPNCredentialResponse(BaseModel):
 
     # Assigned instance info (if assigned to instance)
     assigned_to_instance_id: Optional[int] = None
+    assigned_instance_at: Optional[datetime] = None
     assigned_instance_name: Optional[str] = None
     assigned_instance_created_by_email: Optional[str] = None
     assigned_instance_created_by_name: Optional[str] = None
