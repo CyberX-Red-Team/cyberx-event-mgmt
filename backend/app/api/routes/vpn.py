@@ -574,7 +574,8 @@ async def get_my_vpn_config(
 async def download_my_vpn_config(
     vpn_id: Optional[int] = Query(None, description="Specific VPN ID to download"),
     current_user: User = Depends(get_current_active_user),
-    service: VPNService = Depends(get_vpn_service)
+    service: VPNService = Depends(get_vpn_service),
+    db: AsyncSession = Depends(get_db)
 ):
     """Download a specific WireGuard configuration file or the first one if no ID specified."""
     if vpn_id:
@@ -591,8 +592,16 @@ async def download_my_vpn_config(
         if not vpn:
             raise not_found("You do not have any VPN credentials")
 
+    # Get naming pattern from settings
+    from app.models.app_setting import AppSetting
+    result = await db.execute(
+        select(AppSetting).where(AppSetting.key == 'vpn_naming_pattern')
+    )
+    setting = result.scalar_one_or_none()
+    pattern = setting.value if setting else "simnet_{ipv4_address}.conf"
+
     config = await service.generate_wireguard_config(vpn)
-    filename = service.get_config_filename(current_user, vpn)
+    filename = service.format_filename(pattern, vpn, current_user)
 
     return PlainTextResponse(
         content=config,
