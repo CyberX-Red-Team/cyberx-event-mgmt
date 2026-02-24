@@ -133,6 +133,21 @@ async def queue_invitation_email_for_user(
     # Build confirmation URL
     confirmation_url = f"{settings.FRONTEND_URL}/confirm?code={confirmation_code}"
 
+    # Log confirmation URL to console in staging environment
+    # (useful when email sandbox mode is enabled)
+    if settings.ENVIRONMENT == "staging":
+        logger.info(
+            f"\n{'='*80}\n"
+            f"📧 STAGING INVITATION EMAIL\n"
+            f"{'='*80}\n"
+            f"To: {user.email} (ID: {user.id})\n"
+            f"Name: {user.first_name} {user.last_name}\n"
+            f"Event: {event.name} (ID: {event.id})\n"
+            f"\n🔗 CONFIRMATION LINK:\n"
+            f"{confirmation_url}\n"
+            f"{'='*80}\n"
+        )
+
     # Build event variables
     event_vars = build_event_template_vars(event)
 
