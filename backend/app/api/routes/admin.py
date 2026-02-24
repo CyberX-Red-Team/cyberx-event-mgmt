@@ -548,9 +548,11 @@ async def resend_participant_invitation(
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
     audit_service = AuditService(db)
-    await audit_service.log_action(
-        action="resend_invitation",
+    await audit_service.log(
+        action="RESEND_INVITATION",
         user_id=current_user.id,
+        resource_type="USER",
+        resource_id=participant_id,
         details={
             "target_user_id": participant_id,
             "target_email": participant.email,
