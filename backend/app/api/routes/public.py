@@ -211,6 +211,26 @@ async def confirm_participation(
     user.terms_accepted_at = now
     user.terms_version = terms_version
 
+    # Update EventParticipation status to confirmed
+    from app.models.event import EventParticipation, ParticipationStatus
+    event_service = EventService(db)
+    event = await event_service.get_current_event()
+
+    if event:
+        participation_result = await db.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == user.id,
+                EventParticipation.event_id == event.id
+            )
+        )
+        participation = participation_result.scalar_one_or_none()
+
+        if participation:
+            participation.status = ParticipationStatus.CONFIRMED.value
+            participation.confirmed_at = now
+            participation.terms_accepted_at = now
+            participation.terms_version_accepted = terms_version
+
     # Generate credentials if not already set
     # Username: Only generate if missing (returning participants keep their existing username)
     if not user.pandas_username:
@@ -234,10 +254,8 @@ async def confirm_participation(
     await db.commit()
     await db.refresh(user)
 
-    # Audit log
+    # Audit log (reuse event from above)
     audit_service = AuditService(db)
-    event_service = EventService(db)
-    event = await event_service.get_current_event()
 
     await audit_service.log_terms_acceptance(
         user_id=user.id,
