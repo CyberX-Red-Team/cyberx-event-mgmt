@@ -3,13 +3,20 @@
 Seed test data for staging environment.
 
 Creates test users for manual testing:
-- 5 admin users
-- 10 sponsor users
-- 20 invitee users (randomly assigned to sponsors)
+- 5 admin users (confirmed='YES', immediate credentials)
+- 10 sponsor users (confirmed='YES', immediate credentials)
+- 20 invitee users (confirmed='UNKNOWN', credentials generated after confirmation)
 - 1 email template (plain invitation)
 - 1000 VPN credentials (for load testing)
 
-All users have predictable passwords for easy testing.
+IMPORTANT: This script uses ParticipantService to create users, ensuring:
+- Proper password encryption (both password_hash and pandas_password fields)
+- Correct credential generation flow based on role and confirmation status
+- Sponsors get immediate credentials (username + password)
+- Invitees get credentials only after confirming via the confirmation endpoint
+
+All confirmed users (admins, sponsors) share password: CyberX2026!
+Invitees must confirm first before getting credentials.
 """
 import asyncio
 import sys
@@ -31,6 +38,7 @@ from app.models.user import User, UserRole
 from app.models.vpn import VPNCredential
 from app.models.email_template import EmailTemplate
 from app.utils.security import hash_password
+from app.services.participant_service import ParticipantService
 
 
 # Test user data with deterministic credentials
@@ -256,6 +264,8 @@ async def seed_test_data():
     }
 
     async with AsyncSessionLocal() as session:
+        participant_service = ParticipantService(session)
+
         # Create admin users
         print("Creating admin users...")
         for admin_data in ADMIN_USERS:
@@ -267,26 +277,27 @@ async def seed_test_data():
 
             if existing_user:
                 print(f"  ⚠️  Admin {admin_data['email']} already exists, updating...")
-                existing_user.password_hash = hash_password(TEST_PASSWORD)
-                existing_user.role = UserRole.ADMIN.value
-                existing_user.is_admin = True
-                existing_user.is_active = True
-                existing_user.confirmed = 'YES'
-                existing_user.email_status = 'GOOD'
+                # Update via service to ensure proper password handling
+                await participant_service.update_participant(
+                    existing_user.id,
+                    role=UserRole.ADMIN.value,
+                    pandas_password=TEST_PASSWORD,  # This will update both hash and encrypted field
+                    is_active=True,
+                    confirmed='YES',
+                    email_status='GOOD'
+                )
             else:
-                user = User(
+                # Create via service to ensure proper credential generation
+                user = await participant_service.create_participant(
                     email=admin_data["email"],
                     first_name=admin_data["first_name"],
                     last_name=admin_data["last_name"],
                     country=admin_data["country"],
                     role=UserRole.ADMIN.value,
-                    is_admin=True,
-                    is_active=True,
                     confirmed='YES',
-                    email_status='GOOD',
-                    password_hash=hash_password(TEST_PASSWORD),
+                    pandas_password=TEST_PASSWORD,  # Explicit password for testing
+                    is_admin=True
                 )
-                session.add(user)
                 print(f"  ✅ Created admin: {admin_data['email']}")
 
             credentials["admins"].append({
@@ -294,8 +305,6 @@ async def seed_test_data():
                 "role": "admin",
                 "name": f"{admin_data['first_name']} {admin_data['last_name']}"
             })
-
-        await session.commit()
 
         # Create sponsor users and get their IDs
         print("\nCreating sponsor users...")
@@ -308,26 +317,28 @@ async def seed_test_data():
 
             if existing_user:
                 print(f"  ⚠️  Sponsor {sponsor_data['email']} already exists, updating...")
-                existing_user.password_hash = hash_password(TEST_PASSWORD)
-                existing_user.role = UserRole.SPONSOR.value
-                existing_user.is_active = True
-                existing_user.confirmed = 'YES'
-                existing_user.email_status = 'GOOD'
+                # Update via service to ensure proper password handling
+                await participant_service.update_participant(
+                    existing_user.id,
+                    role=UserRole.SPONSOR.value,
+                    pandas_password=TEST_PASSWORD,  # This will update both hash and encrypted field
+                    is_active=True,
+                    confirmed='YES',
+                    email_status='GOOD'
+                )
                 sponsor_ids.append(existing_user.id)
             else:
-                user = User(
+                # Create via service - sponsors get immediate credentials
+                # confirmed='YES' ensures they get username and password right away
+                user = await participant_service.create_participant(
                     email=sponsor_data["email"],
                     first_name=sponsor_data["first_name"],
                     last_name=sponsor_data["last_name"],
                     country=sponsor_data["country"],
                     role=UserRole.SPONSOR.value,
-                    is_active=True,
                     confirmed='YES',
-                    email_status='GOOD',
-                    password_hash=hash_password(TEST_PASSWORD),
+                    pandas_password=TEST_PASSWORD  # Explicit password for testing
                 )
-                session.add(user)
-                await session.flush()  # Get ID
                 sponsor_ids.append(user.id)
                 print(f"  ✅ Created sponsor: {sponsor_data['email']}")
 
@@ -336,8 +347,6 @@ async def seed_test_data():
                 "role": "sponsor",
                 "name": f"{sponsor_data['first_name']} {sponsor_data['last_name']}"
             })
-
-        await session.commit()
 
         # Create invitee users and randomly assign to sponsors
         print("\nCreating invitee users...")
@@ -355,31 +364,34 @@ async def seed_test_data():
 
             if existing_user:
                 print(f"  ⚠️  Invitee {invitee_data['email']} already exists, updating...")
-                existing_user.password_hash = hash_password(TEST_PASSWORD)
-                existing_user.role = UserRole.INVITEE.value
-                existing_user.sponsor_id = sponsor_id
-                existing_user.is_active = True
-                existing_user.confirmed = 'UNKNOWN'
-                existing_user.email_status = 'GOOD'
-                existing_user.confirmation_code = confirmation_code
-                existing_user.confirmation_sent_at = datetime.now(timezone.utc)
+                # Update via service
+                await participant_service.update_participant(
+                    existing_user.id,
+                    role=UserRole.INVITEE.value,
+                    sponsor_id=sponsor_id,
+                    is_active=True,
+                    confirmed='UNKNOWN',
+                    email_status='GOOD',
+                    confirmation_code=confirmation_code,
+                    confirmation_sent_at=datetime.now(timezone.utc)
+                )
                 user = existing_user
             else:
-                user = User(
+                # Create via service - invitees with UNKNOWN don't get credentials yet
+                # They'll get credentials when they confirm via the confirmation endpoint
+                user = await participant_service.create_participant(
                     email=invitee_data["email"],
                     first_name=invitee_data["first_name"],
                     last_name=invitee_data["last_name"],
                     country=invitee_data["country"],
                     role=UserRole.INVITEE.value,
                     sponsor_id=sponsor_id,
-                    is_active=True,
-                    confirmed='UNKNOWN',
-                    email_status='GOOD',
-                    password_hash=hash_password(TEST_PASSWORD),
-                    confirmation_code=confirmation_code,
-                    confirmation_sent_at=datetime.now(timezone.utc)
+                    confirmed='UNKNOWN'  # No credentials until they confirm
                 )
-                session.add(user)
+                # Set confirmation code for testing
+                user.confirmation_code = confirmation_code
+                user.confirmation_sent_at = datetime.now(timezone.utc)
+                await session.commit()
                 print(f"  ✅ Created invitee: {invitee_data['email']}")
 
             # Get sponsor email for credentials report
@@ -396,8 +408,6 @@ async def seed_test_data():
                 "confirmation_code": confirmation_code,
                 "confirmation_url": f"{frontend_url}/confirm?code={confirmation_code}"
             })
-
-        await session.commit()
 
         # Create email template
         print("\nCreating email templates...")
@@ -495,12 +505,15 @@ async def seed_test_data():
     print("✅ Test data seeding complete!")
     print("=" * 80)
     print(f"\nTotal resources created/updated:")
-    print(f"  - Admins: {len(ADMIN_USERS)}")
-    print(f"  - Sponsors: {len(SPONSOR_USERS)}")
-    print(f"  - Invitees: {len(INVITEE_USERS)}")
+    print(f"  - Admins: {len(ADMIN_USERS)} (confirmed, with credentials)")
+    print(f"  - Sponsors: {len(SPONSOR_USERS)} (confirmed, with credentials)")
+    print(f"  - Invitees: {len(INVITEE_USERS)} (UNKNOWN status, no credentials until confirmation)")
     print(f"  - Email Templates: 1 (plain invitation)")
     print(f"  - VPN Configs: {NUM_VPN_CONFIGS} ({vpn_created} new, {vpn_updated} updated)")
-    print(f"\nShared password for ALL test users: {TEST_PASSWORD}")
+    print()
+    print("IMPORTANT:")
+    print(f"  ✅ Admins and Sponsors can login immediately with password: {TEST_PASSWORD}")
+    print(f"  ⏳ Invitees must confirm first (use confirmation links below)")
     print()
 
     # Write credentials to JSON file for GitHub Actions artifact
@@ -516,19 +529,20 @@ async def seed_test_data():
     print("TEST CREDENTIALS")
     print("=" * 80)
     print()
-    print("ADMINS (Full system access):")
+    print("ADMINS (Full system access, confirmed='YES', ready to login):")
     for admin in credentials["admins"]:
         print(f"  • {admin['email']} - {admin['name']}")
     print()
-    print("SPONSORS (Can manage their invitees):")
+    print("SPONSORS (Can manage their invitees, confirmed='YES', ready to login):")
     for sponsor in credentials["sponsors"]:
         print(f"  • {sponsor['email']} - {sponsor['name']}")
     print()
-    print("INVITEES (Regular users - Status: UNKNOWN, needs confirmation):")
+    print("INVITEES (Regular users, confirmed='UNKNOWN', must use confirmation links below):")
     for invitee in credentials["invitees"]:
         print(f"  • {invitee['email']} - {invitee['name']} (sponsored by {invitee['sponsor']})")
     print()
-    print(f"PASSWORD (all users): {TEST_PASSWORD}")
+    print(f"PASSWORD (admins/sponsors only): {TEST_PASSWORD}")
+    print("NOTE: Invitees get credentials AFTER confirming via the links below")
     print()
     print("=" * 80)
     print("CONFIRMATION LINKS (for testing invitee confirmation flow)")
