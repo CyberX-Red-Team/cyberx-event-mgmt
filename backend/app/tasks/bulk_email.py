@@ -7,6 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models.user import User
+from app.models.event import Event, EventParticipation, ParticipationStatus
 from app.services.email_queue_service import EmailQueueService
 
 
@@ -32,11 +33,26 @@ async def discover_and_queue_emails():
 
     try:
         async with AsyncSessionLocal() as session:
+            # Get current active event
+            event_result = await session.execute(
+                select(Event).where(Event.is_active == True).limit(1)
+            )
+            current_event = event_result.scalar_one_or_none()
+
+            if not current_event:
+                logger.info("No active event found - skipping password email discovery")
+                return
+
             # Query eligible users (allow GOOD and UNKNOWN, block BOUNCED/SPAM/UNSUBSCRIBED)
             result = await session.execute(
-                select(User).where(
+                select(User)
+                .join(EventParticipation, and_(
+                    EventParticipation.user_id == User.id,
+                    EventParticipation.event_id == current_event.id
+                ))
+                .where(
                     and_(
-                        User.confirmed == 'YES',
+                        EventParticipation.status == ParticipationStatus.CONFIRMED.value,
                         User.password_email_sent.is_(None),
                         User.email_status.notin_(['BOUNCED', 'SPAM_REPORTED', 'UNSUBSCRIBED']),
                         User.is_active == True

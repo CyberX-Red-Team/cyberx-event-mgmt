@@ -54,6 +54,8 @@ class User(Base):
     sponsor_email = Column(String(255), nullable=True)
 
     # Account Status
+    # DEPRECATED: Use EventParticipation.status for event-specific tracking
+    # This field will be removed once migration is complete
     confirmed = Column(String(20), default='UNKNOWN', nullable=False)  # YES/NO/UNKNOWN
     confirmed_at = Column(TIMESTAMP(timezone=True), nullable=True)  # When user confirmed participation
     decline_reason = Column(String(500), nullable=True)  # Optional reason for declining participation
@@ -214,6 +216,65 @@ class User(Base):
         if self.years_invited >= 5 and self.participation_rate < 20:
             return True
         return False
+
+    # Event-specific confirmation helpers
+    async def get_participation_for_event(self, event_id: int, session) -> Optional["EventParticipation"]:
+        """
+        Get EventParticipation record for a specific event.
+
+        Args:
+            event_id: The event ID to check
+            session: Database session (AsyncSession)
+
+        Returns:
+            EventParticipation or None if not found
+        """
+        from sqlalchemy import select
+        from app.models.event import EventParticipation
+
+        result = await session.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == self.id,
+                EventParticipation.event_id == event_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def is_confirmed_for_event(self, event_id: int, session) -> bool:
+        """
+        Check if user is confirmed for a specific event.
+
+        Args:
+            event_id: The event ID to check
+            session: Database session (AsyncSession)
+
+        Returns:
+            True if user has confirmed participation for this event
+        """
+        from app.models.event import ParticipationStatus
+
+        participation = await self.get_participation_for_event(event_id, session)
+        return participation and participation.status == ParticipationStatus.CONFIRMED.value
+
+    async def get_current_event_participation(self, session) -> Optional["EventParticipation"]:
+        """
+        Get EventParticipation record for the current active event.
+
+        Args:
+            session: Database session (AsyncSession)
+
+        Returns:
+            EventParticipation for current event or None
+        """
+        from app.services.event_service import EventService
+
+        event_service = EventService(session)
+        event = await event_service.get_current_event()
+
+        if not event:
+            return None
+
+        return await self.get_participation_for_event(event.id, session)
 
     def can_manage_invitee(self, invitee: "User") -> bool:
         """Check if this user can manage a specific invitee."""

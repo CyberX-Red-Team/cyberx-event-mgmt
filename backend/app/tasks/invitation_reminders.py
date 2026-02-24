@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.models.user import User
-from app.models.event import Event
+from app.models.event import Event, EventParticipation, ParticipationStatus
 from app.services.email_queue_service import EmailQueueService
 from app.services.audit_service import AuditService
 from app.config import get_settings
@@ -86,9 +86,17 @@ async def process_reminder_stage_1(session: AsyncSession, event: Event, settings
     target_date_end = now - timedelta(days=days_after)
 
     result = await session.execute(
-        select(User).where(
+        select(User)
+        .join(EventParticipation, and_(
+            EventParticipation.user_id == User.id,
+            EventParticipation.event_id == event.id
+        ))
+        .where(
             and_(
-                User.confirmed == 'UNKNOWN',
+                EventParticipation.status.in_([
+                    ParticipationStatus.INVITED.value,
+                    ParticipationStatus.NO_RESPONSE.value
+                ]),
                 User.confirmation_sent_at.isnot(None),
                 User.confirmation_sent_at >= target_date_start,
                 User.confirmation_sent_at < target_date_end,
@@ -150,9 +158,17 @@ async def process_reminder_stage_2(session: AsyncSession, event: Event, settings
     target_date_end = now - timedelta(days=days_after)
 
     result = await session.execute(
-        select(User).where(
+        select(User)
+        .join(EventParticipation, and_(
+            EventParticipation.user_id == User.id,
+            EventParticipation.event_id == event.id
+        ))
+        .where(
             and_(
-                User.confirmed == 'UNKNOWN',
+                EventParticipation.status.in_([
+                    ParticipationStatus.INVITED.value,
+                    ParticipationStatus.NO_RESPONSE.value
+                ]),
                 User.confirmation_sent_at.isnot(None),
                 User.confirmation_sent_at >= target_date_start,
                 User.confirmation_sent_at < target_date_end,
@@ -216,9 +232,17 @@ async def process_reminder_stage_3(session: AsyncSession, event: Event, settings
 
     # Find all users who still haven't confirmed
     result = await session.execute(
-        select(User).where(
+        select(User)
+        .join(EventParticipation, and_(
+            EventParticipation.user_id == User.id,
+            EventParticipation.event_id == event.id
+        ))
+        .where(
             and_(
-                User.confirmed == 'UNKNOWN',
+                EventParticipation.status.in_([
+                    ParticipationStatus.INVITED.value,
+                    ParticipationStatus.NO_RESPONSE.value
+                ]),
                 User.confirmation_sent_at.isnot(None),
                 User.reminder_3_sent_at.is_(None),
                 User.is_active == True

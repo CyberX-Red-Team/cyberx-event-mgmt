@@ -243,13 +243,22 @@ async def create_participant(
 
     # Determine if invitation should be sent based on event settings
     should_send_invitation = False
-    if active_event and participant.confirmed == 'UNKNOWN' and participant.role in ['invitee', 'sponsor']:
-        # TEST MODE ALWAYS RESTRICTS: Only send to sponsors if test mode is enabled
-        if active_event.test_mode:
-            should_send_invitation = (participant.role == 'sponsor')
-        else:
-            # Normal mode: Send if registration is open
-            should_send_invitation = active_event.registration_open
+    if active_event and participant.role in ['invitee', 'sponsor']:
+        # Check EventParticipation status for current event
+        from app.models.event import ParticipationStatus
+        participation = await participant.get_current_event_participation(db)
+
+        # Send only if not yet confirmed/declined (invited, no_response, or no record yet)
+        if not participation or participation.status in [
+            ParticipationStatus.INVITED.value,
+            ParticipationStatus.NO_RESPONSE.value
+        ]:
+            # TEST MODE ALWAYS RESTRICTS: Only send to sponsors if test mode is enabled
+            if active_event.test_mode:
+                should_send_invitation = (participant.role == 'sponsor')
+            else:
+                # Normal mode: Send if registration is open
+                should_send_invitation = active_event.registration_open
 
     if should_send_invitation:
         # Queue invitation email using helper function
@@ -510,8 +519,11 @@ async def resend_participant_invitation(
     if participant.role not in ['invitee', 'sponsor']:
         raise bad_request(f"Cannot resend invitation to {participant.role} role. Only invitees and sponsors can receive invitations.")
 
-    if participant.confirmed == 'YES':
-        raise bad_request("Participant has already confirmed. Cannot resend invitation to confirmed users.")
+    # Check EventParticipation status for current event
+    from app.models.event import ParticipationStatus
+    participation = await participant.get_current_event_participation(db)
+    if participation and participation.status == ParticipationStatus.CONFIRMED.value:
+        raise bad_request("Participant has already confirmed for current event. Cannot resend invitation to confirmed users.")
 
     if not participant.is_active:
         raise bad_request("Cannot resend invitation to inactive participant.")
