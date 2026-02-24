@@ -370,6 +370,7 @@ class InstanceService:
         vpn = vpn_result.scalar_one_or_none()
         if vpn:
             vpn.assigned_to_instance_id = instance_id
+            vpn.assigned_instance_at = datetime.now(timezone.utc)
             await self.session.commit()
             logger.info("Updated VPN %d with instance ID %d", vpn_id, instance_id)
 

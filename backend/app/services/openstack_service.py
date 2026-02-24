@@ -574,6 +574,7 @@ class OpenStackService:
             vpn_to_update = vpn_update_result.scalar_one_or_none()
             if vpn_to_update:
                 vpn_to_update.assigned_to_instance_id = instance.id
+                vpn_to_update.assigned_instance_at = datetime.now(timezone.utc)
                 await self.session.commit()
                 logger.info("Updated VPN %d with instance ID %d", assigned_vpn_id, instance.id)
 
