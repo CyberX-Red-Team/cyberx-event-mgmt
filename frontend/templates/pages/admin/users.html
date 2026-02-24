@@ -256,6 +256,8 @@
                                 <li><a class="dropdown-item" href="#" onclick="bulkAction('activate')"><i data-feather="check-circle" class="me-2"></i>Activate</a></li>
                                 <li><a class="dropdown-item" href="#" onclick="bulkAction('deactivate')"><i data-feather="x-circle" class="me-2"></i>Deactivate</a></li>
                                 <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="#" onclick="bulkResendInvitation()"><i data-feather="send" class="me-2"></i>Resend Invitation</a></li>
+                                <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-danger" href="#" onclick="bulkAction('delete')"><i data-feather="trash-2" class="me-2"></i>Delete</a></li>
                             </ul>
                         </div>
@@ -837,6 +839,11 @@ function renderUsersTable() {
                     <button class="btn btn-outline-primary" onclick="editUser(${user.id})" title="Edit">
                         <i data-feather="edit-2"></i>
                     </button>
+                    ${user.confirmed !== 'YES' && user.is_active && (user.role === 'invitee' || user.role === 'sponsor')
+                        ? `<button class="btn btn-outline-info" onclick="resendInvitation(${user.id}, '${escapeHtml(user.email)}')" title="Resend Invitation">
+                            <i data-feather="send"></i>
+                           </button>`
+                        : ''}
                     <button class="btn btn-outline-secondary" onclick="openRoleModal(${user.id}, '${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}', '${user.role}')" title="Change Role">
                         <i data-feather="shield"></i>
                     </button>
@@ -1336,6 +1343,82 @@ function updateSortIndicator() {
         indicator.innerHTML = sortOrder === 'asc' ? ' ▲' : ' ▼';
     } else {
         indicator.innerHTML = '';
+    }
+}
+
+async function resendInvitation(userId, email) {
+    if (!confirm(`Resend invitation email to ${email}?`)) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch(`/api/admin/participants/${userId}/resend-invitation`, {
+            method: 'POST'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            showToast(data.message || 'Invitation email queued successfully', 'success');
+            loadUsers(currentPage);
+        } else {
+            const data = await response.json();
+            showToast(data.detail || 'Failed to resend invitation', 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Failed to resend invitation', 'danger');
+    }
+}
+
+async function bulkResendInvitation() {
+    if (selectedUsers.size === 0) return;
+
+    const confirmMsg = `Resend invitation emails to ${selectedUsers.size} user(s)?\n\n` +
+                      `This will:\n` +
+                      `- Generate new confirmation codes\n` +
+                      `- Create EventParticipation records if needed\n` +
+                      `- Queue invitation emails`;
+
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
+    try {
+        let successCount = 0;
+        let failCount = 0;
+        const failedEmails = [];
+
+        for (const userId of selectedUsers) {
+            try {
+                const response = await csrfFetch(`/api/admin/participants/${userId}/resend-invitation`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    failCount++;
+                    const data = await response.json();
+                    failedEmails.push(data.detail || `ID ${userId}`);
+                }
+            } catch (error) {
+                failCount++;
+                failedEmails.push(`ID ${userId}: ${error.message}`);
+            }
+        }
+
+        let message = `Successfully queued ${successCount} invitation(s)`;
+        if (failCount > 0) {
+            message += `\n\nFailed: ${failCount}\n${failedEmails.join('\n')}`;
+        }
+
+        showToast(message, failCount > 0 ? 'warning' : 'success');
+        loadUsers(currentPage);
+        selectedUsers.clear();
+        updateBulkActionsButton();
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Bulk resend operation failed', 'danger');
     }
 }
 
