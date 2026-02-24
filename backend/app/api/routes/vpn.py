@@ -116,6 +116,7 @@ async def build_vpn_response(
         assigned_to_email=assigned_email,
         assigned_to_name=assigned_name,
         assigned_to_instance_id=assigned_instance_id,
+        assigned_instance_at=vpn.assigned_instance_at,
         assigned_instance_name=assigned_instance_name,
         assigned_instance_created_by_email=assigned_instance_created_by_email,
         assigned_instance_created_by_name=assigned_instance_created_by_name
