@@ -538,7 +538,7 @@ let currentEvent = null;  // Store current event data globally
 const currentUser = {
     id: {{ current_user.id }},
     role: '{{ current_user.role }}',
-    isSponsor: {{ 'true' if current_user.role == 'sponsor' or current_user.is_sponsor else 'false' }}
+    isSponsor: {{ 'true' if current_user.role == 'sponsor' or current_user.is_sponsor_role else 'false' }}
 };
 
 async function loadEventInfo() {

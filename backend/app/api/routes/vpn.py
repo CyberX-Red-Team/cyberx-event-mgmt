@@ -459,7 +459,7 @@ async def request_vpn_credentials(
 
     # Check VPN availability
     # Sponsors can request VPN in test mode, everyone else needs vpn_available
-    is_sponsor = current_user.role == 'sponsor' or current_user.is_sponsor
+    is_sponsor = current_user.role == 'sponsor' or current_user.is_sponsor_role
     vpn_allowed = active_event.vpn_available or (active_event.test_mode and is_sponsor)
 
     if not vpn_allowed:
