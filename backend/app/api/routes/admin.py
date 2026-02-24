@@ -622,10 +622,9 @@ async def reset_participant_workflow(
     )
 
     # Audit log
-    from app.api.utils.request import get_client_ip, get_user_agent
+    from app.api.utils.request import extract_client_metadata
     audit_service = AuditService(db)
-    ip_address = get_client_ip(request) if request else None
-    user_agent = get_user_agent(request) if request else None
+    ip_address, user_agent = extract_client_metadata(request)
 
     await audit_service.log(
         action="RESET_WORKFLOW",
