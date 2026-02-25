@@ -60,8 +60,8 @@ class ParticipantAction(Base):
     notification_sent = Column(Boolean, default=False)
     notification_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
-    # Metadata
-    metadata = Column(Text, nullable=True)  # JSON for type-specific data
+    # Action-specific metadata (JSON for type-specific data)
+    action_metadata = Column(Text, nullable=True)
 
     # Timestamps
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

@@ -33,7 +33,7 @@ def upgrade():
         sa.Column('deadline', sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column('notification_sent', sa.Boolean(), default=False),
         sa.Column('notification_sent_at', sa.TIMESTAMP(timezone=True), nullable=True),
-        sa.Column('metadata', sa.Text(), nullable=True),
+        sa.Column('action_metadata', sa.Text(), nullable=True),
         sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.func.now()),
         sa.Column('updated_at', sa.TIMESTAMP(timezone=True), server_default=sa.func.now()),
         sa.PrimaryKeyConstraint('id'),
