@@ -1654,22 +1654,42 @@ window.showAssignActionModal = async function() {
     // Load email templates
     try {
         const response = await csrfFetch('/api/email/templates');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const templates = await response.json();
+        console.log('Loaded templates:', templates);
 
         const templateSelect = document.getElementById('actionEmailTemplate');
         templateSelect.innerHTML = '<option value="">Use default action notification</option>';
 
         // Filter to only SendGrid templates
-        templates
-            .filter(t => t.sendgrid_template_id)
-            .forEach(template => {
+        const sendgridTemplates = templates.filter(t => t.sendgrid_template_id);
+        console.log('SendGrid templates:', sendgridTemplates);
+
+        if (sendgridTemplates.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No SendGrid templates available - sync templates first';
+            option.disabled = true;
+            templateSelect.appendChild(option);
+        } else {
+            sendgridTemplates.forEach(template => {
                 const option = document.createElement('option');
                 option.value = template.id;
-                option.textContent = template.name;
+                option.textContent = template.display_name || template.name;
                 templateSelect.appendChild(option);
             });
+        }
     } catch (error) {
         console.error('Failed to load templates:', error);
+        const templateSelect = document.getElementById('actionEmailTemplate');
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Error loading templates';
+        option.disabled = true;
+        templateSelect.appendChild(option);
     }
 
     const modal = new bootstrap.Modal(document.getElementById('assignActionModal'));
