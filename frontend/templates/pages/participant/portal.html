@@ -261,6 +261,31 @@
                 </div>
             </div>
 
+            <!-- Actions Waiting Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i data-feather="check-square" class="me-2"></i>Actions Waiting
+                    </h5>
+                    <span id="actionsBadge" class="badge bg-warning d-none">0</span>
+                </div>
+                <div class="card-body">
+                    <div id="actionsLoading" class="text-center py-3">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    <div id="actionsContent" class="d-none">
+                        <p class="text-muted small mb-3">Complete the following actions:</p>
+                        <div id="actionsList"></div>
+                    </div>
+                    <div id="noActions" class="text-center text-muted py-3 d-none">
+                        <i data-feather="check-circle" class="mb-2" style="width: 48px; height: 48px;"></i>
+                        <p class="mb-0">No pending actions</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Authentication Information Card -->
             <div class="card shadow-sm mb-4">
                 <div class="card-header">
@@ -1231,10 +1256,105 @@ async function refreshInstances() {
     }
 }
 
+// =============================================================================
+// Actions Waiting Functions
+// =============================================================================
+async function loadPendingActions() {
+    try {
+        const response = await csrfFetch('/api/participants/actions/my-actions');
+        const actions = await response.json();
+
+        document.getElementById('actionsLoading').classList.add('d-none');
+
+        const pendingActions = actions.filter(a => a.status === 'pending');
+
+        if (pendingActions.length === 0) {
+            document.getElementById('noActions').classList.remove('d-none');
+            document.getElementById('actionsContent').classList.add('d-none');
+            document.getElementById('actionsBadge').classList.add('d-none');
+        } else {
+            document.getElementById('actionsContent').classList.remove('d-none');
+            document.getElementById('noActions').classList.add('d-none');
+
+            // Update badge
+            document.getElementById('actionsBadge').textContent = pendingActions.length;
+            document.getElementById('actionsBadge').classList.remove('d-none');
+
+            // Render actions
+            const html = pendingActions.map(action => {
+                const deadlineHtml = action.deadline
+                    ? `<p class="small text-warning mb-3"><i data-feather="clock" class="feather-sm"></i> Deadline: ${formatDateTime(action.deadline)}</p>`
+                    : '';
+                const descriptionHtml = action.description
+                    ? `<p class="small text-muted mb-3">${escapeHtml(action.description)}</p>`
+                    : '';
+
+                return `
+                    <div class="border rounded p-3 mb-3">
+                        <h6 class="mb-2">${escapeHtml(action.title)}</h6>
+                        ${descriptionHtml}
+                        ${deadlineHtml}
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-success" onclick="respondToAction(${action.id}, 'confirmed')">
+                                <i data-feather="check" class="feather-sm"></i> Confirm
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="respondToAction(${action.id}, 'declined')">
+                                <i data-feather="x" class="feather-sm"></i> Decline
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('actionsList').innerHTML = html;
+            refreshFeatherIcons();
+        }
+    } catch (error) {
+        console.error('Failed to load actions:', error);
+        document.getElementById('actionsLoading').classList.add('d-none');
+    }
+}
+
+async function respondToAction(actionId, status) {
+    const note = status === 'declined' ? prompt('Optional: Please provide a reason for declining') : null;
+
+    try {
+        const response = await csrfFetch(`/api/participants/actions/${actionId}/respond`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                status: status,
+                response_note: note
+            })
+        });
+
+        if (response.ok) {
+            showToast(`Action ${status}`, 'success');
+            loadPendingActions(); // Reload actions
+        } else {
+            const error = await response.json();
+            showToast(error.detail || 'Failed to respond', 'danger');
+        }
+    } catch (error) {
+        console.error('Failed to respond to action:', error);
+        showToast('Failed to respond to action', 'danger');
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // Load event info and VPN status on page load
 document.addEventListener('DOMContentLoaded', async function() {
     // Load event info first
     await loadEventInfo();
+
+    // Load pending actions
+    loadPendingActions();
 
     // Then load VPN status (which depends on event data)
     loadVPNStatus();

@@ -236,6 +236,43 @@ async def create_participant(
     # Reload participant with relationships for response
     participant = await service.get_participant(participant.id)
 
+    # Trigger workflow for admin/sponsor creation (send welcome email with portal password)
+    if participant.role in [UserRole.ADMIN.value, UserRole.SPONSOR.value]:
+        from app.services.workflow_service import WorkflowService
+        from app.models.email_workflow import WorkflowTriggerEvent
+        from app.utils.password import generate_password, hash_password
+        from app.config import get_settings
+
+        settings = get_settings()
+        workflow_service = WorkflowService(db)
+
+        # Determine trigger event based on role
+        trigger_event = (
+            WorkflowTriggerEvent.ADMIN_CREATED
+            if participant.role == UserRole.ADMIN.value
+            else WorkflowTriggerEvent.SPONSOR_CREATED
+        )
+
+        # Generate temporary password for web portal login
+        temp_password = generate_password(length=12)
+        participant.password_hash = hash_password(temp_password)
+        await db.commit()
+
+        # Trigger workflow with custom variables
+        await workflow_service.trigger_workflow(
+            trigger_event=trigger_event,
+            user_id=participant.id,
+            custom_vars={
+                "first_name": participant.first_name,
+                "last_name": participant.last_name,
+                "role": "Admin" if participant.role == UserRole.ADMIN.value else "Sponsor",
+                "password": temp_password,  # Web portal password, not pandas
+                "support_email": settings.SENDGRID_FROM_EMAIL
+            }
+        )
+
+        logger.info(f"Triggered {trigger_event} workflow for new {participant.role} {participant.id}")
+
     # Check if there's an active event and queue invitation email
     from app.services.event_service import EventService
     event_service = EventService(db)

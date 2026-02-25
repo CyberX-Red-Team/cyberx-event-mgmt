@@ -63,6 +63,8 @@ class WorkflowTriggerEvent:
     USER_CONFIRMED = "user_confirmed"
     USER_ACTIVATED = "user_activated"
     USER_DEACTIVATED = "user_deactivated"
+    ADMIN_CREATED = "admin_created"
+    SPONSOR_CREATED = "sponsor_created"
 
     # Credential Events
     PASSWORD_RESET = "password_reset"
@@ -80,3 +82,4 @@ class WorkflowTriggerEvent:
     # Admin Actions
     BULK_INVITE = "bulk_invite"
     CUSTOM_EMAIL = "custom_email"
+    ACTION_ASSIGNED = "action_assigned"
