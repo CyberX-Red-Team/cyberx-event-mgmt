@@ -587,7 +587,7 @@ async function submitAddInvitee() {
 
     } catch (error) {
         console.error('Error creating invitee:', error);
-        showToast(error.message, 'danger');
+        // Error is already displayed in the modal alert - no need for redundant toast
     }
 }
 
