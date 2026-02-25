@@ -4,6 +4,7 @@ from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 from app.dependencies import get_db, get_current_sponsor_user, PermissionChecker
@@ -139,6 +140,42 @@ async def create_my_invitee(
         f"Sponsor {current_user.id} creating invitee: {data.first_name} {data.last_name} "
         f"({data.email})"
     )
+
+    # Check if user already exists
+    from app.api.utils.validation import normalize_email
+    normalized_email = normalize_email(data.email)
+
+    result = await db.execute(
+        select(User).where(User.email_normalized == normalized_email)
+    )
+    existing_user = result.scalar_one_or_none()
+
+    if existing_user:
+        # User already exists - provide helpful error message
+        sponsor_info = "no sponsor"
+        if existing_user.sponsor_id:
+            sponsor_result = await db.execute(
+                select(User).where(User.id == existing_user.sponsor_id)
+            )
+            sponsor = sponsor_result.scalar_one_or_none()
+            if sponsor:
+                sponsor_info = f"{sponsor.first_name} {sponsor.last_name} ({sponsor.email})"
+            else:
+                sponsor_info = f"sponsor ID {existing_user.sponsor_id}"
+
+        error_msg = (
+            f"User with email '{data.email}' already exists. "
+            f"Name: {existing_user.first_name} {existing_user.last_name}, "
+            f"Role: {existing_user.role}, "
+            f"Sponsor: {sponsor_info}"
+        )
+
+        logger.warning(
+            f"Sponsor {current_user.id} attempted to create duplicate invitee: {data.email}. "
+            f"Existing user ID: {existing_user.id}, sponsored by: {sponsor_info}"
+        )
+
+        raise conflict(error_msg)
 
     # Create invitee with auto-assigned sponsor_id
     invitee = await service.create_participant(
