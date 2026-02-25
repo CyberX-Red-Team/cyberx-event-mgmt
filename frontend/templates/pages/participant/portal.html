@@ -26,6 +26,53 @@
         animation: rotate 1s linear infinite;
         display: inline-block;
     }
+
+    /* Action completion animations */
+    @keyframes actionComplete {
+        0% {
+            opacity: 1;
+            transform: scale(1);
+            background-color: transparent;
+        }
+        30% {
+            background-color: #d1e7dd;
+            transform: scale(1.02);
+        }
+        100% {
+            opacity: 0;
+            transform: scale(0.95) translateX(20px);
+        }
+    }
+
+    @keyframes actionDecline {
+        0% {
+            opacity: 1;
+            transform: scale(1);
+            background-color: transparent;
+        }
+        30% {
+            background-color: #f8d7da;
+            transform: scale(1.02);
+        }
+        100% {
+            opacity: 0;
+            transform: scale(0.95) translateX(-20px);
+        }
+    }
+
+    .action-item {
+        transition: all 0.3s ease;
+    }
+
+    .action-completing {
+        animation: actionComplete 0.6s ease forwards;
+        pointer-events: none;
+    }
+
+    .action-declining {
+        animation: actionDecline 0.6s ease forwards;
+        pointer-events: none;
+    }
 </style>
 {% endblock %}
 
@@ -1290,7 +1337,7 @@ async function loadPendingActions() {
                     : '';
 
                 return `
-                    <div class="border rounded p-3 mb-3">
+                    <div class="action-item border rounded p-3 mb-3" data-action-id="${action.id}">
                         <h6 class="mb-2">${escapeHtml(action.title)}</h6>
                         ${descriptionHtml}
                         ${deadlineHtml}
@@ -1318,6 +1365,10 @@ async function loadPendingActions() {
 async function respondToAction(actionId, status) {
     const note = status === 'declined' ? prompt('Optional: Please provide a reason for declining') : null;
 
+    // Find the action item element
+    const actionElement = document.querySelector(`[data-action-id="${actionId}"]`);
+    if (!actionElement) return;
+
     try {
         const response = await csrfFetch(`/api/participants/actions/${actionId}/respond`, {
             method: 'POST',
@@ -1329,8 +1380,30 @@ async function respondToAction(actionId, status) {
         });
 
         if (response.ok) {
+            // Add animation class
+            actionElement.classList.add(status === 'confirmed' ? 'action-completing' : 'action-declining');
+
+            // Show success message
             showToast(`Action ${status}`, 'success');
-            loadPendingActions(); // Reload actions
+
+            // Wait for animation to complete, then remove element and update UI
+            setTimeout(() => {
+                actionElement.remove();
+
+                // Update badge count
+                const remainingActions = document.querySelectorAll('.action-item').length;
+                const badge = document.getElementById('actionsBadge');
+
+                if (remainingActions === 0) {
+                    // No more pending actions - show "no actions" message
+                    document.getElementById('actionsContent').classList.add('d-none');
+                    document.getElementById('noActions').classList.remove('d-none');
+                    badge.classList.add('d-none');
+                } else {
+                    // Update badge count
+                    badge.textContent = remainingActions;
+                }
+            }, 600); // Match animation duration
         } else {
             const error = await response.json();
             showToast(error.detail || 'Failed to respond', 'danger');
