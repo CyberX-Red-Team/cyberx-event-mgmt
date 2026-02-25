@@ -295,6 +295,12 @@ class User(Base):
         Returns:
             Decrypted password or None
         """
+        # Defensive check: if accessed at class level (not instance), return None
+        # This prevents errors during SQLAlchemy inspection or class-level access
+        from sqlalchemy.orm.attributes import InstrumentedAttribute
+        if isinstance(self._pandas_password_encrypted, InstrumentedAttribute):
+            return None
+
         if self._pandas_password_encrypted is None:
             return None
 
