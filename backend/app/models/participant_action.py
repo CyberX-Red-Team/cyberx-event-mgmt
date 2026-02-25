@@ -59,6 +59,7 @@ class ParticipantAction(Base):
     # Email Notification Tracking
     notification_sent = Column(Boolean, default=False)
     notification_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    email_template_id = Column(Integer, ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True)
 
     # Action-specific metadata (JSON for type-specific data)
     action_metadata = Column(Text, nullable=True)
@@ -71,6 +72,7 @@ class ParticipantAction(Base):
     user = relationship("User", foreign_keys=[user_id], backref="assigned_actions")
     event = relationship("Event", backref="participant_actions")
     created_by = relationship("User", foreign_keys=[created_by_id])
+    email_template = relationship("EmailTemplate", foreign_keys=[email_template_id])
 
     def __repr__(self):
         return f"<ParticipantAction(id={self.id}, user_id={self.user_id}, type={self.action_type}, status={self.status})>"

@@ -613,6 +613,16 @@
                     </div>
 
                     <div class="mb-3">
+                        <label class="form-label">Email Template (Optional)</label>
+                        <select class="form-select" id="actionEmailTemplate">
+                            <option value="">Use default action notification</option>
+                        </select>
+                        <div class="form-text">
+                            Custom SendGrid template for action notification email
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="sendNotification" checked>
                             <label class="form-check-label" for="sendNotification">
@@ -1638,8 +1648,30 @@ function escapeHtml(text) {
 // Assign Action Functions
 // ===============================================
 
-window.showAssignActionModal = function() {
+window.showAssignActionModal = async function() {
     document.getElementById('actionTargetCount').textContent = selectedUsers.size;
+
+    // Load email templates
+    try {
+        const response = await csrfFetch('/api/email/templates');
+        const templates = await response.json();
+
+        const templateSelect = document.getElementById('actionEmailTemplate');
+        templateSelect.innerHTML = '<option value="">Use default action notification</option>';
+
+        // Filter to only SendGrid templates
+        templates
+            .filter(t => t.sendgrid_template_id)
+            .forEach(template => {
+                const option = document.createElement('option');
+                option.value = template.id;
+                option.textContent = template.name;
+                templateSelect.appendChild(option);
+            });
+    } catch (error) {
+        console.error('Failed to load templates:', error);
+    }
+
     const modal = new bootstrap.Modal(document.getElementById('assignActionModal'));
     modal.show();
     // Reinitialize feather icons after modal opens
@@ -1652,6 +1684,7 @@ window.submitAssignAction = async function() {
     const description = document.getElementById('actionDescription').value;
     const deadline = document.getElementById('actionDeadline').value;
     const sendNotification = document.getElementById('sendNotification').checked;
+    const emailTemplateId = document.getElementById('actionEmailTemplate').value;
 
     if (!title) {
         showError('assignActionError', 'Title is required');
@@ -1668,7 +1701,8 @@ window.submitAssignAction = async function() {
                 description: description || null,
                 deadline: deadline || null,
                 user_ids: Array.from(selectedUsers),
-                send_notification: sendNotification
+                send_notification: sendNotification,
+                email_template_id: emailTemplateId ? parseInt(emailTemplateId) : null
             })
         });
 

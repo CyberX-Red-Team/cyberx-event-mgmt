@@ -9,6 +9,8 @@ from app.database import get_db
 from app.models.user import User
 from app.models.participant_action import ParticipantAction, ActionType, ActionStatus
 from app.models.event import Event
+from app.models.email_queue import EmailQueue, EmailStatus
+from app.models.email_template import EmailTemplate
 from app.dependencies import get_current_admin_user
 from app.services.workflow_service import WorkflowService
 from app.models.email_workflow import WorkflowTriggerEvent
@@ -27,6 +29,7 @@ class BulkActionCreate(BaseModel):
     deadline: Optional[datetime] = None
     user_ids: List[int]  # Empty list means "all confirmed participants"
     send_notification: bool = True
+    email_template_id: Optional[int] = None  # Optional custom SendGrid template
 
 
 class ActionResponse(BaseModel):
@@ -98,29 +101,63 @@ async def create_bulk_action(
             title=data.title,
             description=data.description,
             status=ActionStatus.PENDING.value,
-            deadline=data.deadline
+            deadline=data.deadline,
+            email_template_id=data.email_template_id
         )
         db.add(action)
         created_actions.append(action)
 
     await db.commit()
 
-    # Send notifications via workflow
+    # Send notifications
     if data.send_notification:
-        workflow_service = WorkflowService(db)
-        for action in created_actions:
-            await workflow_service.trigger_workflow(
-                trigger_event=WorkflowTriggerEvent.ACTION_ASSIGNED,
-                user_id=action.user_id,
-                custom_vars={
-                    "action_title": action.title,
-                    "action_description": action.description or "",
-                    "action_url": f"https://staging.events.cyberxredteam.org/portal#actions",
-                    "deadline": str(action.deadline) if action.deadline else "No deadline"
-                }
+        if data.email_template_id:
+            # Use custom SendGrid template directly
+            template_result = await db.execute(
+                select(EmailTemplate).where(EmailTemplate.id == data.email_template_id)
             )
-            action.notification_sent = True
-            action.notification_sent_at = datetime.now(timezone.utc)
+            template = template_result.scalar_one_or_none()
+
+            if template and template.sendgrid_template_id:
+                for action in created_actions:
+                    user = action.user
+                    # Queue email with custom template
+                    email_queue = EmailQueue(
+                        to_email=user.email,
+                        to_name=f"{user.first_name} {user.last_name}",
+                        subject=f"Action Required: {action.title}",
+                        sendgrid_template_id=template.sendgrid_template_id,
+                        template_data={
+                            "first_name": user.first_name,
+                            "last_name": user.last_name,
+                            "action_title": action.title,
+                            "action_description": action.description or "",
+                            "action_url": f"https://staging.events.cyberxredteam.org/portal#actions",
+                            "deadline": str(action.deadline) if action.deadline else "No deadline",
+                            "event_name": event.name
+                        },
+                        status=EmailStatus.PENDING.value,
+                        event_id=event.id
+                    )
+                    db.add(email_queue)
+                    action.notification_sent = True
+                    action.notification_sent_at = datetime.now(timezone.utc)
+        else:
+            # Use workflow system (default)
+            workflow_service = WorkflowService(db)
+            for action in created_actions:
+                await workflow_service.trigger_workflow(
+                    trigger_event=WorkflowTriggerEvent.ACTION_ASSIGNED,
+                    user_id=action.user_id,
+                    custom_vars={
+                        "action_title": action.title,
+                        "action_description": action.description or "",
+                        "action_url": f"https://staging.events.cyberxredteam.org/portal#actions",
+                        "deadline": str(action.deadline) if action.deadline else "No deadline"
+                    }
+                )
+                action.notification_sent = True
+                action.notification_sent_at = datetime.now(timezone.utc)
 
         await db.commit()
 
@@ -182,3 +219,50 @@ async def list_actions(
         ))
 
     return response
+
+
+@router.get("/statistics")
+async def get_action_statistics(
+    event_id: Optional[int] = None,
+    action_type: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Get summary statistics for actions grouped by action groups."""
+    from sqlalchemy import func, case
+
+    # Base query
+    query = select(
+        ParticipantAction.action_type,
+        ParticipantAction.title,
+        ParticipantAction.created_at,
+        func.count(ParticipantAction.id).label('total'),
+        func.sum(case((ParticipantAction.status == ActionStatus.CONFIRMED.value, 1), else_=0)).label('confirmed'),
+        func.sum(case((ParticipantAction.status == ActionStatus.DECLINED.value, 1), else_=0)).label('declined'),
+        func.sum(case((ParticipantAction.status == ActionStatus.PENDING.value, 1), else_=0)).label('pending'),
+    ).group_by(
+        ParticipantAction.action_type,
+        ParticipantAction.title,
+        ParticipantAction.created_at
+    ).order_by(ParticipantAction.created_at.desc())
+
+    if event_id:
+        query = query.where(ParticipantAction.event_id == event_id)
+    if action_type:
+        query = query.where(ParticipantAction.action_type == action_type)
+
+    result = await db.execute(query)
+    stats = result.all()
+
+    return [
+        {
+            "action_type": row.action_type,
+            "title": row.title,
+            "created_at": row.created_at,
+            "total": row.total,
+            "confirmed": row.confirmed,
+            "declined": row.declined,
+            "pending": row.pending
+        }
+        for row in stats
+    ]
