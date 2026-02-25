@@ -1,0 +1,390 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Action Responses{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Action response specific styles */
+.stat-card {
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.progress-thin {
+    height: 8px;
+}
+
+.response-details {
+    font-size: 0.875rem;
+}
+
+.action-group-card {
+    border-left: 4px solid #0061f2;
+}
+
+.badge-confirmed {
+    background-color: #00ac69;
+}
+
+.badge-declined {
+    background-color: #e81500;
+}
+
+.badge-pending {
+    background-color: #f4a100;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="check-square"></i></div>
+                        Action Responses
+                    </h1>
+                    <div class="page-header-subtitle">View and analyze participant action responses</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+
+    <!-- Loading State -->
+    <div id="loadingState" class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-3 text-muted">Loading action statistics...</p>
+    </div>
+
+    <!-- Content State -->
+    <div id="contentState" class="d-none">
+
+        <!-- Statistics Summary Cards -->
+        <div class="row mb-4" id="summaryCards">
+            <!-- Will be populated dynamically -->
+        </div>
+
+        <!-- Action Groups -->
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <i data-feather="list" class="me-2"></i>
+                        Action Groups
+                    </div>
+                    <div class="col-auto">
+                        <select class="form-select form-select-sm" id="filterActionType">
+                            <option value="">All Types</option>
+                            <option value="in_person_attendance">In-Person Attendance</option>
+                            <option value="orientation_rsvp">Orientation RSVP</option>
+                            <option value="survey_completion">Survey Completion</option>
+                            <option value="document_review">Document Review</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="actionGroups">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="text-center py-5 d-none">
+        <i data-feather="inbox" style="width: 64px; height: 64px;" class="text-muted mb-3"></i>
+        <h4 class="text-muted">No Actions Found</h4>
+        <p class="text-muted">No participant actions have been created yet.</p>
+    </div>
+</div>
+
+<!-- Response Details Modal -->
+<div class="modal fade" id="responseDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="users" class="me-2"></i>
+                    Detailed Responses: <span id="modalActionTitle"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="responseDetailsList"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+'use strict';
+
+let actionStatistics = [];
+let detailedActions = [];
+
+// Load action statistics
+async function loadActionStatistics() {
+    try {
+        const [statsResponse, actionsResponse] = await Promise.all([
+            csrfFetch('/api/admin/actions/statistics'),
+            csrfFetch('/api/admin/actions')
+        ]);
+
+        actionStatistics = await statsResponse.json();
+        detailedActions = await actionsResponse.json();
+
+        if (actionStatistics.length === 0) {
+            document.getElementById('loadingState').classList.add('d-none');
+            document.getElementById('emptyState').classList.remove('d-none');
+        } else {
+            renderStatistics();
+            document.getElementById('loadingState').classList.add('d-none');
+            document.getElementById('contentState').classList.remove('d-none');
+        }
+    } catch (error) {
+        console.error('Failed to load action statistics:', error);
+        showToast('Failed to load action statistics', 'danger');
+    }
+}
+
+// Render summary statistics
+function renderStatistics() {
+    // Calculate totals
+    const totals = actionStatistics.reduce((acc, stat) => {
+        acc.confirmed += stat.confirmed;
+        acc.declined += stat.declined;
+        acc.pending += stat.pending;
+        acc.total += stat.total;
+        return acc;
+    }, { confirmed: 0, declined: 0, pending: 0, total: 0 });
+
+    const confirmedPercent = totals.total ? Math.round((totals.confirmed / totals.total) * 100) : 0;
+    const declinedPercent = totals.total ? Math.round((totals.declined / totals.total) * 100) : 0;
+    const pendingPercent = totals.total ? Math.round((totals.pending / totals.total) * 100) : 0;
+
+    // Render summary cards
+    const summaryHtml = `
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card bg-success text-white shadow-sm stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Confirmed</div>
+                            <div class="h2 mb-0">${totals.confirmed}</div>
+                            <div class="small text-white-50">${confirmedPercent}% of total</div>
+                        </div>
+                        <div class="ms-3">
+                            <i data-feather="check-circle" style="width: 48px; height: 48px;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card bg-danger text-white shadow-sm stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Declined</div>
+                            <div class="h2 mb-0">${totals.declined}</div>
+                            <div class="small text-white-50">${declinedPercent}% of total</div>
+                        </div>
+                        <div class="ms-3">
+                            <i data-feather="x-circle" style="width: 48px; height: 48px;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card bg-warning text-white shadow-sm stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Pending</div>
+                            <div class="h2 mb-0">${totals.pending}</div>
+                            <div class="small text-white-50">${pendingPercent}% of total</div>
+                        </div>
+                        <div class="ms-3">
+                            <i data-feather="clock" style="width: 48px; height: 48px;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card bg-primary text-white shadow-sm stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Total Actions</div>
+                            <div class="h2 mb-0">${totals.total}</div>
+                            <div class="small text-white-50">${actionStatistics.length} groups</div>
+                        </div>
+                        <div class="ms-3">
+                            <i data-feather="check-square" style="width: 48px; height: 48px;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('summaryCards').innerHTML = summaryHtml;
+    renderActionGroups();
+    feather.replace();
+}
+
+// Render action groups
+function renderActionGroups() {
+    const filterValue = document.getElementById('filterActionType').value;
+    const filtered = filterValue
+        ? actionStatistics.filter(s => s.action_type === filterValue)
+        : actionStatistics;
+
+    const html = filtered.map(stat => {
+        const confirmedPercent = (stat.confirmed / stat.total) * 100;
+        const declinedPercent = (stat.declined / stat.total) * 100;
+        const pendingPercent = (stat.pending / stat.total) * 100;
+
+        return `
+            <div class="card action-group-card mb-3 shadow-sm">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <h5 class="mb-1">${escapeHtml(stat.title)}</h5>
+                            <p class="text-muted small mb-2">
+                                <span class="badge bg-secondary">${stat.action_type}</span>
+                                <span class="ms-2">${formatDateTime(stat.created_at)}</span>
+                            </p>
+                            <div class="progress progress-thin mb-2">
+                                <div class="progress-bar bg-success" style="width: ${confirmedPercent}%"></div>
+                                <div class="progress-bar bg-danger" style="width: ${declinedPercent}%"></div>
+                                <div class="progress-bar bg-warning" style="width: ${pendingPercent}%"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="row text-center">
+                                <div class="col-4">
+                                    <span class="badge badge-confirmed">${stat.confirmed}</span>
+                                    <div class="small text-muted">Confirmed</div>
+                                </div>
+                                <div class="col-4">
+                                    <span class="badge badge-declined">${stat.declined}</span>
+                                    <div class="small text-muted">Declined</div>
+                                </div>
+                                <div class="col-4">
+                                    <span class="badge badge-pending">${stat.pending}</span>
+                                    <div class="small text-muted">Pending</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-2 text-end">
+                            <button class="btn btn-primary btn-sm" onclick="showResponseDetails('${escapeHtml(stat.title)}')">
+                                <i data-feather="eye" class="feather-sm"></i> View Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    document.getElementById('actionGroups').innerHTML = html || '<p class="text-muted text-center py-4">No actions match the filter.</p>';
+    feather.replace();
+}
+
+// Show detailed responses
+window.showResponseDetails = function(actionTitle) {
+    const actions = detailedActions.filter(a => a.title === actionTitle);
+
+    document.getElementById('modalActionTitle').textContent = actionTitle;
+
+    const html = actions.map(action => {
+        const statusBadge = action.status === 'confirmed'
+            ? '<span class="badge badge-confirmed">Confirmed</span>'
+            : action.status === 'declined'
+            ? '<span class="badge badge-declined">Declined</span>'
+            : '<span class="badge badge-pending">Pending</span>';
+
+        const responseNote = action.response_note
+            ? `<div class="mt-2"><strong>Note:</strong> ${escapeHtml(action.response_note)}</div>`
+            : '';
+
+        const respondedAt = action.responded_at
+            ? `<div class="small text-muted">Responded: ${formatDateTime(action.responded_at)}</div>`
+            : '<div class="small text-muted">Not yet responded</div>';
+
+        return `
+            <div class="border-bottom pb-3 mb-3">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${escapeHtml(action.user_name)}</strong>
+                        <div class="small text-muted">${escapeHtml(action.user_email)}</div>
+                    </div>
+                    <div>
+                        ${statusBadge}
+                    </div>
+                </div>
+                ${respondedAt}
+                ${responseNote}
+            </div>
+        `;
+    }).join('');
+
+    document.getElementById('responseDetailsList').innerHTML = html;
+
+    const modal = new bootstrap.Modal(document.getElementById('responseDetailsModal'));
+    modal.show();
+    feather.replace();
+};
+
+// Filter change handler
+document.getElementById('filterActionType').addEventListener('change', renderActionGroups);
+
+// Format datetime
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleString();
+}
+
+// Escape HTML
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadActionStatistics();
+});
+
+})(); // End IIFE
+</script>
+{% endblock %}

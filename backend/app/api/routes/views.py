@@ -309,6 +309,23 @@ async def admin_licenses_page(
     )
 
 
+@router.get("/admin/action-responses", response_class=HTMLResponse)
+async def admin_action_responses_page(
+    request: Request,
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Render action responses page (admin only)."""
+    return templates.TemplateResponse(
+        "pages/admin/action_responses.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "active_page": "action-responses",
+            "now": datetime.now()
+        }
+    )
+
+
 # Sponsor pages
 @router.get("/sponsor/invitees", response_class=HTMLResponse)
 async def sponsor_invitees_page(
