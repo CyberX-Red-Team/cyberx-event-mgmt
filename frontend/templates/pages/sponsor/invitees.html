@@ -227,6 +227,11 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <!-- Error Alert -->
+                <div id="addInviteeError" class="alert alert-danger d-none" role="alert">
+                    <i data-feather="alert-circle" class="feather-sm me-1"></i>
+                    <span id="addInviteeErrorText"></span>
+                </div>
                 <form id="addInviteeForm">
                     <div class="mb-3">
                         <label for="addFirstName" class="form-label">First Name <span class="text-danger">*</span></label>
@@ -538,6 +543,8 @@ function applyFilters() {
 // Open Add Invitee Modal
 function openAddInviteeModal() {
     document.getElementById('addInviteeForm').reset();
+    // Hide any previous errors
+    document.getElementById('addInviteeError').classList.add('d-none');
     new bootstrap.Modal(document.getElementById('addInviteeModal')).show();
 }
 
@@ -550,6 +557,9 @@ async function submitAddInvitee() {
         country: document.getElementById('addCountry').value || 'United States'
     };
 
+    // Hide any previous errors
+    document.getElementById('addInviteeError').classList.add('d-none');
+
     try {
         const response = await csrfFetch('/api/sponsors/my-invitees', {
             method: 'POST',
@@ -558,7 +568,16 @@ async function submitAddInvitee() {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || 'Failed to create invitee');
+            const errorMessage = error.detail || 'Failed to create invitee';
+
+            // Show error in modal
+            document.getElementById('addInviteeErrorText').textContent = errorMessage;
+            document.getElementById('addInviteeError').classList.remove('d-none');
+
+            // Re-initialize feather icons for the alert icon
+            feather.replace();
+
+            throw new Error(errorMessage);
         }
 
         showToast('Invitee created successfully', 'success');
@@ -568,7 +587,7 @@ async function submitAddInvitee() {
 
     } catch (error) {
         console.error('Error creating invitee:', error);
-        showToast(error.message, 'error');
+        showToast(error.message, 'danger');
     }
 }
 
