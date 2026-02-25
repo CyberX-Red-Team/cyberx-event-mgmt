@@ -186,7 +186,9 @@ async def list_actions(
     current_user: User = Depends(get_current_admin_user)
 ):
     """List all participant actions with filters."""
-    query = select(ParticipantAction).join(User, User.id == ParticipantAction.user_id)
+    from sqlalchemy.orm import selectinload
+
+    query = select(ParticipantAction).options(selectinload(ParticipantAction.user))
 
     if event_id:
         query = query.where(ParticipantAction.event_id == event_id)
@@ -231,20 +233,19 @@ async def get_action_statistics(
     """Get summary statistics for actions grouped by action groups."""
     from sqlalchemy import func, case
 
-    # Base query
+    # Base query - group by action type and title to aggregate all instances
     query = select(
         ParticipantAction.action_type,
         ParticipantAction.title,
-        ParticipantAction.created_at,
+        func.min(ParticipantAction.created_at).label('created_at'),
         func.count(ParticipantAction.id).label('total'),
         func.sum(case((ParticipantAction.status == ActionStatus.CONFIRMED.value, 1), else_=0)).label('confirmed'),
         func.sum(case((ParticipantAction.status == ActionStatus.DECLINED.value, 1), else_=0)).label('declined'),
         func.sum(case((ParticipantAction.status == ActionStatus.PENDING.value, 1), else_=0)).label('pending'),
     ).group_by(
         ParticipantAction.action_type,
-        ParticipantAction.title,
-        ParticipantAction.created_at
-    ).order_by(ParticipantAction.created_at.desc())
+        ParticipantAction.title
+    ).order_by(func.min(ParticipantAction.created_at).desc())
 
     if event_id:
         query = query.where(ParticipantAction.event_id == event_id)

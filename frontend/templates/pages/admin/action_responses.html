@@ -156,6 +156,10 @@ async function loadActionStatistics() {
         actionStatistics = await statsResponse.json();
         detailedActions = await actionsResponse.json();
 
+        // Ensure arrays
+        if (!Array.isArray(actionStatistics)) actionStatistics = [];
+        if (!Array.isArray(detailedActions)) detailedActions = [];
+
         if (actionStatistics.length === 0) {
             document.getElementById('loadingState').classList.add('d-none');
             document.getElementById('emptyState').classList.remove('d-none');
@@ -167,6 +171,8 @@ async function loadActionStatistics() {
     } catch (error) {
         console.error('Failed to load action statistics:', error);
         showToast('Failed to load action statistics', 'danger');
+        document.getElementById('loadingState').classList.add('d-none');
+        document.getElementById('emptyState').classList.remove('d-none');
     }
 }
 
