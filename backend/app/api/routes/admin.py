@@ -52,7 +52,7 @@ from app.schemas.audit import (
 from app.models.audit_log import AuditLog
 from app.models.email_queue import EmailQueue, EmailBatchLog, EmailQueueStatus
 from app.services.email_queue_service import EmailQueueService
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from app.services.vpn_service import VPNService
 
 
@@ -1474,6 +1474,17 @@ async def update_event(
     changes = {}
     update_data = {}
 
+    # Helper to make values JSON-serializable
+    def make_json_serializable(value):
+        """Convert Python objects to JSON-serializable format."""
+        if value is None:
+            return None
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        if isinstance(value, (str, int, float, bool)):
+            return value
+        return str(value)
+
     # Helper to track and stage field updates
     def track_field(field_name, new_value, parse_fn=None):
         old_value = getattr(event, field_name)
@@ -1483,14 +1494,15 @@ async def update_event(
             old_str = str(old_value) if old_value is not None else None
             new_str = str(parsed_value) if parsed_value is not None else None
             if field_name == "terms_content":
-                changes[field_name] = {"old": "...", "new": "...", "old_value": old_value, "new_value": parsed_value}
+                changes[field_name] = {"old": "...", "new": "...", "old_value": "...", "new_value": "..."}
             else:
                 # Store both string (for audit) and actual value (for trigger checks)
+                # Ensure values are JSON-serializable
                 changes[field_name] = {
                     "old": old_str,
                     "new": new_str,
-                    "old_value": old_value,
-                    "new_value": parsed_value
+                    "old_value": make_json_serializable(old_value),
+                    "new_value": make_json_serializable(parsed_value)
                 }
             update_data[field_name] = parsed_value
 
@@ -1536,8 +1548,8 @@ async def update_event(
         changes["is_active"] = {
             "old": str(old_is_active),
             "new": str(new_is_active),
-            "old_value": old_is_active,
-            "new_value": new_is_active
+            "old_value": make_json_serializable(old_is_active),
+            "new_value": make_json_serializable(new_is_active)
         }
         if data["is_active"]:
             await service.deactivate_other_events(except_event_id=event_id)
