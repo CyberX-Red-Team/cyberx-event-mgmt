@@ -72,7 +72,9 @@ class WorkflowTriggerEvent:
 
     # Event Participation
     PARTICIPATION_CONFIRMED = "participation_confirmed"
-    EVENT_REMINDER = "event_reminder"
+    EVENT_REMINDER_1 = "event_reminder_1"
+    EVENT_REMINDER_2 = "event_reminder_2"
+    EVENT_REMINDER_FINAL = "event_reminder_final"
     EVENT_STARTED = "event_started"
     EVENT_ENDED = "event_ended"
 

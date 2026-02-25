@@ -258,6 +258,24 @@ async def create_participant(
         participant.password_hash = hash_password(temp_password)
         await db.commit()
 
+        # Role-specific template variables (see docs/email-template-variables.md)
+        ROLE_TEMPLATE_VARS = {
+            UserRole.ADMIN.value: {
+                "role": "Admin",
+                "role_label": "ADMIN",
+                "role_upper": "ADMINISTRATOR",
+                "role_display": "Administrator",
+                "a_or_an": "an",
+            },
+            UserRole.SPONSOR.value: {
+                "role": "Sponsor",
+                "role_label": "SPONSOR",
+                "role_upper": "SPONSOR",
+                "role_display": "Sponsor",
+                "a_or_an": "a",
+            },
+        }
+
         # Trigger workflow with custom variables
         await workflow_service.trigger_workflow(
             trigger_event=trigger_event,
@@ -265,7 +283,7 @@ async def create_participant(
             custom_vars={
                 "first_name": participant.first_name,
                 "last_name": participant.last_name,
-                "role": "Admin" if participant.role == UserRole.ADMIN.value else "Sponsor",
+                **ROLE_TEMPLATE_VARS[participant.role],
                 "password": temp_password,  # Web portal password, not pandas
                 "support_email": settings.SENDGRID_FROM_EMAIL
             }
@@ -1778,10 +1796,22 @@ async def get_trigger_events(
             "available_variables": ["first_name", "last_name", "email", "pandas_username", "pandas_password"]
         },
         {
-            "event": WorkflowTriggerEvent.EVENT_REMINDER,
-            "display_name": "Event Reminder",
-            "description": "Triggered to send event reminders",
-            "available_variables": ["first_name", "last_name", "email", "event_name", "event_year"]
+            "event": WorkflowTriggerEvent.EVENT_REMINDER_1,
+            "display_name": "Invitation Reminder — Stage 1",
+            "description": "First follow-up sent ~7 days after initial invitation",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location", "event_start_date", "days_until_event", "confirmation_url", "reminder_stage"]
+        },
+        {
+            "event": WorkflowTriggerEvent.EVENT_REMINDER_2,
+            "display_name": "Invitation Reminder — Stage 2",
+            "description": "Second follow-up sent ~14 days after initial invitation",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location", "event_start_date", "days_until_event", "confirmation_url", "reminder_stage"]
+        },
+        {
+            "event": WorkflowTriggerEvent.EVENT_REMINDER_FINAL,
+            "display_name": "Invitation Reminder — Final",
+            "description": "Last-chance reminder sent ~3 days before event starts",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location", "event_start_date", "days_until_event", "confirmation_url", "reminder_stage", "is_final_reminder"]
         },
         {
             "event": WorkflowTriggerEvent.SURVEY_REQUEST,

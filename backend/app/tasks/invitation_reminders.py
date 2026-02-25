@@ -286,17 +286,50 @@ async def queue_reminders(
     """
     Queue reminder emails for a list of users.
 
+    Resolves the template name and custom_vars from the corresponding
+    event_reminder workflow (configurable via admin UI), falling back
+    to the hardcoded template_name if no workflow is configured.
+
     Args:
         session: Database session
         users: List of users to send reminders to
         event: Active event
         stage: Reminder stage (1, 2, or 3)
-        template_name: Email template to use
+        template_name: Fallback email template name
         days_until_event: Number of days until event starts
     """
     settings = get_settings()
     queue_service = EmailQueueService(session)
     audit_service = AuditService(session)
+
+    # Resolve template from workflow config (falls back to hardcoded default)
+    from sqlalchemy import select
+    from app.models.email_workflow import EmailWorkflow, WorkflowTriggerEvent
+
+    stage_trigger_map = {
+        1: WorkflowTriggerEvent.EVENT_REMINDER_1,
+        2: WorkflowTriggerEvent.EVENT_REMINDER_2,
+        3: WorkflowTriggerEvent.EVENT_REMINDER_FINAL,
+    }
+    trigger_event = stage_trigger_map.get(stage)
+
+    workflow = None
+    if trigger_event:
+        workflow_result = await session.execute(
+            select(EmailWorkflow)
+            .where(EmailWorkflow.trigger_event == trigger_event)
+            .where(EmailWorkflow.is_enabled == True)
+            .limit(1)
+        )
+        workflow = workflow_result.scalar_one_or_none()
+
+    resolved_template = workflow.template_name if workflow else template_name
+    workflow_vars = workflow.custom_vars if workflow and workflow.custom_vars else {}
+
+    logger.info(
+        f"Stage {stage}: Using template '{resolved_template}' "
+        f"(workflow: {'yes' if workflow else 'fallback'})"
+    )
 
     queued_count = 0
     failed_count = 0
@@ -315,12 +348,13 @@ async def queue_reminders(
             from app.services.email_service import build_event_template_vars
             event_vars = build_event_template_vars(event)
 
-            # Queue email
+            # Queue email (workflow_vars first so trigger-time vars override)
             await queue_service.enqueue_email(
                 user_id=user.id,
-                template_name=template_name,
+                template_name=resolved_template,
                 priority=4,  # High priority for reminders
                 custom_vars={
+                    **workflow_vars,
                     "first_name": user.first_name,
                     "last_name": user.last_name,
                     "email": user.email,
@@ -365,7 +399,7 @@ async def queue_reminders(
 
     logger.info(
         f"Stage {stage}: Queued {queued_count} reminders, {failed_count} failed "
-        f"(template: {template_name}, days until event: {days_until_event})"
+        f"(template: {resolved_template}, days until event: {days_until_event})"
     )
 
 

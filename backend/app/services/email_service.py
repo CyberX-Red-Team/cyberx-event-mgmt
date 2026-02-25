@@ -151,14 +151,27 @@ async def queue_invitation_email_for_user(
     # Build event variables
     event_vars = build_event_template_vars(event)
 
+    # Resolve template name from bulk_invite workflow config (falls back to hardcoded default)
+    from app.models.email_workflow import EmailWorkflow, WorkflowTriggerEvent
+    workflow_result = await session.execute(
+        select(EmailWorkflow)
+        .where(EmailWorkflow.trigger_event == WorkflowTriggerEvent.BULK_INVITE)
+        .where(EmailWorkflow.is_enabled == True)
+        .limit(1)
+    )
+    workflow = workflow_result.scalar_one_or_none()
+    template_name = workflow.template_name if workflow else "sg_test_hacker_theme"
+    workflow_vars = workflow.custom_vars if workflow and workflow.custom_vars else {}
+
     # Queue the invitation email
     email_service = EmailQueueService(session)
     queue_entry = await email_service.enqueue_email(
         user_id=user.id,
-        template_name="sg_test_hacker_theme",
+        template_name=template_name,
         priority=3,  # High priority for invitations
         force=force,
         custom_vars={
+            **workflow_vars,
             "first_name": user.first_name,
             "last_name": user.last_name,
             "email": user.email,
