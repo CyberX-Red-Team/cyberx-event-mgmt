@@ -123,12 +123,12 @@ async def respond_to_action(
 
     # Audit log
     audit_service = AuditService(db)
-    await audit_service.log_action(
+    await audit_service.log(
         user_id=current_user.id,
         action="action_respond",
         resource_type="participant_action",
         resource_id=action_id,
-        details=f"Responded {data.status} to action: {action.title}"
+        details={"message": f"Responded {data.status} to action: {action.title}"}
     )
 
     return {

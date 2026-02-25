@@ -126,11 +126,11 @@ async def create_bulk_action(
 
     # Audit log
     audit_service = AuditService(db)
-    await audit_service.log_action(
+    await audit_service.log(
         user_id=current_user.id,
         action="bulk_action_create",
         resource_type="participant_action",
-        details=f"Created {len(created_actions)} actions of type {data.action_type}"
+        details={"message": f"Created {len(created_actions)} actions of type {data.action_type}"}
     )
 
     return {
