@@ -101,9 +101,6 @@
                 <button class="btn btn-sm btn-outline-info me-2" onclick="bulkSendEmail()">
                     <i data-feather="mail" class="me-1"></i> Send Email
                 </button>
-                <button class="btn btn-sm btn-outline-primary" onclick="showAssignActionModal()">
-                    <i data-feather="check-square" class="me-1"></i> Assign Action
-                </button>
             </div>
         </div>
     </div>
@@ -164,70 +161,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Assign Action Modal -->
-    <div class="modal fade" id="assignActionModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Assign Action to Participants</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="assignActionError" class="alert alert-danger d-none" role="alert"></div>
-
-                    <form id="assignActionForm">
-                        <div class="mb-3">
-                            <label class="form-label">Action Type</label>
-                            <select class="form-select" id="actionType" required>
-                                <option value="in_person_attendance">In-Person Attendance</option>
-                                <option value="orientation_rsvp">Orientation RSVP</option>
-                                <option value="survey_completion">Survey Completion</option>
-                                <option value="document_review">Document Review</option>
-                                <option value="custom">Custom Action</option>
-                            </select>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Title <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="actionTitle"
-                                   placeholder="e.g., Confirm In-Person Attendance" required>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Description (Optional)</label>
-                            <textarea class="form-control" id="actionDescription" rows="3"
-                                      placeholder="Additional details about this action"></textarea>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Deadline (Optional)</label>
-                            <input type="datetime-local" class="form-control" id="actionDeadline">
-                        </div>
-
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="sendNotification" checked>
-                                <label class="form-check-label" for="sendNotification">
-                                    Send email notification to participants
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="alert alert-info small">
-                            <i data-feather="info" class="feather-sm me-1"></i>
-                            This action will be assigned to <strong id="actionTargetCount">0</strong> participant(s).
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="submitAssignAction()">Assign Action</button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -597,62 +530,6 @@ async function bulkResendInvitation() {
         console.error('Error:', error);
         showToast('Bulk resend operation failed', 'danger');
     }
-}
-
-// Assign Action Functions
-function showAssignActionModal() {
-    document.getElementById('actionTargetCount').textContent = selectedIds.size;
-    const modal = new bootstrap.Modal(document.getElementById('assignActionModal'));
-    modal.show();
-}
-
-async function submitAssignAction() {
-    const actionType = document.getElementById('actionType').value;
-    const title = document.getElementById('actionTitle').value;
-    const description = document.getElementById('actionDescription').value;
-    const deadline = document.getElementById('actionDeadline').value;
-    const sendNotification = document.getElementById('sendNotification').checked;
-
-    if (!title) {
-        showError('assignActionError', 'Title is required');
-        return;
-    }
-
-    try {
-        const response = await csrfFetch('/api/admin/actions/bulk', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                action_type: actionType,
-                title: title,
-                description: description || null,
-                deadline: deadline || null,
-                user_ids: Array.from(selectedIds),
-                send_notification: sendNotification
-            })
-        });
-
-        if (response.ok) {
-            const result = await response.json();
-            alert(`Assigned action to ${result.actions_created} participants`);
-            bootstrap.Modal.getInstance(document.getElementById('assignActionModal')).hide();
-            document.getElementById('assignActionForm').reset();
-            document.getElementById('assignActionError').classList.add('d-none');
-        } else {
-            const error = await response.json();
-            showError('assignActionError', error.detail || 'Failed to assign action');
-        }
-    } catch (error) {
-        console.error('Failed to assign action:', error);
-        showError('assignActionError', 'Failed to assign action');
-    }
-}
-
-function showError(elementId, message) {
-    const errorEl = document.getElementById(elementId);
-    const errorTextEl = document.getElementById(elementId.replace('Error', 'ErrorText')) || errorEl;
-    errorTextEl.textContent = message;
-    errorEl.classList.remove('d-none');
 }
 
 // Load on page load
