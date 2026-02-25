@@ -9,7 +9,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.participant_action import ParticipantAction, ActionType, ActionStatus
 from app.models.event import Event
-from app.models.email_queue import EmailQueue, EmailStatus
+from app.models.email_queue import EmailQueue, EmailQueueStatus
 from app.models.email_template import EmailTemplate
 from app.dependencies import get_current_admin_user
 from app.services.workflow_service import WorkflowService
@@ -136,7 +136,7 @@ async def create_bulk_action(
                             "deadline": str(action.deadline) if action.deadline else "No deadline",
                             "event_name": event.name
                         },
-                        status=EmailStatus.PENDING.value,
+                        status=EmailQueueStatus.PENDING,
                         event_id=event.id
                     )
                     db.add(email_queue)
