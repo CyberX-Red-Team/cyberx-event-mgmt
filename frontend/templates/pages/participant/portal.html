@@ -339,6 +339,19 @@
                     <h5 class="mb-0"><i data-feather="key" class="me-2"></i>Authentication</h5>
                 </div>
                 <div class="card-body">
+                    {% if current_user.pandas_username %}
+                    <div class="d-flex align-items-center mb-3 p-3 bg-light rounded">
+                        <div class="flex-shrink-0">
+                            <div class="rounded-circle bg-primary bg-opacity-10 p-2">
+                                <i data-feather="at-sign" class="text-primary"></i>
+                            </div>
+                        </div>
+                        <div class="ms-3">
+                            <div class="small text-muted">Username</div>
+                            <div class="fw-bold font-monospace fs-5">{{ current_user.pandas_username }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
                     <div class="alert alert-info mb-0">
                         <i data-feather="info" class="me-2"></i>
                         <div>
