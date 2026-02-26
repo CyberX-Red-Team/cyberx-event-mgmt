@@ -984,6 +984,8 @@ From: CyberX Red Team"""
         "spamreport": "SPAM_REPORTED",
         "unsubscribe": "UNSUBSCRIBED",
         "group_unsubscribe": "UNSUBSCRIBED",
+        "delivered": "GOOD",
+        "group_resubscribe": "GOOD",
     }
 
     async def process_webhook_event(self, event_data: Dict[str, Any]) -> bool:
@@ -996,6 +998,9 @@ From: CyberX Red Team"""
         Updates User.email_status to the appropriate granular value
         (GOOD / BOUNCED / SPAM_REPORTED / UNSUBSCRIBED) and records every
         event in the email_events table for auditing.
+
+        Uses event timestamps to prevent stale out-of-order events from
+        overriding more recent status changes.
 
         Returns:
             True if processed successfully
@@ -1019,14 +1024,14 @@ From: CyberX Red Team"""
             )
             user = result.scalar_one_or_none()
 
-            # Record the event
+            # Record the event (pass dict directly — column is JSON type)
             event = EmailEvent(
                 user_id=user.id if user else None,
                 email_to=email,
                 event_type=event_type,
                 sendgrid_event_id=sg_event_id,
                 sendgrid_message_id=sg_message_id,
-                payload=json.dumps(event_data)
+                payload=event_data
             )
             self.session.add(event)
 
@@ -1034,30 +1039,41 @@ From: CyberX Red Team"""
             if user:
                 new_status = self._EMAIL_STATUS_MAP.get(event_type)
                 if new_status:
-                    user.email_status = new_status
-                    user.email_status_timestamp = event_timestamp or int(
+                    event_ts = event_timestamp or int(
                         datetime.now(timezone.utc).timestamp()
                     )
-                    logger.warning(
-                        f"Email status for user {user.id} ({email}) set to "
-                        f"{new_status} due to {event_type}"
-                        f"{f': {reason}' if reason else ''}"
-                    )
-                elif event_type == "group_resubscribe":
-                    user.email_status = "GOOD"
-                    user.email_status_timestamp = event_timestamp or int(
-                        datetime.now(timezone.utc).timestamp()
-                    )
-                    logger.info(
-                        f"Email status for user {user.id} ({email}) "
-                        f"restored to GOOD via group_resubscribe"
-                    )
+                    current_ts = user.email_status_timestamp or 0
+
+                    # Only apply if this event is newer than the last status change
+                    if event_ts >= current_ts:
+                        old_status = user.email_status
+                        user.email_status = new_status
+                        user.email_status_timestamp = event_ts
+
+                        if new_status == "GOOD":
+                            logger.info(
+                                f"Email status for user {user.id} ({email}) "
+                                f"changed {old_status} → GOOD via {event_type}"
+                            )
+                        else:
+                            logger.warning(
+                                f"Email status for user {user.id} ({email}) "
+                                f"changed {old_status} → {new_status} due to "
+                                f"{event_type}{f': {reason}' if reason else ''}"
+                            )
+                    else:
+                        logger.debug(
+                            f"Skipping stale {event_type} event for user "
+                            f"{user.id} ({email}): event_ts={event_ts} < "
+                            f"current_ts={current_ts}"
+                        )
 
             await self.session.commit()
             return True
 
         except Exception as e:
             logger.error(f"Error processing webhook event: {e}", exc_info=True)
+            await self.session.rollback()
             return False
 
     async def get_email_stats(self) -> Dict[str, int]:

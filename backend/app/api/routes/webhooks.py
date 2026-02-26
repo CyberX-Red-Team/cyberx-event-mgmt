@@ -1,4 +1,5 @@
 """Webhook handlers for external services."""
+import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,8 @@ from app.utils.webhook_security import (
     verify_sendgrid_signature,
     verify_timestamp_freshness
 )
+
+logger = logging.getLogger(__name__)
 
 
 settings = get_settings()
@@ -92,6 +95,15 @@ async def sendgrid_webhook(
             success = await email_service.process_webhook_event(event)
             if success:
                 processed_count += 1
+            else:
+                logger.warning(
+                    f"SendGrid webhook event not processed: "
+                    f"type={event.get('event')}, email={event.get('email')}"
+                )
+
+        logger.info(
+            f"SendGrid webhook batch: {processed_count}/{len(events)} events processed"
+        )
 
         return {
             "status": "ok",
@@ -101,8 +113,8 @@ async def sendgrid_webhook(
 
     except Exception as e:
         # Log error but return 200 to prevent SendGrid from retrying
-        print(f"SendGrid webhook error: {e}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"SendGrid webhook error: {e}", exc_info=True)
+        return {"status": "error", "message": "Internal processing error"}
 
 
 @router.post("/sendgrid/inbound")

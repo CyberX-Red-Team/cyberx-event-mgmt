@@ -1131,13 +1131,29 @@ class TestEmailServiceEventLogging:
         assert user.orientation_invite_email_sent is not None
 
     async def test_process_webhook_event_delivered(self, db_session: AsyncSession):
-        """Test processing a delivered webhook event."""
+        """Test processing a delivered event transitions UNKNOWN → GOOD."""
+        from app.models.user import User, UserRole
         from app.models.audit_log import EmailEvent
         from sqlalchemy import select
 
         service = EmailService(db_session)
 
-        # Process webhook event
+        # Create user with UNKNOWN status (mimics new user creation)
+        user = User(
+            email="test@example.com",
+            first_name="Test",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value,
+            email_status="UNKNOWN"
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        assert user.email_status == "UNKNOWN"
+
+        # Process delivered event
         event_data = {
             "email": "test@example.com",
             "event": "delivered",
@@ -1149,6 +1165,11 @@ class TestEmailServiceEventLogging:
 
         assert success is True
 
+        # Verify user status updated to GOOD
+        await db_session.refresh(user)
+        assert user.email_status == "GOOD"
+        assert user.email_status_timestamp == 1234567890
+
         # Verify event was logged
         result = await db_session.execute(
             select(EmailEvent).where(EmailEvent.email_to == "test@example.com")
@@ -1158,6 +1179,42 @@ class TestEmailServiceEventLogging:
         assert event is not None
         assert event.event_type == "delivered"
         assert event.sendgrid_message_id == "msg123"
+
+    async def test_process_webhook_event_stale_event_ignored(self, db_session: AsyncSession):
+        """Test that a stale event doesn't override a newer status."""
+        from app.models.user import User, UserRole
+
+        service = EmailService(db_session)
+
+        # Create user already marked BOUNCED at timestamp 2000000000
+        user = User(
+            email="test@example.com",
+            first_name="Test",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value,
+            email_status="BOUNCED",
+            email_status_timestamp=2000000000
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        # Process an older delivered event (timestamp < current)
+        event_data = {
+            "email": "test@example.com",
+            "event": "delivered",
+            "sg_message_id": "msg_old",
+            "timestamp": 1000000000
+        }
+
+        success = await service.process_webhook_event(event_data)
+        assert success is True
+
+        # Status should NOT have changed — stale event was ignored
+        await db_session.refresh(user)
+        assert user.email_status == "BOUNCED"
+        assert user.email_status_timestamp == 2000000000
 
     async def test_process_webhook_event_bounce(self, db_session: AsyncSession):
         """Test processing a bounce event updates user status."""
