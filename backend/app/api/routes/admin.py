@@ -240,7 +240,8 @@ async def create_participant(
     if participant.role in [UserRole.ADMIN.value, UserRole.SPONSOR.value]:
         from app.services.workflow_service import WorkflowService
         from app.models.email_workflow import WorkflowTriggerEvent
-        from app.utils.password import generate_password, hash_password
+        from app.utils.security import hash_password
+        from app.api.routes.public import generate_password
         from app.config import get_settings
 
         settings = get_settings()
