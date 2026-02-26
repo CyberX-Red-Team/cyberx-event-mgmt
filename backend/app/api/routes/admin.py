@@ -670,6 +670,7 @@ async def resend_participant_invitation(
 async def reset_participant_workflow(
     participant_id: int,
     reset_event_participation: bool = True,
+    reset_credentials: bool = False,
     request: Request = None,
     current_user: User = Depends(get_current_admin_user),
     service: ParticipantService = Depends(get_participant_service),
@@ -685,6 +686,7 @@ async def reset_participant_workflow(
     - All reminder timestamps
     - Password email timestamp
     - EventParticipation record for current event (optional)
+    - Credentials for invitees only (optional) — sponsors/admins keep theirs across events
 
     Useful for:
     - Testing invitation flows
@@ -701,7 +703,8 @@ async def reset_participant_workflow(
     # Reset workflow state
     participant = await service.reset_workflow_state(
         participant_id=participant_id,
-        reset_event_participation=reset_event_participation
+        reset_event_participation=reset_event_participation,
+        reset_credentials=reset_credentials
     )
 
     # Audit log
@@ -717,7 +720,8 @@ async def reset_participant_workflow(
         details={
             "target_user_id": participant_id,
             "target_email": participant.email,
-            "reset_event_participation": reset_event_participation
+            "reset_event_participation": reset_event_participation,
+            "reset_credentials": reset_credentials
         },
         ip_address=ip_address,
         user_agent=user_agent
@@ -727,7 +731,9 @@ async def reset_participant_workflow(
         "success": True,
         "message": f"Workflow state reset for {participant.email}",
         "new_confirmation_code": participant.confirmation_code,
-        "reset_event_participation": reset_event_participation
+        "reset_event_participation": reset_event_participation,
+        "reset_credentials": reset_credentials,
+        "credentials_cleared": reset_credentials and participant.role == "invitee"
     }
 
 

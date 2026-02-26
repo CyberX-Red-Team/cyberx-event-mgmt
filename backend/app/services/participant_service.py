@@ -833,7 +833,8 @@ class ParticipantService:
     async def reset_workflow_state(
         self,
         participant_id: int,
-        reset_event_participation: bool = True
+        reset_event_participation: bool = True,
+        reset_credentials: bool = False
     ) -> Optional[User]:
         """
         Reset workflow-related fields for a participant.
@@ -850,10 +851,14 @@ class ParticipantService:
         - All reminder timestamps
         - Password email timestamp
         - Optionally: EventParticipation for current event
+        - Optionally: Credentials for invitees only (sponsors/admins keep theirs across events)
 
         Args:
             participant_id: ID of participant to reset
             reset_event_participation: If True, deletes EventParticipation for current event
+            reset_credentials: If True, clears password fields for invitees so fresh
+                credentials are generated on next confirmation. Sponsors/admins are
+                unaffected — they keep credentials across events.
 
         Returns:
             Updated participant or None if not found
@@ -896,6 +901,17 @@ class ParticipantService:
         participant.orientation_invite_email_sent = None
         participant.in_person_email_sent = None
 
+        # Clear credentials for invitees only — sponsors/admins keep theirs across events
+        if reset_credentials and participant.role == UserRole.INVITEE.value:
+            participant.pandas_password = None
+            participant.password_hash = None
+            participant.password_phonetic = None
+            # Keep pandas_username — returning participants keep their username
+            logger.info(
+                f"Cleared credentials for invitee {participant_id} "
+                f"(fresh credentials will be generated on next confirmation)"
+            )
+
         participant.updated_at = datetime.now(timezone.utc)
 
         # Optionally reset EventParticipation for current event
@@ -921,7 +937,8 @@ class ParticipantService:
 
         logger.info(
             f"Reset workflow state for participant {participant_id} "
-            f"(reset_event_participation={reset_event_participation})"
+            f"(reset_event_participation={reset_event_participation}, "
+            f"reset_credentials={reset_credentials}, role={participant.role})"
         )
 
         return participant
