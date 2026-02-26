@@ -282,18 +282,26 @@ async def confirm_participation(
     )
 
     # Trigger credentials email
+    # Sponsors/admins already received credentials at account creation — skip resend.
+    # Only send credentials on confirmation for invitees (or sponsors missing credentials).
     workflow_service = WorkflowService(db)
-    await workflow_service.trigger_workflow(
-        trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
-        user_id=user.id,
-        custom_vars={
-            "login_url": "https://portal.cyberxredteam.org/login",
-            "event_name": event.name if event else "CyberX 2026",
-            "pandas_username": user.pandas_username,
-            "pandas_password": user.pandas_password,
-            "password_phonetic": user.password_phonetic
-        }
-    )
+    if should_generate_password:
+        await workflow_service.trigger_workflow(
+            trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
+            user_id=user.id,
+            custom_vars={
+                "login_url": "https://portal.cyberxredteam.org/login",
+                "event_name": event.name if event else "CyberX 2026",
+                "pandas_username": user.pandas_username,
+                "pandas_password": user.pandas_password,
+                "password_phonetic": user.password_phonetic
+            }
+        )
+    else:
+        logger.info(
+            f"Skipping credential email for {user.role} {user.id} on confirmation — "
+            f"credentials already sent at account creation"
+        )
 
     return {
         "success": True,
