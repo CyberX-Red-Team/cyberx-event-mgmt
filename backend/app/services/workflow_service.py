@@ -84,6 +84,12 @@ class WorkflowService:
                 # Merge workflow custom vars with provided vars
                 merged_vars = {**(workflow.custom_vars or {}), **(custom_vars or {})}
 
+                # Inject sender overrides if configured on the workflow
+                if workflow.from_email:
+                    merged_vars["__from_email"] = workflow.from_email
+                if workflow.from_name:
+                    merged_vars["__from_name"] = workflow.from_name
+
                 # Calculate scheduled time if delay is specified
                 scheduled_for = None
                 if workflow.delay_minutes and workflow.delay_minutes > 0:

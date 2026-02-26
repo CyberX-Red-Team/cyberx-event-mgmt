@@ -163,6 +163,12 @@ async def queue_invitation_email_for_user(
     template_name = workflow.template_name if workflow else "sg_test_hacker_theme"
     workflow_vars = workflow.custom_vars if workflow and workflow.custom_vars else {}
 
+    # Inject sender overrides if configured on the workflow
+    if workflow and workflow.from_email:
+        workflow_vars["__from_email"] = workflow.from_email
+    if workflow and workflow.from_name:
+        workflow_vars["__from_name"] = workflow.from_name
+
     # Queue the invitation email
     email_service = EmailQueueService(session)
     queue_entry = await email_service.enqueue_email(
@@ -371,7 +377,8 @@ class EmailService:
         user: User,
         recipient_email: str,
         recipient_name: str,
-        custom_vars: Optional[Dict[str, Any]] = None
+        custom_vars: Optional[Dict[str, Any]] = None,
+        from_email_override: Optional[Email] = None
     ) -> Mail:
         """
         Create a SendGrid Mail object using dynamic templates.
@@ -385,6 +392,7 @@ class EmailService:
             recipient_email: Recipient email address
             recipient_name: Recipient name
             custom_vars: Custom template variables to pass to SendGrid
+            from_email_override: Optional sender address override
 
         Returns:
             Mail object configured for SendGrid dynamic template
@@ -410,7 +418,7 @@ class EmailService:
 
         # Create message with dynamic template
         message = Mail(
-            from_email=self.from_email,
+            from_email=from_email_override or self.from_email,
             to_emails=To(recipient_email, recipient_name)
         )
 
@@ -537,6 +545,26 @@ class EmailService:
             Tuple of (success, message, message_id)
         """
         try:
+            # Extract sender overrides from custom_vars (reserved keys)
+            # These are injected by workflow_service / queue helpers and should
+            # NOT be passed to the template engine.
+            send_vars = dict(custom_vars) if custom_vars else {}
+            override_from_email = send_vars.pop("__from_email", None)
+            override_from_name = send_vars.pop("__from_name", None)
+            custom_vars = send_vars if send_vars else None
+
+            # Resolve sender address (workflow override → env default)
+            from_email = self.from_email
+            if override_from_email or override_from_name:
+                from_email = Email(
+                    override_from_email or settings.SENDGRID_FROM_EMAIL,
+                    override_from_name or settings.SENDGRID_FROM_NAME
+                )
+                logger.info(
+                    f"Using sender override: {override_from_email or settings.SENDGRID_FROM_EMAIL} "
+                    f"<{override_from_name or settings.SENDGRID_FROM_NAME}>"
+                )
+
             # Determine recipient email (with test override support)
             recipient_email = user.email
             recipient_name = f"{user.first_name} {user.last_name}"
@@ -556,7 +584,8 @@ class EmailService:
                     user=user,
                     recipient_email=recipient_email,
                     recipient_name=recipient_name,
-                    custom_vars=custom_vars
+                    custom_vars=custom_vars,
+                    from_email_override=from_email
                 )
                 subject = f"[Dynamic Template: {template.name}]"  # For logging only
             else:
@@ -576,7 +605,7 @@ class EmailService:
 
                 # Create message
                 message = Mail(
-                    from_email=self.from_email,
+                    from_email=from_email,
                     to_emails=To(recipient_email, recipient_name),
                     subject=subject,
                     html_content=Content("text/html", html_content),

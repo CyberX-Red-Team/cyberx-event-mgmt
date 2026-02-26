@@ -183,6 +183,35 @@ Available variables (all stages):
 | `is_final_reminder` | Trigger-time (`true` only for stage 3) |
 | `logo_url`, `org_address`, etc. | Workflow DB `custom_vars` |
 
+## Per-Workflow Sender Address Override
+
+Each workflow can optionally override the default sender address (`SENDGRID_FROM_EMAIL` / `SENDGRID_FROM_NAME` env vars) by setting `from_email` and/or `from_name` on the `EmailWorkflow` row. This allows different email flows to send from different addresses — e.g., invitations from `invite@cyberxrt.com` and general emails from `hello@cyberxrt.com`.
+
+### How It Works
+
+1. **Model columns:** `EmailWorkflow.from_email` and `EmailWorkflow.from_name` (nullable strings). Set via admin UI or API.
+2. **Queue time:** When a workflow is used as a config store (bulk invite, reminders, or `WorkflowService.trigger_workflow()`), the from fields are injected into `custom_vars` as reserved keys `__from_email` and `__from_name`.
+3. **Send time:** `EmailService._send_email_with_template()` pops the reserved keys from `custom_vars` before template rendering and uses them to construct a per-message `Email()` sender. Falls back to the env var defaults if not present.
+
+### Precedence
+
+```
+1. Workflow from_email/from_name   (highest — per-workflow override)
+2. SENDGRID_FROM_EMAIL/FROM_NAME   (lowest — env var default)
+```
+
+### Example
+
+| Workflow | from_email | from_name |
+|---|---|---|
+| `bulk_invite` | `invite@cyberxrt.com` | `CyberX Invitations` |
+| `user_confirmed` | _(null — uses default)_ | _(null — uses default)_ |
+| `event_reminder_1` | `invite@cyberxrt.com` | `CyberX Invitations` |
+
+### Reserved Keys
+
+The keys `__from_email` and `__from_name` are reserved and must not be used as template variable names. They are stripped from `custom_vars` before reaching SendGrid / Handlebars rendering.
+
 ## SendGrid Dynamic Templates
 
 The templates themselves live in SendGrid and use Handlebars syntax:

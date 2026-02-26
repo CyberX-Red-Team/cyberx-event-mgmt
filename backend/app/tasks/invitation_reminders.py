@@ -326,6 +326,12 @@ async def queue_reminders(
     resolved_template = workflow.template_name if workflow else template_name
     workflow_vars = workflow.custom_vars if workflow and workflow.custom_vars else {}
 
+    # Inject sender overrides if configured on the workflow
+    if workflow and workflow.from_email:
+        workflow_vars["__from_email"] = workflow.from_email
+    if workflow and workflow.from_name:
+        workflow_vars["__from_name"] = workflow.from_name
+
     logger.info(
         f"Stage {stage}: Using template '{resolved_template}' "
         f"(workflow: {'yes' if workflow else 'fallback'})"

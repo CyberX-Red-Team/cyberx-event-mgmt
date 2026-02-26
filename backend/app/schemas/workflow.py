@@ -15,6 +15,8 @@ class WorkflowBase(BaseModel):
     custom_vars: Optional[Dict[str, Any]] = None
     delay_minutes: Optional[int] = Field(default=None, ge=0)
     is_enabled: bool = True
+    from_email: Optional[str] = Field(None, max_length=255)
+    from_name: Optional[str] = Field(None, max_length=255)
 
 
 class WorkflowCreate(WorkflowBase):
@@ -32,6 +34,8 @@ class WorkflowUpdate(BaseModel):
     custom_vars: Optional[Dict[str, Any]] = None
     delay_minutes: Optional[int] = Field(None, ge=0)
     is_enabled: Optional[bool] = None
+    from_email: Optional[str] = Field(None, max_length=255)
+    from_name: Optional[str] = Field(None, max_length=255)
 
 
 class WorkflowResponse(WorkflowBase):

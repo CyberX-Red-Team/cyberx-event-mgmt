@@ -1882,6 +1882,8 @@ async def create_workflow(
         custom_vars=workflow_create.custom_vars or {},
         delay_minutes=workflow_create.delay_minutes,
         is_enabled=workflow_create.is_enabled,
+        from_email=workflow_create.from_email,
+        from_name=workflow_create.from_name,
         created_by_id=current_user.id
     )
 
@@ -1958,6 +1960,12 @@ async def update_workflow(
     if workflow_update.is_enabled is not None:
         changes["is_enabled"] = {"old": workflow.is_enabled, "new": workflow_update.is_enabled}
         workflow.is_enabled = workflow_update.is_enabled
+    if workflow_update.from_email is not None:
+        changes["from_email"] = {"old": workflow.from_email, "new": workflow_update.from_email}
+        workflow.from_email = workflow_update.from_email or None  # empty string → NULL
+    if workflow_update.from_name is not None:
+        changes["from_name"] = {"old": workflow.from_name, "new": workflow_update.from_name}
+        workflow.from_name = workflow_update.from_name or None  # empty string → NULL
 
     await db.commit()
     await db.refresh(workflow)

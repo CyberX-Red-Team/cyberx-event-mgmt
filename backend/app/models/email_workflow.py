@@ -30,6 +30,10 @@ class EmailWorkflow(Base):
     template_name = Column(String(100), nullable=False)  # Which EmailTemplate to use
     priority = Column(Integer, default=5, nullable=False)  # Queue priority (1=highest, 10=lowest)
 
+    # Sender Override (optional, falls back to SENDGRID_FROM_EMAIL / SENDGRID_FROM_NAME)
+    from_email = Column(String(255), nullable=True)  # e.g., "invite@cyberxrt.com"
+    from_name = Column(String(255), nullable=True)   # e.g., "CyberX Invitations"
+
     # Custom Variables (merged with event data)
     # Use JSON for cross-database compatibility (PostgreSQL and SQLite)
     custom_vars = Column(JSON, nullable=True, default=dict)  # Default template variables
