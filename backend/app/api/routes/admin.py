@@ -1777,11 +1777,24 @@ async def get_trigger_events(
     from app.models.email_workflow import WorkflowTriggerEvent
 
     events = [
+        # User Events
         {
             "event": WorkflowTriggerEvent.USER_CREATED,
             "display_name": "User Created",
-            "description": "Triggered when a new user is created",
+            "description": "Triggered when a new participant user is created",
             "available_variables": ["first_name", "last_name", "email", "login_url"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ADMIN_CREATED,
+            "display_name": "Admin Created",
+            "description": "Triggered when a new admin account is created",
+            "available_variables": ["first_name", "last_name", "email", "password", "login_url", "role", "role_label", "role_upper", "role_display", "a_or_an"]
+        },
+        {
+            "event": WorkflowTriggerEvent.SPONSOR_CREATED,
+            "display_name": "Sponsor Created",
+            "description": "Triggered when a new sponsor account is created",
+            "available_variables": ["first_name", "last_name", "email", "password", "login_url", "role", "role_label", "role_upper", "role_display", "a_or_an"]
         },
         {
             "event": WorkflowTriggerEvent.USER_CONFIRMED,
@@ -1790,10 +1803,44 @@ async def get_trigger_events(
             "available_variables": ["first_name", "last_name", "email", "login_url", "event_name"]
         },
         {
+            "event": WorkflowTriggerEvent.USER_ACTIVATED,
+            "display_name": "User Activated",
+            "description": "Triggered when a user account is activated",
+            "available_variables": ["first_name", "last_name", "email", "login_url"]
+        },
+        {
+            "event": WorkflowTriggerEvent.USER_DEACTIVATED,
+            "display_name": "User Deactivated",
+            "description": "Triggered when a user account is deactivated",
+            "available_variables": ["first_name", "last_name", "email"]
+        },
+
+        # Credential Events
+        {
+            "event": WorkflowTriggerEvent.PASSWORD_RESET,
+            "display_name": "Password Reset",
+            "description": "Triggered when a password reset is requested",
+            "available_variables": ["first_name", "last_name", "email", "reset_url", "reset_code"]
+        },
+        {
             "event": WorkflowTriggerEvent.VPN_ASSIGNED,
             "display_name": "VPN Assigned",
             "description": "Triggered when VPN credentials are assigned",
             "available_variables": ["first_name", "last_name", "email", "pandas_username", "pandas_password"]
+        },
+
+        # Event Participation
+        {
+            "event": WorkflowTriggerEvent.PARTICIPATION_CONFIRMED,
+            "display_name": "Participation Confirmed",
+            "description": "Triggered when a user confirms they will attend the event",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location"]
+        },
+        {
+            "event": WorkflowTriggerEvent.BULK_INVITE,
+            "display_name": "Bulk Invite",
+            "description": "Template used for bulk invitation emails sent to participants",
+            "available_variables": ["first_name", "last_name", "email", "confirmation_url", "event_name", "event_date_range", "event_time", "event_location"]
         },
         {
             "event": WorkflowTriggerEvent.EVENT_REMINDER_1,
@@ -1814,16 +1861,38 @@ async def get_trigger_events(
             "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location", "event_start_date", "days_until_event", "confirmation_url", "reminder_stage", "is_final_reminder"]
         },
         {
+            "event": WorkflowTriggerEvent.EVENT_STARTED,
+            "display_name": "Event Started",
+            "description": "Triggered when the event officially begins",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location", "login_url"]
+        },
+        {
+            "event": WorkflowTriggerEvent.EVENT_ENDED,
+            "display_name": "Event Ended",
+            "description": "Triggered when the event concludes",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "survey_url"]
+        },
+
+        # Feedback
+        {
             "event": WorkflowTriggerEvent.SURVEY_REQUEST,
             "display_name": "Survey Request",
             "description": "Triggered after event completion for feedback",
             "available_variables": ["first_name", "last_name", "email", "survey_url"]
         },
+
+        # Admin Actions
         {
-            "event": WorkflowTriggerEvent.PASSWORD_RESET,
-            "display_name": "Password Reset",
-            "description": "Triggered when password is reset",
-            "available_variables": ["first_name", "last_name", "email", "reset_url"]
+            "event": WorkflowTriggerEvent.CUSTOM_EMAIL,
+            "display_name": "Custom Email",
+            "description": "Used for ad-hoc custom emails sent by admins",
+            "available_variables": ["first_name", "last_name", "email"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED,
+            "display_name": "Action Assigned",
+            "description": "Triggered when a participant action is assigned to a user",
+            "available_variables": ["first_name", "last_name", "email", "action_name", "action_description", "login_url"]
         }
     ]
 
