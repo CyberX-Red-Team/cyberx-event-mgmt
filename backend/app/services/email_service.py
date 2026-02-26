@@ -326,12 +326,23 @@ class EmailService:
         # Use confirmation_code if available (new system), otherwise fall back to invite_id (legacy)
         confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
 
+        # Role-specific display variables
+        role_vars = {
+            "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "role_display": "Administrator", "a_or_an": "an"},
+            "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "role_display": "Sponsor", "a_or_an": "a"},
+            "invitee": {"role_label": "INVITEE", "role_upper": "INVITEE", "role_display": "Invitee", "a_or_an": "an"},
+        }.get(user.role or "", {"role_label": "", "role_upper": "", "role_display": "", "a_or_an": "a"})
+
         vars = {
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "email": user.email or "",
+            "role": (user.role or "").capitalize(),
+            **role_vars,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
+            "password": user.pandas_password or "",  # Alias for templates using {{password}}
+            "password_phonetic": user.password_phonetic or "",
             "event_name": "2025",  # TODO: Make configurable from active event
             "confirm_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",  # Legacy variable name
             "confirmation_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",  # New variable name
@@ -400,13 +411,24 @@ class EmailService:
         # Build base template variables
         confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
 
+        # Role-specific display variables
+        role_vars = {
+            "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "role_display": "Administrator", "a_or_an": "an"},
+            "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "role_display": "Sponsor", "a_or_an": "a"},
+            "invitee": {"role_label": "INVITEE", "role_upper": "INVITEE", "role_display": "Invitee", "a_or_an": "an"},
+        }.get(user.role or "", {"role_label": "", "role_upper": "", "role_display": "", "a_or_an": "a"})
+
         dynamic_template_data = {
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "email": user.email or "",
             "username": user.email or "",  # Portal login username (email-based auth)
+            "role": (user.role or "").capitalize(),
+            **role_vars,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
+            "password": user.pandas_password or "",  # Alias for templates using {{password}}
+            "password_phonetic": user.password_phonetic or "",
             "confirm_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
             "confirmation_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
             "login_url": f"{settings.FRONTEND_URL}/login",
@@ -450,8 +472,10 @@ class EmailService:
             first_name = "John"
             last_name = "Doe"
             email = "john.doe@example.com"
+            role = "invitee"
             pandas_username = "jdoe"
             pandas_password = "sample_password"
+            password_phonetic = "sample-PAPA-ALPHA-sierra-sierra"
             invite_id = "abc123"
             id = 1
             confirmation_code = "sample_confirmation_code_123"

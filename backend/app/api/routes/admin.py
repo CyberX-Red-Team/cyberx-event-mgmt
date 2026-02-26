@@ -249,8 +249,10 @@ async def create_participant(
     # Reload participant with relationships for response
     participant = await service.get_participant(participant.id)
 
-    # Trigger workflow for admin/sponsor creation (send welcome email with portal password)
-    if participant.role in [UserRole.ADMIN.value, UserRole.SPONSOR.value]:
+    # Trigger workflow for admin creation (send welcome email with portal password)
+    # Sponsors do NOT get credentials at creation — they must confirm participation first.
+    # Sponsor credentials are sent via user_confirmed workflow after confirmation.
+    if participant.role == UserRole.ADMIN.value:
         from app.services.workflow_service import WorkflowService
         from app.models.email_workflow import WorkflowTriggerEvent
         from app.utils.security import hash_password
@@ -260,50 +262,34 @@ async def create_participant(
         settings = get_settings()
         workflow_service = WorkflowService(db)
 
-        # Determine trigger event based on role
-        trigger_event = (
-            WorkflowTriggerEvent.ADMIN_CREATED
-            if participant.role == UserRole.ADMIN.value
-            else WorkflowTriggerEvent.SPONSOR_CREATED
-        )
-
         # Generate temporary password for web portal login
         temp_password = generate_password(length=12)
         participant.password_hash = hash_password(temp_password)
         await db.commit()
 
-        # Role-specific template variables (see docs/email-template-variables.md)
-        ROLE_TEMPLATE_VARS = {
-            UserRole.ADMIN.value: {
+        # Trigger admin_created workflow with custom variables
+        await workflow_service.trigger_workflow(
+            trigger_event=WorkflowTriggerEvent.ADMIN_CREATED,
+            user_id=participant.id,
+            custom_vars={
+                "first_name": participant.first_name,
+                "last_name": participant.last_name,
                 "role": "Admin",
                 "role_label": "ADMIN",
                 "role_upper": "ADMINISTRATOR",
                 "role_display": "Administrator",
                 "a_or_an": "an",
-            },
-            UserRole.SPONSOR.value: {
-                "role": "Sponsor",
-                "role_label": "SPONSOR",
-                "role_upper": "SPONSOR",
-                "role_display": "Sponsor",
-                "a_or_an": "a",
-            },
-        }
-
-        # Trigger workflow with custom variables
-        await workflow_service.trigger_workflow(
-            trigger_event=trigger_event,
-            user_id=participant.id,
-            custom_vars={
-                "first_name": participant.first_name,
-                "last_name": participant.last_name,
-                **ROLE_TEMPLATE_VARS[participant.role],
-                "password": temp_password,  # Web portal password, not pandas
+                "password": temp_password,  # Web portal password
                 "support_email": settings.SENDGRID_FROM_EMAIL
             }
         )
 
-        logger.info(f"Triggered {trigger_event} workflow for new {participant.role} {participant.id}")
+        logger.info(f"Triggered admin_created workflow for new admin {participant.id}")
+    elif participant.role == UserRole.SPONSOR.value:
+        logger.info(
+            f"Sponsor {participant.id} created — credentials deferred until confirmation "
+            f"(will trigger via user_confirmed workflow)"
+        )
 
     # Check if there's an active event and queue invitation email
     from app.services.event_service import EventService

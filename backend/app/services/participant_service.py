@@ -312,28 +312,19 @@ class ParticipantService:
                     should_send_invitation = event.registration_open
 
             if should_send_invitation:
-                # Generate confirmation code
-                participant.confirmation_code = secrets.token_urlsafe(32)
-                participant.confirmation_sent_at = datetime.now(timezone.utc)
-                await self.session.commit()
-
-                # Only trigger user_created workflow for users with credentials (sponsors/admins)
-                # Invitees without credentials are handled by the automated invitation_emails task
                 has_credentials = participant.pandas_username is not None and participant.pandas_password is not None
 
-                if has_credentials:
-                    # Trigger workflow for sponsors/admins who have immediate credentials
+                if confirmed == 'YES' and has_credentials:
+                    # Already confirmed (legacy import or manual creation with confirmed=YES)
+                    # Send credentials immediately — no need to wait for confirmation
                     try:
                         workflow_service = WorkflowService(self.session)
                         await workflow_service.trigger_workflow(
                             trigger_event="user_created",
                             user_id=participant.id,
                             custom_vars={
-                                "confirmation_code": participant.confirmation_code,
-                                "confirmation_url": "https://portal.cyberxredteam.org/confirm",
                                 "event_name": event.name,
                                 "event_year": str(event.year),
-                                "terms_version": event.terms_version,
                                 "role": role,
                                 "pandas_username": participant.pandas_username,
                                 "pandas_password": participant.pandas_password,
@@ -341,11 +332,26 @@ class ParticipantService:
                                 "login_url": "https://portal.cyberxredteam.org/login"
                             }
                         )
-                        logger.info(f"Triggered user_created workflow for {role} {participant.id} with credentials")
+                        logger.info(f"Triggered user_created workflow for pre-confirmed {role} {participant.id}")
                     except Exception as e:
                         logger.error(f"Failed to trigger workflow for {role} {participant.id}: {str(e)}")
+                elif has_credentials:
+                    # Not yet confirmed — defer credentials until confirmation.
+                    # Generate confirmation code so invitation email can be sent.
+                    participant.confirmation_code = secrets.token_urlsafe(32)
+                    participant.confirmation_sent_at = datetime.now(timezone.utc)
+                    await self.session.commit()
+                    logger.info(
+                        f"{role} {participant.id} created with credentials — "
+                        f"waiting for confirmation before sending password email "
+                        f"(will trigger via user_confirmed workflow)"
+                    )
                 else:
-                    logger.info(f"Skipped user_created workflow for {role} {participant.id} (no credentials yet - will be handled by invitation task)")
+                    # No credentials yet (invitees) — handled by invitation task
+                    participant.confirmation_code = secrets.token_urlsafe(32)
+                    participant.confirmation_sent_at = datetime.now(timezone.utc)
+                    await self.session.commit()
+                    logger.info(f"Skipped credentials for {role} {participant.id} (no credentials yet - will be handled by invitation task)")
             else:
                 # Log why invitation was not sent
                 from app.services.audit_service import AuditService
@@ -365,30 +371,44 @@ class ParticipantService:
                     # Blocked by registration closed or event inactive
                     logger.info(f"{role} created but invitation NOT sent (event inactive or registration closed)")
 
-                # For sponsors created outside normal workflow, send credentials email immediately
-                if role == UserRole.SPONSOR.value and self._can_send_email(participant.email_status):
-                    try:
-                        queue_service = EmailQueueService(self.session)
-                        await queue_service.enqueue_email(
-                            user_id=participant.id,
-                            template_name="password",
-                            priority=3,
-                            custom_vars={
-                                "first_name": participant.first_name,
-                                "last_name": participant.last_name,
-                                "email": participant.email,
-                                "pandas_username": participant.pandas_username,
-                                "pandas_password": participant.pandas_password,
-                                "password_phonetic": participant.password_phonetic,
-                                "login_url": "https://portal.cyberxredteam.org/login"
-                            }
-                        )
+                # If already confirmed, send credentials even though invitation was blocked
+                # For invitees: Only send if event is active (no passwords before campaign starts)
+                # For sponsors/admins: Always send (they need portal access)
+                if confirmed == 'YES' and self._can_send_email(participant.email_status):
+                    should_send_now = (role != UserRole.INVITEE.value) or (event and event.is_active)
+                    has_credentials = participant.pandas_username is not None and participant.pandas_password is not None
+
+                    if should_send_now and has_credentials:
+                        try:
+                            queue_service = EmailQueueService(self.session)
+                            await queue_service.enqueue_email(
+                                user_id=participant.id,
+                                template_name="password",
+                                priority=3,
+                                custom_vars={
+                                    "first_name": participant.first_name,
+                                    "last_name": participant.last_name,
+                                    "email": participant.email,
+                                    "pandas_username": participant.pandas_username,
+                                    "pandas_password": participant.pandas_password,
+                                    "password_phonetic": participant.password_phonetic,
+                                    "login_url": "https://portal.cyberxredteam.org/login"
+                                }
+                            )
+                            logger.info(f"Queued password email for pre-confirmed {role} {participant.id}")
+                        except Exception as e:
+                            logger.error(f"Failed to queue email for {role} {participant.id}: {str(e)}")
+                    elif not should_send_now:
                         logger.info(
-                            f"Queued credentials email for sponsor {participant.id} ({participant.email}) "
-                            f"with username={participant.pandas_username}, password={participant.pandas_password}"
+                            f"Skipping password email for confirmed invitee {participant.id} "
+                            f"- no active event (passwords sent when event activates)"
                         )
-                    except Exception as e:
-                        logger.error(f"Failed to queue credentials email for sponsor {participant.id}: {str(e)}")
+                else:
+                    # Not confirmed — credentials deferred until confirmation
+                    logger.info(
+                        f"{role} {participant.id} created but invitation blocked — "
+                        f"credentials will be sent after confirmation"
+                    )
 
         # If user is already confirmed (legacy import or manual creation), queue password email
         # For invitees: Only send if there's an active event (no passwords before campaign starts)
