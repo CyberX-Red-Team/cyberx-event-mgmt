@@ -16,7 +16,7 @@ from app.api.utils.dependencies import get_event_service
 from app.models.user import User
 from app.models.event import EventParticipation
 from app.services.event_service import EventService
-from app.config import get_version
+from app.config import get_version, get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -26,8 +26,11 @@ router = APIRouter(tags=["Views"])
 templates_path = Path(__file__).parent.parent.parent.parent.parent / "frontend" / "templates"
 templates = Jinja2Templates(directory=str(templates_path))
 
-# Add global context processor for version
+# Add global context processors
 templates.env.globals["app_version"] = get_version()
+_settings = get_settings()
+templates.env.globals["app_environment"] = _settings.ENVIRONMENT
+templates.env.globals["sendgrid_sandbox_mode"] = _settings.SENDGRID_SANDBOX_MODE
 
 
 # Authentication pages

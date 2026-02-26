@@ -1,6 +1,6 @@
 {% extends "layouts/base.html" %}
 
-{% block body_class %}nav-fixed{% endblock %}
+{% block body_class %}nav-fixed{% if app_environment == 'staging' and not sendgrid_sandbox_mode %} has-email-banner{% endif %}{% endblock %}
 
 {% block body %}
 <!-- Top Navigation -->
@@ -42,6 +42,17 @@
         </div>
     </div>
 </nav>
+
+{% if app_environment == 'staging' and not sendgrid_sandbox_mode %}
+<div class="email-live-banner" role="alert">
+    <div class="banner-inner">
+        <span class="pulse-dot"></span>
+        <strong>Staging</strong>
+        <span class="separator"></span>
+        <span>Email sending is <strong>LIVE</strong> &mdash; SendGrid sandbox mode is off. Emails will be delivered to real recipients.</span>
+    </div>
+</div>
+{% endif %}
 
 {% set show_sidebar = current_user.is_admin or current_user.role == 'admin' or current_user.role == 'sponsor' %}
 
@@ -176,6 +187,43 @@
 
 {% block extra_css %}
 <style>
+/* Email-live warning banner (staging only) */
+.email-live-banner {
+    background: linear-gradient(90deg, #dc3545 0%, #b02a37 100%);
+    color: #fff;
+    position: fixed;
+    top: 56px;
+    left: 0;
+    right: 0;
+    z-index: 1030;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+.email-live-banner .banner-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.625rem;
+    padding: 0.5rem 1rem;
+}
+.email-live-banner .pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border-radius: 50%;
+    animation: pulse-live 1.5s ease-in-out infinite;
+}
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+.email-live-banner .separator {
+    width: 1px;
+    height: 14px;
+    background: rgba(255,255,255,0.4);
+}
+
 /* Full-width layout for users without sidebar */
 #layoutSidenav.no-sidebar {
     padding-left: 0 !important;
