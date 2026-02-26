@@ -590,8 +590,11 @@ class ParticipantService:
         if not new_password:
             new_password = self._generate_password()
 
+        from app.api.routes.public import generate_phonetic_password
+
         participant.pandas_password = new_password
         participant.password_hash = hash_password(new_password)
+        participant.password_phonetic = generate_phonetic_password(new_password)
         participant.updated_at = datetime.now(timezone.utc)
 
         await self.session.commit()

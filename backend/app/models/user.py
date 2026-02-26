@@ -74,7 +74,7 @@ class User(Base):
     # Credentials
     pandas_username = Column(String(255), unique=True, nullable=True, index=True)
     _pandas_password_encrypted = Column('pandas_password', String(500), nullable=True)  # Encrypted storage (Fernet)
-    password_phonetic = Column(String(500), nullable=True)
+    _password_phonetic_encrypted = Column('password_phonetic', String(500), nullable=True)  # Encrypted storage (Fernet)
     password_hash = Column(String(255), nullable=True)  # For web portal login (bcrypt)
 
     # Password Reset
@@ -337,6 +337,43 @@ class User(Base):
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to encrypt pandas_password for user {self.id}: {e}")
             self._pandas_password_encrypted = value
+
+    # Encrypted password_phonetic property
+    @hybrid_property
+    def password_phonetic(self) -> Optional[str]:
+        """Get decrypted password phonetic."""
+        from sqlalchemy.orm.attributes import InstrumentedAttribute
+        if isinstance(self._password_phonetic_encrypted, InstrumentedAttribute):
+            return None
+
+        if self._password_phonetic_encrypted is None:
+            return None
+
+        try:
+            from app.utils.encryption import decrypt_field
+            return decrypt_field(self._password_phonetic_encrypted)
+        except Exception as e:
+            # If decryption fails, assume it's plaintext (backward compatibility)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to decrypt password_phonetic for user {self.id}: {e}")
+            return self._password_phonetic_encrypted
+
+    @password_phonetic.setter
+    def password_phonetic(self, value: Optional[str]) -> None:
+        """Set password phonetic (automatically encrypts)."""
+        if value is None:
+            self._password_phonetic_encrypted = None
+            return
+
+        try:
+            from app.utils.encryption import encrypt_field
+            self._password_phonetic_encrypted = encrypt_field(value)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to encrypt password_phonetic for user {self.id}: {e}")
+            self._password_phonetic_encrypted = value
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, role={self.role}, name={self.full_name})>"
