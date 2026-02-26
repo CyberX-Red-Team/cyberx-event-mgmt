@@ -159,6 +159,25 @@
                     </div>
                 </div>
 
+                <!-- Sender Override -->
+                <div class="card bg-light mb-3">
+                    <div class="card-body">
+                        <h6 class="mb-3"><i data-feather="at-sign" class="me-2"></i>Sender Override <span class="badge bg-secondary">Optional</span></h6>
+                        <div class="form-text mb-3">Override the default sender address for this workflow. Leave blank to use the system default.</div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label">From Email</label>
+                                <input type="email" class="form-control" id="workflowFromEmail" placeholder="e.g., invite@cyberxrt.com">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">From Name</label>
+                                <input type="text" class="form-control" id="workflowFromName" placeholder="e.g., CyberX Invitations">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Status -->
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="workflowEnabled" checked>
@@ -369,6 +388,8 @@ function openCreateWorkflowModal() {
     document.getElementById('workflowPriority').value = '5';
     document.getElementById('workflowDelay').value = '';
     document.getElementById('workflowCustomVars').value = '';
+    document.getElementById('workflowFromEmail').value = '';
+    document.getElementById('workflowFromName').value = '';
     document.getElementById('workflowEnabled').checked = true;
     document.getElementById('triggerEventDescription').textContent = '';
     document.getElementById('availableVarsInfo').textContent = '';
@@ -395,6 +416,8 @@ async function editWorkflow(id) {
         document.getElementById('workflowPriority').value = workflow.priority;
         document.getElementById('workflowDelay').value = workflow.delay_minutes || '';
         document.getElementById('workflowCustomVars').value = workflow.custom_vars ? JSON.stringify(workflow.custom_vars, null, 2) : '';
+        document.getElementById('workflowFromEmail').value = workflow.from_email || '';
+        document.getElementById('workflowFromName').value = workflow.from_name || '';
         document.getElementById('workflowEnabled').checked = workflow.is_enabled;
 
         onTriggerEventChange();
@@ -430,6 +453,8 @@ async function saveWorkflow() {
         priority: parseInt(document.getElementById('workflowPriority').value),
         delay_minutes: document.getElementById('workflowDelay').value ? parseInt(document.getElementById('workflowDelay').value) : null,
         custom_vars: customVars,
+        from_email: document.getElementById('workflowFromEmail').value || null,
+        from_name: document.getElementById('workflowFromName').value || null,
         is_enabled: document.getElementById('workflowEnabled').checked
     };
 
