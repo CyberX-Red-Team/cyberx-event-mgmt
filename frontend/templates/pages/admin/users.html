@@ -1545,15 +1545,21 @@ window.resetWorkflow = async function(userId, email) {
         return;
     }
 
+    // Ask about credential reset (only affects invitees — sponsors/admins keep theirs)
+    const resetCreds = confirm(
+        `Also clear invitee credentials?\n\n` +
+        `• YES = Invitees get fresh passwords on next confirmation (for new event cycle)\n` +
+        `• NO = Keep existing passwords (for re-testing flows)\n\n` +
+        `Note: Sponsor/admin credentials are never affected.`
+    );
+
     try {
-        const response = await csrfFetch(`/api/admin/participants/${userId}/reset-workflow`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                reset_event_participation: true
-            })
+        const params = new URLSearchParams({
+            reset_event_participation: true,
+            reset_credentials: resetCreds
+        });
+        const response = await csrfFetch(`/api/admin/participants/${userId}/reset-workflow?${params}`, {
+            method: 'POST'
         });
 
         if (!response.ok) {
@@ -1563,8 +1569,12 @@ window.resetWorkflow = async function(userId, email) {
         }
 
         const data = await response.json();
-        showToast(data.message || 'Workflow state reset successfully', 'success');
-        loadUsers(currentPage); // Reload the current page
+        let message = data.message || 'Workflow state reset successfully';
+        if (data.credentials_cleared) {
+            message += ' (credentials cleared)';
+        }
+        showToast(message, 'success');
+        loadUsers(currentPage);
     } catch (error) {
         console.error('Error resetting workflow:', error);
         showToast('Network error: Failed to reset workflow state', 'danger');
@@ -1591,26 +1601,35 @@ window.bulkResetWorkflow = async function() {
         return;
     }
 
+    // Ask about credential reset (only affects invitees — sponsors/admins keep theirs)
+    const resetCreds = confirm(
+        `Also clear invitee credentials?\n\n` +
+        `• YES = Invitees get fresh passwords on next confirmation (for new event cycle)\n` +
+        `• NO = Keep existing passwords (for re-testing flows)\n\n` +
+        `Note: Sponsor/admin credentials are never affected.`
+    );
+
     try {
         let successCount = 0;
         let failCount = 0;
+        let credsCleared = 0;
         const failedEmails = [];
 
-        // Process each selected user
+        const params = new URLSearchParams({
+            reset_event_participation: true,
+            reset_credentials: resetCreds
+        });
+
         for (const userId of selectedUsers) {
             try {
-                const response = await csrfFetch(`/api/admin/participants/${userId}/reset-workflow`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        reset_event_participation: true
-                    })
+                const response = await csrfFetch(`/api/admin/participants/${userId}/reset-workflow?${params}`, {
+                    method: 'POST'
                 });
 
                 if (response.ok) {
                     successCount++;
+                    const data = await response.json();
+                    if (data.credentials_cleared) credsCleared++;
                 } else {
                     failCount++;
                     const data = await response.json();
@@ -1623,6 +1642,9 @@ window.bulkResetWorkflow = async function() {
         }
 
         let message = `Successfully reset ${successCount} user(s)`;
+        if (credsCleared > 0) {
+            message += ` (${credsCleared} invitee credentials cleared)`;
+        }
         if (failCount > 0) {
             message += `\n\nFailed: ${failCount}\n${failedEmails.join('\n')}`;
         }
