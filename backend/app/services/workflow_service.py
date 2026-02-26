@@ -82,7 +82,19 @@ class WorkflowService:
         for workflow in workflows:
             try:
                 # Merge workflow custom vars with provided vars
+                # Caller vars override workflow DB vars
                 merged_vars = {**(workflow.custom_vars or {}), **(custom_vars or {})}
+
+                logger.info(
+                    "Workflow '%s': merging vars — "
+                    "workflow_db_keys=%s, caller_keys=%s, merged_keys=%s, "
+                    "password_present=%s",
+                    workflow.name,
+                    list((workflow.custom_vars or {}).keys()),
+                    list((custom_vars or {}).keys()),
+                    list(merged_vars.keys()),
+                    "password" in merged_vars,
+                )
 
                 # Inject sender overrides if configured on the workflow
                 if workflow.from_email:

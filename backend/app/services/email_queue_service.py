@@ -240,10 +240,19 @@ class EmailQueueService:
                         continue
 
                     # Send email
+                    queue_vars = email_queue.custom_vars or {}
+                    logger.info(
+                        "Processing queue %s: template='%s', user=%s, "
+                        "custom_vars_keys=%s, password_present=%s",
+                        email_queue.id, email_queue.template_name,
+                        user.id,
+                        list(queue_vars.keys()) if queue_vars else "none",
+                        "password" in queue_vars,
+                    )
                     success, message, message_id = await email_service.send_email(
                         user=user,
                         template_name=email_queue.template_name,
-                        custom_vars=email_queue.custom_vars or {}
+                        custom_vars=queue_vars,
                     )
 
                     if success:

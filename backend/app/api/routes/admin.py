@@ -255,7 +255,7 @@ async def create_participant(
         from app.services.workflow_service import WorkflowService
         from app.models.email_workflow import WorkflowTriggerEvent
         from app.utils.security import hash_password
-        from app.api.routes.public import generate_password
+        from app.api.routes.public import generate_password, generate_phonetic_password
         from app.config import get_settings
 
         settings = get_settings()
@@ -270,11 +270,13 @@ async def create_participant(
 
         # Generate temporary password for web portal login
         temp_password = generate_password(length=12)
+        temp_phonetic = generate_phonetic_password(temp_password)
         participant.password_hash = hash_password(temp_password)
+        participant.password_phonetic = temp_phonetic
         await db.commit()
 
         # Role-specific template variables
-        ROLE_TEMPLATE_VARS = {
+        role_template_vars = {
             UserRole.ADMIN.value: {
                 "role": "Admin",
                 "role_label": "ADMIN",
@@ -292,19 +294,33 @@ async def create_participant(
         }
 
         # Trigger workflow with custom variables
-        await workflow_service.trigger_workflow(
-            trigger_event=trigger_event,
-            user_id=participant.id,
-            custom_vars={
-                "first_name": participant.first_name,
-                "last_name": participant.last_name,
-                **ROLE_TEMPLATE_VARS[participant.role],
-                "password": temp_password,  # Web portal password
-                "support_email": settings.SENDGRID_FROM_EMAIL
-            }
+        email_custom_vars = {
+            "first_name": participant.first_name,
+            "last_name": participant.last_name,
+            **role_template_vars[participant.role],
+            "email": participant.email,
+            "password": temp_password,
+            "password_phonetic": temp_phonetic,
+            "login_url": f"{settings.FRONTEND_URL}/login",
+            "support_email": settings.SENDGRID_FROM_EMAIL,
+        }
+
+        logger.info(
+            "Triggering %s workflow for %s %s with vars: %s",
+            trigger_event, participant.role, participant.id,
+            list(email_custom_vars.keys())
         )
 
-        logger.info(f"Triggered {trigger_event} workflow for new {participant.role} {participant.id}")
+        queued = await workflow_service.trigger_workflow(
+            trigger_event=trigger_event,
+            user_id=participant.id,
+            custom_vars=email_custom_vars,
+        )
+
+        logger.info(
+            "Workflow %s for %s %s: %d email(s) queued",
+            trigger_event, participant.role, participant.id, queued
+        )
 
     # Check if there's an active event and queue invitation email
     from app.services.event_service import EventService

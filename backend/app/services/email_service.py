@@ -341,13 +341,14 @@ class EmailService:
             **role_vars,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
-            "password": user.pandas_password or "",  # Alias for templates using {{password}}
+            "password": user.pandas_password or "",
             "password_phonetic": user.password_phonetic or "",
-            "event_name": "2025",  # TODO: Make configurable from active event
-            "confirm_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",  # Legacy variable name
-            "confirmation_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",  # New variable name
+            "event_name": "2025",
+            "confirm_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
+            "confirmation_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
             "login_url": f"{settings.FRONTEND_URL}/login",
             "survey_url": f"{settings.FRONTEND_URL}/survey",
+            "support_email": settings.SENDGRID_FROM_EMAIL or "",
             "orientation_date": "TBD",
             "orientation_time": "TBD",
             "orientation_location": "TBD",
@@ -422,22 +423,38 @@ class EmailService:
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "email": user.email or "",
-            "username": user.email or "",  # Portal login username (email-based auth)
+            "username": user.email or "",
             "role": (user.role or "").capitalize(),
             **role_vars,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
-            "password": user.pandas_password or "",  # Alias for templates using {{password}}
+            "password": user.pandas_password or "",
             "password_phonetic": user.password_phonetic or "",
             "confirm_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
             "confirmation_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
             "login_url": f"{settings.FRONTEND_URL}/login",
             "survey_url": f"{settings.FRONTEND_URL}/survey",
+            "support_email": settings.SENDGRID_FROM_EMAIL or "",
         }
 
-        # Merge custom variables
+        # Merge custom variables (override defaults with workflow/trigger vars)
         if custom_vars:
+            logger.debug(
+                "Merging %d custom_vars into template data: %s",
+                len(custom_vars), list(custom_vars.keys())
+            )
             dynamic_template_data.update(custom_vars)
+
+        # Log password presence for debugging (never log actual value)
+        has_password = bool(dynamic_template_data.get("password"))
+        logger.info(
+            "SendGrid dynamic template: id=%s, vars=%s, "
+            "password_present=%s, custom_vars_provided=%s",
+            template.sendgrid_template_id,
+            list(dynamic_template_data.keys()),
+            has_password,
+            bool(custom_vars),
+        )
 
         # Create message with dynamic template
         message = Mail(
@@ -448,12 +465,6 @@ class EmailService:
         # Set the dynamic template ID and data
         message.template_id = template.sendgrid_template_id
         message.dynamic_template_data = dynamic_template_data
-
-        logger.info(
-            f"Created SendGrid dynamic template message: "
-            f"template_id={template.sendgrid_template_id}, "
-            f"variables={list(dynamic_template_data.keys())}"
-        )
 
         return message
 
@@ -574,6 +585,15 @@ class EmailService:
             # These are injected by workflow_service / queue helpers and should
             # NOT be passed to the template engine.
             send_vars = dict(custom_vars) if custom_vars else {}
+
+            logger.info(
+                "Email send for user %s, template '%s': "
+                "custom_vars_keys=%s, password_in_vars=%s",
+                user.id, template.name,
+                list(send_vars.keys()) if send_vars else "none",
+                "password" in send_vars,
+            )
+
             override_from_email = send_vars.pop("__from_email", None)
             override_from_name = send_vars.pop("__from_name", None)
             custom_vars = send_vars if send_vars else None
@@ -1515,6 +1535,7 @@ From: CyberX Red Team"""
             subject=detail.get("subject", ""),
             html_content=html_content,
             text_content=detail.get("plain_content"),
+            sendgrid_template_id=sendgrid_template_id,
             available_variables=available_variables,
             is_system=False,
             created_by_id=created_by_id
