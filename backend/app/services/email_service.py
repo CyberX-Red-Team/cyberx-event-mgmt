@@ -404,6 +404,7 @@ class EmailService:
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "email": user.email or "",
+            "username": user.email or "",  # Portal login username (email-based auth)
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
             "confirm_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
