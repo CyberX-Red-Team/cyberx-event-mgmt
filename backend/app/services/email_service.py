@@ -976,9 +976,25 @@ From: CyberX Red Team"""
 
         await self.session.commit()
 
+    # Map SendGrid event types → User.email_status values
+    _EMAIL_STATUS_MAP = {
+        "bounce": "BOUNCED",
+        "dropped": "BOUNCED",
+        "spamreport": "SPAM_REPORTED",
+        "unsubscribe": "UNSUBSCRIBED",
+        "group_unsubscribe": "UNSUBSCRIBED",
+    }
+
     async def process_webhook_event(self, event_data: Dict[str, Any]) -> bool:
         """
         Process a SendGrid webhook event.
+
+        Handles: processed, deferred, delivered, open, click, bounce,
+        dropped, spamreport, unsubscribe, group_unsubscribe, group_resubscribe.
+
+        Updates User.email_status to the appropriate granular value
+        (GOOD / BOUNCED / SPAM_REPORTED / UNSUBSCRIBED) and records every
+        event in the email_events table for auditing.
 
         Returns:
             True if processed successfully
@@ -987,36 +1003,60 @@ From: CyberX Red Team"""
             email = event_data.get("email")
             event_type = event_data.get("event")
             sg_message_id = event_data.get("sg_message_id")
+            sg_event_id = event_data.get("sg_event_id")
             reason = event_data.get("reason")
-            timestamp = event_data.get("timestamp")
+            event_timestamp = event_data.get("timestamp")
 
             if not email or not event_type:
                 return False
 
-            # Log the event
+            # Look up user by normalized email (handles case / Gmail alias differences)
+            from app.api.utils.validation import normalize_email
+            normalized = normalize_email(email)
+            result = await self.session.execute(
+                select(User).where(User.email_normalized == normalized)
+            )
+            user = result.scalar_one_or_none()
+
+            # Record the event
             event = EmailEvent(
+                user_id=user.id if user else None,
                 email_to=email,
                 event_type=event_type,
+                sendgrid_event_id=sg_event_id,
                 sendgrid_message_id=sg_message_id,
                 payload=json.dumps(event_data)
             )
             self.session.add(event)
 
-            # Update user email status if bounce or complaint
-            if event_type in ("bounce", "dropped", "spamreport"):
-                result = await self.session.execute(
-                    select(User).where(User.email == email)
-                )
-                user = result.scalar_one_or_none()
-                if user:
-                    user.email_status = "BAD"
-                    user.email_status_timestamp = int(datetime.now(timezone.utc).timestamp())
+            # Update user email_status based on event type
+            if user:
+                new_status = self._EMAIL_STATUS_MAP.get(event_type)
+                if new_status:
+                    user.email_status = new_status
+                    user.email_status_timestamp = event_timestamp or int(
+                        datetime.now(timezone.utc).timestamp()
+                    )
+                    logger.warning(
+                        f"Email status for user {user.id} ({email}) set to "
+                        f"{new_status} due to {event_type}"
+                        f"{f': {reason}' if reason else ''}"
+                    )
+                elif event_type == "group_resubscribe":
+                    user.email_status = "GOOD"
+                    user.email_status_timestamp = event_timestamp or int(
+                        datetime.now(timezone.utc).timestamp()
+                    )
+                    logger.info(
+                        f"Email status for user {user.id} ({email}) "
+                        f"restored to GOOD via group_resubscribe"
+                    )
 
             await self.session.commit()
             return True
 
         except Exception as e:
-            print(f"Error processing webhook: {e}")
+            logger.error(f"Error processing webhook event: {e}", exc_info=True)
             return False
 
     async def get_email_stats(self) -> Dict[str, int]:

@@ -59,7 +59,7 @@ class User(Base):
     confirmed = Column(String(20), default='UNKNOWN', nullable=False)  # YES/NO/UNKNOWN
     confirmed_at = Column(TIMESTAMP(timezone=True), nullable=True)  # When user confirmed participation
     decline_reason = Column(String(500), nullable=True)  # Optional reason for declining participation
-    email_status = Column(String(50), default='GOOD', nullable=False)  # GOOD/BOUNCED/SPAM_REPORTED/UNSUBSCRIBE
+    email_status = Column(String(50), default='GOOD', nullable=False)  # GOOD/BOUNCED/SPAM_REPORTED/UNSUBSCRIBED
     email_status_timestamp = Column(BigInteger, nullable=True)
     future_participation = Column(String(20), default='UNKNOWN')
     remove_permanently = Column(String(20), default='UNKNOWN')

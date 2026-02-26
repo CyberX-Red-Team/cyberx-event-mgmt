@@ -189,7 +189,20 @@ async def create_participant(
     # Check if email already exists
     existing = await service.get_participant_by_email(data.email)
     if existing:
-        raise bad_request("A participant with this email already exists")
+        sponsor_info = "no sponsor"
+        if existing.sponsor_id:
+            sponsor = await service.get_participant(existing.sponsor_id)
+            if sponsor:
+                sponsor_info = f"{sponsor.first_name} {sponsor.last_name} ({sponsor.email})"
+            else:
+                sponsor_info = f"sponsor ID {existing.sponsor_id}"
+
+        raise conflict(
+            f"User with email '{data.email}' already exists. "
+            f"Name: {existing.first_name} {existing.last_name}, "
+            f"Role: {existing.role}, "
+            f"Sponsor: {sponsor_info}"
+        )
 
     # Determine sponsor_id
     sponsor_id = data.sponsor_id
@@ -370,7 +383,20 @@ async def update_participant(
     if data.email:
         existing = await service.get_participant_by_email(data.email)
         if existing and existing.id != participant_id:
-            raise bad_request("A participant with this email already exists")
+            sponsor_info = "no sponsor"
+            if existing.sponsor_id:
+                sponsor = await service.get_participant(existing.sponsor_id)
+                if sponsor:
+                    sponsor_info = f"{sponsor.first_name} {sponsor.last_name} ({sponsor.email})"
+                else:
+                    sponsor_info = f"sponsor ID {existing.sponsor_id}"
+
+            raise conflict(
+                f"User with email '{data.email}' already exists. "
+                f"Name: {existing.first_name} {existing.last_name}, "
+                f"Role: {existing.role}, "
+                f"Sponsor: {sponsor_info}"
+            )
 
     # Convert role enum to string value if provided
     update_data = data.model_dump(exclude_unset=True)

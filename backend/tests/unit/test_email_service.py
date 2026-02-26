@@ -1179,7 +1179,7 @@ class TestEmailServiceEventLogging:
         await db_session.commit()
         await db_session.refresh(user)
 
-        assert user.email_status != "BAD"
+        assert user.email_status == "GOOD"
 
         # Process bounce event
         event_data = {
@@ -1196,8 +1196,8 @@ class TestEmailServiceEventLogging:
 
         # Verify user status updated
         await db_session.refresh(user)
-        assert user.email_status == "BAD"
-        assert user.email_status_timestamp is not None
+        assert user.email_status == "BOUNCED"
+        assert user.email_status_timestamp == 1234567890
 
     async def test_process_webhook_event_dropped(self, db_session: AsyncSession):
         """Test processing a dropped event marks email as bad."""
@@ -1232,10 +1232,10 @@ class TestEmailServiceEventLogging:
 
         # Verify user status updated
         await db_session.refresh(user)
-        assert user.email_status == "BAD"
+        assert user.email_status == "BOUNCED"
 
     async def test_process_webhook_event_spamreport(self, db_session: AsyncSession):
-        """Test processing a spam report marks email as bad."""
+        """Test processing a spam report marks email as spam reported."""
         from app.models.user import User, UserRole
 
         service = EmailService(db_session)
@@ -1266,7 +1266,7 @@ class TestEmailServiceEventLogging:
 
         # Verify user status updated
         await db_session.refresh(user)
-        assert user.email_status == "BAD"
+        assert user.email_status == "SPAM_REPORTED"
 
     async def test_process_webhook_event_invalid(self, db_session: AsyncSession):
         """Test processing invalid webhook event returns False."""
@@ -1570,7 +1570,7 @@ class TestEmailServiceSendGridMocking:
             last_name="User",
             country="USA",
             role=UserRole.INVITEE.value,
-            email_status="BAD"
+            email_status="BOUNCED"
         )
         db_session.add(user)
         await db_session.commit()
@@ -1673,7 +1673,7 @@ class TestEmailServiceBulkOperations:
             last_name="User",
             country="USA",
             role=UserRole.INVITEE.value,
-            email_status="BAD"
+            email_status="BOUNCED"
         )
         db_session.add_all([user1, user2])
         await db_session.commit()
