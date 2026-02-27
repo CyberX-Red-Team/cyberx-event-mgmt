@@ -12,6 +12,7 @@ from app.models.cloud_init_template import CloudInitTemplate
 from app.models.instance_template import InstanceTemplate
 from app.models.instance import Instance
 from app.models.license import LicenseProduct, LicenseToken, LicenseSlot
+from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
 
 __all__ = [
     "User",
@@ -37,4 +38,6 @@ __all__ = [
     "LicenseProduct",
     "LicenseToken",
     "LicenseSlot",
+    "PasswordSyncQueue",
+    "SyncOperation",
 ]

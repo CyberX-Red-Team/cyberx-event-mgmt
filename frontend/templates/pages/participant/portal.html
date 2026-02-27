@@ -352,6 +352,22 @@
                         </div>
                     </div>
                     {% endif %}
+                    {% if current_user.pandas_username %}
+                    <div class="d-flex align-items-center mb-3 p-3 bg-light rounded">
+                        <div class="flex-shrink-0">
+                            <div class="rounded-circle bg-{{ 'success' if current_user.keycloak_synced else 'warning' }} bg-opacity-10 p-2">
+                                <i data-feather="{{ 'check-circle' if current_user.keycloak_synced else 'clock' }}"
+                                   class="text-{{ 'success' if current_user.keycloak_synced else 'warning' }}"></i>
+                            </div>
+                        </div>
+                        <div class="ms-3">
+                            <div class="small text-muted">Keycloak Sync</div>
+                            <div class="fw-bold text-{{ 'success' if current_user.keycloak_synced else 'warning' }}">
+                                {{ 'Synced' if current_user.keycloak_synced else 'Pending' }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                     <div class="alert alert-info mb-0">
                         <i data-feather="info" class="me-2"></i>
                         <div>

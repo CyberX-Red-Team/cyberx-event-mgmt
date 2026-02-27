@@ -577,14 +577,15 @@ class ParticipantService:
             vpn.is_available = False  # Never recycle
             vpn.is_active = False      # Mark as inactive
 
-        # Step 3: Delete user from Keycloak (if implemented)
-        # TODO: When Keycloak integration is implemented, add deletion here:
-        # if participant.pandas_username:
-        #     keycloak_service = KeycloakService()
-        #     try:
-        #         await keycloak_service.delete_user(participant.pandas_username)
-        #     except Exception as e:
-        #         logger.warning(f"Failed to delete user from Keycloak: {e}")
+        # Step 3: Queue Keycloak user deletion
+        if participant.pandas_username:
+            from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+            queue_entry = PasswordSyncQueue(
+                user_id=participant.id,
+                username=participant.pandas_username,
+                operation=SyncOperation.DELETE_USER.value
+            )
+            self.session.add(queue_entry)
 
         # Step 4: Delete the participant from database
         await self.session.delete(participant)
@@ -615,7 +616,20 @@ class ParticipantService:
         participant.pandas_password = new_password
         participant.password_hash = hash_password(new_password)
         participant.password_phonetic = generate_phonetic_password(new_password)
+        participant.keycloak_synced = False
         participant.updated_at = datetime.now(timezone.utc)
+
+        # Queue password sync to Keycloak
+        if participant.pandas_username:
+            from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+            from app.utils.encryption import encrypt_field
+            queue_entry = PasswordSyncQueue(
+                user_id=participant.id,
+                username=participant.pandas_username,
+                encrypted_password=encrypt_field(new_password),
+                operation=SyncOperation.UPDATE_PASSWORD.value
+            )
+            self.session.add(queue_entry)
 
         await self.session.commit()
 

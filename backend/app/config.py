@@ -110,6 +110,18 @@ class Settings(BaseSettings):
     # Note: License server URL is derived from FRONTEND_URL + "/api/license"
     # Note: license_token is auto-generated per-instance (no config needed)
 
+    # Keycloak Integration (optional - only needed for Keycloak SSO sync)
+    KEYCLOAK_URL: str = ""  # e.g. https://auth.cyberxredteam.org
+    KEYCLOAK_REALM: str = "cyberx"
+    KEYCLOAK_ADMIN_CLIENT_ID: str = "admin-cli"
+    KEYCLOAK_ADMIN_CLIENT_SECRET: str = ""
+    KEYCLOAK_WEBHOOK_SECRET: str = ""  # HMAC secret for verifying inbound Keycloak webhooks
+
+    # Password Sync to Keycloak
+    PASSWORD_SYNC_ENABLED: bool = False  # Master toggle for Keycloak sync job
+    PASSWORD_SYNC_INTERVAL_MINUTES: int = 5
+    PASSWORD_SYNC_MAX_RETRIES: int = 5
+
     # Invitation Reminder Configuration
     REMINDER_1_ENABLED: bool = False
     REMINDER_1_DAYS_AFTER_INVITE: int = 7  # First reminder: 7 days after initial invitation

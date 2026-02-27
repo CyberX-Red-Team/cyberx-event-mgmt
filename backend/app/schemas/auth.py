@@ -51,6 +51,9 @@ class UserResponse(BaseModel):
     # VPN status
     has_vpn: bool = False
 
+    # Keycloak sync status
+    keycloak_synced: bool = False
+
     model_config = {
         "from_attributes": True
     }

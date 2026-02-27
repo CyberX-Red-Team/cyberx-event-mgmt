@@ -193,6 +193,7 @@
                             <th>Country</th>
                             <th>Status</th>
                             <th>VPN</th>
+                            <th title="Keycloak Sync Status">KC</th>
                             <th>Active</th>
                             <th>Actions</th>
                         </tr>
@@ -429,7 +430,7 @@ async function loadInvitees(page = 1) {
         console.error('Error loading invitees:', error);
         showToast('Error loading invitees', 'error');
         document.getElementById('inviteesTableBody').innerHTML =
-            '<tr><td colspan="7" class="text-center text-danger">Error loading invitees</td></tr>';
+            '<tr><td colspan="8" class="text-center text-danger">Error loading invitees</td></tr>';
     } finally {
         showLoading(false);
     }
@@ -440,7 +441,7 @@ function renderTable(invitees) {
     const tbody = document.getElementById('inviteesTableBody');
 
     if (invitees.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No invitees found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No invitees found</td></tr>';
         return;
     }
 
@@ -451,6 +452,7 @@ function renderTable(invitees) {
             <td>${getCountryFlag(invitee.country)} ${escapeHtml(invitee.country)}</td>
             <td>${renderStatusBadge(invitee)}</td>
             <td>${invitee.has_vpn ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-secondary">No</span>'}</td>
+            <td>${invitee.keycloak_synced ? '<i data-feather="check-circle" class="text-success"></i>' : '<i data-feather="minus-circle" class="text-secondary"></i>'}</td>
             <td>${invitee.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
             <td>
                 <button class="btn btn-sm btn-primary btn-actions me-1" onclick="openEditInviteeModal(${invitee.id})" title="Edit">

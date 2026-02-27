@@ -130,6 +130,7 @@
                             <th>Username</th>
                             <th>Confirmed</th>
                             <th>VPN</th>
+                            <th title="Keycloak Sync Status">KC</th>
                             <th>Participation</th>
                             <th>Status</th>
                             <th width="150">Actions</th>
@@ -137,7 +138,7 @@
                     </thead>
                     <tbody id="participantsBody">
                         <tr>
-                            <td colspan="10" class="text-center py-4">
+                            <td colspan="11" class="text-center py-4">
                                 <div class="spinner-border spinner-border-sm me-2"></div>
                                 Loading participants...
                             </td>
@@ -248,6 +249,11 @@ function renderParticipants(participants) {
                 ${p.has_vpn
                     ? `<span class="badge bg-info">${p.vpn_count}</span>`
                     : '<span class="badge bg-warning">0</span>'}
+            </td>
+            <td class="text-center">
+                ${p.keycloak_synced
+                    ? '<i data-feather="check-circle" class="text-success" style="width:16px;height:16px;" title="Synced to Keycloak"></i>'
+                    : '<i data-feather="minus-circle" class="text-secondary" style="width:16px;height:16px;" title="Not synced"></i>'}
             </td>
             <td>
                 <span class="small" title="Years participated / Years invited">

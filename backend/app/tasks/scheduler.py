@@ -52,6 +52,7 @@ async def start_scheduler():
     from app.tasks.invitation_reminders import schedule_invitation_reminder_job
     from app.tasks.instance_status_sync import schedule_instance_status_sync_job
     from app.tasks.license_slot_reaper import schedule_license_slot_reaper_job
+    from app.tasks.keycloak_sync import schedule_keycloak_sync_job
 
     sched = get_scheduler()
 
@@ -65,6 +66,7 @@ async def start_scheduler():
     schedule_invitation_reminder_job(sched)
     schedule_instance_status_sync_job(sched)
     schedule_license_slot_reaper_job(sched)
+    schedule_keycloak_sync_job(sched)
 
     # Register status heartbeat job (updates database every 60 seconds)
     sched.add_job(

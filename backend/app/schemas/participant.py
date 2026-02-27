@@ -116,6 +116,9 @@ class ParticipantResponse(BaseModel):
     has_vpn: bool = False
     vpn_count: int = 0
 
+    # Keycloak sync status
+    keycloak_synced: bool = False
+
     # Participation tracking
     years_invited: int = 0
     years_participated: int = 0

@@ -77,6 +77,9 @@ class User(Base):
     _password_phonetic_encrypted = Column('password_phonetic', String(500), nullable=True)  # Encrypted storage (Fernet)
     password_hash = Column(String(255), nullable=True)  # For web portal login (bcrypt)
 
+    # Keycloak Sync Status
+    keycloak_synced = Column(Boolean, default=False, nullable=False)
+
     # Password Reset
     password_reset_token = Column(String(100), unique=True, nullable=True, index=True)
     password_reset_expires = Column(TIMESTAMP(timezone=True), nullable=True)

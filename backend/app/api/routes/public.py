@@ -265,6 +265,18 @@ async def confirm_participation(
         user.pandas_password = password  # Store plaintext for email (will be synced to Keycloak)
         user.password_hash = pwd_context.hash(password)  # Store hash for local auth
         user.password_phonetic = generate_phonetic_password(password)  # For easy communication
+        user.keycloak_synced = False  # Reset sync status on credential change
+
+        # Queue Keycloak sync
+        from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+        from app.utils.encryption import encrypt_field
+        queue_entry = PasswordSyncQueue(
+            user_id=user.id,
+            username=user.pandas_username,
+            encrypted_password=encrypt_field(password),
+            operation=SyncOperation.CREATE_USER.value
+        )
+        db.add(queue_entry)
     else:
         logger.info(
             f"Keeping existing password for user {user.id} ({user.email}, role: {user.role}) "

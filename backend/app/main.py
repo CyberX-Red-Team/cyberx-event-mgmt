@@ -13,7 +13,7 @@ from app.api.routes import auth, admin, vpn, email, webhooks, views, event, publ
 from app.api.routes import instances as instances_routes, cloud_init as cloud_init_routes, license as license_routes, cloud_init_vpn
 from app.api.routes import instance_templates, participant_instances
 from app.api.routes import settings as settings_routes
-from app.api.routes import admin_actions, participant_actions
+from app.api.routes import admin_actions, participant_actions, admin_keycloak
 from app.tasks import start_scheduler, stop_scheduler, list_jobs
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
@@ -182,6 +182,7 @@ app.add_middleware(
 csrf_exempt_urls = [
     "/api/webhooks/sendgrid",  # SendGrid webhook
     "/api/webhooks/discord",   # Discord OAuth callback
+    "/api/webhooks/keycloak",  # Keycloak event listener webhook
     "/api/public/confirm",     # Public confirmation endpoint
     "/api/public/decline",     # Public decline endpoint
     "/health",                 # Health check
@@ -227,6 +228,7 @@ app.include_router(participant_instances.router)  # Participant self-service pro
 app.include_router(settings_routes.router)  # Admin system settings
 app.include_router(admin_actions.router)  # Admin participant actions management
 app.include_router(participant_actions.router)  # Participant actions (view & respond)
+app.include_router(admin_keycloak.router)  # Admin Keycloak sync management
 
 # Include view routes (HTML pages)
 app.include_router(views.router)

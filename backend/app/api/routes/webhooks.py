@@ -192,34 +192,107 @@ async def keycloak_webhook(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Handle Keycloak SSO webhook events.
+    Handle Keycloak event listener webhook events.
 
-    This can be used for:
-    - User login events
-    - User registration
-    - Password changes
+    Keycloak can be configured to send events via an HTTP event listener SPI.
+    Events include user login, registration, password changes, and admin actions.
+
+    Security:
+    - Verifies HMAC-SHA256 signature if KEYCLOAK_WEBHOOK_SECRET is configured
+    - Logs events to audit trail
     """
+    # Verify webhook signature if secret is configured
+    if settings.KEYCLOAK_WEBHOOK_SECRET:
+        raw_body = await request.body()
+        signature = request.headers.get("X-Keycloak-Signature", "")
+
+        if not _verify_keycloak_signature(
+            raw_body, signature, settings.KEYCLOAK_WEBHOOK_SECRET
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature"
+            )
+
     try:
         data = await request.json()
 
-        event_type = data.get("type")
+        event_type = (data.get("type") or "").upper()
         user_data = data.get("details", {})
+        username = user_data.get("username", "")
+        realm = data.get("realmId", "")
+
+        logger.info(
+            f"Keycloak webhook: type={event_type}, username={username}, realm={realm}"
+        )
 
         if event_type == "LOGIN":
-            # User logged in via Keycloak
-            email = user_data.get("email")
-            # TODO: Track login event
+            # User authenticated in the exercise environment
+            if username:
+                from sqlalchemy import select as sa_select
+                from app.models.user import User
+                from app.services.audit_service import AuditService
+                result = await db.execute(
+                    sa_select(User).where(User.pandas_username == username)
+                )
+                user = result.scalar_one_or_none()
+                if user:
+                    audit = AuditService(db)
+                    await audit.log_action(
+                        action="KEYCLOAK_LOGIN",
+                        user_id=user.id,
+                        details={
+                            "username": username,
+                            "realm": realm,
+                            "ip_address": user_data.get("ipAddress"),
+                        }
+                    )
+                    await db.commit()
 
         elif event_type == "REGISTER":
-            # New user registered via Keycloak
-            email = user_data.get("email")
-            # TODO: Create user record if needed
+            # Self-registration in Keycloak (unexpected — users are pre-provisioned)
+            logger.warning(
+                f"Unexpected Keycloak self-registration: username={username}"
+            )
+
+        elif event_type in ("UPDATE_PASSWORD", "RESET_PASSWORD"):
+            # Password changed directly in Keycloak
+            logger.info(
+                f"Password changed in Keycloak for username={username}"
+            )
+
+        elif event_type in ("ADMIN_EVENT", "UPDATE_CREDENTIAL"):
+            # Admin action in Keycloak
+            logger.info(
+                f"Keycloak admin event: {data.get('operationType', 'unknown')} "
+                f"resource={data.get('resourceType', 'unknown')}"
+            )
 
         return {"status": "ok", "event": event_type}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Keycloak webhook error: {e}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Keycloak webhook error: {e}", exc_info=True)
+        return {"status": "error", "message": "Internal processing error"}
+
+
+def _verify_keycloak_signature(payload: bytes, signature: str, secret: str) -> bool:
+    """Verify Keycloak webhook HMAC-SHA256 signature."""
+    if not signature:
+        logger.warning("Keycloak webhook missing signature header")
+        return False
+
+    import hmac
+    import hashlib
+
+    expected = hmac.new(
+        secret.encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(expected, signature)
 
 
 @router.get("/health")

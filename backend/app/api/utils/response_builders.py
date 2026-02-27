@@ -63,6 +63,7 @@ async def build_auth_user_response(
         discord_username=user.discord_username,
         snowflake_id=user.snowflake_id,
         has_vpn=has_vpn,
+        keycloak_synced=user.keycloak_synced,
         event_participation_status=event_participation_status,
         event_participation_id=event_participation_id
     )
@@ -152,6 +153,7 @@ async def build_participant_response(
         password_email_sent=user.password_email_sent,
         has_vpn=vpn_count > 0,
         vpn_count=vpn_count,
+        keycloak_synced=user.keycloak_synced,
         # Participation tracking
         years_invited=user.years_invited,
         years_participated=user.years_participated,
