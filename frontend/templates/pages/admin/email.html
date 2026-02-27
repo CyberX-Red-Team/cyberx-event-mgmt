@@ -2274,7 +2274,7 @@ function renderPendingQueueTable(items) {
     tbody.innerHTML = items.map(item => {
         const createdAt = formatDateTime(item.created_at);
         const scheduledFor = item.scheduled_for ? formatDateTime(item.scheduled_for) : '-';
-        const batchId = item.batch_id ? `<code class="small">${item.batch_id.substring(0, 8)}</code>` : '-';
+        const batchId = item.batch_id ? `<code class="small">${item.batch_id}</code>` : '-';
         const priorityBadge = item.priority <= 2 ? 'danger' : item.priority <= 5 ? 'warning' : 'secondary';
 
         return `
@@ -2315,7 +2315,7 @@ function renderRecentQueueTable(items) {
         const statusBadge = getQueueStatusBadge(item.status);
         const createdAt = formatDateTime(item.created_at);
         const completedAt = item.sent_at || item.processed_at ? formatDateTime(item.sent_at || item.processed_at) : '-';
-        const batchId = item.batch_id ? `<code class="small">${item.batch_id.substring(0, 8)}</code>` : '-';
+        const batchId = item.batch_id ? `<code class="small">${item.batch_id}</code>` : '-';
         const priorityBadge = item.priority <= 2 ? 'danger' : item.priority <= 5 ? 'warning' : 'secondary';
 
         return `
