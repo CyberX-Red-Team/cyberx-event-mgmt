@@ -147,6 +147,22 @@ class KeycloakSyncService:
                     entry.last_error = "Keycloak API returned non-success"
                     failed_count += 1
 
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                # Connectivity/timeout errors — don't count against retries,
+                # Keycloak likely went down mid-batch. Stop processing remaining entries.
+                entry.last_error = f"Service unavailable: {e}"
+                skipped_remaining = len(pending) - synced_count - failed_count
+                logger.warning(
+                    f"Keycloak became unreachable mid-batch, "
+                    f"skipping remaining {skipped_remaining} entries"
+                )
+                await self.session.commit()
+                return {
+                    "synced": synced_count,
+                    "failed": failed_count,
+                    "skipped": skipped_remaining
+                }
+
             except Exception as e:
                 entry.retry_count += 1
                 entry.last_error = str(e)[:500]
