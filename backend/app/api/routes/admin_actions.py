@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
 from datetime import datetime, timezone
+import uuid
 
 from app.database import get_db
 from app.models.user import User
@@ -39,6 +40,7 @@ class ActionResponse(BaseModel):
     user_email: str
     user_name: str
     event_id: int
+    batch_id: Optional[str]
     action_type: str
     title: str
     description: Optional[str]
@@ -91,12 +93,14 @@ async def create_bulk_action(
         raise HTTPException(status_code=400, detail="No target users found")
 
     # Create actions
+    batch_id = f"action_{uuid.uuid4().hex[:12]}"
     created_actions = []
     for user in target_users:
         action = ParticipantAction(
             user_id=user.id,
             event_id=event.id,
             created_by_id=current_user.id,
+            batch_id=batch_id,
             action_type=data.action_type,
             title=data.title,
             description=data.description,
@@ -168,9 +172,8 @@ async def create_bulk_action(
 
 
 class BulkActionRevoke(BaseModel):
-    """Request to revoke actions by group (title + action_type)."""
-    action_type: str
-    title: str
+    """Request to revoke actions by batch_id."""
+    batch_id: str
 
 
 @router.post("/revoke")
@@ -180,19 +183,17 @@ async def revoke_actions(
     current_user: User = Depends(get_current_admin_user)
 ):
     """
-    Revoke all pending actions in a group (by action_type + title).
+    Revoke all pending actions in a batch.
 
     Sets PENDING actions to CANCELLED. Already confirmed/declined actions are not changed.
-    Also cancels any pending notification emails for those actions.
     """
-    from sqlalchemy import update, and_
+    from sqlalchemy import and_
 
-    # Find all pending actions in this group
+    # Find all pending actions in this batch
     result = await db.execute(
         select(ParticipantAction).where(
             and_(
-                ParticipantAction.action_type == data.action_type,
-                ParticipantAction.title == data.title,
+                ParticipantAction.batch_id == data.batch_id,
                 ParticipantAction.status == ActionStatus.PENDING.value
             )
         )
@@ -223,8 +224,7 @@ async def revoke_actions(
         resource_type="participant_action",
         details={
             "message": f"Revoked {len(pending_actions)} pending actions",
-            "action_type": data.action_type,
-            "title": data.title
+            "batch_id": data.batch_id
         }
     )
 
@@ -268,6 +268,7 @@ async def list_actions(
             user_email=user.email,
             user_name=f"{user.first_name} {user.last_name}",
             event_id=action.event_id,
+            batch_id=action.batch_id,
             action_type=action.action_type,
             title=action.title,
             description=action.description,
@@ -288,11 +289,13 @@ async def get_action_statistics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin_user)
 ):
-    """Get summary statistics for actions grouped by action groups."""
+    """Get summary statistics for actions grouped by batch."""
     from sqlalchemy import func, case
 
-    # Base query - group by action type and title to aggregate all instances
+    # Group by batch_id for clean separation of batches.
+    # Falls back to action_type+title grouping for legacy actions without batch_id.
     query = select(
+        ParticipantAction.batch_id,
         ParticipantAction.action_type,
         ParticipantAction.title,
         func.min(ParticipantAction.created_at).label('created_at'),
@@ -302,6 +305,7 @@ async def get_action_statistics(
         func.sum(case((ParticipantAction.status == ActionStatus.PENDING.value, 1), else_=0)).label('pending'),
         func.sum(case((ParticipantAction.status == ActionStatus.CANCELLED.value, 1), else_=0)).label('cancelled'),
     ).group_by(
+        ParticipantAction.batch_id,
         ParticipantAction.action_type,
         ParticipantAction.title
     ).order_by(func.min(ParticipantAction.created_at).desc())
@@ -316,6 +320,7 @@ async def get_action_statistics(
 
     return [
         {
+            "batch_id": row.batch_id,
             "action_type": row.action_type,
             "title": row.title,
             "created_at": row.created_at,

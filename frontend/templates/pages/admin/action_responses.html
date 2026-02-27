@@ -314,11 +314,11 @@ function renderActionGroups() {
                             </div>
                         </div>
                         <div class="col-md-2 text-end">
-                            <button class="btn btn-primary btn-sm mb-1" onclick="showResponseDetails('${escapeHtml(stat.title)}')">
+                            <button class="btn btn-primary btn-sm mb-1" onclick="showResponseDetails('${escapeHtml(stat.title)}', ${stat.batch_id ? `'${escapeHtml(stat.batch_id)}'` : 'null'})">
                                 <i data-feather="eye" class="feather-sm"></i> View
                             </button>
-                            ${stat.pending > 0 ? `
-                            <button class="btn btn-outline-danger btn-sm" onclick="revokeActionGroup('${escapeHtml(stat.action_type)}', '${escapeHtml(stat.title)}', ${stat.pending})">
+                            ${stat.pending > 0 && stat.batch_id ? `
+                            <button class="btn btn-outline-danger btn-sm" onclick="revokeActionGroup('${escapeHtml(stat.batch_id)}', '${escapeHtml(stat.title)}', ${stat.pending})">
                                 <i data-feather="x-octagon" class="feather-sm"></i> Revoke
                             </button>` : ''}
                         </div>
@@ -333,8 +333,10 @@ function renderActionGroups() {
 }
 
 // Show detailed responses
-window.showResponseDetails = function(actionTitle) {
-    const actions = detailedActions.filter(a => a.title === actionTitle);
+window.showResponseDetails = function(actionTitle, batchId) {
+    const actions = batchId
+        ? detailedActions.filter(a => a.batch_id === batchId)
+        : detailedActions.filter(a => a.title === actionTitle);
 
     document.getElementById('modalActionTitle').textContent = actionTitle;
 
@@ -380,8 +382,8 @@ window.showResponseDetails = function(actionTitle) {
 };
 
 // Revoke action group
-window.revokeActionGroup = async function(actionType, title, pendingCount) {
-    if (!confirm(`Revoke ${pendingCount} pending action(s) for "${title}"?\n\nThis will cancel all pending actions in this group. Already confirmed or declined actions are not affected.`)) {
+window.revokeActionGroup = async function(batchId, title, pendingCount) {
+    if (!confirm(`Revoke ${pendingCount} pending action(s) for "${title}"?\n\nThis will cancel all pending actions in this batch. Already confirmed or declined actions are not affected.`)) {
         return;
     }
 
@@ -389,7 +391,7 @@ window.revokeActionGroup = async function(actionType, title, pendingCount) {
         const response = await csrfFetch('/api/admin/actions/revoke', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action_type: actionType, title: title })
+            body: JSON.stringify({ batch_id: batchId })
         });
 
         const result = await response.json();

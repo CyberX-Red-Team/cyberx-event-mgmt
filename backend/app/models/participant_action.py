@@ -41,6 +41,9 @@ class ParticipantAction(Base):
     event_id = Column(Integer, ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True)
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
+    # Batch grouping (all actions from a single bulk create share the same batch_id)
+    batch_id = Column(String(100), nullable=True, index=True)
+
     # Action Details
     action_type = Column(String(50), nullable=False, index=True)  # ActionType enum value
     title = Column(String(255), nullable=False)  # "Confirm In-Person Attendance"
