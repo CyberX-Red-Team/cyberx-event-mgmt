@@ -298,6 +298,13 @@ async def queue_reminders(
         template_name: Fallback email template name
         days_until_event: Number of days until event starts
     """
+    # Hard guard: never send reminders if the event has already started
+    now = datetime.now(timezone.utc)
+    event_start_utc = event.start_date.replace(tzinfo=timezone.utc) if event.start_date else None
+    if event_start_utc and event_start_utc <= now:
+        logger.info(f"Stage {stage}: Event already started - skipping reminders")
+        return
+
     settings = get_settings()
     queue_service = EmailQueueService(session)
     audit_service = AuditService(session)
