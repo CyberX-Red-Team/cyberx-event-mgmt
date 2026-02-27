@@ -423,7 +423,7 @@ class EmailService:
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "email": user.email or "",
-            "username": user.email or "",
+            "username": user.pandas_username or "",
             "role": (user.role or "").capitalize(),
             **role_vars,
             "pandas_username": user.pandas_username or "",
