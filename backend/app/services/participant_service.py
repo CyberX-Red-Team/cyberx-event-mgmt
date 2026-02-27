@@ -1000,6 +1000,26 @@ class ParticipantService:
                 return f"{base[:44]}{timestamp}"
 
     def _generate_password(self, length: int = 12) -> str:
-        """Generate a secure random password."""
-        alphabet = string.ascii_letters + string.digits
-        return "".join(secrets.choice(alphabet) for _ in range(length))
+        """Generate a secure random password.
+
+        Uses a safe special character set that avoids mis-interpretation by:
+        - HTML/email clients: no &, <, >, ", '
+        - Handlebars templates: no { }
+        - Shells: no !, $, `, \\, |, ;
+        """
+        # Safe special chars: @#%^*
+        safe_specials = "@#%^*"
+        all_chars = string.ascii_letters + string.digits + safe_specials
+
+        # Ensure at least one of each character type
+        chars = [
+            secrets.choice(string.ascii_uppercase),
+            secrets.choice(string.ascii_lowercase),
+            secrets.choice(string.digits),
+            secrets.choice(safe_specials),
+        ]
+        chars.extend(secrets.choice(all_chars) for _ in range(length - 4))
+
+        # Shuffle to avoid predictable first-4 pattern
+        secrets.SystemRandom().shuffle(chars)
+        return "".join(chars)

@@ -66,23 +66,27 @@ def generate_password(length: int = 12) -> str:
 
     Returns:
         Random password with mix of uppercase, lowercase, digits, and symbols
-    """
-    # Ensure at least one of each character type
-    chars = []
-    chars.append(secrets.choice(string.ascii_uppercase))
-    chars.append(secrets.choice(string.ascii_lowercase))
-    chars.append(secrets.choice(string.digits))
-    chars.append(secrets.choice("!@#$%^&*"))
 
-    # Fill the rest randomly
-    all_chars = string.ascii_letters + string.digits + "!@#$%^&*"
+    Uses a safe special character set that avoids mis-interpretation by:
+    - HTML/email clients: no &, <, >, ", '
+    - Handlebars templates: no { }
+    - Shells: no !, $, `, \\, |, ;
+    """
+    safe_specials = "@#%^*"
+    all_chars = string.ascii_letters + string.digits + safe_specials
+
+    # Ensure at least one of each character type
+    chars = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice(safe_specials),
+    ]
     chars.extend(secrets.choice(all_chars) for _ in range(length - 4))
 
     # Shuffle to avoid predictable patterns
-    password_list = list(chars)
-    secrets.SystemRandom().shuffle(password_list)
-
-    return ''.join(password_list)
+    secrets.SystemRandom().shuffle(chars)
+    return ''.join(chars)
 
 
 def generate_phonetic_password(password: str) -> str:
