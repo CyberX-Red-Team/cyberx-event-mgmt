@@ -25,7 +25,8 @@ class WorkflowService:
         self,
         trigger_event: str,
         user_id: int,
-        custom_vars: Optional[Dict[str, Any]] = None
+        custom_vars: Optional[Dict[str, Any]] = None,
+        force: bool = False
     ) -> int:
         """
         Trigger all enabled workflows for a specific event.
@@ -34,6 +35,7 @@ class WorkflowService:
             trigger_event: The event that occurred (e.g., "user_confirmed")
             user_id: ID of the user to send email to
             custom_vars: Additional custom variables to pass to email template
+            force: If True, bypass 24-hour duplicate check in email queue
 
         Returns:
             Number of emails queued
@@ -113,7 +115,8 @@ class WorkflowService:
                     template_name=workflow.template_name,
                     priority=workflow.priority,
                     custom_vars=merged_vars,
-                    scheduled_for=scheduled_for
+                    scheduled_for=scheduled_for,
+                    force=force
                 )
 
                 # Audit log the workflow trigger

@@ -299,7 +299,8 @@ async def confirm_participation(
                 "pandas_username": user.pandas_username,
                 "pandas_password": user.pandas_password,
                 "password_phonetic": user.password_phonetic
-            }
+            },
+            force=True  # Bypass 24h dedup — user just confirmed, always send credentials
         )
     else:
         logger.info(
