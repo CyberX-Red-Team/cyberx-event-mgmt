@@ -167,6 +167,74 @@ async def create_bulk_action(
     }
 
 
+class BulkActionRevoke(BaseModel):
+    """Request to revoke actions by group (title + action_type)."""
+    action_type: str
+    title: str
+
+
+@router.post("/revoke")
+async def revoke_actions(
+    data: BulkActionRevoke,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """
+    Revoke all pending actions in a group (by action_type + title).
+
+    Sets PENDING actions to CANCELLED. Already confirmed/declined actions are not changed.
+    Also cancels any pending notification emails for those actions.
+    """
+    from sqlalchemy import update, and_
+
+    # Find all pending actions in this group
+    result = await db.execute(
+        select(ParticipantAction).where(
+            and_(
+                ParticipantAction.action_type == data.action_type,
+                ParticipantAction.title == data.title,
+                ParticipantAction.status == ActionStatus.PENDING.value
+            )
+        )
+    )
+    pending_actions = result.scalars().all()
+
+    if not pending_actions:
+        return {
+            "success": True,
+            "actions_revoked": 0,
+            "message": "No pending actions to revoke"
+        }
+
+    # Cancel the actions
+    now = datetime.now(timezone.utc)
+    for action in pending_actions:
+        action.status = ActionStatus.CANCELLED.value
+        action.responded_at = now
+        action.response_note = f"Revoked by admin {current_user.email}"
+
+    await db.commit()
+
+    # Audit log
+    audit_service = AuditService(db)
+    await audit_service.log(
+        user_id=current_user.id,
+        action="bulk_action_revoke",
+        resource_type="participant_action",
+        details={
+            "message": f"Revoked {len(pending_actions)} pending actions",
+            "action_type": data.action_type,
+            "title": data.title
+        }
+    )
+
+    return {
+        "success": True,
+        "actions_revoked": len(pending_actions),
+        "message": f"Revoked {len(pending_actions)} pending actions"
+    }
+
+
 @router.get("")
 async def list_actions(
     event_id: Optional[int] = None,
@@ -232,6 +300,7 @@ async def get_action_statistics(
         func.sum(case((ParticipantAction.status == ActionStatus.CONFIRMED.value, 1), else_=0)).label('confirmed'),
         func.sum(case((ParticipantAction.status == ActionStatus.DECLINED.value, 1), else_=0)).label('declined'),
         func.sum(case((ParticipantAction.status == ActionStatus.PENDING.value, 1), else_=0)).label('pending'),
+        func.sum(case((ParticipantAction.status == ActionStatus.CANCELLED.value, 1), else_=0)).label('cancelled'),
     ).group_by(
         ParticipantAction.action_type,
         ParticipantAction.title
@@ -253,7 +322,8 @@ async def get_action_statistics(
             "total": row.total,
             "confirmed": row.confirmed,
             "declined": row.declined,
-            "pending": row.pending
+            "pending": row.pending,
+            "cancelled": row.cancelled
         }
         for row in stats
     ]

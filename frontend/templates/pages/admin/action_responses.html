@@ -294,24 +294,33 @@ function renderActionGroups() {
                         </div>
                         <div class="col-md-4">
                             <div class="row text-center">
-                                <div class="col-4">
+                                <div class="col">
                                     <span class="badge badge-confirmed">${stat.confirmed}</span>
                                     <div class="small text-muted">Confirmed</div>
                                 </div>
-                                <div class="col-4">
+                                <div class="col">
                                     <span class="badge badge-declined">${stat.declined}</span>
                                     <div class="small text-muted">Declined</div>
                                 </div>
-                                <div class="col-4">
+                                <div class="col">
                                     <span class="badge badge-pending">${stat.pending}</span>
                                     <div class="small text-muted">Pending</div>
                                 </div>
+                                ${stat.cancelled > 0 ? `
+                                <div class="col">
+                                    <span class="badge bg-secondary">${stat.cancelled}</span>
+                                    <div class="small text-muted">Cancelled</div>
+                                </div>` : ''}
                             </div>
                         </div>
                         <div class="col-md-2 text-end">
-                            <button class="btn btn-primary btn-sm" onclick="showResponseDetails('${escapeHtml(stat.title)}')">
-                                <i data-feather="eye" class="feather-sm"></i> View Details
+                            <button class="btn btn-primary btn-sm mb-1" onclick="showResponseDetails('${escapeHtml(stat.title)}')">
+                                <i data-feather="eye" class="feather-sm"></i> View
                             </button>
+                            ${stat.pending > 0 ? `
+                            <button class="btn btn-outline-danger btn-sm" onclick="revokeActionGroup('${escapeHtml(stat.action_type)}', '${escapeHtml(stat.title)}', ${stat.pending})">
+                                <i data-feather="x-octagon" class="feather-sm"></i> Revoke
+                            </button>` : ''}
                         </div>
                     </div>
                 </div>
@@ -334,6 +343,8 @@ window.showResponseDetails = function(actionTitle) {
             ? '<span class="badge badge-confirmed">Confirmed</span>'
             : action.status === 'declined'
             ? '<span class="badge badge-declined">Declined</span>'
+            : action.status === 'cancelled'
+            ? '<span class="badge bg-secondary">Cancelled</span>'
             : '<span class="badge badge-pending">Pending</span>';
 
         const responseNote = action.response_note
@@ -366,6 +377,33 @@ window.showResponseDetails = function(actionTitle) {
     const modal = new bootstrap.Modal(document.getElementById('responseDetailsModal'));
     modal.show();
     feather.replace();
+};
+
+// Revoke action group
+window.revokeActionGroup = async function(actionType, title, pendingCount) {
+    if (!confirm(`Revoke ${pendingCount} pending action(s) for "${title}"?\n\nThis will cancel all pending actions in this group. Already confirmed or declined actions are not affected.`)) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch('/api/admin/actions/revoke', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action_type: actionType, title: title })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast(`Revoked ${result.actions_revoked} pending action(s)`, 'success');
+            await loadActionStatistics();
+        } else {
+            showToast(result.detail || 'Failed to revoke actions', 'danger');
+        }
+    } catch (error) {
+        console.error('Failed to revoke actions:', error);
+        showToast('Failed to revoke actions', 'danger');
+    }
 };
 
 // Filter change handler
