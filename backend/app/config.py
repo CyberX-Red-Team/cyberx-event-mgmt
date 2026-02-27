@@ -111,10 +111,13 @@ class Settings(BaseSettings):
     # Note: license_token is auto-generated per-instance (no config needed)
 
     # Invitation Reminder Configuration
+    REMINDER_1_ENABLED: bool = False
     REMINDER_1_DAYS_AFTER_INVITE: int = 7  # First reminder: 7 days after initial invitation
     REMINDER_1_MIN_DAYS_BEFORE_EVENT: int = 14  # Don't send if event is less than 14 days away
+    REMINDER_2_ENABLED: bool = False
     REMINDER_2_DAYS_AFTER_INVITE: int = 14  # Second reminder: 14 days after initial invitation
     REMINDER_2_MIN_DAYS_BEFORE_EVENT: int = 7  # Don't send if event is less than 7 days away
+    REMINDER_3_ENABLED: bool = False
     REMINDER_3_DAYS_BEFORE_EVENT: int = 3  # Final reminder: 3 days before event starts
     REMINDER_CHECK_INTERVAL_HOURS: int = 24  # How often to check for reminders to send
 

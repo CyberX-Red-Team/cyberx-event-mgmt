@@ -69,6 +69,10 @@ async def process_reminder_stage_1(session: AsyncSession, event: Event, settings
     - confirmed is still UNKNOWN
     - event is at least Y days away
     """
+    if not settings.REMINDER_1_ENABLED:
+        logger.info("Stage 1: Disabled via REMINDER_1_ENABLED - skipping")
+        return
+
     now = datetime.now(timezone.utc)
     days_after = settings.REMINDER_1_DAYS_AFTER_INVITE
     min_days_before_event = settings.REMINDER_1_MIN_DAYS_BEFORE_EVENT
@@ -141,6 +145,10 @@ async def process_reminder_stage_2(session: AsyncSession, event: Event, settings
     - confirmed is still UNKNOWN
     - event is at least Z days away
     """
+    if not settings.REMINDER_2_ENABLED:
+        logger.info("Stage 2: Disabled via REMINDER_2_ENABLED - skipping")
+        return
+
     now = datetime.now(timezone.utc)
     days_after = settings.REMINDER_2_DAYS_AFTER_INVITE
     min_days_before_event = settings.REMINDER_2_MIN_DAYS_BEFORE_EVENT
@@ -213,6 +221,10 @@ async def process_reminder_stage_3(session: AsyncSession, event: Event, settings
     - confirmed is still UNKNOWN
     - This is the "last chance to RSVP" reminder
     """
+    if not settings.REMINDER_3_ENABLED:
+        logger.info("Stage 3: Disabled via REMINDER_3_ENABLED - skipping")
+        return
+
     now = datetime.now(timezone.utc)
     days_before = settings.REMINDER_3_DAYS_BEFORE_EVENT
 
