@@ -138,6 +138,7 @@ async def create_bulk_action(
                         template_name=template.name,
                         priority=3,
                         custom_vars=notification_vars,
+                        force=True,
                     )
                     action.notification_sent = True
                     action.notification_sent_at = datetime.now(timezone.utc)
@@ -149,6 +150,7 @@ async def create_bulk_action(
                     trigger_event=WorkflowTriggerEvent.ACTION_ASSIGNED,
                     user_id=action.user_id,
                     custom_vars=notification_vars,
+                    force=True,
                 )
                 action.notification_sent = True
                 action.notification_sent_at = datetime.now(timezone.utc)
