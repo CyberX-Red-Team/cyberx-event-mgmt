@@ -9,10 +9,10 @@ from app.database import get_db
 from app.models.user import User
 from app.models.participant_action import ParticipantAction, ActionType, ActionStatus
 from app.models.event import Event
-from app.models.email_queue import EmailQueue, EmailQueueStatus
 from app.models.email_template import EmailTemplate
 from app.dependencies import get_current_admin_user
 from app.services.workflow_service import WorkflowService
+from app.services.email_queue_service import EmailQueueService
 from app.models.email_workflow import WorkflowTriggerEvent
 from app.services.audit_service import AuditService
 from pydantic import BaseModel
@@ -111,35 +111,30 @@ async def create_bulk_action(
 
     # Send notifications
     if data.send_notification:
+        notification_vars = {
+            "action_title": data.title,
+            "action_description": data.description or "",
+            "action_url": f"https://staging.events.cyberxredteam.org/portal#actions",
+            "deadline": str(data.deadline) if data.deadline else "No deadline",
+            "event_name": event.name
+        }
+
         if data.email_template_id:
-            # Use custom SendGrid template directly
+            # Use custom SendGrid template via queue
             template_result = await db.execute(
                 select(EmailTemplate).where(EmailTemplate.id == data.email_template_id)
             )
             template = template_result.scalar_one_or_none()
 
-            if template and template.sendgrid_template_id:
+            if template:
+                queue_service = EmailQueueService(db)
                 for action in created_actions:
-                    user = action.user
-                    # Queue email with custom template
-                    email_queue = EmailQueue(
-                        to_email=user.email,
-                        to_name=f"{user.first_name} {user.last_name}",
-                        subject=f"Action Required: {action.title}",
-                        sendgrid_template_id=template.sendgrid_template_id,
-                        template_data={
-                            "first_name": user.first_name,
-                            "last_name": user.last_name,
-                            "action_title": action.title,
-                            "action_description": action.description or "",
-                            "action_url": f"https://staging.events.cyberxredteam.org/portal#actions",
-                            "deadline": str(action.deadline) if action.deadline else "No deadline",
-                            "event_name": event.name
-                        },
-                        status=EmailQueueStatus.PENDING,
-                        event_id=event.id
+                    await queue_service.enqueue_email(
+                        user_id=action.user_id,
+                        template_name=template.name,
+                        priority=3,
+                        custom_vars=notification_vars,
                     )
-                    db.add(email_queue)
                     action.notification_sent = True
                     action.notification_sent_at = datetime.now(timezone.utc)
         else:
@@ -149,12 +144,7 @@ async def create_bulk_action(
                 await workflow_service.trigger_workflow(
                     trigger_event=WorkflowTriggerEvent.ACTION_ASSIGNED,
                     user_id=action.user_id,
-                    custom_vars={
-                        "action_title": action.title,
-                        "action_description": action.description or "",
-                        "action_url": f"https://staging.events.cyberxredteam.org/portal#actions",
-                        "deadline": str(action.deadline) if action.deadline else "No deadline"
-                    }
+                    custom_vars=notification_vars,
                 )
                 action.notification_sent = True
                 action.notification_sent_at = datetime.now(timezone.utc)
