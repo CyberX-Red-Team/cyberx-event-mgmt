@@ -46,6 +46,7 @@ class EventUpdate(BaseModel):
     test_mode: Optional[bool] = None
     ssh_public_key: Optional[str] = None
     ssh_private_key: Optional[str] = None
+    discord_channel_id: Optional[str] = Field(None, max_length=100, description="Discord channel ID for invite generation")
 
 
 class EventResponse(BaseModel):
@@ -63,6 +64,7 @@ class EventResponse(BaseModel):
     vpn_available: bool = False
     test_mode: bool = False
     ssh_public_key: Optional[str] = None
+    discord_channel_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -130,6 +132,9 @@ class EventParticipationResponse(BaseModel):
     declined_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    # Discord invite
+    discord_invite_code: Optional[str] = None
 
     # Related entities (populated when needed)
     user: Optional[ParticipantBrief] = None

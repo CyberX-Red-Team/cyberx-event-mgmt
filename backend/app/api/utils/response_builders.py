@@ -202,6 +202,7 @@ async def build_event_participation_response(
         declined_reason=p.declined_reason,
         created_at=p.created_at,
         updated_at=p.updated_at,
+        discord_invite_code=p.discord_invite_code,
         user_email=p.user.email if p.user else None,
         user_first_name=p.user.first_name if p.user else None,
         user_last_name=p.user.last_name if p.user else None,

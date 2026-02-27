@@ -382,6 +382,15 @@
                 </div>
             </div>
 
+            <!-- Discord Card -->
+            <div class="card shadow-sm mb-4" id="discordCard" style="display: none;">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="message-circle" class="me-2"></i>Discord</h5>
+                </div>
+                <div class="card-body" id="discordContent">
+                </div>
+            </div>
+
             <!-- VPN Card -->
             <div class="card shadow-sm mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -682,6 +691,35 @@ async function loadEventInfo() {
                 sshKeySection.style.display = 'block';
             } else {
                 sshKeySection.style.display = 'none';
+            }
+
+            // Show Discord card if user has an invite
+            var discordCard = document.getElementById('discordCard');
+            var discordContent = document.getElementById('discordContent');
+            if (data.participation && (data.participation.discord_invite_link || data.participation.discord_joined)) {
+                discordCard.style.display = 'block';
+                if (data.participation.discord_joined) {
+                    discordContent.innerHTML = `
+                        <div class="d-flex align-items-center p-3 bg-light rounded">
+                            <div class="flex-shrink-0">
+                                <div class="rounded-circle bg-success bg-opacity-10 p-2">
+                                    <i data-feather="check-circle" class="text-success"></i>
+                                </div>
+                            </div>
+                            <div class="ms-3">
+                                <div class="fw-bold text-success">Joined Discord</div>
+                                <div class="small text-muted">Your invite has been used successfully</div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    discordContent.innerHTML = `
+                        <p class="text-muted mb-3">Join the event Discord server using your unique invite link below. This link is single-use and tied to your account.</p>
+                        <a href="${data.participation.discord_invite_link}" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+                            <i data-feather="external-link" class="me-2"></i>Join Discord Server
+                        </a>
+                    `;
+                }
             }
 
             loadingState.classList.add('d-none');

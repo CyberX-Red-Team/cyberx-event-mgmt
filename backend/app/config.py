@@ -117,6 +117,10 @@ class Settings(BaseSettings):
     KEYCLOAK_ADMIN_CLIENT_SECRET: str = ""
     KEYCLOAK_WEBHOOK_SECRET: str = ""  # HMAC secret for verifying inbound Keycloak webhooks
 
+    # Discord Integration (optional - for per-event invite links)
+    DISCORD_BOT_TOKEN: str = ""  # Bot token for Discord API
+    DISCORD_INVITE_ENABLED: bool = False  # Master toggle
+
     # Password Sync to Keycloak
     PASSWORD_SYNC_ENABLED: bool = False  # Master toggle for Keycloak sync job
     PASSWORD_SYNC_INTERVAL_MINUTES: int = 5

@@ -75,32 +75,81 @@ async def list_events(
 @router.get("/active")
 async def get_active_event(
     current_user: User = Depends(get_current_active_user),
-    service: EventService = Depends(get_event_service)
+    service: EventService = Depends(get_event_service),
+    db: AsyncSession = Depends(get_db)
 ):
-    """Get the currently active event."""
+    """Get the currently active event with user's participation data."""
     event = await service.get_active_event()
     if not event:
-        return {"active": False, "event": None}
+        return {"active": False, "event": None, "participation": None}
+
+    event_response = EventResponse(
+        id=event.id,
+        year=event.year,
+        name=event.name,
+        slug=event.slug,
+        start_date=event.start_date,
+        end_date=event.end_date,
+        event_time=event.event_time,
+        event_location=event.event_location,
+        terms_version=event.terms_version,
+        is_active=event.is_active,
+        vpn_available=getattr(event, 'vpn_available', False),
+        test_mode=getattr(event, 'test_mode', False),
+        ssh_public_key="available" if event.ssh_private_key else None,
+        created_at=event.created_at,
+        updated_at=event.updated_at
+    )
+
+    # Get user's participation for this event (includes Discord invite)
+    from sqlalchemy import select
+    from app.models.event import EventParticipation
+    part_result = await db.execute(
+        select(EventParticipation).where(
+            EventParticipation.user_id == current_user.id,
+            EventParticipation.event_id == event.id
+        )
+    )
+    part = part_result.scalar_one_or_none()
+
+    participation_data = None
+    if part and part.discord_invite_code:
+        discord_invite_link = None
+        discord_joined = False
+
+        if part.discord_invite_used_at:
+            discord_joined = True
+        else:
+            # Lazy check: ask Discord if the invite has been consumed
+            from app.config import get_settings
+            settings = get_settings()
+            if settings.DISCORD_INVITE_ENABLED and settings.DISCORD_BOT_TOKEN:
+                try:
+                    from app.services.discord_invite_service import DiscordInviteService
+                    discord_service = DiscordInviteService()
+                    used = await discord_service.check_invite_used(part.discord_invite_code)
+                    if used:
+                        from datetime import datetime, timezone
+                        part.discord_invite_used_at = datetime.now(timezone.utc)
+                        await db.commit()
+                        discord_joined = True
+                    else:
+                        discord_invite_link = f"https://discord.gg/{part.discord_invite_code}"
+                except Exception as e:
+                    logger.warning(f"Failed to check Discord invite status: {e}")
+                    discord_invite_link = f"https://discord.gg/{part.discord_invite_code}"
+            else:
+                discord_invite_link = f"https://discord.gg/{part.discord_invite_code}"
+
+        participation_data = {
+            "discord_invite_link": discord_invite_link,
+            "discord_joined": discord_joined
+        }
 
     return {
         "active": True,
-        "event": EventResponse(
-            id=event.id,
-            year=event.year,
-            name=event.name,
-            slug=event.slug,
-            start_date=event.start_date,
-            end_date=event.end_date,
-            event_time=event.event_time,
-            event_location=event.event_location,
-            terms_version=event.terms_version,
-            is_active=event.is_active,
-            vpn_available=getattr(event, 'vpn_available', False),
-            test_mode=getattr(event, 'test_mode', False),
-            ssh_public_key="available" if event.ssh_private_key else None,  # Indicate availability without exposing key
-            created_at=event.created_at,
-            updated_at=event.updated_at
-        )
+        "event": event_response,
+        "participation": participation_data
     }
 
 

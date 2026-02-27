@@ -8,6 +8,7 @@ from app.services.workflow_service import WorkflowService
 from app.services.event_service import EventService
 from app.models.email_workflow import WorkflowTriggerEvent
 from app.dependencies import get_db
+from app.config import get_settings
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 import secrets
 import string
@@ -282,6 +283,21 @@ async def confirm_participation(
             f"Keeping existing password for user {user.id} ({user.email}, role: {user.role}) "
             f"during confirmation"
         )
+
+    # Generate Discord invite if configured for this event
+    if event and event.discord_channel_id and participation:
+        settings = get_settings()
+        if settings.DISCORD_INVITE_ENABLED and settings.DISCORD_BOT_TOKEN:
+            try:
+                from app.services.discord_invite_service import DiscordInviteService
+                discord_service = DiscordInviteService()
+                invite_code = await discord_service.generate_invite(event.discord_channel_id)
+                if invite_code:
+                    participation.discord_invite_code = invite_code
+                    participation.discord_invite_generated_at = now
+                    logger.info(f"Generated Discord invite for user {user.id}: {invite_code}")
+            except Exception as e:
+                logger.warning(f"Failed to generate Discord invite for user {user.id}: {e}")
 
     await db.commit()
     await db.refresh(user)

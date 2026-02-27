@@ -1416,6 +1416,7 @@ def _build_event_dict(event):
         "confirmation_expires_days": event.confirmation_expires_days,
         "ssh_public_key": event.ssh_public_key,
         "ssh_private_key": event.ssh_private_key,
+        "discord_channel_id": event.discord_channel_id,
         "created_at": event.created_at.isoformat() if event.created_at else None,
         "updated_at": event.updated_at.isoformat() if event.updated_at else None
     }
@@ -1612,6 +1613,8 @@ async def update_event(
         track_field("ssh_public_key", data["ssh_public_key"])
     if "ssh_private_key" in data:
         track_field("ssh_private_key", data["ssh_private_key"])
+    if "discord_channel_id" in data:
+        track_field("discord_channel_id", data["discord_channel_id"])
 
     # Handle is_active separately (requires deactivating other events)
     if "is_active" in data and data["is_active"] != event.is_active:
@@ -2170,3 +2173,68 @@ async def delete_workflow(
     await db.commit()
 
     return {"success": True, "message": "Workflow deleted successfully"}
+
+
+# ---- Discord Invite Management ----
+
+@router.post("/participants/{user_id}/regenerate-discord-invite")
+async def regenerate_discord_invite(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Regenerate a Discord invite for a participant's current event."""
+    from app.models.event import EventParticipation
+    from app.services.event_service import EventService
+    from app.services.discord_invite_service import DiscordInviteService
+    from app.config import get_settings
+    from datetime import datetime, timezone
+
+    settings = get_settings()
+    if not settings.DISCORD_INVITE_ENABLED or not settings.DISCORD_BOT_TOKEN:
+        raise bad_request("Discord invite generation is not enabled")
+
+    # Get participant
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise not_found("User")
+
+    # Get active event
+    event_service = EventService(db)
+    event = await event_service.get_active_event()
+    if not event:
+        raise bad_request("No active event")
+
+    if not event.discord_channel_id:
+        raise bad_request("No Discord channel configured for this event")
+
+    # Get participation
+    part_result = await db.execute(
+        select(EventParticipation).where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.event_id == event.id
+        )
+    )
+    participation = part_result.scalar_one_or_none()
+    if not participation:
+        raise not_found("No participation found for this user and event")
+
+    # Generate new invite
+    discord_service = DiscordInviteService()
+    invite_code = await discord_service.generate_invite(event.discord_channel_id)
+
+    if not invite_code:
+        raise server_error("Failed to generate Discord invite — Discord API may be unavailable")
+
+    participation.discord_invite_code = invite_code
+    participation.discord_invite_generated_at = datetime.now(timezone.utc)
+    participation.discord_invite_used_at = None  # Reset used status
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Discord invite regenerated for {user.email}",
+        "invite_link": f"https://discord.gg/{invite_code}"
+    }
