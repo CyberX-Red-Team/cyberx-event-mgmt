@@ -141,6 +141,37 @@
         </div>
     </div>
 
+    <!-- Keycloak Sync Card -->
+    <div class="card mb-4" id="keycloakCard">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <i data-feather="key" class="me-2"></i>
+                Keycloak Sync
+            </div>
+            <div id="kcHealthBadge">
+                <span class="badge bg-secondary">Checking...</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <div class="d-flex gap-4 small" id="kcStats">
+                        <span class="text-muted">Loading stats...</span>
+                    </div>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button class="btn btn-sm btn-outline-primary me-1" onclick="syncAllUnsynced()" id="syncAllBtn">
+                        <i data-feather="refresh-cw" class="me-1"></i> Sync All Unsynced
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadKeycloakStatus()" title="Refresh status">
+                        <i data-feather="refresh-cw"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="kcSyncResult" class="mt-2" style="display: none;"></div>
+        </div>
+    </div>
+
     <!-- Tab Navigation -->
     <div class="card mb-4">
         <div class="card-header p-0">
@@ -259,6 +290,8 @@
                                 <li><a class="dropdown-item" href="#" onclick="bulkResendInvitation()"><i data-feather="send" class="me-2"></i>Resend Invitation</a></li>
                                 <li><a class="dropdown-item" href="#" onclick="bulkResetWorkflow()"><i data-feather="refresh-cw" class="me-2"></i>Reset Workflow State</a></li>
                                 <li><a class="dropdown-item" href="#" onclick="showAssignActionModal()"><i data-feather="check-square" class="me-2"></i>Assign Action</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="#" onclick="bulkSyncKeycloak()"><i data-feather="key" class="me-2"></i>Sync to Keycloak</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-danger" href="#" onclick="bulkAction('delete')"><i data-feather="trash-2" class="me-2"></i>Delete</a></li>
                             </ul>
@@ -694,6 +727,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadStats();
     loadUsers(1);
     loadSponsors();
+    loadKeycloakStatus();
 
     // Tab change handlers
     document.querySelectorAll('#userTabs button').forEach(tab => {
@@ -932,6 +966,11 @@ function renderUsersTable() {
                     ${user.role === 'invitee' || user.role === 'sponsor'
                         ? `<button class="btn btn-outline-warning" onclick="resetWorkflow(${user.id}, '${escapeHtml(user.email)}')" title="Reset Workflow State">
                             <i data-feather="refresh-cw"></i>
+                           </button>`
+                        : ''}
+                    ${!user.keycloak_synced && user.pandas_username
+                        ? `<button class="btn btn-outline-warning" onclick="syncUserToKeycloak(${user.id}, '${escapeHtml(user.pandas_username)}')" title="Sync to Keycloak">
+                            <i data-feather="key"></i>
                            </button>`
                         : ''}
                     <button class="btn btn-outline-secondary" onclick="openRoleModal(${user.id}, '${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}', '${user.role}')" title="Change Role">
@@ -1769,6 +1808,169 @@ function showError(elementId, message) {
     errorElement.textContent = message;
     errorElement.classList.remove('d-none');
 }
+
+// =============================================================================
+// Keycloak Sync
+// =============================================================================
+window.loadKeycloakStatus = async function() {
+    try {
+        const [healthRes, statusRes] = await Promise.all([
+            csrfFetch('/api/admin/keycloak/health'),
+            csrfFetch('/api/admin/keycloak/sync-status')
+        ]);
+
+        const health = await healthRes.json();
+        const stats = await statusRes.json();
+
+        // Health badge
+        const badge = document.getElementById('kcHealthBadge');
+        if (!health.keycloak_url || health.keycloak_url === '(not configured)') {
+            badge.innerHTML = '<span class="badge bg-secondary">Not Configured</span>';
+        } else if (health.status === 'healthy') {
+            badge.innerHTML = '<span class="badge bg-success">Connected</span>';
+        } else {
+            badge.innerHTML = '<span class="badge bg-danger">Unreachable</span>';
+        }
+
+        // Stats
+        const statsEl = document.getElementById('kcStats');
+        statsEl.innerHTML = `
+            <span><strong>${stats.pending || 0}</strong> pending</span>
+            <span><strong>${stats.synced || 0}</strong> synced</span>
+            <span><strong>${stats.failed || 0}</strong> failed</span>
+            <span class="text-muted">Sync: ${stats.sync_enabled ? 'Enabled' : 'Disabled'}</span>
+        `;
+
+        // Disable sync button if not configured
+        const syncBtn = document.getElementById('syncAllBtn');
+        if (!health.keycloak_url || health.keycloak_url === '(not configured)') {
+            syncBtn.disabled = true;
+            syncBtn.title = 'Keycloak URL not configured';
+        } else {
+            syncBtn.disabled = false;
+            syncBtn.title = '';
+        }
+
+        feather.replace();
+    } catch (error) {
+        console.error('Failed to load Keycloak status:', error);
+        document.getElementById('kcStats').innerHTML = '<span class="text-danger">Failed to load status</span>';
+    }
+};
+
+window.syncUserToKeycloak = async function(userId, username) {
+    if (!confirm(`Sync ${username} to Keycloak?`)) return;
+
+    try {
+        const btn = event.currentTarget;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        const response = await csrfFetch(`/api/admin/keycloak/sync-user/${userId}`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.synced > 0) {
+            showToast(`${username} synced to Keycloak`, 'success');
+        } else if (response.ok) {
+            showToast(`Sync queued but not completed: ${data.skipped} skipped, ${data.failed} failed`, 'warning');
+        } else {
+            showToast(data.detail || 'Sync failed', 'danger');
+        }
+
+        loadUsers(currentPage);
+        loadKeycloakStatus();
+
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Failed to sync user', 'danger');
+    }
+};
+
+window.syncAllUnsynced = async function() {
+    if (!confirm('Sync all unsynced confirmed users to Keycloak?\n\nThis will queue and immediately process all users with credentials who are not yet synced.')) return;
+
+    const btn = document.getElementById('syncAllBtn');
+    const resultEl = document.getElementById('kcSyncResult');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Syncing...';
+    resultEl.style.display = 'none';
+
+    try {
+        const response = await csrfFetch('/api/admin/keycloak/sync-confirmed', {
+            method: 'POST',
+            body: { user_ids: [] }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            let alertClass = 'alert-success';
+            if (data.failed > 0) alertClass = 'alert-warning';
+            if (data.queued === 0) alertClass = 'alert-info';
+
+            resultEl.innerHTML = `
+                <div class="alert ${alertClass} alert-dismissible mb-0 py-2 small">
+                    ${data.queued === 0
+                        ? 'No unsynced users found.'
+                        : `Queued ${data.queued} user(s): ${data.synced} synced, ${data.failed} failed, ${data.skipped} skipped`}
+                    <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            resultEl.style.display = 'block';
+        } else {
+            showToast(data.detail || 'Bulk sync failed', 'danger');
+        }
+
+        loadUsers(currentPage);
+        loadKeycloakStatus();
+
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Bulk sync failed', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-feather="refresh-cw" class="me-1"></i> Sync All Unsynced';
+        feather.replace();
+    }
+};
+
+window.bulkSyncKeycloak = async function() {
+    if (selectedUsers.size === 0) return;
+
+    if (!confirm(`Sync ${selectedUsers.size} selected user(s) to Keycloak?`)) return;
+
+    try {
+        const response = await csrfFetch('/api/admin/keycloak/sync-confirmed', {
+            method: 'POST',
+            body: { user_ids: Array.from(selectedUsers) }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast(
+                data.queued === 0
+                    ? 'No users with credentials to sync in selection'
+                    : `Queued ${data.queued}: ${data.synced} synced, ${data.failed} failed, ${data.skipped} skipped`,
+                data.failed > 0 ? 'warning' : 'success'
+            );
+        } else {
+            showToast(data.detail || 'Bulk sync failed', 'danger');
+        }
+
+        loadUsers(currentPage);
+        loadKeycloakStatus();
+        selectedUsers.clear();
+        updateBulkActionsButton();
+
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Bulk sync failed', 'danger');
+    }
+};
 
 })(); // End IIFE
 </script>

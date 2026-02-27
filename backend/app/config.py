@@ -116,6 +116,7 @@ class Settings(BaseSettings):
     KEYCLOAK_ADMIN_CLIENT_ID: str = "admin-cli"
     KEYCLOAK_ADMIN_CLIENT_SECRET: str = ""
     KEYCLOAK_WEBHOOK_SECRET: str = ""  # HMAC secret for verifying inbound Keycloak webhooks
+    KEYCLOAK_WEBHOOK_DEBUG: bool = False  # Log raw webhook payloads for debugging
 
     # Discord Integration (optional - for per-event invite links)
     DISCORD_BOT_TOKEN: str = ""  # Bot token for Discord API

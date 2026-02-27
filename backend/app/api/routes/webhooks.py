@@ -192,10 +192,18 @@ async def keycloak_webhook(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Handle Keycloak event listener webhook events.
+    Handle Keycloak event webhooks from the p2-inc/keycloak-events plugin.
 
-    Keycloak can be configured to send events via an HTTP event listener SPI.
-    Events include user login, registration, password changes, and admin actions.
+    EventRepresentation payload fields:
+    - uid: Unique event ID
+    - time: Event timestamp (epoch ms)
+    - realmId, realmName: Realm identifiers
+    - type: Prefixed event type (e.g. "access.LOGIN", "access.REGISTER")
+    - operationType: For admin events (CREATE, UPDATE, DELETE, ACTION)
+    - resourcePath, resourceType: For admin events
+    - authDetails: {realmId, clientId, userId, ipAddress, username, sessionId}
+    - details: Key-value map with additional event context
+    - error: Error string if the event represents a failure
 
     Security:
     - Verifies HMAC-SHA256 signature if KEYCLOAK_WEBHOOK_SECRET is configured
@@ -217,14 +225,39 @@ async def keycloak_webhook(
     try:
         data = await request.json()
 
-        event_type = (data.get("type") or "").upper()
-        user_data = data.get("details", {})
-        username = user_data.get("username", "")
+        if settings.KEYCLOAK_WEBHOOK_DEBUG:
+            import json
+            logger.info(f"Keycloak webhook raw payload: {json.dumps(data, indent=2, default=str)}")
+
+        # p2-inc/keycloak-events uses prefixed type (e.g. "access.LOGIN")
+        raw_type = data.get("type") or ""
+        # Strip the prefix (access., admin., etc.) to get the base event type
+        event_type = raw_type.rsplit(".", 1)[-1].upper() if raw_type else ""
+
+        # authDetails contains user context (username, IP, etc.)
+        auth_details = data.get("authDetails") or {}
+        username = auth_details.get("username", "")
+        ip_address = auth_details.get("ipAddress")
+        client_id = auth_details.get("clientId")
+        session_id = auth_details.get("sessionId")
+
+        # details is a sibling key-value map with extra context
+        details = data.get("details") or {}
+
         realm = data.get("realmId", "")
+        realm_name = data.get("realmName", "")
+        error = data.get("error")
 
         logger.info(
-            f"Keycloak webhook: type={event_type}, username={username}, realm={realm}"
+            f"Keycloak webhook: type={raw_type}, username={username}, "
+            f"realm={realm_name or realm}"
         )
+
+        if error:
+            logger.warning(
+                f"Keycloak event error: type={raw_type}, username={username}, "
+                f"error={error}"
+            )
 
         if event_type == "LOGIN":
             # User authenticated in the exercise environment
@@ -243,11 +276,19 @@ async def keycloak_webhook(
                         user_id=user.id,
                         details={
                             "username": username,
-                            "realm": realm,
-                            "ip_address": user_data.get("ipAddress"),
+                            "realm": realm_name or realm,
+                            "ip_address": ip_address,
+                            "client_id": client_id,
+                            "session_id": session_id,
                         }
                     )
                     await db.commit()
+
+        elif event_type == "LOGIN_ERROR":
+            logger.warning(
+                f"Keycloak login failure: username={username}, "
+                f"ip={ip_address}, error={error}"
+            )
 
         elif event_type == "REGISTER":
             # Self-registration in Keycloak (unexpected — users are pre-provisioned)
@@ -261,14 +302,22 @@ async def keycloak_webhook(
                 f"Password changed in Keycloak for username={username}"
             )
 
-        elif event_type in ("ADMIN_EVENT", "UPDATE_CREDENTIAL"):
-            # Admin action in Keycloak
+        elif event_type == "LOGOUT":
             logger.info(
-                f"Keycloak admin event: {data.get('operationType', 'unknown')} "
-                f"resource={data.get('resourceType', 'unknown')}"
+                f"Keycloak logout: username={username}, session={session_id}"
             )
 
-        return {"status": "ok", "event": event_type}
+        # Admin events come via operationType + resourceType/resourcePath
+        operation_type = data.get("operationType")
+        if operation_type:
+            resource_type = data.get("resourceType", "unknown")
+            resource_path = data.get("resourcePath", "")
+            logger.info(
+                f"Keycloak admin event: {operation_type} "
+                f"resource={resource_type} path={resource_path}"
+            )
+
+        return {"status": "ok", "event": raw_type}
 
     except HTTPException:
         raise
