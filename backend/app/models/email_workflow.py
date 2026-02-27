@@ -88,4 +88,10 @@ class WorkflowTriggerEvent:
     # Admin Actions
     BULK_INVITE = "bulk_invite"
     CUSTOM_EMAIL = "custom_email"
-    ACTION_ASSIGNED = "action_assigned"
+    ACTION_ASSIGNED = "action_assigned"  # Generic fallback for custom/unknown action types
+
+    # Per-Action-Type Triggers (allow distinct workflows per action type)
+    ACTION_ASSIGNED_IN_PERSON_ATTENDANCE = "action_assigned_in_person_attendance"
+    ACTION_ASSIGNED_SURVEY_COMPLETION = "action_assigned_survey_completion"
+    ACTION_ASSIGNED_ORIENTATION_RSVP = "action_assigned_orientation_rsvp"
+    ACTION_ASSIGNED_DOCUMENT_REVIEW = "action_assigned_document_review"

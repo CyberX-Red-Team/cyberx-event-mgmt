@@ -1945,9 +1945,35 @@ async def get_trigger_events(
         },
         {
             "event": WorkflowTriggerEvent.ACTION_ASSIGNED,
-            "display_name": "Action Assigned",
-            "description": "Triggered when a participant action is assigned to a user",
-            "available_variables": ["first_name", "last_name", "email", "action_name", "action_description", "login_url"]
+            "display_name": "Action Assigned (Generic)",
+            "description": "Fallback trigger for custom or unknown action types",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
+        },
+
+        # Per-Action-Type Triggers
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED_IN_PERSON_ATTENDANCE,
+            "display_name": "Action: In-Person Attendance",
+            "description": "Triggered when an in-person attendance confirmation is assigned",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED_SURVEY_COMPLETION,
+            "display_name": "Action: Survey Completion",
+            "description": "Triggered when a survey completion action is assigned",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED_ORIENTATION_RSVP,
+            "display_name": "Action: Orientation RSVP",
+            "description": "Triggered when an orientation RSVP action is assigned",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED_DOCUMENT_REVIEW,
+            "display_name": "Action: Document Review",
+            "description": "Triggered when a document review action is assigned",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
         }
     ]
 

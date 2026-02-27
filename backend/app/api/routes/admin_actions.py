@@ -144,10 +144,19 @@ async def create_bulk_action(
                     action.notification_sent_at = datetime.now(timezone.utc)
         else:
             # Use workflow system (default)
+            # Try action-type-specific trigger first, fall back to generic ACTION_ASSIGNED
+            action_type_trigger_map = {
+                ActionType.IN_PERSON_ATTENDANCE.value: WorkflowTriggerEvent.ACTION_ASSIGNED_IN_PERSON_ATTENDANCE,
+                ActionType.SURVEY_COMPLETION.value: WorkflowTriggerEvent.ACTION_ASSIGNED_SURVEY_COMPLETION,
+                ActionType.ORIENTATION_RSVP.value: WorkflowTriggerEvent.ACTION_ASSIGNED_ORIENTATION_RSVP,
+                ActionType.DOCUMENT_REVIEW.value: WorkflowTriggerEvent.ACTION_ASSIGNED_DOCUMENT_REVIEW,
+            }
+            trigger_event = action_type_trigger_map.get(data.action_type, WorkflowTriggerEvent.ACTION_ASSIGNED)
+
             workflow_service = WorkflowService(db)
             for action in created_actions:
                 await workflow_service.trigger_workflow(
-                    trigger_event=WorkflowTriggerEvent.ACTION_ASSIGNED,
+                    trigger_event=trigger_event,
                     user_id=action.user_id,
                     custom_vars=notification_vars,
                     force=True,
