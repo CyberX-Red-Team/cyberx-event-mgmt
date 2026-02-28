@@ -317,8 +317,8 @@ async def change_password(
     current_user.password_hash = pwd_context.hash(data.new_password)
     current_user.password_phonetic = generate_phonetic_password(data.new_password)
 
-    # Queue Keycloak sync for password update
-    if current_user.pandas_username:
+    # Queue Keycloak sync for password update (invitees and sponsors only — admins don't have Keycloak accounts)
+    if current_user.pandas_username and current_user.role in ('invitee', 'sponsor'):
         from app.services.keycloak_sync_service import KeycloakSyncService
         from app.models.password_sync_queue import SyncOperation
         sync_service = KeycloakSyncService(db)
@@ -475,8 +475,8 @@ async def complete_password_reset(
     user.password_reset_token = None
     user.password_reset_expires = None
 
-    # Queue Keycloak sync for password update
-    if user.pandas_username:
+    # Queue Keycloak sync for password update (invitees and sponsors only — admins don't have Keycloak accounts)
+    if user.pandas_username and user.role in ('invitee', 'sponsor'):
         from app.services.keycloak_sync_service import KeycloakSyncService
         from app.models.password_sync_queue import SyncOperation
         sync_service = KeycloakSyncService(db)
