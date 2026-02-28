@@ -332,21 +332,38 @@ async def keycloak_webhook(
 
 
 def _verify_keycloak_signature(payload: bytes, signature: str, secret: str) -> bool:
-    """Verify Keycloak webhook HMAC-SHA256 signature."""
+    """Verify Keycloak webhook HMAC-SHA256 signature.
+
+    The p2-inc/keycloak-events plugin sends the signature as Base64-encoded
+    HMAC-SHA256. We compare in both Base64 and hex to be robust.
+    """
     if not signature:
         logger.warning("Keycloak webhook missing signature header")
         return False
 
+    import base64
     import hmac
     import hashlib
 
-    expected = hmac.new(
+    # Strip optional "sha256=" prefix (some webhook implementations add it)
+    sig_value = signature
+    if sig_value.startswith("sha256="):
+        sig_value = sig_value[7:]
+
+    computed = hmac.new(
         secret.encode('utf-8'),
         payload,
         hashlib.sha256
-    ).hexdigest()
+    ).digest()
 
-    return hmac.compare_digest(expected, signature)
+    # Compare as Base64 (p2-inc/keycloak-events format)
+    expected_b64 = base64.b64encode(computed).decode('utf-8')
+    if hmac.compare_digest(expected_b64, sig_value):
+        return True
+
+    # Fallback: compare as hex
+    expected_hex = computed.hex()
+    return hmac.compare_digest(expected_hex, sig_value)
 
 
 @router.get("/health")
