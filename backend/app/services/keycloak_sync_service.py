@@ -195,18 +195,59 @@ class KeycloakSyncService:
             logger.error(f"Unknown sync operation: {entry.operation}")
             return False
 
+    async def _get_user_profile(self, user_id: int) -> Optional[User]:
+        """Look up the local User record for profile fields."""
+        result = await self.session.execute(
+            select(User).where(User.id == user_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def _update_keycloak_profile(
+        self,
+        client: httpx.AsyncClient,
+        admin_token: str,
+        kc_user_id: str,
+        user: User,
+        username: str
+    ) -> None:
+        """Update a Keycloak user's profile fields (email, name)."""
+        profile_payload = {
+            "firstName": user.first_name or "",
+            "lastName": user.last_name or "",
+            "email": f"{username}@pandas.red",
+            "emailVerified": True,
+        }
+        resp = await client.put(
+            f"{self.settings.KEYCLOAK_URL}/admin/realms/"
+            f"{self.settings.KEYCLOAK_REALM}/users/{kc_user_id}",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json=profile_payload
+        )
+        if resp.status_code != 204:
+            logger.warning(
+                f"Failed to update Keycloak profile for {username}: "
+                f"{resp.status_code} {resp.text}"
+            )
+
     async def _create_keycloak_user(
         self, entry: PasswordSyncQueue, admin_token: str
     ) -> bool:
-        """Create a user in Keycloak with credentials."""
+        """Create a user in Keycloak with credentials and profile."""
         password = decrypt_field(entry.encrypted_password) if entry.encrypted_password else None
+
+        # Look up local user for profile fields
+        local_user = await self._get_user_profile(entry.user_id)
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             # Check if user already exists
             existing_id = await self._find_keycloak_user(client, admin_token, entry.username)
 
             if existing_id:
-                # User exists — just update password
+                # User exists — update profile and password
+                if local_user:
+                    await self._update_keycloak_profile(
+                        client, admin_token, existing_id, local_user, entry.username
+                    )
                 if password:
                     return await self._set_keycloak_password(
                         client, admin_token, existing_id, password
@@ -217,6 +258,10 @@ class KeycloakSyncService:
             user_payload = {
                 "username": entry.username,
                 "enabled": True,
+                "email": f"{entry.username}@pandas.red",
+                "emailVerified": True,
+                "firstName": (local_user.first_name or "") if local_user else "",
+                "lastName": (local_user.last_name or "") if local_user else "",
                 "credentials": []
             }
 
@@ -237,13 +282,18 @@ class KeycloakSyncService:
             if response.status_code == 201:
                 return True
             elif response.status_code == 409:
-                # Conflict — user already exists (race condition), update password instead
-                logger.info(f"User {entry.username} already exists in Keycloak, updating password")
+                # Conflict — user already exists (race condition), update instead
+                logger.info(f"User {entry.username} already exists in Keycloak, updating profile and password")
                 kc_user_id = await self._find_keycloak_user(client, admin_token, entry.username)
-                if kc_user_id and password:
-                    return await self._set_keycloak_password(
-                        client, admin_token, kc_user_id, password
-                    )
+                if kc_user_id:
+                    if local_user:
+                        await self._update_keycloak_profile(
+                            client, admin_token, kc_user_id, local_user, entry.username
+                        )
+                    if password:
+                        return await self._set_keycloak_password(
+                            client, admin_token, kc_user_id, password
+                        )
                 return True
             else:
                 logger.error(
