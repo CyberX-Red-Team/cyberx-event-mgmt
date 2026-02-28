@@ -317,6 +317,19 @@ async def change_password(
     current_user.password_hash = pwd_context.hash(data.new_password)
     current_user.password_phonetic = generate_phonetic_password(data.new_password)
 
+    # Queue Keycloak sync if user has been synced before
+    if current_user.keycloak_synced and current_user.pandas_username:
+        from app.services.keycloak_sync_service import KeycloakSyncService
+        from app.models.password_sync_queue import SyncOperation
+        sync_service = KeycloakSyncService(db)
+        await sync_service.queue_user_sync(
+            user_id=current_user.id,
+            username=current_user.pandas_username,
+            password=data.new_password,
+            operation=SyncOperation.UPDATE_PASSWORD
+        )
+        current_user.keycloak_synced = False
+
     await db.commit()
 
     # Log password change
@@ -461,6 +474,19 @@ async def complete_password_reset(
     # Clear reset token
     user.password_reset_token = None
     user.password_reset_expires = None
+
+    # Queue Keycloak sync if user has been synced before
+    if user.keycloak_synced and user.pandas_username:
+        from app.services.keycloak_sync_service import KeycloakSyncService
+        from app.models.password_sync_queue import SyncOperation
+        sync_service = KeycloakSyncService(db)
+        await sync_service.queue_user_sync(
+            user_id=user.id,
+            username=user.pandas_username,
+            password=data.new_password,
+            operation=SyncOperation.UPDATE_PASSWORD
+        )
+        user.keycloak_synced = False
 
     await db.commit()
 
