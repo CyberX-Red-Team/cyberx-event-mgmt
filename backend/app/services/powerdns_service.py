@@ -137,6 +137,8 @@ class PowerDNSService:
                 response = await client.put(
                     f"{self.base_url}/accounts/{account_id}/users/{user_id}",
                     auth=self.auth,
+                    headers={"Content-Type": "application/json"},
+                    content="{}",
                 )
                 if response.status_code == 204:
                     return True
