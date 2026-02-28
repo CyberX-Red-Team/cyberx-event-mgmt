@@ -318,12 +318,13 @@
                                         Status Date <span id="sortIndicator"></span>
                                     </th>
                                     <th width="120">Participation</th>
+                                    <th width="40" title="Keycloak Sync Status">KC</th>
                                     <th width="130">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="usersBody">
                                 <tr>
-                                    <td colspan="12" class="text-center py-4">
+                                    <td colspan="13" class="text-center py-4">
                                         <div class="spinner-border spinner-border-sm me-2"></div>
                                         Loading users...
                                     </td>
@@ -802,7 +803,7 @@ window.loadUsers = async function(page = 1) {
         console.error('Error loading users:', error);
         document.getElementById('usersBody').innerHTML = `
             <tr>
-                <td colspan="12" class="text-center text-danger py-4">
+                <td colspan="13" class="text-center text-danger py-4">
                     Failed to load users. Please try again.
                 </td>
             </tr>
@@ -917,7 +918,7 @@ function renderUsersTable() {
     const tbody = document.getElementById('usersBody');
 
     if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-muted">No invitees found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-muted">No invitees found</td></tr>';
         return;
     }
 
@@ -948,6 +949,13 @@ function renderUsersTable() {
                         ? '<span class="badge bg-warning ms-1" title="Recommend removal">?</span>'
                         : ''}
                 </span>
+            </td>
+            <td class="text-center">
+                ${user.keycloak_synced
+                    ? '<i data-feather="check-circle" class="text-success" style="width:16px;height:16px;" title="Synced to Keycloak"></i>'
+                    : user.pandas_username
+                        ? '<i data-feather="minus-circle" class="text-warning" style="width:16px;height:16px;" title="Not synced (has credentials)"></i>'
+                        : '<i data-feather="minus-circle" class="text-secondary" style="width:16px;height:16px;" title="No credentials"></i>'}
             </td>
             <td>
                 <div class="btn-group btn-group-sm">
