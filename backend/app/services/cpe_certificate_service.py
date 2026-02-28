@@ -98,13 +98,14 @@ class CPECertificateService:
         return results
 
     async def issue_certificate(
-        self, user_id: int, event_id: int, issued_by_user_id: int
+        self, user_id: int, event_id: int, issued_by_user_id: int,
+        skip_eligibility: bool = False,
     ) -> CPECertificate:
         """
         Issue a CPE certificate to a user for an event.
 
-        Verifies eligibility, generates certificate number, creates DB record,
-        generates DOCX, converts to PDF, and uploads to R2.
+        Verifies eligibility (unless skip_eligibility=True), generates certificate
+        number, creates DB record, generates DOCX, converts to PDF, and uploads to R2.
 
         Raises ValueError if user is ineligible or certificate already exists.
         """
@@ -121,9 +122,9 @@ class CPECertificateService:
                 f"(status: {existing.status})"
             )
 
-        # Check eligibility
+        # Check eligibility (still record snapshot even when skipping)
         eligibility = await self.check_eligibility(user_id, event)
-        if not eligibility["eligible"]:
+        if not eligibility["eligible"] and not skip_eligibility:
             missing = [k for k, v in eligibility["criteria"].items() if not v]
             raise ValueError(f"User {user_id} is ineligible. Missing: {', '.join(missing)}")
 
@@ -163,7 +164,8 @@ class CPECertificateService:
         return certificate
 
     async def bulk_issue(
-        self, event_id: int, user_ids: list[int], issued_by_user_id: int
+        self, event_id: int, user_ids: list[int], issued_by_user_id: int,
+        skip_eligibility: bool = False,
     ) -> dict:
         """
         Issue certificates in bulk for multiple users.
@@ -190,15 +192,19 @@ class CPECertificateService:
                     })
                     continue
 
-                eligibility = await self.check_eligibility(user_id, event)
-                if not eligibility["eligible"]:
-                    skipped_ineligible.append({
-                        "user_id": user_id,
-                        "criteria": eligibility["criteria"],
-                    })
-                    continue
+                if not skip_eligibility:
+                    eligibility = await self.check_eligibility(user_id, event)
+                    if not eligibility["eligible"]:
+                        skipped_ineligible.append({
+                            "user_id": user_id,
+                            "criteria": eligibility["criteria"],
+                        })
+                        continue
 
-                cert = await self.issue_certificate(user_id, event_id, issued_by_user_id)
+                cert = await self.issue_certificate(
+                    user_id, event_id, issued_by_user_id,
+                    skip_eligibility=skip_eligibility,
+                )
                 issued.append({
                     "user_id": user_id,
                     "certificate_number": cert.certificate_number,

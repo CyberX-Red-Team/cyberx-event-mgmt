@@ -24,11 +24,13 @@ router = APIRouter(prefix="/api/admin/cpe", tags=["Admin - CPE Certificates"])
 class IssueCertificateRequest(BaseModel):
     user_id: int
     event_id: int
+    skip_eligibility: bool = False
 
 
 class BulkIssueRequest(BaseModel):
     event_id: int
     user_ids: List[int]
+    skip_eligibility: bool = False
 
 
 class RevokeCertificateRequest(BaseModel):
@@ -116,6 +118,7 @@ async def issue_certificate(
             user_id=request_body.user_id,
             event_id=request_body.event_id,
             issued_by_user_id=current_user.id,
+            skip_eligibility=request_body.skip_eligibility,
         )
         await db.commit()
 
@@ -155,6 +158,7 @@ async def bulk_issue_certificates(
             event_id=request_body.event_id,
             user_ids=request_body.user_ids,
             issued_by_user_id=current_user.id,
+            skip_eligibility=request_body.skip_eligibility,
         )
 
         if result["issued"]:
