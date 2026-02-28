@@ -163,6 +163,19 @@ services:
     networks:
       - cyberx-network
 
+  # Gotenberg - DOCX to PDF conversion for CPE certificates
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: cyberx_gotenberg
+    restart: unless-stopped
+    networks:
+      - cyberx-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Database backup service
   backup:
     image: postgres:15-alpine

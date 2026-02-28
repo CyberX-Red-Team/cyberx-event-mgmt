@@ -514,6 +514,91 @@ class AuditService:
             user_agent=user_agent
         )
 
+    async def log_certificate_issue(
+        self,
+        user_id: int,
+        target_user_id: int,
+        certificate_id: int,
+        event_id: int,
+        certificate_number: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log CPE certificate issuance."""
+        return await self.log(
+            action="CERTIFICATE_ISSUE",
+            user_id=user_id,
+            resource_type="CERTIFICATE",
+            resource_id=certificate_id,
+            details={
+                "target_user_id": target_user_id,
+                "event_id": event_id,
+                "certificate_number": certificate_number,
+            },
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_certificate_revoke(
+        self,
+        user_id: int,
+        certificate_id: int,
+        certificate_number: str,
+        reason: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log CPE certificate revocation."""
+        return await self.log(
+            action="CERTIFICATE_REVOKE",
+            user_id=user_id,
+            resource_type="CERTIFICATE",
+            resource_id=certificate_id,
+            details={
+                "certificate_number": certificate_number,
+                "reason": reason,
+            },
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_certificate_download(
+        self,
+        user_id: int,
+        certificate_id: int,
+        certificate_number: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log CPE certificate PDF download."""
+        return await self.log(
+            action="CERTIFICATE_DOWNLOAD",
+            user_id=user_id,
+            resource_type="CERTIFICATE",
+            resource_id=certificate_id,
+            details={"certificate_number": certificate_number},
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_bulk_certificate_issue(
+        self,
+        user_id: int,
+        event_id: int,
+        count: int,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log bulk CPE certificate issuance."""
+        return await self.log(
+            action="BULK_CERTIFICATE_ISSUE",
+            user_id=user_id,
+            resource_type="CERTIFICATE",
+            details={"event_id": event_id, "count": count},
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
     async def log_reminder_sent(
         self,
         user_id: int,

@@ -94,3 +94,19 @@ services:
         sync: false  # Set manually in Render dashboard
       - key: ADMIN_LAST_NAME
         sync: false  # Set manually in Render dashboard
+      # CPE Certificate configuration (optional)
+      - key: CPE_TEMPLATE_R2_KEY
+        sync: false
+      - key: GOTENBERG_URL
+        value: http://cyberx-gotenberg:10000
+
+  # Gotenberg - DOCX to PDF conversion for CPE certificates
+  - type: pserv
+    name: cyberx-gotenberg
+    runtime: docker
+    region: virginia
+    plan: starter
+    dockerfilePath: ./Dockerfile.gotenberg
+    envVars:
+      - key: GOTENBERG_API_PORT
+        value: "10000"

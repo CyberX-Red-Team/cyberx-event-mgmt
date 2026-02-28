@@ -13,6 +13,7 @@ from app.models.instance_template import InstanceTemplate
 from app.models.instance import Instance
 from app.models.license import LicenseProduct, LicenseToken, LicenseSlot
 from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+from app.models.cpe_certificate import CPECertificate, CertificateStatus
 
 __all__ = [
     "User",
@@ -40,4 +41,6 @@ __all__ = [
     "LicenseSlot",
     "PasswordSyncQueue",
     "SyncOperation",
+    "CPECertificate",
+    "CertificateStatus",
 ]

@@ -1,315 +1,296 @@
-# CyberX Event Management - Setup Guide
+# CyberX Event Management - Quick Start
 
-## ✅ What's Been Built
+Get the application running locally for development.
 
-### Phase 1: Foundation (COMPLETED)
+## Prerequisites
 
-- ✅ Complete project structure
-- ✅ Python 3.13 environment with all dependencies
-- ✅ PostgreSQL + Redis Docker configuration
-- ✅ 6 SQLAlchemy models (User, VPNCredential, Session, AuditLog, EmailEvent, VPNRequest)
-- ✅ Alembic migrations configured for async operations
-- ✅ CSV import script for SharePoint data
-- ✅ Database initialization script
-- ✅ Security utilities (password hashing, tokens)
-- ✅ Comprehensive documentation
+- **Python 3.11+**
+- **Docker & Docker Compose** (for PostgreSQL)
+- **SendGrid account** (for email features -- can use sandbox mode for testing)
 
-### Phase 2: Authentication & Sessions (COMPLETED)
-
-- ✅ AuthService with session management
-- ✅ Session-based authentication (24-hour expiry)
-- ✅ Password hashing with bcrypt
-- ✅ FastAPI dependencies for route protection
-- ✅ Login/logout API endpoints
-- ✅ Current user (/me) endpoint
-- ✅ Admin and participant role checking
-- ✅ Secure cookie-based sessions
-- ✅ FastAPI main application setup
-- ✅ Authentication flow tested end-to-end
-
-### Phase 3: Admin Portal API (COMPLETED)
-
-- ✅ Participant CRUD endpoints (list, get, create, update, delete)
-- ✅ Participant filtering, pagination, and search
-- ✅ Participant statistics endpoint
-- ✅ Bulk actions (activate/deactivate)
-- ✅ Password reset endpoint
-- ✅ VPN credentials listing and management
-- ✅ VPN assignment and revocation
-- ✅ VPN bulk assignment
-- ✅ WireGuard config generation and download
-- ✅ Self-service VPN config download for participants
-- ✅ Combined dashboard statistics endpoint
-- ✅ All endpoints tested end-to-end
-
-### Phase 4: Email Service (COMPLETED)
-
-- ✅ SendGrid email service integration
-- ✅ 6 email templates (invite, password, reminder, vpn_config, survey, orientation)
-- ✅ Single and bulk email sending endpoints
-- ✅ VPN config email with attachment
-- ✅ Email statistics endpoint
-- ✅ Participant email status tracking
-- ✅ SendGrid webhook handler for delivery events
-- ✅ Discord and Keycloak webhook handlers (stub)
-- ✅ Automatic user email status updates (bounce handling)
-- ✅ All endpoints tested end-to-end
-
-## 🚀 Quick Start
-
-### 1. Start PostgreSQL
+## 1. Start PostgreSQL
 
 ```bash
-cd ~/projects/cyberx/website-nextgen/cyberx-event-mgmt
-
-# Start PostgreSQL (Docker must be running)
+cd cyberx-event-mgmt
 docker compose up -d postgres
-
-# Verify it's running
-docker compose ps
+docker compose ps  # verify it's running
 ```
 
-### 2. Create Database Tables
+## 2. Set Up Python Environment
 
 ```bash
 cd backend
-
-# Run Alembic migrations to create tables
-alembic upgrade head
-```
-
-This will create all 6 tables:
-- `users`
-- `vpn_credentials`
-- `sessions`
-- `audit_logs`
-- `email_events`
-- `vpn_requests`
-
-### 3. Create Admin User (Optional)
-
-```bash
-# Run the initialization script
-python scripts/init_db.py
-```
-
-This will prompt you for:
-- Admin email (default: admin@cyberxredteam.org)
-- Admin password (default: changeme)
-
-### 4. Import CSV Data
-
-```bash
-# Import participants and VPN configurations
-python scripts/import_csv.py
-```
-
-This will:
-- Import 269 participants from `CyberX Master Invite.csv`
-- Import 2001 VPN configs from `VPN Configs V2.csv`
-- Link VPN credentials to users by username
-- Display import statistics
-
-**Expected output:**
-```
-📥 Importing participants from: /Users/wes/projects/cyberx/website-nextgen/data/CyberX Master Invite.csv
-  ✓ Imported 50 participants...
-  ✓ Imported 100 participants...
-  ...
-✅ Imported 269 participants successfully
-
-📥 Importing VPN configurations from: /Users/wes/projects/cyberx/website-nextgen/data/VPN Configs V2.csv
-  ✓ Imported 100 VPN configs...
-  ✓ Imported 200 VPN configs...
-  ...
-✅ Imported 2001 VPN configurations successfully
-
-📊 Verifying imported data...
-  Users: 269 total, X confirmed, Y with VPN
-  VPN Credentials: 2001 total, Z available
-    Cyber: A, Kinetic: B
-```
-
-### 5. Verify Database
-
-```bash
-# Connect to PostgreSQL
-docker compose exec postgres psql -U cyberx -d cyberx_events
-
-# Run queries
-\dt                                    # List tables
-SELECT COUNT(*) FROM users;            # Count users
-SELECT COUNT(*) FROM vpn_credentials;  # Count VPN configs
-SELECT * FROM users LIMIT 5;           # Sample users
-\q                                     # Exit
-```
-
-### 6. Create Admin User
-
-```bash
-# Create an admin user for testing
-python scripts/create_admin.py
-
-# Or specify credentials directly
-python scripts/create_admin.py admin@cyberxredteam.org admin123
-```
-
-This creates an admin user with:
-- Email: admin@cyberxredteam.org
-- Password: admin123
-- Is Admin: True
-
-### 7. Test Authentication API
-
-```bash
-# Terminal 1: Start the API server
-uvicorn app.main:app --reload
-
-# Terminal 2: Run authentication tests
-python scripts/test_auth.py
-```
-
-The server will start on [http://localhost:8000](http://localhost:8000)
-
-**API Documentation** (when DEBUG=True):
-- Swagger UI: [http://localhost:8000/api/docs](http://localhost:8000/api/docs)
-- ReDoc: [http://localhost:8000/api/redoc](http://localhost:8000/api/redoc)
-
-**Available endpoints:**
-- `POST /api/auth/login` - Login with email/username and password
-- `POST /api/auth/logout` - Logout and invalidate session
-- `GET /api/auth/me` - Get current user info (requires authentication)
-
-## 📁 Data Files Location
-
-The import script expects CSV files at:
-```
-/Users/wes/projects/cyberx/website-nextgen/data/
-├── CyberX Master Invite.csv
-└── VPN Configs V2.csv
-```
-
-To use different paths, run:
-```bash
-python scripts/import_csv.py /path/to/participants.csv /path/to/vpn-configs.csv
-```
-
-## 🔧 Troubleshooting
-
-### Docker not found
-Make sure Docker Desktop is installed and running. Verify with:
-```bash
-which docker
-docker --version
-```
-
-### Database connection refused
-Check if PostgreSQL is running:
-```bash
-docker compose ps
-docker compose logs postgres
-```
-
-### Import fails with "File not found"
-Verify the CSV files exist:
-```bash
-ls -lh ~/projects/cyberx/website-nextgen/data/
-```
-
-### Python module errors
-Reinstall dependencies:
-```bash
-cd backend
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## 📊 Database Schema
+## 3. Configure Environment
 
-### users table
-- 269 participants (from CSV)
-- Fields: email, first_name, last_name, country, confirmed, email_status
-- Credentials: pandas_username, pandas_password, password_phonetic, password_hash
-- Discord: discord_username, snowflake_id, discord_invite_code
-- Timestamps for all email communications
+```bash
+cp .env.example .env
+```
 
-### vpn_credentials table
-- 2001 VPN configurations (from CSV)
-- Fields: interface_ip, ipv4_address, ipv6_local, ipv6_global
-- WireGuard keys: private_key, preshared_key, endpoint
-- Assignment: assigned_to_username, assigned_to_user_id, is_available
-- Types: cyber, kinetic
+Edit `.env` with the minimum required settings:
 
-### Other tables
-- **sessions**: User authentication sessions (24-hour expiry)
-- **audit_logs**: System activity tracking with JSONB details
-- **email_events**: SendGrid webhook events
-- **vpn_requests**: VPN allocation request tracking
+```env
+DATABASE_URL=postgresql+asyncpg://cyberx:changeme@localhost:5432/cyberx_events
+SECRET_KEY=dev-secret-key-change-in-production
+DEBUG=true
+ENABLE_SCHEDULER_IN_WEB=true
 
-## 🎯 Next Steps
+# SendGrid (use sandbox mode for local dev)
+SENDGRID_API_KEY=SG.your-key
+SENDGRID_FROM_EMAIL=noreply@example.com
+SENDGRID_SANDBOX_MODE=true
 
-Completed phases:
+# Optional: redirect all emails to yourself during testing
+# TEST_EMAIL_OVERRIDE=your-email@example.com
 
-1. **~~Build Authentication Service~~** ✅ COMPLETED
-   - ✅ Session creation and validation
-   - ✅ Password hashing and verification
-   - ✅ Login/logout endpoints
+# Optional: auto-create admin user on first startup
+ADMIN_EMAIL=admin@cyberxredteam.org
+ADMIN_PASSWORD=changeme
+```
 
-2. **~~Create Admin & Participant API Routes~~** ✅ COMPLETED
-   - ✅ Auth endpoints (/api/auth/login, /logout, /me)
-   - ✅ Admin endpoints (/api/admin/participants, /vpn, /dashboard)
-   - ✅ VPN endpoints (/api/vpn/assign, /revoke, /config)
+See [ENVIRONMENT_VARIABLES.md](ENVIRONMENT_VARIABLES.md) for the complete variable reference.
 
-3. **~~Implement VPN Service~~** ✅ COMPLETED
-   - ✅ VPN allocation logic
-   - ✅ WireGuard config generation
-   - ✅ On-demand file creation
+## 4. Initialize Database
 
-4. **~~Build Email Service~~** ✅ COMPLETED
-   - ✅ SendGrid integration
-   - ✅ Template rendering (6 templates)
-   - ✅ Webhook processing
-   - ✅ Email endpoints (/api/email/send, /bulk, /stats)
+```bash
+# Run all migrations
+alembic upgrade head
+```
 
-5. **~~Create Frontend Templates~~** ✅ COMPLETED
-   - ✅ Jinja2 templating integration with FastAPI
-   - ✅ Layout templates (base.html, dashboard.html, auth.html)
-   - ✅ Login page with session handling
-   - ✅ Admin dashboard with statistics
-   - ✅ Participants list with filtering and pagination
-   - ✅ Participant portal for self-service
+If you set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env`, the admin user is created automatically on first startup. Otherwise, create one manually:
 
-6. **~~Add Background Jobs~~** ✅ COMPLETED
-   - ✅ APScheduler integration with AsyncIOScheduler
-   - ✅ Bulk password email job (every 45 minutes)
-   - ✅ Session cleanup job (hourly)
-   - ✅ Scheduler status endpoint (/api/admin/scheduler/jobs)
-   - ✅ Proper startup/shutdown lifecycle management
+```bash
+python scripts/create_admin.py admin@cyberxredteam.org your-password
+```
 
-## 📖 Documentation
+## 5. Start the Application
 
-- [README.md](README.md) - Complete project documentation
-- [/Users/wes/.claude/plans/starry-sparking-hoare.md](/Users/wes/.claude/plans/starry-sparking-hoare.md) - Detailed implementation plan
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-## 🔐 Security Notes
+Open your browser:
+- **Application**: http://localhost:8000
+- **API Docs** (DEBUG=true only): http://localhost:8000/api/docs
+- **Health Check**: http://localhost:8000/health
 
-- Default admin password should be changed immediately
-- `.env` file contains sensitive credentials - never commit to git
-- Session tokens are 32-byte cryptographically secure random strings
-- Passwords are hashed with bcrypt
-- VPN private keys are base64 encoded in database
+Log in with the admin credentials you configured.
 
-## 💡 Tips
+## 6. Import Data (Optional)
 
-- Use `alembic revision --autogenerate -m "message"` to create new migrations
-- Check logs with `docker compose logs -f postgres`
-- Reset database: `docker compose down -v && docker compose up -d`
-- Run tests: `pytest` (when tests are implemented)
+```bash
+# Import participants and VPN configurations from CSV
+python scripts/import_csv.py /path/to/participants.csv /path/to/vpn-configs.csv
+```
+
+**Participants CSV** columns: `email`, `first_name`, `last_name`, `country` (required), plus optional `pandas_username`, `sponsor_email`, `discord_username`.
+
+**VPN Configs CSV** columns: `interface_ip`, `ipv4_address`, `private_key` (required), plus optional `ipv6_local`, `ipv6_global`, `preshared_key`.
 
 ---
 
-**Status**: Phase 6 (Background Jobs) ✅ COMPLETE
+## Optional Integrations
 
-All core phases completed. The application is now ready for:
-- Integration testing
-- Production deployment
-- Optional enhancements (additional frontend pages, extended email templates)
+These are not needed for basic operation. Configure them when ready.
+
+### Keycloak SSO
+
+Syncs participant credentials to Keycloak for SSO access to exercise tools.
+
+```env
+KEYCLOAK_URL=https://auth.cyberxredteam.org
+KEYCLOAK_REALM=cyberx
+KEYCLOAK_ADMIN_CLIENT_ID=admin-cli
+KEYCLOAK_ADMIN_CLIENT_SECRET=your-client-secret
+PASSWORD_SYNC_ENABLED=true
+```
+
+The background job syncs every 5 minutes. See [Keycloak Password Sync Design](backend/docs/keycloak-password-sync-design.md) for details.
+
+### Keycloak Webhooks
+
+Receives Keycloak login/register events via the p2-inc/keycloak-events plugin. Used for audit logging and PowerDNS-Admin auto-account assignment.
+
+```env
+KEYCLOAK_WEBHOOK_SECRET=your-hmac-secret
+# KEYCLOAK_WEBHOOK_DEBUG=true  # uncomment to log raw payloads
+```
+
+### PowerDNS-Admin
+
+Auto-assigns users to a DNS management account on first login via Keycloak SSO.
+
+```env
+POWERDNS_API_URL=https://dns.cyberxredteam.org/api/v1/pdnsadmin/
+POWERDNS_USERNAME=admin
+POWERDNS_PASSWORD=your-password
+POWERDNS_API_KEY=your-api-key
+POWERDNS_ACCOUNT_NAME=cyberx
+```
+
+### Discord Invites
+
+Generates single-use Discord invite links for confirmed participants.
+
+```env
+DISCORD_BOT_TOKEN=your-bot-token
+DISCORD_INVITE_ENABLED=true
+```
+
+Also requires setting `discord_channel_id` on the event via the admin API.
+
+### VPN (WireGuard)
+
+```env
+VPN_SERVER_PUBLIC_KEY=base64-encoded-key
+VPN_SERVER_ENDPOINT=vpn.example.com:51820
+VPN_DNS_SERVERS=10.20.200.1
+VPN_ALLOWED_IPS=10.0.0.0/8,fd00:a::/32
+```
+
+### OpenStack Instance Provisioning
+
+```env
+OS_AUTH_URL=https://your-openstack/identity/v3
+OS_AUTH_TYPE=v3applicationcredential
+OS_APPLICATION_CREDENTIAL_ID=your-credential-id
+OS_APPLICATION_CREDENTIAL_SECRET=your-credential-secret
+```
+
+### DigitalOcean Instance Provisioning
+
+```env
+DO_API_TOKEN=your-api-token
+DO_DEFAULT_REGION=nyc1
+DO_DEFAULT_SIZE=s-1vcpu-1gb
+```
+
+### Download Links (Cloudflare R2)
+
+```env
+R2_ACCOUNT_ID=your-account-id
+R2_ACCESS_KEY_ID=your-access-key
+R2_SECRET_ACCESS_KEY=your-secret-key
+R2_BUCKET=your-bucket
+DOWNLOAD_LINK_MODE=r2
+```
+
+---
+
+## Database
+
+### Run Migrations
+
+```bash
+alembic upgrade head        # Apply all pending migrations
+alembic current             # Check current migration version
+alembic history             # List migration history
+alembic downgrade -1        # Roll back one migration
+```
+
+### Create a New Migration
+
+```bash
+alembic revision --autogenerate -m "description of change"
+```
+
+### Reset Database (Development Only)
+
+```bash
+docker compose down -v
+docker compose up -d postgres
+alembic upgrade head
+```
+
+---
+
+## Background Jobs
+
+In production, background jobs run in a separate worker service. For local development, set `ENABLE_SCHEDULER_IN_WEB=true` to run them in the web process.
+
+Jobs include:
+- **Email queue processor** -- sends queued emails (every `BULK_EMAIL_INTERVAL_MINUTES`, default 45 min)
+- **Keycloak password sync** -- syncs credentials to Keycloak (every `PASSWORD_SYNC_INTERVAL_MINUTES`, default 5 min)
+- **Invitation reminders** -- sends reminder emails (every `REMINDER_CHECK_INTERVAL_HOURS`, default 24 hr)
+- **Session cleanup** -- removes expired sessions (hourly)
+- **Scheduler heartbeat** -- writes health status to DB (every 60 seconds)
+
+---
+
+## Testing
+
+```bash
+cd backend
+
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=app --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_auth.py -v
+```
+
+### Testing Reminders
+
+Use the admin API to trigger reminders without waiting for the configured timeframes:
+
+```bash
+# Dry run -- see who would get reminders
+curl -b cookies.txt -X POST "http://localhost:8000/api/admin/reminders/trigger?dry_run=true"
+
+# Trigger stage 1 for all eligible users
+curl -b cookies.txt -X POST "http://localhost:8000/api/admin/reminders/trigger?stage=1"
+
+# Force re-send even if already sent
+curl -b cookies.txt -X POST "http://localhost:8000/api/admin/reminders/trigger?stage=1&force=true"
+```
+
+### Testing Emails
+
+See [TESTING_EMAIL_GUIDE.md](TESTING_EMAIL_GUIDE.md) for detailed email testing instructions.
+
+Useful settings for testing:
+- `SENDGRID_SANDBOX_MODE=true` -- validates without sending
+- `TEST_EMAIL_OVERRIDE=your@email.com` -- redirects all emails to you
+
+---
+
+## Troubleshooting
+
+**Database connection refused:**
+```bash
+docker compose ps              # Check if postgres is running
+docker compose logs postgres   # Check postgres logs
+```
+
+**Pydantic validation error on startup:**
+- `DATABASE_URL` is the only strictly required variable. Check it's set.
+
+**Emails not sending:**
+- Check `SENDGRID_SANDBOX_MODE` (true = no delivery)
+- Check `TEST_EMAIL_OVERRIDE` (redirects all emails)
+- Check `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL`
+
+**"Keycloak sync disabled" in admin UI:**
+- Set `PASSWORD_SYNC_ENABLED=true` in `.env` and restart (settings are cached at startup)
+
+**Scheduler running twice:**
+- Set `ENABLE_SCHEDULER_IN_WEB=false` and use a separate worker process
+
+---
+
+## Related Documentation
+
+- [ENVIRONMENT_VARIABLES.md](ENVIRONMENT_VARIABLES.md) -- Complete env var reference
+- [INSTALL.md](INSTALL.md) -- Production installation guide
+- [ADMIN_GUIDE.md](ADMIN_GUIDE.md) -- Admin UI and API usage
+- [EVENT_MANAGEMENT.md](EVENT_MANAGEMENT.md) -- Event lifecycle
+- [TESTING_EMAIL_GUIDE.md](TESTING_EMAIL_GUIDE.md) -- Email testing
+- [backend/docs/keycloak-password-sync-design.md](backend/docs/keycloak-password-sync-design.md) -- Keycloak sync design
