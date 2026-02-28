@@ -335,8 +335,8 @@ class KeycloakSyncService:
         """Get Keycloak admin access token via client credentials grant."""
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
-                f"{self.settings.KEYCLOAK_URL}/realms/master/"
-                f"protocol/openid-connect/token",
+                f"{self.settings.KEYCLOAK_URL}/realms/"
+                f"{self.settings.KEYCLOAK_REALM}/protocol/openid-connect/token",
                 data={
                     "grant_type": "client_credentials",
                     "client_id": self.settings.KEYCLOAK_ADMIN_CLIENT_ID,
