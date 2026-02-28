@@ -276,18 +276,17 @@ async def keycloak_webhook(
                 user = result.scalar_one_or_none()
                 if user:
                     audit = AuditService(db)
-                    await audit.log_action(
+                    await audit.log(
                         action="KEYCLOAK_LOGIN",
                         user_id=user.id,
+                        ip_address=ip_address,
                         details={
                             "username": username,
                             "realm": realm_name or realm,
-                            "ip_address": ip_address,
                             "client_id": client_id,
                             "session_id": session_id,
                         }
                     )
-                    await db.commit()
 
                 # PowerDNS-Admin: auto-assign user to configured account
                 if client_id == "powerdns-admin":
