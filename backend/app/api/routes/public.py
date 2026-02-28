@@ -283,6 +283,17 @@ async def confirm_participation(
             f"Keeping existing password for user {user.id} ({user.email}, role: {user.role}) "
             f"during confirmation"
         )
+        # Still sync existing credentials to Keycloak if not already synced
+        if not user.keycloak_synced and user.pandas_username and user.pandas_password:
+            from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+            from app.utils.encryption import encrypt_field
+            queue_entry = PasswordSyncQueue(
+                user_id=user.id,
+                username=user.pandas_username,
+                encrypted_password=encrypt_field(user.pandas_password),
+                operation=SyncOperation.CREATE_USER.value
+            )
+            db.add(queue_entry)
 
     # Generate Discord invite if configured for this event
     if event and event.discord_channel_id and participation:
