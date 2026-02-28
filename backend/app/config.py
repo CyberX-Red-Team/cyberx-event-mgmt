@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     KEYCLOAK_REALM: str = "cyberx"
     KEYCLOAK_ADMIN_CLIENT_ID: str = "admin-cli"
     KEYCLOAK_ADMIN_CLIENT_SECRET: str = ""
+    KEYCLOAK_USER_GROUPS: str = ""  # Comma-separated group names for synced users (e.g. "cyberx-users,participants")
     KEYCLOAK_WEBHOOK_SECRET: str = ""  # HMAC secret for verifying inbound Keycloak webhooks
     KEYCLOAK_WEBHOOK_DEBUG: bool = False  # Log raw webhook payloads for debugging
 

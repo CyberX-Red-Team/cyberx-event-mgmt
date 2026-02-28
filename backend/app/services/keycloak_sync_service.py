@@ -248,6 +248,7 @@ class KeycloakSyncService:
                     await self._update_keycloak_profile(
                         client, admin_token, existing_id, local_user, entry.username
                     )
+                await self._assign_user_groups(client, admin_token, existing_id)
                 if password:
                     return await self._set_keycloak_password(
                         client, admin_token, existing_id, password
@@ -280,6 +281,11 @@ class KeycloakSyncService:
             )
 
             if response.status_code == 201:
+                # Add to group if configured
+                if self.settings.KEYCLOAK_USER_GROUPS:
+                    new_user_id = await self._find_keycloak_user(client, admin_token, entry.username)
+                    if new_user_id:
+                        await self._assign_user_groups(client, admin_token, new_user_id)
                 return True
             elif response.status_code == 409:
                 # Conflict — user already exists (race condition), update instead
@@ -290,6 +296,7 @@ class KeycloakSyncService:
                         await self._update_keycloak_profile(
                             client, admin_token, kc_user_id, local_user, entry.username
                         )
+                    await self._assign_user_groups(client, admin_token, kc_user_id)
                     if password:
                         return await self._set_keycloak_password(
                             client, admin_token, kc_user_id, password
@@ -352,6 +359,73 @@ class KeycloakSyncService:
                     f"{response.status_code} {response.text}"
                 )
                 return False
+
+    async def _find_keycloak_group(
+        self,
+        client: httpx.AsyncClient,
+        admin_token: str,
+        group_name: str
+    ) -> Optional[str]:
+        """Find a Keycloak group ID by name. Returns None if not found."""
+        response = await client.get(
+            f"{self.settings.KEYCLOAK_URL}/admin/realms/"
+            f"{self.settings.KEYCLOAK_REALM}/groups",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            params={"search": group_name, "exact": "true"}
+        )
+
+        if response.status_code != 200:
+            logger.error(f"Failed to search Keycloak groups: {response.status_code}")
+            return None
+
+        groups = response.json()
+        for group in groups:
+            if group.get("name") == group_name:
+                return group["id"]
+        return None
+
+    async def _add_user_to_group(
+        self,
+        client: httpx.AsyncClient,
+        admin_token: str,
+        kc_user_id: str,
+        group_name: str
+    ) -> bool:
+        """Add a Keycloak user to a group by name. Idempotent."""
+        group_id = await self._find_keycloak_group(client, admin_token, group_name)
+        if not group_id:
+            logger.warning(f"Keycloak group '{group_name}' not found, skipping group assignment")
+            return False
+
+        response = await client.put(
+            f"{self.settings.KEYCLOAK_URL}/admin/realms/"
+            f"{self.settings.KEYCLOAK_REALM}/users/{kc_user_id}/groups/{group_id}",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+
+        if response.status_code == 204:
+            logger.info(f"Added user {kc_user_id} to group '{group_name}'")
+            return True
+        else:
+            logger.warning(
+                f"Failed to add user {kc_user_id} to group '{group_name}': "
+                f"{response.status_code} {response.text}"
+            )
+            return False
+
+    async def _assign_user_groups(
+        self,
+        client: httpx.AsyncClient,
+        admin_token: str,
+        kc_user_id: str
+    ) -> None:
+        """Assign a Keycloak user to all configured groups."""
+        if not self.settings.KEYCLOAK_USER_GROUPS:
+            return
+        for group_name in self.settings.KEYCLOAK_USER_GROUPS.split(","):
+            group_name = group_name.strip()
+            if group_name:
+                await self._add_user_to_group(client, admin_token, kc_user_id, group_name)
 
     async def _set_keycloak_password(
         self,

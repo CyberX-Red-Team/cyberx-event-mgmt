@@ -217,6 +217,11 @@ async def keycloak_webhook(
         if not _verify_keycloak_signature(
             raw_body, signature, settings.KEYCLOAK_WEBHOOK_SECRET
         ):
+            logger.warning(
+                f"Keycloak webhook signature verification failed. "
+                f"Header present: {bool(signature)}, "
+                f"IP: {request.client.host if request.client else 'unknown'}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid webhook signature"
