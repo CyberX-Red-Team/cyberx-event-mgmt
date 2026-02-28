@@ -289,6 +289,25 @@ async def keycloak_webhook(
                     )
                     await db.commit()
 
+                # PowerDNS-Admin: auto-assign user to configured account
+                if client_id == "powerdns-admin":
+                    if settings.POWERDNS_API_URL and settings.POWERDNS_USERNAME:
+                        try:
+                            from app.services.powerdns_service import PowerDNSService
+                            pdns = PowerDNSService()
+                            pdns_result = await pdns.ensure_user_in_account(
+                                username, settings.POWERDNS_ACCOUNT_NAME
+                            )
+                            logger.info(
+                                f"PowerDNS account assignment: username={username}, "
+                                f"result={pdns_result['status']}"
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"PowerDNS account assignment failed for "
+                                f"{username}: {e}"
+                            )
+
         elif event_type == "LOGIN_ERROR":
             logger.warning(
                 f"Keycloak login failure: username={username}, "

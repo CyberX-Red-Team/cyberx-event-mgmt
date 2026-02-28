@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     POWERDNS_API_URL: str = ""
     POWERDNS_USERNAME: str = ""
     POWERDNS_PASSWORD: str = ""
+    POWERDNS_API_KEY: str = ""          # API key for zone operations (created in PowerDNS-Admin UI)
+    POWERDNS_ACCOUNT_NAME: str = "cyberx"  # Account to auto-assign users to on first login
 
     # Render API (optional - only needed for deployment automation)
     RENDER_API_KEY: str = ""
