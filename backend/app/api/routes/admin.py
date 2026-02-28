@@ -1345,6 +1345,136 @@ async def get_scheduler_status(
     }
 
 
+# ============== Reminder Testing ==============
+
+@router.post("/reminders/trigger")
+async def trigger_reminders(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+    stage: Optional[int] = Query(None, description="Reminder stage (1, 2, or 3). Omit for all stages."),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to target. Omit for all eligible."),
+    force: bool = Query(False, description="Re-send even if reminder was already sent for this stage."),
+    dry_run: bool = Query(False, description="Preview eligible users without actually queuing emails."),
+):
+    """
+    Manually trigger reminder processing, bypassing all date/time checks.
+
+    Useful for testing reminder workflows without waiting for the configured
+    timeframes (days-after-invite, min-days-before-event, etc.).
+
+    The only checks that remain:
+    - User must have confirmation_sent_at set (was actually invited)
+    - User's participation status must be INVITED or NO_RESPONSE
+    - User must be active
+    - Unless force=true, skips users who already received this reminder stage
+
+    Requires admin role.
+    """
+    from app.models.event import Event, EventParticipation, ParticipationStatus
+    from app.tasks.invitation_reminders import queue_reminders
+    from sqlalchemy import and_
+    from datetime import datetime, timezone
+
+    # Validate stage
+    if stage is not None and stage not in (1, 2, 3):
+        raise bad_request("Stage must be 1, 2, or 3")
+
+    # Get active event
+    event_result = await db.execute(
+        select(Event).where(Event.is_active == True).order_by(Event.year.desc())
+    )
+    event = event_result.scalar_one_or_none()
+    if not event:
+        raise not_found("No active event found")
+
+    now = datetime.now(timezone.utc)
+    event_start_utc = event.start_date.replace(tzinfo=timezone.utc) if event.start_date else now
+    days_until_event = (event_start_utc - now).days
+
+    stages_to_run = [stage] if stage else [1, 2, 3]
+    target_user_ids = [int(uid.strip()) for uid in user_ids.split(",") if uid.strip()] if user_ids else None
+
+    results = {}
+
+    for s in stages_to_run:
+        # Build query: invited/no-response users who were actually sent an invitation
+        conditions = [
+            EventParticipation.event_id == event.id,
+            EventParticipation.status.in_([
+                ParticipationStatus.INVITED.value,
+                ParticipationStatus.NO_RESPONSE.value,
+            ]),
+            User.confirmation_sent_at.isnot(None),
+            User.is_active == True,
+        ]
+
+        # Unless force, skip users who already got this stage
+        if not force:
+            if s == 1:
+                conditions.append(User.reminder_1_sent_at.is_(None))
+            elif s == 2:
+                conditions.append(User.reminder_2_sent_at.is_(None))
+            elif s == 3:
+                conditions.append(User.reminder_3_sent_at.is_(None))
+
+        # Filter to specific users if requested
+        if target_user_ids:
+            conditions.append(User.id.in_(target_user_ids))
+
+        result = await db.execute(
+            select(User)
+            .join(EventParticipation, and_(
+                EventParticipation.user_id == User.id,
+                EventParticipation.event_id == event.id,
+            ))
+            .where(and_(*conditions))
+        )
+        users = result.scalars().all()
+
+        # Test mode filtering
+        if event.test_mode:
+            users = [u for u in users if u.is_sponsor_role]
+
+        stage_key = f"stage_{s}"
+        template_map = {1: "invite_reminder_1", 2: "invite_reminder_2", 3: "invite_reminder_final"}
+
+        if dry_run:
+            results[stage_key] = {
+                "eligible_count": len(users),
+                "users": [{"id": u.id, "email": u.email, "name": f"{u.first_name} {u.last_name}"} for u in users],
+                "would_send": len(users) > 0,
+            }
+        else:
+            if users:
+                await queue_reminders(
+                    session=db,
+                    users=users,
+                    event=event,
+                    stage=s,
+                    template_name=template_map[s],
+                    days_until_event=max(days_until_event, 0),
+                )
+            results[stage_key] = {
+                "queued": len(users),
+                "users": [{"id": u.id, "email": u.email} for u in users],
+            }
+
+    logger.info(
+        f"Manual reminder trigger by {current_user.username}: "
+        f"stages={stages_to_run}, force={force}, dry_run={dry_run}, results={results}"
+    )
+
+    return {
+        "event": event.name,
+        "test_mode": event.test_mode,
+        "days_until_event": days_until_event,
+        "dry_run": dry_run,
+        "force": force,
+        "results": results,
+    }
+
+
 # =============================================================================
 # Event Lifecycle Management Endpoints
 # =============================================================================
