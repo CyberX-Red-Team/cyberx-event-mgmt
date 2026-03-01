@@ -111,7 +111,8 @@ class Settings(BaseSettings):
 
     # CPE Certificate Configuration
     CPE_TEMPLATE_R2_KEY: str = ""         # R2 object key for DOCX template (e.g. "templates/cpe_template.docx")
-    CPE_SIGNATURE_IMAGE_PATH: str = ""    # Path to signature image (PNG/SVG), empty = no signature
+    CPE_SIGNATURE_IMAGE_R2_KEY: str = ""  # R2 object key for signature image (PNG, transparent bg)
+    CPE_SIGNER_NAME: str = ""             # Signer name+title for certificate (e.g. "John Doe, CISSP / Director")
     CPE_CONVERSION_MODE: str = "gotenberg"  # "gotenberg" or "libreoffice"
     GOTENBERG_URL: str = ""               # e.g. "http://gotenberg:3000"
     CPE_HOURS_DEFAULT: float = 32.0

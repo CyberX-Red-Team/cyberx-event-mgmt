@@ -16,8 +16,9 @@ from app.models.vpn import VPNCredential
 
 logger = logging.getLogger(__name__)
 
-# Module-level cache for the DOCX template bytes (downloaded from R2 once per process)
+# Module-level caches (downloaded from R2 once per process)
 _template_cache: Optional[bytes] = None
+_signature_cache: Optional[bytes] = None
 
 
 class CPECertificateService:
@@ -497,6 +498,49 @@ class CPECertificateService:
         logger.info(f"Downloaded CPE template from R2: {r2_key} ({len(_template_cache)} bytes)")
         return _template_cache
 
+    def _get_signature_image(self) -> Optional[bytes]:
+        """Download the signature image from R2, caching in memory after first fetch."""
+        global _signature_cache
+
+        if _signature_cache is not None:
+            return _signature_cache
+
+        r2_key = self.settings.CPE_SIGNATURE_IMAGE_R2_KEY
+        if not r2_key:
+            return None
+
+        import boto3
+        from botocore.config import Config
+
+        account_id = self.settings.R2_ACCOUNT_ID
+        access_key_id = self.settings.R2_ACCESS_KEY_ID
+        secret_access_key = self.settings.R2_SECRET_ACCESS_KEY
+        bucket = self.settings.R2_BUCKET
+
+        if not all([account_id, access_key_id, secret_access_key, bucket]):
+            logger.warning("R2 not configured — cannot fetch signature image")
+            return None
+
+        endpoint_url = f"https://{account_id}.r2.cloudflarestorage.com"
+
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            region_name="auto",
+            config=Config(signature_version="s3v4"),
+        )
+
+        try:
+            response = s3.get_object(Bucket=bucket, Key=r2_key)
+            _signature_cache = response["Body"].read()
+            logger.info(f"Downloaded signature image from R2: {r2_key} ({len(_signature_cache)} bytes)")
+            return _signature_cache
+        except Exception as e:
+            logger.error(f"Failed to download signature image from R2: {e}")
+            return None
+
     def _fill_template(
         self, certificate: CPECertificate, user: User,
         event: Event, template_bytes: bytes
@@ -516,9 +560,10 @@ class CPECertificateService:
             "[MM/DD/YYYY] \u2013 [MM/DD/YYYY]": f"{start_str} \u2013 {end_str}",
             "[MM/DD/YYYY] – [MM/DD/YYYY]": f"{start_str} – {end_str}",
             "CX-[YYYY]-[####]": certificate.certificate_number,
-            "[MM/DD/YYYY]": issue_date_str,
-            "[Name / Title]": "",  # Placeholder for signature - left empty until configured
+            "[Name / Title]": self.settings.CPE_SIGNER_NAME or "",
         }
+        # Note: [MM/DD/YYYY] for issue date is handled separately below
+        # (moved above the signature line in the template)
 
         # Replace in paragraphs
         for paragraph in doc.paragraphs:
@@ -542,10 +587,77 @@ class CPECertificateService:
                     for paragraph in footer.paragraphs:
                         self._replace_in_paragraph(paragraph, replacements)
 
+        # Fix signature table: move date value above the line
+        # Table 1 = signature table, Cell [0,3] = Date Issued column
+        # Template layout: P0 (empty, has bottom-border line), P1 "Date Issued", P2 "[MM/DD/YYYY]"
+        # Desired:          P0 (date value, has bottom-border line), P1 "Date Issued", P2 (empty)
+        if len(doc.tables) >= 2:
+            sig_table = doc.tables[1]
+            if len(sig_table.rows[0].cells) >= 4:
+                date_cell = sig_table.rows[0].cells[3]
+                if len(date_cell.paragraphs) >= 3:
+                    # Copy formatting from P2 runs to P0, set date text
+                    p0 = date_cell.paragraphs[0]
+                    p2 = date_cell.paragraphs[2]
+                    if p0.runs:
+                        p0.runs[0].text = issue_date_str
+                    elif p2.runs:
+                        # Copy the run with formatting from P2 to P0
+                        from copy import deepcopy
+                        from docx.oxml.ns import qn
+                        new_run = deepcopy(p2.runs[0]._element)
+                        new_run.find(qn('w:t')).text = issue_date_str
+                        p0._element.append(new_run)
+                    # Clear P2
+                    for run in p2.runs:
+                        run.text = ""
+
+        # Insert signature image above the signature line if configured
+        # Cell [0,1] P0 = empty paragraph with bottom-border (the line)
+        if self.settings.CPE_SIGNATURE_IMAGE_R2_KEY and len(doc.tables) >= 2:
+            sig_cell = doc.tables[1].rows[0].cells[1]
+            if sig_cell.paragraphs:
+                sig_img_bytes = self._get_signature_image()
+                if sig_img_bytes:
+                    from docx.shared import Inches
+                    run = sig_cell.paragraphs[0].add_run()
+                    run.add_picture(io.BytesIO(sig_img_bytes), width=Inches(1.5))
+
+        # Reduce spacing to fit on one page (LibreOffice renders slightly larger than Word)
+        self._reduce_spacing_for_libreoffice(doc)
+
         # Save to bytes
         buffer = io.BytesIO()
         doc.save(buffer)
         return buffer.getvalue()
+
+    @staticmethod
+    def _reduce_spacing_for_libreoffice(doc):
+        """Reduce paragraph spacing slightly so LibreOffice keeps output to one page.
+
+        Word and LibreOffice have different text metrics; the original template
+        fits on one page in Word but overflows in LibreOffice.  We trim the
+        largest after-spacing values by ~25% which is enough to reclaim the space.
+        """
+        from docx.oxml.ns import qn
+
+        # Paragraph indexes with generous after-spacing that can be trimmed
+        # P8(after=160), P9(after=160), P12(after=200), P15(after=180), P16(after=200)
+        trim_targets = {8, 9, 12, 15, 16}
+
+        for i, p in enumerate(doc.paragraphs):
+            if i not in trim_targets:
+                continue
+            pPr = p._element.find(qn('w:pPr'))
+            if pPr is None:
+                continue
+            spacing = pPr.find(qn('w:spacing'))
+            if spacing is None:
+                continue
+            after = spacing.get(qn('w:after'))
+            if after:
+                new_val = str(int(int(after) * 0.75))
+                spacing.set(qn('w:after'), new_val)
 
     @staticmethod
     def _replace_in_paragraph(paragraph, replacements: dict):
