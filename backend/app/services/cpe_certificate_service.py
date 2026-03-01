@@ -257,6 +257,76 @@ class CPECertificateService:
         await self.session.flush()
         return cert
 
+    async def bulk_regenerate_pdfs(
+        self, event_id: int, certificate_ids: Optional[list[int]] = None
+    ) -> dict:
+        """
+        Regenerate PDFs for certificates missing them.
+
+        If certificate_ids provided, regenerate those specific certs.
+        If only event_id, regenerate all ISSUED certs missing a PDF.
+        """
+        if certificate_ids:
+            query = (
+                select(CPECertificate)
+                .where(
+                    CPECertificate.id.in_(certificate_ids),
+                    CPECertificate.event_id == event_id,
+                )
+            )
+        else:
+            query = (
+                select(CPECertificate)
+                .where(
+                    CPECertificate.event_id == event_id,
+                    CPECertificate.status == CertificateStatus.ISSUED.value,
+                    CPECertificate.pdf_storage_key.is_(None),
+                )
+            )
+
+        result = await self.session.execute(query)
+        certs = result.scalars().all()
+
+        regenerated = []
+        failed = []
+        skipped_revoked = []
+
+        for cert in certs:
+            if cert.status == CertificateStatus.REVOKED.value:
+                skipped_revoked.append({
+                    "certificate_id": cert.id,
+                    "certificate_number": cert.certificate_number,
+                })
+                continue
+
+            try:
+                user = await self.session.get(User, cert.user_id)
+                event = await self.session.get(Event, cert.event_id)
+
+                pdf_storage_key = await self._generate_and_upload_pdf(cert, user, event)
+                cert.pdf_storage_key = pdf_storage_key
+                cert.pdf_generated_at = datetime.now(timezone.utc)
+                await self.session.flush()
+
+                regenerated.append({
+                    "certificate_id": cert.id,
+                    "certificate_number": cert.certificate_number,
+                })
+                logger.info(f"Regenerated PDF for {cert.certificate_number}")
+            except Exception as e:
+                logger.error(f"Failed to regenerate PDF for {cert.certificate_number}: {e}")
+                failed.append({
+                    "certificate_id": cert.id,
+                    "certificate_number": cert.certificate_number,
+                    "error": str(e),
+                })
+
+        return {
+            "regenerated": regenerated,
+            "failed": failed,
+            "skipped_revoked": skipped_revoked,
+        }
+
     async def get_certificates_for_event(
         self, event_id: int, status: Optional[str] = None
     ) -> list[CPECertificate]:

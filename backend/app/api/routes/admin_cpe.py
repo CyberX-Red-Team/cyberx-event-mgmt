@@ -33,6 +33,11 @@ class BulkIssueRequest(BaseModel):
     skip_eligibility: bool = False
 
 
+class BulkRegenerateRequest(BaseModel):
+    event_id: int
+    certificate_ids: Optional[List[int]] = None
+
+
 class RevokeCertificateRequest(BaseModel):
     reason: str
 
@@ -286,3 +291,55 @@ async def regenerate_certificate_pdf(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/certificates/regenerate/bulk")
+async def bulk_regenerate_pdfs(
+    request_body: BulkRegenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Bulk regenerate PDFs for certificates.
+
+    Automatically manages the Gotenberg service on Render:
+    scales to Standard, resumes, waits for ready, then suspends after.
+
+    If certificate_ids is omitted, regenerates all ISSUED certs missing PDFs for the event.
+    """
+    from app.services.render_service import RenderServiceManager
+
+    render = RenderServiceManager()
+    service = CPECertificateService(db)
+
+    try:
+        # Start Gotenberg (scale + resume + wait)
+        if render.enabled:
+            ready = await render.start_gotenberg()
+            if not ready:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Gotenberg service did not become ready in time"
+                )
+
+        result = await service.bulk_regenerate_pdfs(
+            event_id=request_body.event_id,
+            certificate_ids=request_body.certificate_ids,
+        )
+        await db.commit()
+
+        return {
+            "status": "ok",
+            "regenerated_count": len(result["regenerated"]),
+            "failed_count": len(result["failed"]),
+            "skipped_revoked_count": len(result["skipped_revoked"]),
+            **result,
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    finally:
+        # Always suspend Gotenberg after bulk operation
+        if render.enabled:
+            await render.stop_gotenberg()

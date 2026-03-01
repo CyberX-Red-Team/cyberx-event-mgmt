@@ -99,12 +99,17 @@ services:
         sync: false
       - key: GOTENBERG_URL
         value: http://cyberx-gotenberg:3000
+      # Render API (optional - for auto suspend/resume of Gotenberg)
+      - key: RENDER_API_KEY
+        sync: false
+      - key: GOTENBERG_RENDER_SERVICE_ID
+        sync: false
 
   # Gotenberg - DOCX to PDF conversion for CPE certificates
   - type: pserv
     name: cyberx-gotenberg
     runtime: docker
     region: virginia
-    plan: starter
+    plan: standard
     dockerfilePath: ./Dockerfile.gotenberg
     envVars: []

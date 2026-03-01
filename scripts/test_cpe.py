@@ -9,12 +9,18 @@ Optional:
     --base-url https://staging.events.cyberxredteam.org  (default)
     --event-id 1            (default)
     --target-email EMAIL    (issue cert for this user; default: self)
+    --render-api-key KEY    (Render API key for Gotenberg lifecycle)
+    --gotenberg-service-id ID  (Render service ID for Gotenberg)
 """
 import argparse
 import json
 import sys
+import time
 
 import requests
+
+
+RENDER_API_BASE = "https://api.render.com/v1"
 
 
 def print_step(n, desc):
@@ -31,17 +37,127 @@ def print_result(label, data):
         print(f"  {data}")
 
 
+# ---------------------------------------------------------------
+# Render API helpers
+# ---------------------------------------------------------------
+
+def render_scale_gotenberg(api_key, service_id, plan="standard"):
+    """Scale Gotenberg to the specified plan."""
+    print(f"  Scaling Gotenberg to '{plan}' plan...")
+    resp = requests.patch(
+        f"{RENDER_API_BASE}/services/{service_id}",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        json={"plan": plan},
+        timeout=30,
+    )
+    if resp.status_code == 200:
+        print(f"  Scaled to {plan}")
+        return True
+    else:
+        print(f"  Scale failed: {resp.status_code} {resp.text}")
+        return False
+
+
+def render_resume_gotenberg(api_key, service_id):
+    """Resume Gotenberg service."""
+    print("  Resuming Gotenberg service...")
+    resp = requests.post(
+        f"{RENDER_API_BASE}/services/{service_id}/resume",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+        },
+        timeout=30,
+    )
+    if resp.status_code in (200, 202):
+        print("  Resume requested")
+        return True
+    else:
+        print(f"  Resume failed: {resp.status_code} {resp.text}")
+        return False
+
+
+def render_suspend_gotenberg(api_key, service_id):
+    """Suspend Gotenberg service."""
+    print("  Suspending Gotenberg service...")
+    resp = requests.post(
+        f"{RENDER_API_BASE}/services/{service_id}/suspend",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+        },
+        timeout=30,
+    )
+    if resp.status_code in (200, 202):
+        print("  Suspended")
+        return True
+    else:
+        print(f"  Suspend failed: {resp.status_code} {resp.text}")
+        return False
+
+
+def render_wait_for_gotenberg(gotenberg_url, timeout=120, interval=5):
+    """Poll Gotenberg health endpoint until ready."""
+    health_url = f"{gotenberg_url}/health"
+    print(f"  Waiting for Gotenberg at {health_url} (timeout={timeout}s)...")
+    elapsed = 0
+    while elapsed < timeout:
+        try:
+            resp = requests.get(health_url, timeout=5)
+            if resp.status_code == 200:
+                print(f"  Gotenberg ready after {elapsed}s")
+                return True
+        except requests.ConnectionError:
+            pass
+        except requests.Timeout:
+            pass
+        time.sleep(interval)
+        elapsed += interval
+        if elapsed % 15 == 0:
+            print(f"  Still waiting... ({elapsed}s)")
+    print(f"  Gotenberg not ready after {timeout}s")
+    return False
+
+
+def start_gotenberg(api_key, service_id, gotenberg_url):
+    """Scale to standard, resume, and wait for Gotenberg."""
+    render_scale_gotenberg(api_key, service_id, "standard")
+    render_resume_gotenberg(api_key, service_id)
+    return render_wait_for_gotenberg(gotenberg_url)
+
+
+def stop_gotenberg(api_key, service_id):
+    """Suspend Gotenberg."""
+    render_suspend_gotenberg(api_key, service_id)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Test CPE Certificate System")
     parser.add_argument("--base-url", default="https://staging.events.cyberxredteam.org")
     parser.add_argument("--email", required=True, help="Admin email")
     parser.add_argument("--password", required=True, help="Admin password")
     parser.add_argument("--event-id", type=int, default=1, help="Event ID to test with")
-    parser.add_argument("--target-email", default=None, help="Email of user to issue cert for (default: self)")
+    parser.add_argument("--target-email", default=None,
+                        help="Email of user to issue cert for (default: self)")
+    parser.add_argument("--render-api-key", default=None,
+                        help="Render API key for Gotenberg lifecycle management")
+    parser.add_argument("--gotenberg-service-id", default=None,
+                        help="Render service ID for Gotenberg")
     args = parser.parse_args()
 
     base = args.base_url.rstrip("/")
     session = requests.Session()
+    render_enabled = bool(args.render_api_key and args.gotenberg_service_id)
+
+    if render_enabled:
+        print("  Render API integration enabled for Gotenberg lifecycle management")
+    else:
+        print("  Render API not configured (--render-api-key / --gotenberg-service-id)")
+        print("  Gotenberg must be running manually for PDF tests")
 
     # ---------------------------------------------------------------
     # Step 1: Get a CSRF token (any GET sets the cookie)
@@ -224,96 +340,153 @@ def main():
         print(f"  Status: {resp.status_code} - {resp.text}")
 
     # ---------------------------------------------------------------
-    # Step 7: Test participant download endpoint
+    # Step 7: Start Gotenberg (if Render API configured)
     # ---------------------------------------------------------------
-    if cert_id:
-        print_step(7, f"Testing participant certificate download (cert {cert_id})")
+    gotenberg_started = False
+    if render_enabled:
+        print_step(7, "Starting Gotenberg via Render API")
+        # Derive the internal Gotenberg URL from the base URL's service
+        gotenberg_url = "http://cyberx-gotenberg:3000"
+        gotenberg_started = start_gotenberg(
+            args.render_api_key, args.gotenberg_service_id, gotenberg_url
+        )
+        if not gotenberg_started:
+            print("  WARNING: Gotenberg may not be ready. PDF tests may fail.")
+            # We can't directly reach Gotenberg from outside Render's network,
+            # so we'll just proceed and let the API tests tell us if it works.
+            print("  (Note: Can't verify from outside Render - will test via API)")
+            gotenberg_started = True  # Proceed anyway
+    else:
+        print_step(7, "Skipping Gotenberg startup (no Render API credentials)")
 
-        # Note: /api/cpe/my-certificates returns certs for the *logged-in* user,
-        # which may differ from the target user. Show what we get either way.
-        resp = session.get(f"{base}/api/cpe/my-certificates", headers=headers)
-        if resp.status_code == 200:
-            data = resp.json()
-            certs_list = data.get("certificates", [])
-            print(f"  My certificates (as logged-in admin): {len(certs_list)}")
-            for c in certs_list:
-                print(f"    - {c.get('certificate_number')}: {c.get('cpe_hours')} CPE hours")
-            if user_id != admin_user_id and not certs_list:
-                print("  (Expected: cert was issued for a different user)")
+    try:
+        # ---------------------------------------------------------------
+        # Step 8: Test bulk regenerate PDFs
+        # ---------------------------------------------------------------
+        if cert_id:
+            print_step(8, f"Bulk regenerate PDFs for event {event_id}")
+            resp = session.post(
+                f"{base}/api/admin/cpe/certificates/regenerate/bulk",
+                json={"event_id": event_id},
+                headers=headers,
+                timeout=300,  # May take a while for bulk operations
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                print(f"  Regenerated: {data.get('regenerated_count')}")
+                print(f"  Failed: {data.get('failed_count')}")
+                print(f"  Skipped (revoked): {data.get('skipped_revoked_count')}")
+                if data.get("regenerated"):
+                    for r in data["regenerated"]:
+                        print(f"    - {r.get('certificate_number')}: OK")
+                if data.get("failed"):
+                    for f in data["failed"]:
+                        print(f"    - {f.get('certificate_number')}: FAILED - {f.get('error')}")
+            else:
+                print(f"  Status: {resp.status_code} - {resp.text}")
         else:
-            print(f"  List status: {resp.status_code} - {resp.text}")
+            print_step(8, "Skipping bulk regenerate (no certificate available)")
 
-        # Download test - only works if cert belongs to the logged-in user
-        if user_id == admin_user_id:
+        # ---------------------------------------------------------------
+        # Step 9: Test single regenerate PDF
+        # ---------------------------------------------------------------
+        if cert_id:
+            print_step(9, f"Regenerating PDF for certificate {cert_id}")
+            resp = session.post(
+                f"{base}/api/admin/cpe/certificates/{cert_id}/regenerate",
+                headers=headers,
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                print(f"  Regenerated: {data.get('certificate_number')}")
+                print(f"  PDF generated at: {data.get('pdf_generated_at')}")
+            else:
+                print(f"  Status: {resp.status_code} - {resp.text}")
+        else:
+            print_step(9, "Skipping regenerate test (no certificate available)")
+
+        # ---------------------------------------------------------------
+        # Step 10: Test participant download endpoint
+        # ---------------------------------------------------------------
+        if cert_id:
+            print_step(10, f"Testing participant certificate download (cert {cert_id})")
+
+            resp = session.get(f"{base}/api/cpe/my-certificates", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                certs_list = data.get("certificates", [])
+                print(f"  My certificates (as logged-in admin): {len(certs_list)}")
+                for c in certs_list:
+                    print(f"    - {c.get('certificate_number')}: {c.get('cpe_hours')} CPE hours")
+                if user_id != admin_user_id and not certs_list:
+                    print("  (Expected: cert was issued for a different user)")
+            else:
+                print(f"  List status: {resp.status_code} - {resp.text}")
+
+            # Download test - only works if cert belongs to the logged-in user
+            if user_id == admin_user_id:
+                resp = session.get(
+                    f"{base}/api/cpe/my-certificates/{cert_id}/download",
+                    headers=headers,
+                    allow_redirects=False,
+                )
+                if resp.status_code == 302:
+                    location = resp.headers.get("Location", "")
+                    print(f"  Download redirect: 302")
+                    print(f"  Location: {location[:100]}...")
+                elif resp.status_code == 200:
+                    content_type = resp.headers.get("Content-Type", "")
+                    print(f"  Download: 200 ({content_type}, {len(resp.content)} bytes)")
+                else:
+                    print(f"  Download status: {resp.status_code}")
+                    print(f"  {resp.text[:200]}")
+            else:
+                print(f"  Skipping download test (cert belongs to user {user_id}, "
+                      f"logged in as user {admin_user_id})")
+        else:
+            print_step(10, "Skipping download test (no certificate available)")
+
+        # ---------------------------------------------------------------
+        # Step 11: Test revoke
+        # ---------------------------------------------------------------
+        if cert_id:
+            print_step(11, f"Revoking certificate {cert_id}")
+            resp = session.post(
+                f"{base}/api/admin/cpe/certificates/{cert_id}/revoke",
+                json={"reason": "Test revocation from test script"},
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                print(f"  Revoked: {data.get('certificate_number')}")
+                print(f"  Revoked at: {data.get('revoked_at')}")
+            else:
+                print(f"  Status: {resp.status_code} - {resp.text}")
+
+            # Verify download is blocked after revocation
+            print("\n  Verifying download is blocked after revocation...")
             resp = session.get(
                 f"{base}/api/cpe/my-certificates/{cert_id}/download",
                 headers=headers,
                 allow_redirects=False,
             )
-            if resp.status_code == 302:
-                location = resp.headers.get("Location", "")
-                print(f"  Download redirect: 302")
-                print(f"  Location: {location[:100]}...")
-            elif resp.status_code == 200:
-                content_type = resp.headers.get("Content-Type", "")
-                print(f"  Download: 200 ({content_type}, {len(resp.content)} bytes)")
+            if resp.status_code in (400, 403, 404, 410):
+                print(f"  Download blocked as expected: {resp.status_code}")
             else:
-                print(f"  Download status: {resp.status_code}")
-                print(f"  {resp.text[:200]}")
+                print(f"  Unexpected status: {resp.status_code} - {resp.text[:200]}")
         else:
-            print(f"  Skipping download test (cert belongs to user {user_id}, "
-                  f"logged in as user {admin_user_id})")
-    else:
-        print_step(7, "Skipping download test (no certificate available)")
+            print_step(11, "Skipping revoke test (no certificate available)")
 
-    # ---------------------------------------------------------------
-    # Step 8: Test regenerate PDF
-    # ---------------------------------------------------------------
-    if cert_id:
-        print_step(8, f"Regenerating PDF for certificate {cert_id}")
-        resp = session.post(
-            f"{base}/api/admin/cpe/certificates/{cert_id}/regenerate",
-            headers=headers,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            print(f"  Regenerated: {data.get('certificate_number')}")
-            print(f"  PDF generated at: {data.get('pdf_generated_at')}")
-        else:
-            print(f"  Status: {resp.status_code} - {resp.text}")
-    else:
-        print_step(8, "Skipping regenerate test (no certificate available)")
-
-    # ---------------------------------------------------------------
-    # Step 9: Test revoke
-    # ---------------------------------------------------------------
-    if cert_id:
-        print_step(9, f"Revoking certificate {cert_id}")
-        resp = session.post(
-            f"{base}/api/admin/cpe/certificates/{cert_id}/revoke",
-            json={"reason": "Test revocation from test script"},
-            headers=headers,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            print(f"  Revoked: {data.get('certificate_number')}")
-            print(f"  Revoked at: {data.get('revoked_at')}")
-        else:
-            print(f"  Status: {resp.status_code} - {resp.text}")
-
-        # Verify download is blocked after revocation
-        print("\n  Verifying download is blocked after revocation...")
-        resp = session.get(
-            f"{base}/api/cpe/my-certificates/{cert_id}/download",
-            headers=headers,
-            allow_redirects=False,
-        )
-        if resp.status_code in (400, 403, 404):
-            print(f"  Download blocked as expected: {resp.status_code}")
-        else:
-            print(f"  Unexpected status: {resp.status_code} - {resp.text[:200]}")
-    else:
-        print_step(9, "Skipping revoke test (no certificate available)")
+    finally:
+        # ---------------------------------------------------------------
+        # Cleanup: Suspend Gotenberg
+        # ---------------------------------------------------------------
+        if render_enabled:
+            print(f"\n{'='*60}")
+            print("  Cleanup: Suspending Gotenberg")
+            print(f"{'='*60}")
+            stop_gotenberg(args.render_api_key, args.gotenberg_service_id)
 
     # ---------------------------------------------------------------
     # Done

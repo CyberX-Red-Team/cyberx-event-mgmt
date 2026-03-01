@@ -53,8 +53,9 @@ class Settings(BaseSettings):
     POWERDNS_API_KEY: str = ""          # API key for zone operations (created in PowerDNS-Admin UI)
     POWERDNS_ACCOUNT_NAME: str = "cyberx"  # Account to auto-assign users to on first login
 
-    # Render API (optional - only needed for deployment automation)
+    # Render API (optional - for Gotenberg lifecycle management)
     RENDER_API_KEY: str = ""
+    GOTENBERG_RENDER_SERVICE_ID: str = ""
 
     # VPN Server Configuration (optional - only needed if using VPN features)
     VPN_SERVER_PUBLIC_KEY: str = ""
