@@ -1,4 +1,5 @@
 """CPE Certificate service for eligibility checking, issuance, and PDF generation."""
+import asyncio
 import io
 import logging
 from datetime import datetime, timedelta, timezone
@@ -731,21 +732,40 @@ class CPECertificateService:
             raise ValueError(f"Unknown CPE_CONVERSION_MODE: {mode}")
 
     async def _convert_via_gotenberg(self, docx_bytes: bytes) -> bytes:
-        """Convert DOCX to PDF via Gotenberg HTTP API."""
+        """Convert DOCX to PDF via Gotenberg HTTP API.
+
+        Retries on ConnectError to handle the brief window after Render marks
+        a deploy as 'live' but the private service isn't fully routable yet.
+        """
         import httpx
 
         gotenberg_url = self.settings.GOTENBERG_URL
         if not gotenberg_url:
             raise ValueError("GOTENBERG_URL is not configured")
 
+        max_retries = 4
+        retry_delay = 3  # seconds
+
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{gotenberg_url}/forms/libreoffice/convert",
-                files={"files": ("certificate.docx", docx_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            return response.content
+            for attempt in range(max_retries + 1):
+                try:
+                    response = await client.post(
+                        f"{gotenberg_url}/forms/libreoffice/convert",
+                        files={"files": ("certificate.docx", docx_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+                        timeout=30.0,
+                    )
+                    response.raise_for_status()
+                    return response.content
+                except httpx.ConnectError:
+                    if attempt < max_retries:
+                        logger.warning(
+                            f"Gotenberg not reachable (attempt {attempt + 1}/{max_retries + 1}), "
+                            f"retrying in {retry_delay}s"
+                        )
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        logger.error("Gotenberg not reachable after all retries")
+                        raise
 
     async def _convert_via_libreoffice(self, docx_bytes: bytes) -> bytes:
         """Convert DOCX to PDF via local LibreOffice (for self-hosted Docker)."""
