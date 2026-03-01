@@ -1,0 +1,692 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}CPE Certificates{% endblock %}
+
+{% block extra_css %}
+<style>
+    .criteria-badge {
+        font-size: 0.75rem;
+        padding: 0.2rem 0.5rem;
+    }
+    .tab-content {
+        padding-top: 1.5rem;
+    }
+    .bulk-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .status-issued { color: #198754; }
+    .status-revoked { color: #dc3545; text-decoration: line-through; }
+    .pdf-yes { color: #198754; }
+    .pdf-no { color: #dc3545; font-weight: bold; }
+    #bulkRegenProgress {
+        display: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-fluid px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="award"></i></div>
+                        CPE Certificates
+                    </h1>
+                    <div class="page-header-subtitle">Manage CPE certificate eligibility, issuance, and PDF generation</div>
+                </div>
+                <div class="col-auto mt-4">
+                    <select class="form-select" id="eventSelector" onchange="onEventChange()">
+                        <option value="">Select an event...</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-fluid px-4 mt-n10">
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-primary text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Total Issued</div>
+                            <div class="text-lg fw-bold" id="statTotal">-</div>
+                        </div>
+                        <i data-feather="award" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Active</div>
+                            <div class="text-lg fw-bold" id="statActive">-</div>
+                        </div>
+                        <i data-feather="check-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-danger text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Revoked</div>
+                            <div class="text-lg fw-bold" id="statRevoked">-</div>
+                        </div>
+                        <i data-feather="x-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-warning text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Missing PDF</div>
+                            <div class="text-lg fw-bold" id="statMissingPdf">-</div>
+                        </div>
+                        <i data-feather="file-minus" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- No Event Selected -->
+    <div id="noEventMessage" class="card">
+        <div class="card-body text-center py-5">
+            <i data-feather="calendar" style="width: 48px; height: 48px;" class="text-muted mb-3"></i>
+            <h5 class="text-muted">Select an event to manage CPE certificates</h5>
+        </div>
+    </div>
+
+    <!-- Tabs (hidden until event selected) -->
+    <div id="cpeContent" style="display: none;">
+        <ul class="nav nav-tabs" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#eligibilityTab" type="button">
+                    <i data-feather="clipboard" class="me-1"></i> Eligibility
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#certificatesTab" type="button">
+                    <i data-feather="file-text" class="me-1"></i> Certificates
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+            <!-- Eligibility Tab -->
+            <div class="tab-pane fade show active" id="eligibilityTab">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div><i data-feather="clipboard" class="me-2"></i>Participant Eligibility</div>
+                        <div class="bulk-actions">
+                            <div class="form-check me-3">
+                                <input class="form-check-input" type="checkbox" id="skipEligibilityCheck">
+                                <label class="form-check-label small" for="skipEligibilityCheck">Skip eligibility check</label>
+                            </div>
+                            <button class="btn btn-sm btn-success" onclick="issueSelected()" id="issueSelectedBtn" disabled>
+                                <i data-feather="plus" class="me-1"></i> Issue Selected (<span id="eligSelectedCount">0</span>)
+                            </button>
+                            <button class="btn btn-sm btn-primary" onclick="issueAllEligible()">
+                                <i data-feather="users" class="me-1"></i> Issue All Eligible
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="eligibilityLoading" class="text-center py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading eligibility...
+                        </div>
+                        <div class="table-responsive" id="eligibilityTableWrapper" style="display: none;">
+                            <table class="table table-hover table-sm" id="eligibilityTable">
+                                <thead>
+                                    <tr>
+                                        <th width="30"><input type="checkbox" class="form-check-input" id="selectAllElig" onchange="toggleSelectAllElig()"></th>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th class="text-center">Nextcloud</th>
+                                        <th class="text-center">PowerDNS</th>
+                                        <th class="text-center">VPN</th>
+                                        <th class="text-center">Eligible</th>
+                                        <th class="text-center">Certificate</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="eligibilityBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Certificates Tab -->
+            <div class="tab-pane fade" id="certificatesTab">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div><i data-feather="file-text" class="me-2"></i>Issued Certificates</div>
+                        <div class="bulk-actions">
+                            <select class="form-select form-select-sm" id="certStatusFilter" onchange="loadCertificates()" style="width: auto;">
+                                <option value="">All Status</option>
+                                <option value="issued">Issued</option>
+                                <option value="revoked">Revoked</option>
+                            </select>
+                            <button class="btn btn-sm btn-warning" onclick="bulkRegeneratePdfs()">
+                                <i data-feather="refresh-cw" class="me-1"></i> Regenerate Missing PDFs
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="bulkRegenProgress" class="alert alert-info">
+                            <div class="spinner-border spinner-border-sm me-2"></div>
+                            <span id="bulkRegenStatus">Starting Gotenberg and regenerating PDFs... This may take a few minutes.</span>
+                        </div>
+                        <div id="certsLoading" class="text-center py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading certificates...
+                        </div>
+                        <div class="table-responsive" id="certsTableWrapper" style="display: none;">
+                            <table class="table table-hover table-sm" id="certsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Certificate #</th>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th class="text-center">CPE Hours</th>
+                                        <th class="text-center">Status</th>
+                                        <th class="text-center">PDF</th>
+                                        <th>Issued</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="certsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Revoke Modal -->
+<div class="modal fade" id="revokeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Revoke Certificate</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Revoking certificate <strong id="revokeCertNumber"></strong>. This action cannot be undone.</p>
+                <div class="mb-3">
+                    <label class="form-label">Reason for revocation</label>
+                    <textarea class="form-control" id="revokeReason" rows="3" placeholder="Enter reason..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="confirmRevoke()">
+                    <i data-feather="x-circle" class="me-1"></i> Revoke
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// =============================================================================
+// State
+// =============================================================================
+var currentEventId = null;
+var eligibilityData = [];
+var certificatesData = [];
+var revokeModal = null;
+var revokeCertId = null;
+
+// =============================================================================
+// Initialization
+// =============================================================================
+document.addEventListener('DOMContentLoaded', function() {
+    revokeModal = new bootstrap.Modal(document.getElementById('revokeModal'));
+    loadEvents();
+});
+
+// =============================================================================
+// Event Loading
+// =============================================================================
+async function loadEvents() {
+    try {
+        var response = await csrfFetch('/api/admin/events');
+        if (!response.ok) return;
+        var events = await response.json();
+
+        var selector = document.getElementById('eventSelector');
+        // Keep the default option
+        for (var i = 0; i < events.length; i++) {
+            var evt = events[i];
+            if (evt.is_archived) continue;
+            var option = document.createElement('option');
+            option.value = evt.id;
+            option.textContent = evt.name + ' (' + (evt.year || '') + ')';
+            selector.appendChild(option);
+        }
+
+        // Auto-select if only one event
+        if (selector.options.length === 2) {
+            selector.selectedIndex = 1;
+            onEventChange();
+        }
+    } catch (error) {
+        console.error('Failed to load events:', error);
+    }
+}
+
+function onEventChange() {
+    var selector = document.getElementById('eventSelector');
+    currentEventId = selector.value ? parseInt(selector.value) : null;
+
+    if (currentEventId) {
+        document.getElementById('noEventMessage').style.display = 'none';
+        document.getElementById('cpeContent').style.display = 'block';
+        loadEligibility();
+        loadCertificates();
+    } else {
+        document.getElementById('noEventMessage').style.display = 'block';
+        document.getElementById('cpeContent').style.display = 'none';
+        resetStats();
+    }
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+function resetStats() {
+    document.getElementById('statTotal').textContent = '-';
+    document.getElementById('statActive').textContent = '-';
+    document.getElementById('statRevoked').textContent = '-';
+    document.getElementById('statMissingPdf').textContent = '-';
+}
+
+// =============================================================================
+// Eligibility
+// =============================================================================
+async function loadEligibility() {
+    var loading = document.getElementById('eligibilityLoading');
+    var wrapper = document.getElementById('eligibilityTableWrapper');
+    loading.style.display = 'block';
+    wrapper.style.display = 'none';
+
+    try {
+        var response = await csrfFetch('/api/admin/cpe/eligibility/' + currentEventId);
+        if (!response.ok) {
+            var err = await response.json();
+            loading.innerHTML = '<span class="text-danger">' + (err.detail || 'Failed to load') + '</span>';
+            return;
+        }
+        var data = await response.json();
+        eligibilityData = data.participants || [];
+        renderEligibilityTable();
+    } catch (error) {
+        console.error('Failed to load eligibility:', error);
+        loading.innerHTML = '<span class="text-danger">Failed to load eligibility data</span>';
+    }
+}
+
+function renderEligibilityTable() {
+    var loading = document.getElementById('eligibilityLoading');
+    var wrapper = document.getElementById('eligibilityTableWrapper');
+    var tbody = document.getElementById('eligibilityBody');
+
+    tbody.innerHTML = '';
+
+    for (var i = 0; i < eligibilityData.length; i++) {
+        var p = eligibilityData[i];
+        var cr = p.criteria || {};
+        var row = document.createElement('tr');
+
+        var hasCert = p.certificate_exists;
+        var checkboxDisabled = hasCert ? 'disabled' : '';
+
+        row.innerHTML =
+            '<td><input type="checkbox" class="form-check-input elig-check" data-user-id="' + p.user_id + '" ' + checkboxDisabled + ' onchange="updateEligSelection()"></td>' +
+            '<td>' + escapeHtml((p.first_name || '') + ' ' + (p.last_name || '')) + '</td>' +
+            '<td>' + escapeHtml(p.email || '') + '</td>' +
+            '<td class="text-center">' + criteriaBadge(cr.has_nextcloud_login) + '</td>' +
+            '<td class="text-center">' + criteriaBadge(cr.has_powerdns_login) + '</td>' +
+            '<td class="text-center">' + criteriaBadge(cr.has_vpn_assigned) + '</td>' +
+            '<td class="text-center">' + (p.eligible ? '<span class="badge bg-success">Eligible</span>' : '<span class="badge bg-secondary">No</span>') + '</td>' +
+            '<td class="text-center">' + (hasCert ? '<span class="badge bg-info">' + escapeHtml(p.certificate_number || '') + '</span>' : '-') + '</td>' +
+            '<td>' + (hasCert ? '' : '<button class="btn btn-sm btn-outline-success" onclick="issueSingle(' + p.user_id + ')" title="Issue certificate"><i data-feather="plus-circle"></i></button>') + '</td>';
+
+        tbody.appendChild(row);
+    }
+
+    loading.style.display = 'none';
+    wrapper.style.display = 'block';
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+function criteriaBadge(val) {
+    if (val) return '<span class="badge bg-success criteria-badge">Yes</span>';
+    return '<span class="badge bg-danger criteria-badge">No</span>';
+}
+
+function toggleSelectAllElig() {
+    var checked = document.getElementById('selectAllElig').checked;
+    var checkboxes = document.querySelectorAll('.elig-check:not(:disabled)');
+    for (var i = 0; i < checkboxes.length; i++) {
+        checkboxes[i].checked = checked;
+    }
+    updateEligSelection();
+}
+
+function updateEligSelection() {
+    var checked = document.querySelectorAll('.elig-check:checked');
+    var count = checked.length;
+    document.getElementById('eligSelectedCount').textContent = count;
+    document.getElementById('issueSelectedBtn').disabled = count === 0;
+}
+
+function getSelectedUserIds() {
+    var checked = document.querySelectorAll('.elig-check:checked');
+    var ids = [];
+    for (var i = 0; i < checked.length; i++) {
+        ids.push(parseInt(checked[i].getAttribute('data-user-id')));
+    }
+    return ids;
+}
+
+// =============================================================================
+// Issuance
+// =============================================================================
+async function issueSingle(userId) {
+    var skipEligibility = document.getElementById('skipEligibilityCheck').checked;
+    try {
+        var response = await csrfFetch('/api/admin/cpe/issue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                event_id: currentEventId,
+                skip_eligibility: skipEligibility
+            })
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast('Certificate issued: ' + data.certificate_number, 'success');
+            loadEligibility();
+            loadCertificates();
+        } else {
+            showToast(data.detail || 'Failed to issue certificate', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+async function issueSelected() {
+    var userIds = getSelectedUserIds();
+    if (userIds.length === 0) return;
+    await bulkIssue(userIds);
+}
+
+async function issueAllEligible() {
+    var eligible = [];
+    for (var i = 0; i < eligibilityData.length; i++) {
+        var p = eligibilityData[i];
+        if (p.eligible && !p.certificate_exists) {
+            eligible.push(p.user_id);
+        }
+    }
+    if (eligible.length === 0) {
+        showToast('No eligible participants without certificates', 'warning');
+        return;
+    }
+    if (!confirm('Issue certificates for ' + eligible.length + ' eligible participants?')) return;
+    await bulkIssue(eligible);
+}
+
+async function bulkIssue(userIds) {
+    var skipEligibility = document.getElementById('skipEligibilityCheck').checked;
+    try {
+        var response = await csrfFetch('/api/admin/cpe/issue/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                event_id: currentEventId,
+                user_ids: userIds,
+                skip_eligibility: skipEligibility
+            })
+        });
+        var data = await response.json();
+        if (response.ok) {
+            var msg = 'Issued: ' + data.issued_count;
+            if (data.skipped_existing_count) msg += ', Already existed: ' + data.skipped_existing_count;
+            if (data.skipped_ineligible_count) msg += ', Ineligible: ' + data.skipped_ineligible_count;
+            if (data.failed_count) msg += ', Failed: ' + data.failed_count;
+            showToast(msg, data.failed_count ? 'warning' : 'success');
+            loadEligibility();
+            loadCertificates();
+        } else {
+            showToast(data.detail || 'Bulk issue failed', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+// =============================================================================
+// Certificates
+// =============================================================================
+async function loadCertificates() {
+    var loading = document.getElementById('certsLoading');
+    var wrapper = document.getElementById('certsTableWrapper');
+    loading.style.display = 'block';
+    wrapper.style.display = 'none';
+
+    var statusFilter = document.getElementById('certStatusFilter').value;
+    var url = '/api/admin/cpe/certificates/' + currentEventId;
+    if (statusFilter) url += '?status=' + statusFilter;
+
+    try {
+        var response = await csrfFetch(url);
+        if (!response.ok) {
+            loading.innerHTML = '<span class="text-danger">Failed to load certificates</span>';
+            return;
+        }
+        var data = await response.json();
+        certificatesData = data.certificates || [];
+        renderCertificatesTable();
+        updateStats();
+    } catch (error) {
+        console.error('Failed to load certificates:', error);
+        loading.innerHTML = '<span class="text-danger">Failed to load certificates</span>';
+    }
+}
+
+function renderCertificatesTable() {
+    var loading = document.getElementById('certsLoading');
+    var wrapper = document.getElementById('certsTableWrapper');
+    var tbody = document.getElementById('certsBody');
+
+    tbody.innerHTML = '';
+
+    if (certificatesData.length === 0) {
+        loading.innerHTML = '<span class="text-muted">No certificates found for this event</span>';
+        loading.style.display = 'block';
+        wrapper.style.display = 'none';
+        return;
+    }
+
+    for (var i = 0; i < certificatesData.length; i++) {
+        var cert = certificatesData[i];
+        var row = document.createElement('tr');
+
+        var isRevoked = cert.status === 'revoked';
+        var statusClass = isRevoked ? 'status-revoked' : 'status-issued';
+        var statusLabel = isRevoked ? 'Revoked' : 'Issued';
+        var pdfClass = cert.pdf_generated ? 'pdf-yes' : 'pdf-no';
+        var pdfLabel = cert.pdf_generated ? 'Yes' : 'No';
+        var issuedDate = cert.created_at ? formatDateTime(cert.created_at, { hideSeconds: true }) : '-';
+
+        var actions = '';
+        if (!isRevoked) {
+            actions += '<button class="btn btn-sm btn-outline-warning me-1" onclick="regeneratePdf(' + cert.id + ')" title="Regenerate PDF"><i data-feather="refresh-cw"></i></button>';
+            actions += '<button class="btn btn-sm btn-outline-danger" onclick="openRevokeModal(' + cert.id + ', \'' + escapeHtml(cert.certificate_number) + '\')" title="Revoke"><i data-feather="x-circle"></i></button>';
+        } else {
+            actions = '<span class="small text-muted">' + escapeHtml(cert.revocation_reason || '') + '</span>';
+        }
+
+        row.innerHTML =
+            '<td><code>' + escapeHtml(cert.certificate_number) + '</code></td>' +
+            '<td>' + escapeHtml((cert.first_name || '') + ' ' + (cert.last_name || '')) + '</td>' +
+            '<td>' + escapeHtml(cert.email || '') + '</td>' +
+            '<td class="text-center">' + cert.cpe_hours + '</td>' +
+            '<td class="text-center"><span class="' + statusClass + '">' + statusLabel + '</span></td>' +
+            '<td class="text-center"><span class="' + pdfClass + '">' + pdfLabel + '</span></td>' +
+            '<td>' + issuedDate + '</td>' +
+            '<td>' + actions + '</td>';
+
+        tbody.appendChild(row);
+    }
+
+    loading.style.display = 'none';
+    wrapper.style.display = 'block';
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+function updateStats() {
+    // Use unfiltered data for stats - reload if filtered
+    var total = certificatesData.length;
+    var active = 0;
+    var revoked = 0;
+    var missingPdf = 0;
+
+    for (var i = 0; i < certificatesData.length; i++) {
+        var c = certificatesData[i];
+        if (c.status === 'revoked') revoked++;
+        else active++;
+        if (!c.pdf_generated && c.status !== 'revoked') missingPdf++;
+    }
+
+    document.getElementById('statTotal').textContent = total;
+    document.getElementById('statActive').textContent = active;
+    document.getElementById('statRevoked').textContent = revoked;
+    document.getElementById('statMissingPdf').textContent = missingPdf;
+}
+
+// =============================================================================
+// Regenerate PDF
+// =============================================================================
+async function regeneratePdf(certId) {
+    try {
+        var response = await csrfFetch('/api/admin/cpe/certificates/' + certId + '/regenerate', {
+            method: 'POST'
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast('PDF regenerated for ' + data.certificate_number, 'success');
+            loadCertificates();
+        } else {
+            showToast(data.detail || 'Failed to regenerate PDF', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+async function bulkRegeneratePdfs() {
+    if (!confirm('This will start Gotenberg, regenerate all missing PDFs, then suspend Gotenberg. This may take several minutes. Continue?')) return;
+
+    var progress = document.getElementById('bulkRegenProgress');
+    var status = document.getElementById('bulkRegenStatus');
+    progress.style.display = 'block';
+    status.textContent = 'Starting Gotenberg and regenerating PDFs... This may take a few minutes.';
+
+    try {
+        var response = await csrfFetch('/api/admin/cpe/certificates/regenerate/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event_id: currentEventId })
+        });
+        var data = await response.json();
+        if (response.ok) {
+            var msg = 'Regenerated: ' + data.regenerated_count;
+            if (data.failed_count) msg += ', Failed: ' + data.failed_count;
+            if (data.skipped_revoked_count) msg += ', Skipped revoked: ' + data.skipped_revoked_count;
+            showToast(msg, data.failed_count ? 'warning' : 'success');
+            loadCertificates();
+        } else {
+            showToast(data.detail || 'Bulk regeneration failed', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    } finally {
+        progress.style.display = 'none';
+    }
+}
+
+// =============================================================================
+// Revoke
+// =============================================================================
+function openRevokeModal(certId, certNumber) {
+    revokeCertId = certId;
+    document.getElementById('revokeCertNumber').textContent = certNumber;
+    document.getElementById('revokeReason').value = '';
+    revokeModal.show();
+}
+
+async function confirmRevoke() {
+    var reason = document.getElementById('revokeReason').value.trim();
+    if (!reason) {
+        showToast('Please enter a reason for revocation', 'warning');
+        return;
+    }
+
+    try {
+        var response = await csrfFetch('/api/admin/cpe/certificates/' + revokeCertId + '/revoke', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: reason })
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast('Certificate ' + data.certificate_number + ' revoked', 'success');
+            revokeModal.hide();
+            loadCertificates();
+            loadEligibility();
+        } else {
+            showToast(data.detail || 'Failed to revoke', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+// =============================================================================
+// Utilities
+// =============================================================================
+function escapeHtml(text) {
+    if (!text) return '';
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

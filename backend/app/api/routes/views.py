@@ -138,6 +138,23 @@ async def admin_vpn_page(
     )
 
 
+@router.get("/admin/cpe-certificates", response_class=HTMLResponse)
+async def admin_cpe_certificates_page(
+    request: Request,
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Render CPE certificate management page."""
+    return templates.TemplateResponse(
+        "pages/admin/cpe_certificates.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "active_page": "cpe-certificates",
+            "now": datetime.now()
+        }
+    )
+
+
 @router.get("/admin/email", response_class=HTMLResponse)
 async def admin_email_page(
     request: Request,

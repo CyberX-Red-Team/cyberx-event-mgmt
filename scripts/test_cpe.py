@@ -147,6 +147,8 @@ def main():
                         help="Render API key for Gotenberg lifecycle management")
     parser.add_argument("--gotenberg-service-id", default=None,
                         help="Render service ID for Gotenberg")
+    parser.add_argument("--no-revoke", action="store_true",
+                        help="Skip the revoke step (keep certificate intact for inspection)")
     args = parser.parse_args()
 
     base = args.base_url.rstrip("/")
@@ -448,9 +450,13 @@ def main():
             print_step(10, "Skipping download test (no certificate available)")
 
         # ---------------------------------------------------------------
-        # Step 11: Test revoke
+        # Step 11: Test revoke (unless --no-revoke)
         # ---------------------------------------------------------------
-        if cert_id:
+        if args.no_revoke:
+            print_step(11, "Skipping revoke test (--no-revoke flag set)")
+            if cert_number:
+                print(f"  Certificate {cert_number} preserved for inspection")
+        elif cert_id:
             print_step(11, f"Revoking certificate {cert_id}")
             resp = session.post(
                 f"{base}/api/admin/cpe/certificates/{cert_id}/revoke",
