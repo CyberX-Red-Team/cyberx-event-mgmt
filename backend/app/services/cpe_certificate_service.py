@@ -614,14 +614,29 @@ class CPECertificateService:
 
         # Insert signature image above the signature line if configured
         # Cell [0,1] P0 = empty paragraph with bottom-border (the line)
+        # We set spacing-after to 0 so the image sits directly on the line.
         if self.settings.CPE_SIGNATURE_IMAGE_R2_KEY and len(doc.tables) >= 2:
             sig_cell = doc.tables[1].rows[0].cells[1]
             if sig_cell.paragraphs:
                 sig_img_bytes = self._get_signature_image()
                 if sig_img_bytes:
-                    from docx.shared import Inches
-                    run = sig_cell.paragraphs[0].add_run()
-                    run.add_picture(io.BytesIO(sig_img_bytes), width=Inches(1.5))
+                    from docx.shared import Inches, Pt
+                    from docx.oxml.ns import qn as _qn
+                    from docx.oxml import OxmlElement
+                    p0 = sig_cell.paragraphs[0]
+                    run = p0.add_run()
+                    run.add_picture(io.BytesIO(sig_img_bytes), width=Inches(2.0))
+                    # Zero out paragraph spacing so signature sits on the line
+                    pPr = p0._element.find(_qn('w:pPr'))
+                    if pPr is None:
+                        pPr = OxmlElement('w:pPr')
+                        p0._element.insert(0, pPr)
+                    spacing = pPr.find(_qn('w:spacing'))
+                    if spacing is None:
+                        spacing = OxmlElement('w:spacing')
+                        pPr.append(spacing)
+                    spacing.set(_qn('w:after'), '0')
+                    spacing.set(_qn('w:before'), '0')
 
         # Reduce spacing to fit on one page (LibreOffice renders slightly larger than Word)
         self._reduce_spacing_for_libreoffice(doc)
@@ -637,7 +652,8 @@ class CPECertificateService:
 
         Word and LibreOffice have different text metrics; the original template
         fits on one page in Word but overflows in LibreOffice.  We trim the
-        largest after-spacing values by ~25% which is enough to reclaim the space.
+        after-spacing values by ~40% which is enough to reclaim the space
+        (including room for the signature image).
         """
         from docx.oxml.ns import qn
 
@@ -656,7 +672,7 @@ class CPECertificateService:
                 continue
             after = spacing.get(qn('w:after'))
             if after:
-                new_val = str(int(int(after) * 0.75))
+                new_val = str(int(int(after) * 0.60))
                 spacing.set(qn('w:after'), new_val)
 
     @staticmethod
