@@ -1,1 +1,5 @@
 FROM gotenberg/gotenberg:8
+
+# Disable Chromium (not needed - only using LibreOffice for DOCX-to-PDF)
+# Saves ~200MB RAM, critical for running on 512MB Starter plan
+CMD ["gotenberg", "--chromium-disable-javascript=true", "--chromium-auto-start=false"]

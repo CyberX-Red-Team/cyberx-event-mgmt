@@ -98,7 +98,7 @@ services:
       - key: CPE_TEMPLATE_R2_KEY
         sync: false
       - key: GOTENBERG_URL
-        value: http://cyberx-gotenberg:10000
+        value: http://cyberx-gotenberg:3000
 
   # Gotenberg - DOCX to PDF conversion for CPE certificates
   - type: pserv
@@ -107,6 +107,4 @@ services:
     region: virginia
     plan: starter
     dockerfilePath: ./Dockerfile.gotenberg
-    envVars:
-      - key: GOTENBERG_API_PORT
-        value: "10000"
+    envVars: []
