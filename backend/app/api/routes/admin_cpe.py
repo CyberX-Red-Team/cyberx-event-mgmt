@@ -114,11 +114,22 @@ async def issue_certificate(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Issue a CPE certificate to a single user."""
+    """Issue a CPE certificate to a single user.
+
+    Automatically manages the Gotenberg service on Render for PDF generation.
+    """
+    from app.services.render_service import RenderServiceManager
+
+    render = RenderServiceManager()
     service = CPECertificateService(db)
     audit = AuditService(db)
 
     try:
+        if render.enabled:
+            ready = await render.start_gotenberg()
+            if not ready:
+                logger.warning("Gotenberg not ready - certificate will be created without PDF")
+
         cert = await service.issue_certificate(
             user_id=request_body.user_id,
             event_id=request_body.event_id,
@@ -146,6 +157,10 @@ async def issue_certificate(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    finally:
+        if render.enabled:
+            await render.stop_gotenberg()
+
 
 @router.post("/issue/bulk")
 async def bulk_issue_certificates(
@@ -154,11 +169,22 @@ async def bulk_issue_certificates(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Issue CPE certificates in bulk for multiple users."""
+    """Issue CPE certificates in bulk for multiple users.
+
+    Automatically manages the Gotenberg service on Render for PDF generation.
+    """
+    from app.services.render_service import RenderServiceManager
+
+    render = RenderServiceManager()
     service = CPECertificateService(db)
     audit = AuditService(db)
 
     try:
+        if render.enabled:
+            ready = await render.start_gotenberg()
+            if not ready:
+                logger.warning("Gotenberg not ready - certificates will be created without PDFs")
+
         result = await service.bulk_issue(
             event_id=request_body.event_id,
             user_ids=request_body.user_ids,
@@ -185,6 +211,10 @@ async def bulk_issue_certificates(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    finally:
+        if render.enabled:
+            await render.stop_gotenberg()
 
 
 @router.get("/certificates/{event_id}")
@@ -317,10 +347,25 @@ async def regenerate_certificate_pdf(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Regenerate the PDF for an existing certificate."""
+    """Regenerate the PDF for an existing certificate.
+
+    Automatically manages the Gotenberg service on Render:
+    starts before conversion, suspends after.
+    """
+    from app.services.render_service import RenderServiceManager
+
+    render = RenderServiceManager()
     service = CPECertificateService(db)
 
     try:
+        if render.enabled:
+            ready = await render.start_gotenberg()
+            if not ready:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Gotenberg service did not become ready in time"
+                )
+
         cert = await service.regenerate_pdf(certificate_id)
         await db.commit()
 
@@ -332,6 +377,10 @@ async def regenerate_certificate_pdf(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    finally:
+        if render.enabled:
+            await render.stop_gotenberg()
 
 
 @router.post("/certificates/regenerate/bulk")
