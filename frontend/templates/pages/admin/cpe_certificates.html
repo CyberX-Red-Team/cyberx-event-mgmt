@@ -276,7 +276,8 @@ async function loadEvents() {
     try {
         var response = await csrfFetch('/api/admin/events');
         if (!response.ok) return;
-        var events = await response.json();
+        var data = await response.json();
+        var events = data.events || data;
 
         var selector = document.getElementById('eventSelector');
         // Keep the default option
