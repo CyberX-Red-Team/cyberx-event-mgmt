@@ -612,31 +612,47 @@ class CPECertificateService:
                     for run in p2.runs:
                         run.text = ""
 
-        # Insert signature image above the signature line if configured
-        # Cell [0,1] P0 = empty paragraph with bottom-border (the line)
-        # We set spacing-after to 0 so the image sits directly on the line.
-        if self.settings.CPE_SIGNATURE_IMAGE_R2_KEY and len(doc.tables) >= 2:
-            sig_cell = doc.tables[1].rows[0].cells[1]
-            if sig_cell.paragraphs:
-                sig_img_bytes = self._get_signature_image()
-                if sig_img_bytes:
-                    from docx.shared import Inches, Pt
-                    from docx.oxml.ns import qn as _qn
-                    from docx.oxml import OxmlElement
-                    p0 = sig_cell.paragraphs[0]
-                    run = p0.add_run()
-                    run.add_picture(io.BytesIO(sig_img_bytes), width=Inches(2.0))
-                    # Zero out paragraph spacing so signature sits on the line
-                    pPr = p0._element.find(_qn('w:pPr'))
-                    if pPr is None:
-                        pPr = OxmlElement('w:pPr')
-                        p0._element.insert(0, pPr)
-                    spacing = pPr.find(_qn('w:spacing'))
-                    if spacing is None:
-                        spacing = OxmlElement('w:spacing')
-                        pPr.append(spacing)
-                    spacing.set(_qn('w:after'), '0')
-                    spacing.set(_qn('w:before'), '0')
+        # Insert signature image and fix signature table alignment
+        if len(doc.tables) >= 2:
+            from docx.oxml.ns import qn as _qn
+            from docx.oxml import OxmlElement
+
+            sig_table = doc.tables[1]
+
+            # Set all cells in signature row to vertical-align bottom
+            # so Certificate ID and Date Issued align with the signature line
+            for cell in sig_table.rows[0].cells:
+                tcPr = cell._element.find(_qn('w:tcPr'))
+                if tcPr is None:
+                    tcPr = OxmlElement('w:tcPr')
+                    cell._element.insert(0, tcPr)
+                vAlign = tcPr.find(_qn('w:vAlign'))
+                if vAlign is None:
+                    vAlign = OxmlElement('w:vAlign')
+                    tcPr.append(vAlign)
+                vAlign.set(_qn('w:val'), 'bottom')
+
+            # Insert signature image in Cell [0,1] P0
+            if self.settings.CPE_SIGNATURE_IMAGE_R2_KEY:
+                sig_cell = sig_table.rows[0].cells[1]
+                if sig_cell.paragraphs:
+                    sig_img_bytes = self._get_signature_image()
+                    if sig_img_bytes:
+                        from docx.shared import Inches
+                        p0 = sig_cell.paragraphs[0]
+                        run = p0.add_run()
+                        run.add_picture(io.BytesIO(sig_img_bytes), width=Inches(2.0))
+                        # Zero out paragraph spacing so signature sits on the line
+                        pPr = p0._element.find(_qn('w:pPr'))
+                        if pPr is None:
+                            pPr = OxmlElement('w:pPr')
+                            p0._element.insert(0, pPr)
+                        spacing = pPr.find(_qn('w:spacing'))
+                        if spacing is None:
+                            spacing = OxmlElement('w:spacing')
+                            pPr.append(spacing)
+                        spacing.set(_qn('w:after'), '0')
+                        spacing.set(_qn('w:before'), '0')
 
         # Reduce spacing to fit on one page (LibreOffice renders slightly larger than Word)
         self._reduce_spacing_for_libreoffice(doc)
@@ -648,32 +664,26 @@ class CPECertificateService:
 
     @staticmethod
     def _reduce_spacing_for_libreoffice(doc):
-        """Reduce paragraph spacing slightly so LibreOffice keeps output to one page.
+        """Reduce paragraph spacing so LibreOffice keeps output to one page.
 
         Word and LibreOffice have different text metrics; the original template
-        fits on one page in Word but overflows in LibreOffice.  We trim the
-        after-spacing values by ~40% which is enough to reclaim the space
-        (including room for the signature image).
+        fits on one page in Word but overflows in LibreOffice.  We trim
+        before/after spacing on all body paragraphs by 50% to reclaim enough
+        space (including room for the signature image).
         """
         from docx.oxml.ns import qn
 
-        # Paragraph indexes with generous after-spacing that can be trimmed
-        # P8(after=160), P9(after=160), P12(after=200), P15(after=180), P16(after=200)
-        trim_targets = {8, 9, 12, 15, 16}
-
-        for i, p in enumerate(doc.paragraphs):
-            if i not in trim_targets:
-                continue
+        for p in doc.paragraphs:
             pPr = p._element.find(qn('w:pPr'))
             if pPr is None:
                 continue
             spacing = pPr.find(qn('w:spacing'))
             if spacing is None:
                 continue
-            after = spacing.get(qn('w:after'))
-            if after:
-                new_val = str(int(int(after) * 0.60))
-                spacing.set(qn('w:after'), new_val)
+            for attr in (qn('w:after'), qn('w:before')):
+                val = spacing.get(attr)
+                if val and int(val) > 0:
+                    spacing.set(attr, str(int(int(val) * 0.50)))
 
     @staticmethod
     def _replace_in_paragraph(paragraph, replacements: dict):
