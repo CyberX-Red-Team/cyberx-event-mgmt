@@ -166,25 +166,19 @@ class RenderServiceManager:
     async def start_gotenberg(self, plan: str = "standard") -> bool:
         """Scale, resume, and wait for Gotenberg to be ready. Returns True if ready.
 
-        Two-phase readiness check:
-        1. Poll Render deploys API until the deploy is 'live' (up to 180s)
-        2. Poll Gotenberg health endpoint to confirm it's serving (up to 60s)
+        Polls the Render deploys API until the deploy status is 'live' (up to 180s).
+        Render's 'live' status means the service has passed its own health checks,
+        so no additional health polling is needed.
         """
         if not self.enabled:
             logger.info("Render API not configured, skipping Gotenberg start")
             return True  # Assume it's already running (local dev)
 
-        logger.info("Starting Gotenberg lifecycle: scale → resume → wait for deploy → health check")
+        logger.info("Starting Gotenberg lifecycle: scale → resume → wait for deploy live")
         await self.scale_gotenberg(plan)
         await self.resume_gotenberg()
 
-        # Phase 1: Wait for Render to report the deploy as live
-        deploy_live = await self._wait_for_deploy_live(timeout=180, interval=5)
-        if not deploy_live:
-            logger.warning("Deploy did not go live, attempting health check anyway")
-
-        # Phase 2: Wait for the health endpoint to respond
-        return await self.wait_for_gotenberg_ready(timeout=60, interval=3)
+        return await self._wait_for_deploy_live(timeout=180, interval=5)
 
     async def stop_gotenberg(self) -> bool:
         """Suspend Gotenberg after use."""

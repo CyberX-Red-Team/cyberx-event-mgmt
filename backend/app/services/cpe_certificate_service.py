@@ -632,27 +632,37 @@ class CPECertificateService:
                     tcPr.append(vAlign)
                 vAlign.set(_qn('w:val'), 'bottom')
 
-            # Insert signature image in Cell [0,1] P0
+            # Insert signature image in its OWN paragraph BEFORE P0, not inside P0.
+            # P0 has the bottom-border that forms the signature line. If the image
+            # is in P0, it makes P0 much taller than P0 in other cells, causing
+            # the lines to misalign. By putting the image in a separate paragraph
+            # above P0, all cells' P0 (the line) remain the same height and align.
             if self.settings.CPE_SIGNATURE_IMAGE_R2_KEY:
                 sig_cell = sig_table.rows[0].cells[1]
                 if sig_cell.paragraphs:
                     sig_img_bytes = self._get_signature_image()
                     if sig_img_bytes:
                         from docx.shared import Inches
-                        p0 = sig_cell.paragraphs[0]
-                        run = p0.add_run()
+
+                        # Create a new paragraph element for the image
+                        img_para_elem = OxmlElement('w:p')
+                        # Set spacing to 0 so image sits flush against the line
+                        img_pPr = OxmlElement('w:pPr')
+                        img_spacing = OxmlElement('w:spacing')
+                        img_spacing.set(_qn('w:after'), '0')
+                        img_spacing.set(_qn('w:before'), '0')
+                        img_pPr.append(img_spacing)
+                        img_para_elem.append(img_pPr)
+
+                        # Insert before P0
+                        p0_elem = sig_cell.paragraphs[0]._element
+                        p0_elem.addprevious(img_para_elem)
+
+                        # Add image run to the new paragraph
+                        from docx.text.paragraph import Paragraph
+                        img_para = Paragraph(img_para_elem, sig_cell)
+                        run = img_para.add_run()
                         run.add_picture(io.BytesIO(sig_img_bytes), width=Inches(2.0))
-                        # Zero out paragraph spacing so signature sits on the line
-                        pPr = p0._element.find(_qn('w:pPr'))
-                        if pPr is None:
-                            pPr = OxmlElement('w:pPr')
-                            p0._element.insert(0, pPr)
-                        spacing = pPr.find(_qn('w:spacing'))
-                        if spacing is None:
-                            spacing = OxmlElement('w:spacing')
-                            pPr.append(spacing)
-                        spacing.set(_qn('w:after'), '0')
-                        spacing.set(_qn('w:before'), '0')
 
         # Reduce spacing to fit on one page (LibreOffice renders slightly larger than Word)
         self._reduce_spacing_for_libreoffice(doc)
