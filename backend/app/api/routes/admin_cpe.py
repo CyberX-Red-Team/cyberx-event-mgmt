@@ -270,6 +270,47 @@ async def revoke_certificate(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/certificates/{certificate_id}/reinstate")
+async def reinstate_certificate(
+    certificate_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Reinstate a revoked certificate (undo revocation)."""
+    service = CPECertificateService(db)
+    audit = AuditService(db)
+
+    cert = await service.get_certificate_by_id(certificate_id)
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    if cert.status != "revoked":
+        raise HTTPException(status_code=400, detail="Certificate is not revoked")
+
+    cert.status = "issued"
+    cert.revoked_at = None
+    cert.revoked_by_user_id = None
+    cert.revocation_reason = None
+    await db.commit()
+
+    await audit.log(
+        action="CERTIFICATE_REINSTATE",
+        user_id=current_user.id,
+        resource_type="CERTIFICATE",
+        resource_id=cert.id,
+        details={
+            "certificate_number": cert.certificate_number,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return {
+        "status": "ok",
+        "certificate_number": cert.certificate_number,
+    }
+
+
 @router.post("/certificates/{certificate_id}/regenerate")
 async def regenerate_certificate_pdf(
     certificate_id: int,

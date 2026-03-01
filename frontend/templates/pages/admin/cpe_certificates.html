@@ -18,7 +18,7 @@
         flex-wrap: wrap;
     }
     .status-issued { color: #198754; }
-    .status-revoked { color: #dc3545; text-decoration: line-through; }
+    .status-revoked { color: #dc3545; }
     .pdf-yes { color: #198754; }
     .pdf-no { color: #dc3545; font-weight: bold; }
     #bulkRegenProgress {
@@ -233,7 +233,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Revoking certificate <strong id="revokeCertNumber"></strong>. This action cannot be undone.</p>
+                <p>Revoking certificate <strong id="revokeCertNumber"></strong>. You can reinstate it later if needed.</p>
                 <div class="mb-3">
                     <label class="form-label">Reason for revocation</label>
                     <textarea class="form-control" id="revokeReason" rows="3" placeholder="Enter reason..."></textarea>
@@ -362,7 +362,21 @@ function renderEligibilityTable() {
         var row = document.createElement('tr');
 
         var hasCert = p.certificate_exists;
-        var checkboxDisabled = hasCert ? 'disabled' : '';
+        var isRevoked = hasCert && p.certificate_status === 'revoked';
+        var hasActiveCert = hasCert && !isRevoked;
+        var checkboxDisabled = hasActiveCert ? 'disabled' : '';
+
+        var certBadge = '-';
+        if (hasActiveCert) {
+            certBadge = '<span class="badge bg-info">' + escapeHtml(p.certificate_number || '') + '</span>';
+        } else if (isRevoked) {
+            certBadge = '<span class="badge bg-danger">Revoked</span>';
+        }
+
+        var actionBtn = '';
+        if (!hasActiveCert) {
+            actionBtn = '<button class="btn btn-sm btn-outline-success" onclick="issueSingle(' + p.user_id + ')" title="Issue certificate"><i data-feather="plus-circle"></i></button>';
+        }
 
         row.innerHTML =
             '<td><input type="checkbox" class="form-check-input elig-check" data-user-id="' + p.user_id + '" ' + checkboxDisabled + ' onchange="updateEligSelection()"></td>' +
@@ -372,8 +386,8 @@ function renderEligibilityTable() {
             '<td class="text-center">' + criteriaBadge(cr.has_powerdns_login) + '</td>' +
             '<td class="text-center">' + criteriaBadge(cr.has_vpn_assigned) + '</td>' +
             '<td class="text-center">' + (p.eligible ? '<span class="badge bg-success">Eligible</span>' : '<span class="badge bg-secondary">No</span>') + '</td>' +
-            '<td class="text-center">' + (hasCert ? '<span class="badge bg-info">' + escapeHtml(p.certificate_number || '') + '</span>' : '-') + '</td>' +
-            '<td>' + (hasCert ? '' : '<button class="btn btn-sm btn-outline-success" onclick="issueSingle(' + p.user_id + ')" title="Issue certificate"><i data-feather="plus-circle"></i></button>') + '</td>';
+            '<td class="text-center">' + certBadge + '</td>' +
+            '<td>' + actionBtn + '</td>';
 
         tbody.appendChild(row);
     }
@@ -551,7 +565,8 @@ function renderCertificatesTable() {
             actions += '<button class="btn btn-sm btn-outline-warning me-1" onclick="regeneratePdf(' + cert.id + ')" title="Regenerate PDF"><i data-feather="refresh-cw"></i></button>';
             actions += '<button class="btn btn-sm btn-outline-danger" onclick="openRevokeModal(' + cert.id + ', \'' + escapeHtml(cert.certificate_number) + '\')" title="Revoke"><i data-feather="x-circle"></i></button>';
         } else {
-            actions = '<span class="small text-muted">' + escapeHtml(cert.revocation_reason || '') + '</span>';
+            actions = '<button class="btn btn-sm btn-outline-success me-1" onclick="reinstateCert(' + cert.id + ')" title="Reinstate"><i data-feather="rotate-ccw"></i></button>';
+            actions += '<span class="small text-muted ms-1">' + escapeHtml(cert.revocation_reason || '') + '</span>';
         }
 
         row.innerHTML =
@@ -674,6 +689,29 @@ async function confirmRevoke() {
             loadEligibility();
         } else {
             showToast(data.detail || 'Failed to revoke', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+// =============================================================================
+// Reinstate
+// =============================================================================
+async function reinstateCert(certId) {
+    if (!confirm('Reinstate this revoked certificate?')) return;
+
+    try {
+        var response = await csrfFetch('/api/admin/cpe/certificates/' + certId + '/reinstate', {
+            method: 'POST'
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast('Certificate ' + data.certificate_number + ' reinstated', 'success');
+            loadCertificates();
+            loadEligibility();
+        } else {
+            showToast(data.detail || 'Failed to reinstate', 'danger');
         }
     } catch (error) {
         showToast('Error: ' + error.message, 'danger');

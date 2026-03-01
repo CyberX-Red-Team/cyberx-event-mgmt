@@ -481,6 +481,53 @@ def main():
                 print(f"  Download blocked as expected: {resp.status_code}")
             else:
                 print(f"  Unexpected status: {resp.status_code} - {resp.text[:200]}")
+
+            # Step 12: Test reinstate
+            print_step(12, f"Reinstating certificate {cert_id}")
+            resp = session.post(
+                f"{base}/api/admin/cpe/certificates/{cert_id}/reinstate",
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                print(f"  Reinstated: {data.get('certificate_number')}")
+            else:
+                print(f"  Status: {resp.status_code} - {resp.text}")
+
+            # Step 13: Test re-issue over revoked cert (revoke again first, then re-issue)
+            print_step(13, "Testing re-issue over revoked certificate")
+            # Revoke again
+            resp = session.post(
+                f"{base}/api/admin/cpe/certificates/{cert_id}/revoke",
+                json={"reason": "Test re-revocation for re-issue test"},
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                print(f"  Re-revoked for re-issue test")
+            else:
+                print(f"  Re-revoke status: {resp.status_code} - {resp.text}")
+
+            # Re-issue (should delete revoked cert and create new one)
+            resp = session.post(
+                f"{base}/api/admin/cpe/issue",
+                json={
+                    "user_id": user_id,
+                    "event_id": event_id,
+                    "skip_eligibility": True,
+                },
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                new_cert_id = data.get("certificate_id")
+                new_cert_number = data.get("certificate_number")
+                print(f"  Re-issued successfully!")
+                print(f"  New cert ID: {new_cert_id} (was: {cert_id})")
+                print(f"  New cert number: {new_cert_number} (was: {cert_number})")
+                cert_id = new_cert_id
+                cert_number = new_cert_number
+            else:
+                print(f"  Re-issue status: {resp.status_code} - {resp.text}")
         else:
             print_step(11, "Skipping revoke test (no certificate available)")
 

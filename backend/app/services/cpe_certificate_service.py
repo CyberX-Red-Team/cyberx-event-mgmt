@@ -117,10 +117,19 @@ class CPECertificateService:
         # Check for existing certificate
         existing = await self._get_existing_certificate(user_id, event_id)
         if existing:
-            raise ValueError(
-                f"Certificate already exists: {existing.certificate_number} "
-                f"(status: {existing.status})"
-            )
+            if existing.status == CertificateStatus.REVOKED.value:
+                # Delete revoked cert so a fresh one can be issued
+                logger.info(
+                    f"Removing revoked certificate {existing.certificate_number} "
+                    f"for user {user_id} to allow re-issuance"
+                )
+                await self.session.delete(existing)
+                await self.session.flush()
+            else:
+                raise ValueError(
+                    f"Certificate already exists: {existing.certificate_number} "
+                    f"(status: {existing.status})"
+                )
 
         # Check eligibility (still record snapshot even when skipping)
         eligibility = await self.check_eligibility(user_id, event)
@@ -185,7 +194,7 @@ class CPECertificateService:
         for user_id in user_ids:
             try:
                 existing = await self._get_existing_certificate(user_id, event_id)
-                if existing:
+                if existing and existing.status != CertificateStatus.REVOKED.value:
                     skipped_existing.append({
                         "user_id": user_id,
                         "certificate_number": existing.certificate_number,
