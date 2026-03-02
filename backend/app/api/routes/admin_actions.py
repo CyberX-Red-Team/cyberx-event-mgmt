@@ -182,6 +182,159 @@ async def create_bulk_action(
     }
 
 
+class BulkActionAssign(BaseModel):
+    """Request to assign an existing action batch to additional participants."""
+    batch_id: str
+    user_ids: List[int]
+    send_notification: bool = True
+
+
+@router.post("/assign")
+async def assign_action_to_participants(
+    data: BulkActionAssign,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """
+    Assign an existing action (by batch_id) to additional participants.
+
+    Copies action_type, title, description, deadline, and email_template_id
+    from the existing batch. Skips users who already have this action.
+    """
+    from sqlalchemy import and_
+
+    # Find an existing action in this batch to copy properties from
+    result = await db.execute(
+        select(ParticipantAction).where(
+            ParticipantAction.batch_id == data.batch_id
+        ).limit(1)
+    )
+    reference_action = result.scalar_one_or_none()
+    if not reference_action:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    # Find users who already have this action (to skip duplicates)
+    existing_result = await db.execute(
+        select(ParticipantAction.user_id).where(
+            ParticipantAction.batch_id == data.batch_id
+        )
+    )
+    existing_user_ids = {row[0] for row in existing_result.all()}
+
+    # Filter to only new users
+    new_user_ids = [uid for uid in data.user_ids if uid not in existing_user_ids]
+    if not new_user_ids:
+        return {
+            "success": True,
+            "actions_created": 0,
+            "message": "All selected participants already have this action"
+        }
+
+    # Verify users exist
+    user_result = await db.execute(
+        select(User).where(User.id.in_(new_user_ids))
+    )
+    target_users = user_result.scalars().all()
+    if not target_users:
+        raise HTTPException(status_code=400, detail="No valid users found")
+
+    # Create actions with same properties as existing batch
+    created_actions = []
+    for user in target_users:
+        action = ParticipantAction(
+            user_id=user.id,
+            event_id=reference_action.event_id,
+            created_by_id=current_user.id,
+            batch_id=data.batch_id,
+            action_type=reference_action.action_type,
+            title=reference_action.title,
+            description=reference_action.description,
+            status=ActionStatus.PENDING.value,
+            deadline=reference_action.deadline,
+            email_template_id=reference_action.email_template_id,
+        )
+        db.add(action)
+        created_actions.append(action)
+
+    await db.commit()
+
+    # Send notifications
+    if data.send_notification:
+        # Load event for notification vars
+        event_result = await db.execute(
+            select(Event).where(Event.id == reference_action.event_id)
+        )
+        event = event_result.scalar_one_or_none()
+
+        notification_vars = {
+            "action_title": reference_action.title,
+            "action_description": reference_action.description or "",
+            "action_url": f"https://staging.events.cyberxredteam.org/portal#actions",
+            "deadline": str(reference_action.deadline) if reference_action.deadline else "No deadline",
+            "event_name": event.name if event else "",
+        }
+
+        if reference_action.email_template_id:
+            template_result = await db.execute(
+                select(EmailTemplate).where(
+                    EmailTemplate.id == reference_action.email_template_id
+                )
+            )
+            template = template_result.scalar_one_or_none()
+            if template:
+                queue_service = EmailQueueService(db)
+                for action in created_actions:
+                    await queue_service.enqueue_email(
+                        user_id=action.user_id,
+                        template_name=template.name,
+                        priority=3,
+                        custom_vars=notification_vars,
+                        force=True,
+                    )
+                    action.notification_sent = True
+                    action.notification_sent_at = datetime.now(timezone.utc)
+        else:
+            action_type_trigger_map = {
+                ActionType.IN_PERSON_ATTENDANCE.value: WorkflowTriggerEvent.ACTION_ASSIGNED_IN_PERSON_ATTENDANCE,
+                ActionType.SURVEY_COMPLETION.value: WorkflowTriggerEvent.ACTION_ASSIGNED_SURVEY_COMPLETION,
+                ActionType.ORIENTATION_RSVP.value: WorkflowTriggerEvent.ACTION_ASSIGNED_ORIENTATION_RSVP,
+                ActionType.DOCUMENT_REVIEW.value: WorkflowTriggerEvent.ACTION_ASSIGNED_DOCUMENT_REVIEW,
+            }
+            trigger_event = action_type_trigger_map.get(
+                reference_action.action_type, WorkflowTriggerEvent.ACTION_ASSIGNED
+            )
+            workflow_service = WorkflowService(db)
+            for action in created_actions:
+                await workflow_service.trigger_workflow(
+                    trigger_event=trigger_event,
+                    user_id=action.user_id,
+                    custom_vars=notification_vars,
+                    force=True,
+                )
+                action.notification_sent = True
+                action.notification_sent_at = datetime.now(timezone.utc)
+
+        await db.commit()
+
+    # Audit log
+    audit_service = AuditService(db)
+    await audit_service.log(
+        user_id=current_user.id,
+        action="action_assign_participants",
+        resource_type="participant_action",
+        details={
+            "message": f"Assigned {len(created_actions)} additional participants to action '{reference_action.title}'",
+            "batch_id": data.batch_id,
+        }
+    )
+
+    return {
+        "success": True,
+        "actions_created": len(created_actions),
+        "message": f"Assigned action to {len(created_actions)} additional participant(s)"
+    }
+
+
 class BulkActionRevoke(BaseModel):
     """Request to revoke actions by batch_id."""
     batch_id: str

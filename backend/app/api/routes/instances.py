@@ -245,6 +245,37 @@ async def get_instance(
     return InstanceResponse.model_validate(instance)
 
 
+@router.patch("/{instance_id}", response_model=InstanceResponse)
+async def update_instance(
+    instance_id: int,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Update instance fields (visibility, notes)."""
+    from sqlalchemy import select
+    from app.models.instance import Instance
+
+    result = await db.execute(
+        select(Instance).where(Instance.id == instance_id, Instance.deleted_at.is_(None))
+    )
+    instance = result.scalar_one_or_none()
+    if not instance:
+        raise not_found("Instance", instance_id)
+
+    if "visibility" in data:
+        if data["visibility"] not in ("private", "public"):
+            raise bad_request("Visibility must be 'private' or 'public'")
+        instance.visibility = data["visibility"]
+
+    if "notes" in data:
+        instance.notes = data["notes"]
+
+    await db.commit()
+    await db.refresh(instance)
+    return InstanceResponse.model_validate(instance)
+
+
 @router.delete("/{instance_id}")
 async def delete_instance(
     instance_id: int,

@@ -142,6 +142,7 @@
                             <th>Status</th>
                             <th>IP Address</th>
                             <th>VPN IP</th>
+                            <th>Visibility</th>
                             <th>Event</th>
                             <th>Created By</th>
                             <th>Created</th>
@@ -149,7 +150,7 @@
                         </tr>
                     </thead>
                     <tbody id="instanceBody">
-                        <tr><td colspan="9" class="text-center py-4">
+                        <tr><td colspan="10" class="text-center py-4">
                             <div class="spinner-border spinner-border-sm me-2"></div> Loading instances...
                         </td></tr>
                     </tbody>
@@ -460,7 +461,7 @@ async function loadInstances(page = 1) {
     } catch (e) {
         console.error(e);
         document.getElementById('instanceBody').innerHTML =
-            '<tr><td colspan="9" class="text-center text-danger py-4">Failed to load instances.</td></tr>';
+            '<tr><td colspan="10" class="text-center text-danger py-4">Failed to load instances.</td></tr>';
     }
 }
 
@@ -484,7 +485,7 @@ function providerIcon(provider) {
 function renderInstances(items) {
     const tbody = document.getElementById('instanceBody');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">No instances found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">No instances found.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(i => `
@@ -502,6 +503,11 @@ function renderInstances(items) {
             <td>${statusBadge(i.status)}</td>
             <td><code>${i.ip_address || '-'}</code></td>
             <td>${i.vpn_ip ? `<code class="text-success">${i.vpn_ip}</code>` : '<span class="text-muted">-</span>'}</td>
+            <td>
+                <span class="badge ${i.visibility === 'public' ? 'bg-success' : 'bg-secondary'}" style="cursor:pointer;" onclick="toggleVisibility(${i.id}, '${i.visibility}')" title="Click to toggle">
+                    ${i.visibility === 'public' ? '<i data-feather="globe" class="feather-sm me-1"></i>Public' : '<i data-feather="lock" class="feather-sm me-1"></i>Private'}
+                </span>
+            </td>
             <td>${i.event_name || '<span class="text-muted">-</span>'}</td>
             <td>${i.created_by_username || '<span class="text-muted">-</span>'}</td>
             <td>${formatDateTime(i.created_at)}</td>
@@ -778,6 +784,24 @@ async function deleteSelectedInstances() {
         loadStats();
         showToast(`Deleted ${data.success_count} instance(s)`, data.errors.length ? 'warning' : 'success');
     } catch (e) { showToast('Bulk delete failed', 'danger'); }
+}
+
+// ── Visibility Toggle ──
+async function toggleVisibility(id, current) {
+    const newVisibility = current === 'public' ? 'private' : 'public';
+    try {
+        const resp = await csrfFetch(`/api/instances/${id}`, {
+            method: 'PATCH',
+            body: { visibility: newVisibility }
+        });
+        if (resp.ok) {
+            loadInstances(currentPage);
+            showToast(`Visibility set to ${newVisibility}`, 'success');
+        } else {
+            const err = await resp.json();
+            showToast(err.detail || 'Failed to update visibility', 'danger');
+        }
+    } catch (e) { showToast('Failed to update visibility', 'danger'); }
 }
 
 // ── Init ──

@@ -127,8 +127,36 @@
             </div>
             <div class="modal-body">
                 <div id="responseDetailsList"></div>
+
+                <!-- Assign More Participants (collapsible) -->
+                <div id="assignMoreSection" class="d-none mt-3 border-top pt-3">
+                    <h6 class="mb-3"><i data-feather="user-plus" class="me-1"></i> Assign Additional Participants</h6>
+                    <div class="input-group mb-2">
+                        <input type="text" class="form-control form-control-sm" id="assignSearchInput"
+                               placeholder="Search participants by name or email..." autocomplete="off">
+                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="searchParticipantsForAssign()">
+                            <i data-feather="search"></i>
+                        </button>
+                    </div>
+                    <div id="assignSearchResults" class="mb-2" style="max-height: 200px; overflow-y: auto;"></div>
+                    <div id="assignSelectedList" class="mb-2"></div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="form-check form-check-inline mb-0">
+                            <input class="form-check-input" type="checkbox" id="assignSendNotification" checked>
+                            <label class="form-check-label small" for="assignSendNotification">Send notification</label>
+                        </div>
+                        <button class="btn btn-primary btn-sm" id="submitAssignMore" onclick="submitAssignMore()" disabled>
+                            Assign (<span id="assignSelectedCount">0</span>)
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="hideAssignMore()">Cancel</button>
+                    </div>
+                    <div id="assignError" class="alert alert-danger small mt-2 d-none"></div>
+                </div>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-primary btn-sm" id="assignMoreBtn" onclick="showAssignMore()">
+                    <i data-feather="user-plus" class="me-1"></i> Assign More Participants
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
@@ -144,6 +172,8 @@
 
 let actionStatistics = [];
 let detailedActions = [];
+let currentModalBatchId = null;
+let assignSelectedUsers = new Map(); // id -> {name, email}
 
 // Load action statistics
 async function loadActionStatistics() {
@@ -376,6 +406,11 @@ window.showResponseDetails = function(actionTitle, batchId) {
 
     document.getElementById('responseDetailsList').innerHTML = html;
 
+    // Store batch_id for assign more, reset assign UI
+    currentModalBatchId = batchId;
+    hideAssignMore();
+    document.getElementById('assignMoreBtn').classList.toggle('d-none', !batchId);
+
     const modal = new bootstrap.Modal(document.getElementById('responseDetailsModal'));
     modal.show();
     feather.replace();
@@ -425,6 +460,170 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+// --- Assign More Participants ---
+
+window.showAssignMore = function() {
+    document.getElementById('assignMoreSection').classList.remove('d-none');
+    document.getElementById('assignMoreBtn').classList.add('d-none');
+    document.getElementById('assignSearchInput').focus();
+    feather.replace();
+};
+
+window.hideAssignMore = function() {
+    document.getElementById('assignMoreSection').classList.add('d-none');
+    document.getElementById('assignMoreBtn').classList.remove('d-none');
+    document.getElementById('assignSearchResults').innerHTML = '';
+    document.getElementById('assignSelectedList').innerHTML = '';
+    document.getElementById('assignSearchInput').value = '';
+    document.getElementById('assignError').classList.add('d-none');
+    assignSelectedUsers.clear();
+    updateAssignCount();
+};
+
+window.searchParticipantsForAssign = async function() {
+    const query = document.getElementById('assignSearchInput').value.trim();
+    if (!query || query.length < 2) {
+        document.getElementById('assignSearchResults').innerHTML =
+            '<div class="small text-muted">Type at least 2 characters to search</div>';
+        return;
+    }
+
+    try {
+        const params = new URLSearchParams({ search: query, page: 1, page_size: 20 });
+        const response = await csrfFetch(`/api/admin/participants?${params}`);
+        const data = await response.json();
+        const users = data.items || [];
+
+        // Get existing user IDs in this batch to mark them
+        const existingUserIds = new Set(
+            detailedActions
+                .filter(a => a.batch_id === currentModalBatchId)
+                .map(a => a.user_id)
+        );
+
+        if (users.length === 0) {
+            document.getElementById('assignSearchResults').innerHTML =
+                '<div class="small text-muted">No participants found</div>';
+            return;
+        }
+
+        const html = users.map(user => {
+            const name = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
+            const alreadyAssigned = existingUserIds.has(user.id);
+            const alreadySelected = assignSelectedUsers.has(user.id);
+
+            if (alreadyAssigned) {
+                return `<div class="d-flex align-items-center py-1 px-2 small text-muted">
+                    <span>${escapeHtml(name)} (${escapeHtml(user.email)})</span>
+                    <span class="ms-auto badge bg-secondary">Already assigned</span>
+                </div>`;
+            }
+
+            return `<div class="d-flex align-items-center py-1 px-2 small border-bottom" style="cursor:pointer;"
+                         onclick="toggleAssignUser(${user.id}, '${escapeHtml(name).replace(/'/g, "\\'")}', '${escapeHtml(user.email).replace(/'/g, "\\'")}')"
+                         id="assignResult_${user.id}">
+                <input type="checkbox" class="form-check-input me-2" ${alreadySelected ? 'checked' : ''} style="pointer-events:none;">
+                <span>${escapeHtml(name)}</span>
+                <span class="ms-auto text-muted">${escapeHtml(user.email)}</span>
+            </div>`;
+        }).join('');
+
+        document.getElementById('assignSearchResults').innerHTML = html;
+    } catch (error) {
+        console.error('Failed to search participants:', error);
+        document.getElementById('assignSearchResults').innerHTML =
+            '<div class="small text-danger">Failed to search participants</div>';
+    }
+};
+
+window.toggleAssignUser = function(userId, name, email) {
+    if (assignSelectedUsers.has(userId)) {
+        assignSelectedUsers.delete(userId);
+    } else {
+        assignSelectedUsers.set(userId, { name, email });
+    }
+    updateAssignCount();
+    renderAssignSelected();
+
+    // Update checkbox in search results
+    const row = document.getElementById(`assignResult_${userId}`);
+    if (row) {
+        const cb = row.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = assignSelectedUsers.has(userId);
+    }
+};
+
+function renderAssignSelected() {
+    if (assignSelectedUsers.size === 0) {
+        document.getElementById('assignSelectedList').innerHTML = '';
+        return;
+    }
+
+    const html = Array.from(assignSelectedUsers.entries()).map(([id, u]) =>
+        `<span class="badge bg-primary me-1 mb-1" style="cursor:pointer;" onclick="toggleAssignUser(${id}, '', '')">
+            ${escapeHtml(u.name)} <i data-feather="x" style="width:12px;height:12px;"></i>
+        </span>`
+    ).join('');
+
+    document.getElementById('assignSelectedList').innerHTML = html;
+    feather.replace();
+}
+
+function updateAssignCount() {
+    const count = assignSelectedUsers.size;
+    document.getElementById('assignSelectedCount').textContent = count;
+    document.getElementById('submitAssignMore').disabled = count === 0;
+}
+
+window.submitAssignMore = async function() {
+    if (!currentModalBatchId || assignSelectedUsers.size === 0) return;
+
+    const btn = document.getElementById('submitAssignMore');
+    btn.disabled = true;
+    btn.textContent = 'Assigning...';
+
+    try {
+        const response = await csrfFetch('/api/admin/actions/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                batch_id: currentModalBatchId,
+                user_ids: Array.from(assignSelectedUsers.keys()),
+                send_notification: document.getElementById('assignSendNotification').checked
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast(`Assigned action to ${result.actions_created} participant(s)`, 'success');
+            // Close modal and reload data
+            bootstrap.Modal.getInstance(document.getElementById('responseDetailsModal')).hide();
+            await loadActionStatistics();
+        } else {
+            document.getElementById('assignError').textContent = result.detail || 'Failed to assign action';
+            document.getElementById('assignError').classList.remove('d-none');
+        }
+    } catch (error) {
+        console.error('Failed to assign action:', error);
+        document.getElementById('assignError').textContent = 'Failed to assign action';
+        document.getElementById('assignError').classList.remove('d-none');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `Assign (<span id="assignSelectedCount">${assignSelectedUsers.size}</span>)`;
+    }
+};
+
+// Search on Enter in assign search input
+document.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('assignSearchInput');
+    if (input) {
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchParticipantsForAssign();
+        });
+    }
+});
 
 // Load on page load
 document.addEventListener('DOMContentLoaded', () => {
