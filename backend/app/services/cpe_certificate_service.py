@@ -647,14 +647,13 @@ class CPECertificateService:
 
                         # Create a new paragraph element for the image
                         img_para_elem = OxmlElement('w:p')
-                        # Zero all spacing AND set line rule to exact so
-                        # LibreOffice doesn't add extra space below the image
+                        # Zero before/after spacing so image sits close to P0's line.
+                        # Do NOT set lineRule=exact — that clips the image to the
+                        # line height. Let line spacing auto-expand for the image.
                         img_pPr = OxmlElement('w:pPr')
                         img_spacing = OxmlElement('w:spacing')
                         img_spacing.set(_qn('w:after'), '0')
                         img_spacing.set(_qn('w:before'), '0')
-                        img_spacing.set(_qn('w:line'), '240')  # 12pt exactly
-                        img_spacing.set(_qn('w:lineRule'), 'exact')
                         img_pPr.append(img_spacing)
                         img_para_elem.append(img_pPr)
 
