@@ -4,6 +4,8 @@ Supports both Gotenberg (legacy convenience methods) and generic sidecar service
 like step-ca instances that are created dynamically via the Render API.
 """
 import asyncio
+import copy
+import json
 import logging
 from typing import Optional
 
@@ -399,6 +401,8 @@ class RenderServiceManager:
             "name": name,
             "ownerId": self.render_owner_id,
             "repo": self.render_repo_url,
+            "branch": branch,
+            "autoDeploy": "no",
             "serviceDetails": {
                 "plan": plan,
                 "region": region,
@@ -408,10 +412,16 @@ class RenderServiceManager:
                     "dockerContext": ".",
                 },
                 "envVars": env_vars,
-                "branch": branch,
-                "autoDeploy": "no",
             },
         }
+
+        # Log payload structure (redact env var values)
+        debug_payload = copy.deepcopy(payload)
+        if "serviceDetails" in debug_payload and "envVars" in debug_payload["serviceDetails"]:
+            debug_payload["serviceDetails"]["envVars"] = [
+                {"key": ev["key"], "value": "***"} for ev in debug_payload["serviceDetails"]["envVars"]
+            ]
+        logger.info(f"Creating Render service with payload: {json.dumps(debug_payload, indent=2)}")
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(
