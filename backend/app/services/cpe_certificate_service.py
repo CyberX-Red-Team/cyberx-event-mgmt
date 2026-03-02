@@ -578,7 +578,7 @@ class CPECertificateService:
         c.drawImage(
             img,
             160,   # x: left edge of signature area
-            145,   # y: just above the signature line
+            122,   # y: just above the signature line (~125 in Gotenberg output)
             width=target_w,
             height=target_h,
             mask="auto",  # preserve PNG transparency
@@ -648,10 +648,31 @@ class CPECertificateService:
                     for paragraph in footer.paragraphs:
                         self._replace_in_paragraph(paragraph, replacements)
 
+        # Reduce paragraph spacing so LibreOffice keeps output to one page.
+        # Without this, the disclaimer text overflows past the page boundary.
+        self._reduce_spacing_for_libreoffice(doc)
+
         # Save to bytes
         buffer = io.BytesIO()
         doc.save(buffer)
         return buffer.getvalue()
+
+    @staticmethod
+    def _reduce_spacing_for_libreoffice(doc):
+        """Trim before/after spacing on body paragraphs by 30% for LibreOffice."""
+        from docx.oxml.ns import qn
+
+        for p in doc.paragraphs:
+            pPr = p._element.find(qn('w:pPr'))
+            if pPr is None:
+                continue
+            spacing = pPr.find(qn('w:spacing'))
+            if spacing is None:
+                continue
+            for attr in (qn('w:after'), qn('w:before')):
+                val = spacing.get(attr)
+                if val and int(val) > 0:
+                    spacing.set(attr, str(int(int(val) * 0.70)))
 
     @staticmethod
     def _replace_in_paragraph(paragraph, replacements: dict):
