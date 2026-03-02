@@ -38,6 +38,92 @@
 .badge-pending {
     background-color: #f4a100;
 }
+
+/* Token input (email-client style recipient picker) */
+.token-input-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid #c5ccd6;
+    border-radius: 0.35rem;
+    background: #fff;
+    cursor: text;
+    min-height: 38px;
+    position: relative;
+}
+.token-input-wrap:focus-within {
+    border-color: #0061f2;
+    box-shadow: 0 0 0 0.2rem rgba(0, 97, 242, 0.25);
+}
+.token-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #e8edf2;
+    border: 1px solid #c5ccd6;
+    border-radius: 3px;
+    padding: 2px 6px 2px 8px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    white-space: nowrap;
+    max-width: 250px;
+}
+.token-chip .chip-name { font-weight: 500; }
+.token-chip .chip-email { color: #69707a; font-size: 0.75rem; }
+.token-chip .chip-remove {
+    cursor: pointer;
+    color: #69707a;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    border: none;
+    background: none;
+}
+.token-chip .chip-remove:hover { color: #e81500; }
+.token-input-field {
+    flex: 1;
+    min-width: 120px;
+    border: none;
+    outline: none;
+    font-size: 0.85rem;
+    padding: 2px 0;
+    background: transparent;
+}
+.token-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    background: #fff;
+    border: 1px solid #c5ccd6;
+    border-top: none;
+    border-radius: 0 0 0.35rem 0.35rem;
+    max-height: 220px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.token-dropdown-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+.token-dropdown-item:hover, .token-dropdown-item.highlighted {
+    background: #e8f0fe;
+}
+.token-dropdown-item.disabled {
+    opacity: 0.5;
+    cursor: default;
+    background: transparent;
+}
+.token-dropdown-item .item-name { font-weight: 500; }
+.token-dropdown-item .item-email { color: #69707a; font-size: 0.8rem; margin-left: 8px; }
+.token-dropdown-item .item-badge { margin-left: auto; }
 </style>
 {% endblock %}
 
@@ -131,16 +217,13 @@
                 <!-- Assign More Participants (collapsible) -->
                 <div id="assignMoreSection" class="d-none mt-3 border-top pt-3">
                     <h6 class="mb-3"><i data-feather="user-plus" class="me-1"></i> Assign Additional Participants</h6>
-                    <div class="input-group mb-2">
-                        <input type="text" class="form-control form-control-sm" id="assignSearchInput"
-                               placeholder="Search participants by name or email..." autocomplete="off">
-                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="searchParticipantsForAssign()">
-                            <i data-feather="search"></i>
-                        </button>
+                    <div class="token-input-wrap" id="tokenInputWrap" onclick="document.getElementById('assignSearchInput').focus()">
+                        <!-- Chips inserted here dynamically -->
+                        <input type="text" class="token-input-field" id="assignSearchInput"
+                               placeholder="Type a name or email..." autocomplete="off">
+                        <div class="token-dropdown d-none" id="tokenDropdown"></div>
                     </div>
-                    <div id="assignSearchResults" class="mb-2" style="max-height: 200px; overflow-y: auto;"></div>
-                    <div id="assignSelectedList" class="mb-2"></div>
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2 mt-2">
                         <div class="form-check form-check-inline mb-0">
                             <input class="form-check-input" type="checkbox" id="assignSendNotification" checked>
                             <label class="form-check-label small" for="assignSendNotification">Send notification</label>
@@ -461,7 +544,11 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// --- Assign More Participants ---
+// --- Assign More Participants (token/chip input) ---
+
+let searchDebounceTimer = null;
+let dropdownHighlightIdx = -1;
+let lastSearchResults = [];
 
 window.showAssignMore = function() {
     document.getElementById('assignMoreSection').classList.remove('d-none');
@@ -473,102 +560,226 @@ window.showAssignMore = function() {
 window.hideAssignMore = function() {
     document.getElementById('assignMoreSection').classList.add('d-none');
     document.getElementById('assignMoreBtn').classList.remove('d-none');
-    document.getElementById('assignSearchResults').innerHTML = '';
-    document.getElementById('assignSelectedList').innerHTML = '';
     document.getElementById('assignSearchInput').value = '';
     document.getElementById('assignError').classList.add('d-none');
+    closeDropdown();
     assignSelectedUsers.clear();
+    renderChips();
     updateAssignCount();
 };
 
-window.searchParticipantsForAssign = async function() {
-    const query = document.getElementById('assignSearchInput').value.trim();
-    if (!query || query.length < 2) {
-        document.getElementById('assignSearchResults').innerHTML =
-            '<div class="small text-muted">Type at least 2 characters to search</div>';
+function getExistingUserIds() {
+    return new Set(
+        detailedActions
+            .filter(a => a.batch_id === currentModalBatchId)
+            .map(a => a.user_id)
+    );
+}
+
+// --- Chip rendering ---
+function renderChips() {
+    const wrap = document.getElementById('tokenInputWrap');
+    const input = document.getElementById('assignSearchInput');
+    const dropdown = document.getElementById('tokenDropdown');
+    // Remove existing chips
+    wrap.querySelectorAll('.token-chip').forEach(el => el.remove());
+    // Insert chips before the input
+    Array.from(assignSelectedUsers.entries()).forEach(([id, u]) => {
+        const chip = document.createElement('span');
+        chip.className = 'token-chip';
+        chip.dataset.userId = id;
+        chip.innerHTML = `<span class="chip-name">${escapeHtml(u.name)}</span>` +
+            (u.email ? `<span class="chip-email">${escapeHtml(u.email)}</span>` : '') +
+            `<button type="button" class="chip-remove" data-uid="${id}">&times;</button>`;
+        wrap.insertBefore(chip, input);
+    });
+    // Update placeholder
+    input.placeholder = assignSelectedUsers.size === 0 ? 'Type a name or email...' : '';
+}
+
+// Remove chip on click
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('chip-remove')) {
+        const uid = parseInt(e.target.dataset.uid);
+        assignSelectedUsers.delete(uid);
+        renderChips();
+        updateAssignCount();
+        refreshDropdown();
+        document.getElementById('assignSearchInput').focus();
+    }
+});
+
+// --- Dropdown search ---
+async function fetchParticipants(query) {
+    const params = new URLSearchParams({ page: 1, page_size: 20 });
+    if (query) params.set('search', query);
+    const response = await csrfFetch(`/api/admin/participants?${params}`);
+    const data = await response.json();
+    return data.items || [];
+}
+
+function renderDropdown(users) {
+    const dropdown = document.getElementById('tokenDropdown');
+    const existingIds = getExistingUserIds();
+    lastSearchResults = users;
+    dropdownHighlightIdx = -1;
+
+    if (users.length === 0) {
+        dropdown.innerHTML = '<div class="px-3 py-2 text-muted small">No participants found</div>';
+        dropdown.classList.remove('d-none');
         return;
     }
 
-    try {
-        const params = new URLSearchParams({ search: query, page: 1, page_size: 20 });
-        const response = await csrfFetch(`/api/admin/participants?${params}`);
-        const data = await response.json();
-        const users = data.items || [];
+    dropdown.innerHTML = users.map((user, idx) => {
+        const name = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
+        const alreadyAssigned = existingIds.has(user.id);
+        const alreadySelected = assignSelectedUsers.has(user.id);
+        const disabled = alreadyAssigned || alreadySelected;
+        const badge = alreadyAssigned
+            ? '<span class="item-badge badge bg-secondary">Assigned</span>'
+            : alreadySelected
+            ? '<span class="item-badge badge bg-primary">Selected</span>'
+            : '';
 
-        // Get existing user IDs in this batch to mark them
-        const existingUserIds = new Set(
-            detailedActions
-                .filter(a => a.batch_id === currentModalBatchId)
-                .map(a => a.user_id)
-        );
+        return `<div class="token-dropdown-item ${disabled ? 'disabled' : ''}"
+                     data-idx="${idx}" data-uid="${user.id}"
+                     data-name="${escapeHtml(name)}" data-email="${escapeHtml(user.email)}">
+            <span class="item-name">${escapeHtml(name)}</span>
+            <span class="item-email">${escapeHtml(user.email)}</span>
+            ${badge}
+        </div>`;
+    }).join('');
 
-        if (users.length === 0) {
-            document.getElementById('assignSearchResults').innerHTML =
-                '<div class="small text-muted">No participants found</div>';
+    dropdown.classList.remove('d-none');
+}
+
+function closeDropdown() {
+    const dropdown = document.getElementById('tokenDropdown');
+    dropdown.classList.add('d-none');
+    dropdown.innerHTML = '';
+    lastSearchResults = [];
+    dropdownHighlightIdx = -1;
+}
+
+function refreshDropdown() {
+    if (lastSearchResults.length > 0) {
+        renderDropdown(lastSearchResults);
+    }
+}
+
+function highlightDropdownItem(newIdx) {
+    const items = document.querySelectorAll('.token-dropdown-item:not(.disabled)');
+    if (items.length === 0) return;
+    // Clamp
+    if (newIdx < 0) newIdx = items.length - 1;
+    if (newIdx >= items.length) newIdx = 0;
+    // Remove old highlight
+    document.querySelectorAll('.token-dropdown-item.highlighted').forEach(el => el.classList.remove('highlighted'));
+    items[newIdx].classList.add('highlighted');
+    items[newIdx].scrollIntoView({ block: 'nearest' });
+    dropdownHighlightIdx = newIdx;
+}
+
+function selectHighlightedItem() {
+    const highlighted = document.querySelector('.token-dropdown-item.highlighted');
+    if (highlighted && !highlighted.classList.contains('disabled')) {
+        selectDropdownItem(highlighted);
+    }
+}
+
+function selectDropdownItem(el) {
+    const uid = parseInt(el.dataset.uid);
+    const name = el.dataset.name;
+    const email = el.dataset.email;
+    if (assignSelectedUsers.has(uid)) return;
+
+    assignSelectedUsers.set(uid, { name, email });
+    renderChips();
+    updateAssignCount();
+    document.getElementById('assignSearchInput').value = '';
+    refreshDropdown();
+    document.getElementById('assignSearchInput').focus();
+}
+
+// --- Event handlers ---
+document.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('assignSearchInput');
+    if (!input) return;
+
+    // Live search on input (debounced)
+    input.addEventListener('input', () => {
+        clearTimeout(searchDebounceTimer);
+        const query = input.value.trim();
+        if (query.length < 1) {
+            closeDropdown();
             return;
         }
-
-        const html = users.map(user => {
-            const name = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
-            const alreadyAssigned = existingUserIds.has(user.id);
-            const alreadySelected = assignSelectedUsers.has(user.id);
-
-            if (alreadyAssigned) {
-                return `<div class="d-flex align-items-center py-1 px-2 small text-muted">
-                    <span>${escapeHtml(name)} (${escapeHtml(user.email)})</span>
-                    <span class="ms-auto badge bg-secondary">Already assigned</span>
-                </div>`;
+        searchDebounceTimer = setTimeout(async () => {
+            try {
+                const users = await fetchParticipants(query);
+                renderDropdown(users);
+            } catch (e) {
+                console.error('Search failed:', e);
             }
+        }, 250);
+    });
 
-            return `<div class="d-flex align-items-center py-1 px-2 small border-bottom" style="cursor:pointer;"
-                         onclick="toggleAssignUser(${user.id}, '${escapeHtml(name).replace(/'/g, "\\'")}', '${escapeHtml(user.email).replace(/'/g, "\\'")}')"
-                         id="assignResult_${user.id}">
-                <input type="checkbox" class="form-check-input me-2" ${alreadySelected ? 'checked' : ''} style="pointer-events:none;">
-                <span>${escapeHtml(name)}</span>
-                <span class="ms-auto text-muted">${escapeHtml(user.email)}</span>
-            </div>`;
-        }).join('');
+    // Keyboard navigation
+    input.addEventListener('keydown', (e) => {
+        const dropdown = document.getElementById('tokenDropdown');
+        const isOpen = !dropdown.classList.contains('d-none');
 
-        document.getElementById('assignSearchResults').innerHTML = html;
-    } catch (error) {
-        console.error('Failed to search participants:', error);
-        document.getElementById('assignSearchResults').innerHTML =
-            '<div class="small text-danger">Failed to search participants</div>';
-    }
-};
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (isOpen) {
+                highlightDropdownItem(dropdownHighlightIdx + 1);
+            } else if (input.value.trim().length === 0) {
+                // Open dropdown with all participants on arrow down with empty input
+                fetchParticipants('').then(users => renderDropdown(users));
+            }
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (isOpen) highlightDropdownItem(dropdownHighlightIdx - 1);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (isOpen && dropdownHighlightIdx >= 0) {
+                selectHighlightedItem();
+            }
+        } else if (e.key === 'Escape') {
+            closeDropdown();
+        } else if (e.key === 'Backspace' && input.value === '' && assignSelectedUsers.size > 0) {
+            // Remove last chip
+            const lastKey = Array.from(assignSelectedUsers.keys()).pop();
+            assignSelectedUsers.delete(lastKey);
+            renderChips();
+            updateAssignCount();
+            refreshDropdown();
+        }
+    });
 
-window.toggleAssignUser = function(userId, name, email) {
-    if (assignSelectedUsers.has(userId)) {
-        assignSelectedUsers.delete(userId);
-    } else {
-        assignSelectedUsers.set(userId, { name, email });
-    }
-    updateAssignCount();
-    renderAssignSelected();
+    // Click on dropdown item
+    document.getElementById('tokenDropdown').addEventListener('click', (e) => {
+        const item = e.target.closest('.token-dropdown-item');
+        if (item && !item.classList.contains('disabled')) {
+            selectDropdownItem(item);
+        }
+    });
 
-    // Update checkbox in search results
-    const row = document.getElementById(`assignResult_${userId}`);
-    if (row) {
-        const cb = row.querySelector('input[type="checkbox"]');
-        if (cb) cb.checked = assignSelectedUsers.has(userId);
-    }
-};
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#tokenInputWrap')) {
+            closeDropdown();
+        }
+    });
 
-function renderAssignSelected() {
-    if (assignSelectedUsers.size === 0) {
-        document.getElementById('assignSelectedList').innerHTML = '';
-        return;
-    }
-
-    const html = Array.from(assignSelectedUsers.entries()).map(([id, u]) =>
-        `<span class="badge bg-primary me-1 mb-1" style="cursor:pointer;" onclick="toggleAssignUser(${id}, '', '')">
-            ${escapeHtml(u.name)} <i data-feather="x" style="width:12px;height:12px;"></i>
-        </span>`
-    ).join('');
-
-    document.getElementById('assignSelectedList').innerHTML = html;
-    feather.replace();
-}
+    // Open dropdown on focus if input has text
+    input.addEventListener('focus', () => {
+        const query = input.value.trim();
+        if (query.length >= 1 && lastSearchResults.length > 0) {
+            document.getElementById('tokenDropdown').classList.remove('d-none');
+        }
+    });
+});
 
 function updateAssignCount() {
     const count = assignSelectedUsers.size;
@@ -598,7 +809,6 @@ window.submitAssignMore = async function() {
 
         if (result.success) {
             showToast(`Assigned action to ${result.actions_created} participant(s)`, 'success');
-            // Close modal and reload data
             bootstrap.Modal.getInstance(document.getElementById('responseDetailsModal')).hide();
             await loadActionStatistics();
         } else {
@@ -614,16 +824,6 @@ window.submitAssignMore = async function() {
         btn.innerHTML = `Assign (<span id="assignSelectedCount">${assignSelectedUsers.size}</span>)`;
     }
 };
-
-// Search on Enter in assign search input
-document.addEventListener('DOMContentLoaded', () => {
-    const input = document.getElementById('assignSearchInput');
-    if (input) {
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') searchParticipantsForAssign();
-        });
-    }
-});
 
 // Load on page load
 document.addEventListener('DOMContentLoaded', () => {
