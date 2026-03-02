@@ -46,23 +46,23 @@
     align-items: center;
     gap: 4px;
     padding: 4px 8px;
-    border: 1px solid #c5ccd6;
+    border: 1px solid var(--input-border);
     border-radius: 0.35rem;
-    background: #fff;
+    background: var(--input-bg);
     cursor: text;
     min-height: 38px;
     position: relative;
 }
 .token-input-wrap:focus-within {
-    border-color: #0061f2;
+    border-color: var(--primary-color);
     box-shadow: 0 0 0 0.2rem rgba(0, 97, 242, 0.25);
 }
 .token-chip {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    background: #e8edf2;
-    border: 1px solid #c5ccd6;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
     border-radius: 4px;
     padding: 3px 4px 3px 8px;
     font-size: 0.8rem;
@@ -70,26 +70,26 @@
     white-space: nowrap;
     max-width: 300px;
 }
-.token-chip .chip-name { font-weight: 500; }
-.token-chip .chip-email { color: #69707a; font-size: 0.75rem; }
+.token-chip .chip-name { font-weight: 500; color: var(--text-primary); }
+.token-chip .chip-email { color: var(--text-secondary); font-size: 0.75rem; }
 .token-chip .chip-remove {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: #69707a;
+    color: var(--text-secondary);
     font-size: 16px;
     font-weight: bold;
     line-height: 1;
     width: 18px;
     height: 18px;
     border: none;
-    background: rgba(0,0,0,0.08);
+    background: var(--hover-bg);
     border-radius: 3px;
     margin-left: 2px;
     flex-shrink: 0;
 }
-.token-chip .chip-remove:hover { color: #fff; background: #e81500; }
+.token-chip .chip-remove:hover { color: #fff; background: var(--danger-color); }
 .token-input-field {
     flex: 1;
     min-width: 120px;
@@ -98,6 +98,7 @@
     font-size: 0.85rem;
     padding: 2px 0;
     background: transparent;
+    color: var(--text-primary);
 }
 .token-dropdown {
     position: absolute;
@@ -105,13 +106,13 @@
     left: 0;
     right: 0;
     z-index: 1050;
-    background: #fff;
-    border: 1px solid #c5ccd6;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
     border-top: none;
     border-radius: 0 0 0.35rem 0.35rem;
     max-height: 220px;
     overflow-y: auto;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px var(--shadow);
 }
 .token-dropdown-item {
     display: flex;
@@ -119,18 +120,19 @@
     padding: 6px 10px;
     cursor: pointer;
     font-size: 0.85rem;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
 }
 .token-dropdown-item:hover, .token-dropdown-item.highlighted {
-    background: #e8f0fe;
+    background: var(--hover-bg);
 }
 .token-dropdown-item.disabled {
     opacity: 0.5;
     cursor: default;
     background: transparent;
 }
-.token-dropdown-item .item-name { font-weight: 500; }
-.token-dropdown-item .item-email { color: #69707a; font-size: 0.8rem; margin-left: 8px; }
+.token-dropdown-item .item-name { font-weight: 500; color: var(--text-primary); }
+.token-dropdown-item .item-email { color: var(--text-secondary); font-size: 0.8rem; margin-left: 8px; }
 .token-dropdown-item .item-badge { margin-left: auto; }
 </style>
 {% endblock %}
