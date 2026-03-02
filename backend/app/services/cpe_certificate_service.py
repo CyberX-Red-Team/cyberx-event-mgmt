@@ -578,7 +578,7 @@ class CPECertificateService:
         c.drawImage(
             img,
             160,   # x: left edge of signature area
-            122,   # y: just above the signature line (~125 in Gotenberg output)
+            148,   # y: just above the signature line (~150 in Gotenberg output)
             width=target_w,
             height=target_h,
             mask="auto",  # preserve PNG transparency
