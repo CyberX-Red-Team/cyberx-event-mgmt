@@ -25,6 +25,7 @@ class RenderServiceManager:
         self.service_id: Optional[str] = getattr(settings, "GOTENBERG_RENDER_SERVICE_ID", None)
         self.gotenberg_url: Optional[str] = getattr(settings, "GOTENBERG_URL", None)
         self.render_owner_id: Optional[str] = getattr(settings, "RENDER_OWNER_ID", None)
+        self.render_repo_url: Optional[str] = getattr(settings, "RENDER_REPO_URL", None)
 
     @property
     def enabled(self) -> bool:
@@ -389,17 +390,27 @@ class RenderServiceManager:
             logger.error("RENDER_OWNER_ID not configured, cannot create service")
             return None
 
+        if not self.render_repo_url:
+            logger.error("RENDER_REPO_URL not configured, cannot create service")
+            return None
+
         payload = {
             "type": "private_service",
             "name": name,
             "ownerId": self.render_owner_id,
-            "plan": plan,
-            "region": region,
-            "runtime": "docker",
-            "dockerfilePath": dockerfile_path,
-            "branch": branch,
-            "autoDeploy": "no",
-            "envVars": env_vars,
+            "serviceDetails": {
+                "plan": plan,
+                "region": region,
+                "runtime": "docker",
+                "envSpecificDetails": {
+                    "dockerfilePath": dockerfile_path,
+                    "dockerContext": ".",
+                },
+                "envVars": env_vars,
+                "branch": branch,
+                "autoDeploy": "no",
+                "repo": self.render_repo_url,
+            },
         }
 
         async with httpx.AsyncClient() as client:

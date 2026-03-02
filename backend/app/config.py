@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     # Render API (optional - for sidecar lifecycle management)
     RENDER_API_KEY: str = ""
     RENDER_OWNER_ID: str = ""  # Render owner ID for creating new services
+    RENDER_REPO_URL: str = ""  # GitHub repo URL for creating new Render services (e.g. https://github.com/org/repo)
     GOTENBERG_RENDER_SERVICE_ID: str = ""
 
     # step-ca Configuration (optional - for TLS certificate issuance)

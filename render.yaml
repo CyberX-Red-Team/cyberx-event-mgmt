@@ -106,6 +106,8 @@ services:
         sync: false
       - key: GOTENBERG_RENDER_SERVICE_ID
         sync: false
+      - key: RENDER_REPO_URL
+        sync: false
       # step-ca Configuration (for TLS certificate issuance)
       - key: STEPCA_PROVISIONER_PASSWORD
         sync: false
