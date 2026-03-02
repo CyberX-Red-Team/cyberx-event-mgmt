@@ -144,11 +144,11 @@ class StepCAService:
 
     @staticmethod
     def validate_signing_chain(signing_cert_pem: bytes, chain_pem: bytes) -> bool:
-        """Validate that the signing cert is signed by the first cert in the chain.
+        """Validate that the signing cert chains to the certs in chain_pem.
 
-        The chain file should contain certs in order from the signing cert's
-        issuer up to the root. The first cert in the chain must be the
-        signing cert's issuer.
+        The chain file should contain certs from the signing cert's issuer
+        up to the root. If the chain file's first cert IS the signing cert
+        itself (common with full-chain PEM files), it is automatically skipped.
 
         Raises ValueError if validation fails.
         """
@@ -156,12 +156,34 @@ class StepCAService:
             signing_cert = x509.load_pem_x509_certificate(signing_cert_pem)
             chain_certs = StepCAService.parse_pem_chain(chain_pem)
 
+            # If the first cert in the chain is the signing cert itself, skip it.
+            # This handles full-chain PEM files that include the signing cert.
+            if chain_certs[0].subject == signing_cert.subject:
+                try:
+                    # Double-check by comparing the public key
+                    if (chain_certs[0].public_key().public_bytes(
+                            serialization.Encoding.PEM,
+                            serialization.PublicFormat.SubjectPublicKeyInfo)
+                        == signing_cert.public_key().public_bytes(
+                            serialization.Encoding.PEM,
+                            serialization.PublicFormat.SubjectPublicKeyInfo)):
+                        chain_certs = chain_certs[1:]
+                except Exception:
+                    pass
+
+            if not chain_certs:
+                raise ValueError(
+                    "CA chain file must contain at least one certificate above "
+                    "the signing cert (the issuing CA or root)"
+                )
+
             # The first cert in the chain should be the signing cert's issuer
             issuer_cert = chain_certs[0]
             if signing_cert.issuer != issuer_cert.subject:
                 raise ValueError(
-                    f"Signing certificate issuer ({signing_cert.issuer}) does not match "
-                    f"first certificate in chain ({issuer_cert.subject})"
+                    f"Signing certificate issuer ({signing_cert.issuer.rfc4514_string()}) "
+                    f"does not match first certificate in chain "
+                    f"({issuer_cert.subject.rfc4514_string()})"
                 )
 
             # Verify signature
@@ -177,8 +199,9 @@ class StepCAService:
                 parent = chain_certs[i + 1]
                 if child.issuer != parent.subject:
                     raise ValueError(
-                        f"Chain broken: cert {i} issuer ({child.issuer}) does not match "
-                        f"cert {i+1} subject ({parent.subject})"
+                        f"Chain broken: cert {i} issuer "
+                        f"({child.issuer.rfc4514_string()}) does not match "
+                        f"cert {i+1} subject ({parent.subject.rfc4514_string()})"
                     )
                 parent.public_key().verify(
                     child.signature,
@@ -191,6 +214,32 @@ class StepCAService:
             raise
         except Exception as e:
             raise ValueError(f"Chain validation failed: {e}")
+
+    @staticmethod
+    def strip_signing_cert_from_chain(signing_cert_pem: bytes, chain_pem: bytes) -> bytes:
+        """Remove the signing cert from the chain if it's the first cert.
+
+        Returns normalized chain PEM containing only certs above the signing cert.
+        If the signing cert is not in the chain, returns the original chain unchanged.
+        """
+        signing_cert = x509.load_pem_x509_certificate(signing_cert_pem)
+        chain_certs = StepCAService.parse_pem_chain(chain_pem)
+
+        if chain_certs and chain_certs[0].subject == signing_cert.subject:
+            if (chain_certs[0].public_key().public_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PublicFormat.SubjectPublicKeyInfo)
+                == signing_cert.public_key().public_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PublicFormat.SubjectPublicKeyInfo)):
+                chain_certs = chain_certs[1:]
+
+        if not chain_certs:
+            return chain_pem  # Return original if nothing left
+
+        return b"".join(
+            cert.public_bytes(serialization.Encoding.PEM) for cert in chain_certs
+        )
 
     @staticmethod
     def extract_root_cert(chain_pem: bytes) -> bytes:

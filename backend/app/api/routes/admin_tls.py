@@ -125,6 +125,11 @@ async def create_ca_chain(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Chain validation failed: {e}")
 
+    # Normalize chain: strip signing cert if it was included in the chain file
+    ca_chain_bytes = stepca_service.strip_signing_cert_from_chain(
+        signing_cert_bytes, ca_chain_bytes
+    )
+
     # Create DB record first to get the ID
     ca_chain_record = CAChain(
         name=name,
