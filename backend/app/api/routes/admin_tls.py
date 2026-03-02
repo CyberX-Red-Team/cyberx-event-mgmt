@@ -77,55 +77,56 @@ async def create_ca_chain(
     event_id: int = Form(...),
     default_duration: str = Form("2160h"),
     allow_wildcard: bool = Form(True),
-    root_cert: UploadFile = File(...),
-    root_key: UploadFile = File(...),
-    intermediate_cert: UploadFile = File(...),
-    intermediate_key: UploadFile = File(...),
+    signing_cert: UploadFile = File(...),
+    signing_key: UploadFile = File(...),
+    ca_chain_file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """Create a new CA chain with uploaded PEM files.
 
-    Validates PEM format, chain integrity, encrypts private keys,
+    Accepts 3 files:
+    - signing_cert: The CA certificate that will sign end-entity certs
+    - signing_key: Its private key
+    - ca_chain_file: PEM chain of all certs above the signing cert up to root
+
+    Validates PEM format, chain integrity, encrypts private key,
     and stores all files in R2.
     """
     stepca_service = StepCAService()
 
     # Read uploaded files
-    root_cert_bytes = await root_cert.read()
-    root_key_bytes = await root_key.read()
-    intermediate_cert_bytes = await intermediate_cert.read()
-    intermediate_key_bytes = await intermediate_key.read()
+    signing_cert_bytes = await signing_cert.read()
+    signing_key_bytes = await signing_key.read()
+    ca_chain_bytes = await ca_chain_file.read()
 
     # Validate PEM format
     try:
-        stepca_service.validate_pem_certificate(root_cert_bytes)
+        stepca_service.validate_pem_certificate(signing_cert_bytes)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid root certificate: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid signing certificate: {e}")
 
     try:
-        stepca_service.validate_pem_private_key(root_key_bytes)
+        stepca_service.validate_pem_private_key(signing_key_bytes)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid root private key: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid signing private key: {e}")
 
+    # Validate chain file contains at least one cert
     try:
-        stepca_service.validate_pem_certificate(intermediate_cert_bytes)
+        chain_certs = stepca_service.parse_pem_chain(ca_chain_bytes)
+        if not chain_certs:
+            raise ValueError("CA chain file must contain at least one certificate")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid intermediate certificate: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid CA chain file: {e}")
 
+    # Validate that signing cert is signed by the first cert in the chain
     try:
-        stepca_service.validate_pem_private_key(intermediate_key_bytes)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid intermediate private key: {e}")
-
-    # Validate chain (intermediate signed by root)
-    try:
-        stepca_service.validate_chain(root_cert_bytes, intermediate_cert_bytes)
+        stepca_service.validate_signing_chain(signing_cert_bytes, ca_chain_bytes)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Chain validation failed: {e}")
 
     # Create DB record first to get the ID
-    ca_chain = CAChain(
+    ca_chain_record = CAChain(
         name=name,
         description=description,
         event_id=event_id,
@@ -134,36 +135,32 @@ async def create_ca_chain(
         step_ca_status=CAChainStatus.STOPPED.value,
         created_by_user_id=current_user.id,
     )
-    db.add(ca_chain)
+    db.add(ca_chain_record)
     await db.flush()  # Get the ID
 
     # Upload files to R2
-    prefix = stepca_service.get_ca_files_r2_prefix(ca_chain.id)
+    prefix = stepca_service.get_ca_files_r2_prefix(ca_chain_record.id)
 
     r2_keys = {
-        "root_cert": f"{prefix}/root_ca.crt",
-        "root_key": f"{prefix}/root_ca.key",
-        "intermediate_cert": f"{prefix}/intermediate_ca.crt",
-        "intermediate_key": f"{prefix}/intermediate_ca.key",
+        "signing_cert": f"{prefix}/signing_ca.crt",
+        "signing_key": f"{prefix}/signing_ca.key",
+        "ca_chain": f"{prefix}/ca-chain.pem",
     }
 
-    # Upload all files (encrypt private keys before upload)
-    encrypted_root_key = encrypt_field(root_key_bytes.decode("utf-8"))
-    encrypted_intermediate_key = encrypt_field(intermediate_key_bytes.decode("utf-8"))
+    # Encrypt private key before upload
+    encrypted_signing_key = encrypt_field(signing_key_bytes.decode("utf-8"))
 
-    stepca_service.upload_to_r2(r2_keys["root_cert"], root_cert_bytes)
-    stepca_service.upload_to_r2(r2_keys["root_key"], encrypted_root_key.encode("utf-8"))
-    stepca_service.upload_to_r2(r2_keys["intermediate_cert"], intermediate_cert_bytes)
-    stepca_service.upload_to_r2(r2_keys["intermediate_key"], encrypted_intermediate_key.encode("utf-8"))
+    stepca_service.upload_to_r2(r2_keys["signing_cert"], signing_cert_bytes)
+    stepca_service.upload_to_r2(r2_keys["signing_key"], encrypted_signing_key.encode("utf-8"))
+    stepca_service.upload_to_r2(r2_keys["ca_chain"], ca_chain_bytes)
 
     # Store R2 keys in DB
-    ca_chain.root_cert_r2_key = r2_keys["root_cert"]
-    ca_chain.root_key_r2_key = r2_keys["root_key"]
-    ca_chain.intermediate_cert_r2_key = r2_keys["intermediate_cert"]
-    ca_chain.intermediate_key_r2_key = r2_keys["intermediate_key"]
+    ca_chain_record.signing_cert_r2_key = r2_keys["signing_cert"]
+    ca_chain_record.signing_key_r2_key = r2_keys["signing_key"]
+    ca_chain_record.ca_chain_r2_key = r2_keys["ca_chain"]
 
     await db.commit()
-    await db.refresh(ca_chain)
+    await db.refresh(ca_chain_record)
 
     # Audit log
     audit_service = AuditService(db)
@@ -171,12 +168,12 @@ async def create_ca_chain(
         user_id=current_user.id,
         action="ca_chain_create",
         resource_type="ca_chain",
-        details={"message": f"Created CA chain '{name}'", "ca_chain_id": ca_chain.id}
+        details={"message": f"Created CA chain '{name}'", "ca_chain_id": ca_chain_record.id}
     )
 
     return {
         "success": True,
-        "ca_chain_id": ca_chain.id,
+        "ca_chain_id": ca_chain_record.id,
         "message": f"CA chain '{name}' created. Use the Initialize endpoint to deploy the step-ca service.",
     }
 
@@ -297,8 +294,8 @@ async def delete_ca_chain(
     await stepca_service.delete_instance(chain, db)
 
     # Delete R2 files
-    for key in [chain.root_cert_r2_key, chain.root_key_r2_key,
-                chain.intermediate_cert_r2_key, chain.intermediate_key_r2_key]:
+    for key in [chain.signing_cert_r2_key, chain.signing_key_r2_key,
+                chain.ca_chain_r2_key]:
         if key:
             stepca_service.delete_from_r2(key)
 
@@ -345,24 +342,21 @@ async def initialize_ca_chain(
     stepca_service = StepCAService()
 
     # Download CA files from R2
-    root_cert_bytes = stepca_service.download_from_r2(chain.root_cert_r2_key)
-    root_key_encrypted = stepca_service.download_from_r2(chain.root_key_r2_key)
-    intermediate_cert_bytes = stepca_service.download_from_r2(chain.intermediate_cert_r2_key)
-    intermediate_key_encrypted = stepca_service.download_from_r2(chain.intermediate_key_r2_key)
+    signing_cert_bytes = stepca_service.download_from_r2(chain.signing_cert_r2_key)
+    signing_key_encrypted = stepca_service.download_from_r2(chain.signing_key_r2_key)
+    ca_chain_bytes = stepca_service.download_from_r2(chain.ca_chain_r2_key)
 
-    if not all([root_cert_bytes, root_key_encrypted, intermediate_cert_bytes, intermediate_key_encrypted]):
+    if not all([signing_cert_bytes, signing_key_encrypted, ca_chain_bytes]):
         raise HTTPException(status_code=500, detail="Failed to download CA files from R2")
 
-    # Decrypt private keys
-    root_key_bytes = decrypt_field(root_key_encrypted.decode("utf-8")).encode("utf-8")
-    intermediate_key_bytes = decrypt_field(intermediate_key_encrypted.decode("utf-8")).encode("utf-8")
+    # Decrypt private key
+    signing_key_bytes = decrypt_field(signing_key_encrypted.decode("utf-8")).encode("utf-8")
 
     success = await stepca_service.initialize_ca_chain(
         ca_chain=chain,
-        root_cert_bytes=root_cert_bytes,
-        root_key_bytes=root_key_bytes,
-        intermediate_cert_bytes=intermediate_cert_bytes,
-        intermediate_key_bytes=intermediate_key_bytes,
+        signing_cert_bytes=signing_cert_bytes,
+        signing_key_bytes=signing_key_bytes,
+        ca_chain_bytes=ca_chain_bytes,
         db=db,
     )
 

@@ -26,10 +26,9 @@ def upgrade() -> None:
         sa.Column('event_id', sa.Integer(), sa.ForeignKey('events.id', ondelete='CASCADE'), nullable=False),
 
         # R2 storage keys for CA files
-        sa.Column('root_cert_r2_key', sa.String(500), nullable=True),
-        sa.Column('root_key_r2_key', sa.String(500), nullable=True),
-        sa.Column('intermediate_cert_r2_key', sa.String(500), nullable=True),
-        sa.Column('intermediate_key_r2_key', sa.String(500), nullable=True),
+        sa.Column('signing_cert_r2_key', sa.String(500), nullable=True),
+        sa.Column('signing_key_r2_key', sa.String(500), nullable=True),
+        sa.Column('ca_chain_r2_key', sa.String(500), nullable=True),
 
         # step-ca sidecar
         sa.Column('render_service_id', sa.String(100), nullable=True),

@@ -27,8 +27,11 @@ else
 fi
 
 # Check if CA files are provided via base64 env vars
-if [ -z "${STEPCA_ROOT_CERT_B64}" ] || [ -z "${STEPCA_INTERMEDIATE_CERT_B64}" ] || [ -z "${STEPCA_INTERMEDIATE_KEY_B64}" ]; then
-    echo "ERROR: Required env vars not set: STEPCA_ROOT_CERT_B64, STEPCA_INTERMEDIATE_CERT_B64, STEPCA_INTERMEDIATE_KEY_B64"
+# STEPCA_ROOT_CERT_B64: root CA cert (trust anchor)
+# STEPCA_SIGNING_CERT_B64: the CA cert that will sign end-entity certs
+# STEPCA_SIGNING_KEY_B64: its private key
+if [ -z "${STEPCA_ROOT_CERT_B64}" ] || [ -z "${STEPCA_SIGNING_CERT_B64}" ] || [ -z "${STEPCA_SIGNING_KEY_B64}" ]; then
+    echo "ERROR: Required env vars not set: STEPCA_ROOT_CERT_B64, STEPCA_SIGNING_CERT_B64, STEPCA_SIGNING_KEY_B64"
     exit 1
 fi
 
@@ -51,21 +54,14 @@ fi
 echo ">>> Phase 2: Importing CA files from environment..."
 
 echo "${STEPCA_ROOT_CERT_B64}" | base64 -d > "${CERTS_DIR}/root_ca.crt"
-echo "  - root_ca.crt written"
+echo "  - root_ca.crt written (trust anchor)"
 
-echo "${STEPCA_INTERMEDIATE_CERT_B64}" | base64 -d > "${CERTS_DIR}/intermediate_ca.crt"
-echo "  - intermediate_ca.crt written"
+echo "${STEPCA_SIGNING_CERT_B64}" | base64 -d > "${CERTS_DIR}/signing_ca.crt"
+echo "  - signing_ca.crt written (signs end-entity certs)"
 
-echo "${STEPCA_INTERMEDIATE_KEY_B64}" | base64 -d > "${SECRETS_DIR}/intermediate_ca_key"
-chmod 600 "${SECRETS_DIR}/intermediate_ca_key"
-echo "  - intermediate_ca_key written"
-
-# Optionally write root key if provided (not required for signing, but useful for admin)
-if [ -n "${STEPCA_ROOT_KEY_B64}" ]; then
-    echo "${STEPCA_ROOT_KEY_B64}" | base64 -d > "${SECRETS_DIR}/root_ca_key"
-    chmod 600 "${SECRETS_DIR}/root_ca_key"
-    echo "  - root_ca_key written"
-fi
+echo "${STEPCA_SIGNING_KEY_B64}" | base64 -d > "${SECRETS_DIR}/signing_ca_key"
+chmod 600 "${SECRETS_DIR}/signing_ca_key"
+echo "  - signing_ca_key written"
 
 # Phase 3: Update ca.json to use imported CA files
 echo ">>> Phase 3: Updating ca.json configuration..."
@@ -78,8 +74,8 @@ cat > "${CA_JSON}" << CAJSON
 {
     "root": "${CERTS_DIR}/root_ca.crt",
     "federatedRoots": [],
-    "crt": "${CERTS_DIR}/intermediate_ca.crt",
-    "key": "${SECRETS_DIR}/intermediate_ca_key",
+    "crt": "${CERTS_DIR}/signing_ca.crt",
+    "key": "${SECRETS_DIR}/signing_ca_key",
     "address": "${LISTEN_ADDRESS}",
     "insecureAddress": "",
     "dnsNames": ["localhost"],

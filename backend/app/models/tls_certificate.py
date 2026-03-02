@@ -29,7 +29,7 @@ class CAChain(Base):
     Certificate Authority chain configuration.
 
     Each CA chain maps to a dedicated step-ca sidecar instance on Render.
-    Admin uploads root + intermediate CA files, which are stored encrypted in R2.
+    Admin uploads a signing CA cert + key, plus the chain of trust above it.
     """
     __tablename__ = "ca_chains"
 
@@ -38,11 +38,10 @@ class CAChain(Base):
     description = Column(Text, nullable=True)
     event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
 
-    # R2 storage keys for CA files (private keys stored encrypted)
-    root_cert_r2_key = Column(String(500), nullable=True)
-    root_key_r2_key = Column(String(500), nullable=True)
-    intermediate_cert_r2_key = Column(String(500), nullable=True)
-    intermediate_key_r2_key = Column(String(500), nullable=True)
+    # R2 storage keys for CA files (private key stored encrypted)
+    signing_cert_r2_key = Column(String(500), nullable=True)   # CA cert that signs end-entity certs
+    signing_key_r2_key = Column(String(500), nullable=True)    # Its private key (encrypted in R2)
+    ca_chain_r2_key = Column(String(500), nullable=True)       # Chain above signing cert up to root (PEM)
 
     # step-ca sidecar configuration
     render_service_id = Column(String(100), nullable=True)

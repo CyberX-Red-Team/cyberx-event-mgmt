@@ -248,42 +248,34 @@
                     <div class="col-12">
                         <hr>
                         <h6 class="mb-3">CA Files (PEM format)</h6>
+                        <p class="text-muted small mb-3">Upload the CA certificate that will sign end-entity certs, its private key, and the trust chain above it.</p>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">Root Certificate <span class="text-danger">*</span></label>
-                        <div class="file-drop-zone" id="dropRootCert" onclick="document.getElementById('fileRootCert').click()">
+                        <label class="form-label">Signing Certificate <span class="text-danger">*</span></label>
+                        <div class="file-drop-zone" id="dropSigningCert" onclick="document.getElementById('fileSigningCert').click()">
                             <i data-feather="upload" class="mb-1"></i>
-                            <div class="small text-muted">Drop .pem file or click to browse</div>
-                            <div class="file-name" id="nameRootCert"></div>
+                            <div class="small text-muted">The CA cert that will sign certs (.pem)</div>
+                            <div class="file-name" id="nameSigningCert"></div>
                         </div>
-                        <input type="file" class="d-none" id="fileRootCert" accept=".pem,.crt,.cer" onchange="onFileSelect(this, 'RootCert')">
+                        <input type="file" class="d-none" id="fileSigningCert" accept=".pem,.crt,.cer" onchange="onFileSelect(this, 'SigningCert')">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">Root Private Key <span class="text-danger">*</span></label>
-                        <div class="file-drop-zone" id="dropRootKey" onclick="document.getElementById('fileRootKey').click()">
+                        <label class="form-label">Signing Private Key <span class="text-danger">*</span></label>
+                        <div class="file-drop-zone" id="dropSigningKey" onclick="document.getElementById('fileSigningKey').click()">
                             <i data-feather="upload" class="mb-1"></i>
-                            <div class="small text-muted">Drop .pem file or click to browse</div>
-                            <div class="file-name" id="nameRootKey"></div>
+                            <div class="small text-muted">Private key for the signing cert (.pem)</div>
+                            <div class="file-name" id="nameSigningKey"></div>
                         </div>
-                        <input type="file" class="d-none" id="fileRootKey" accept=".pem,.key" onchange="onFileSelect(this, 'RootKey')">
+                        <input type="file" class="d-none" id="fileSigningKey" accept=".pem,.key" onchange="onFileSelect(this, 'SigningKey')">
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Intermediate Certificate <span class="text-danger">*</span></label>
-                        <div class="file-drop-zone" id="dropIntermediateCert" onclick="document.getElementById('fileIntermediateCert').click()">
+                    <div class="col-12">
+                        <label class="form-label">CA Chain <span class="text-danger">*</span></label>
+                        <div class="file-drop-zone" id="dropCAChain" onclick="document.getElementById('fileCAChain').click()">
                             <i data-feather="upload" class="mb-1"></i>
-                            <div class="small text-muted">Drop .pem file or click to browse</div>
-                            <div class="file-name" id="nameIntermediateCert"></div>
+                            <div class="small text-muted">Chain of trust above signing cert, up to root (concatenated PEM)</div>
+                            <div class="file-name" id="nameCAChain"></div>
                         </div>
-                        <input type="file" class="d-none" id="fileIntermediateCert" accept=".pem,.crt,.cer" onchange="onFileSelect(this, 'IntermediateCert')">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Intermediate Private Key <span class="text-danger">*</span></label>
-                        <div class="file-drop-zone" id="dropIntermediateKey" onclick="document.getElementById('fileIntermediateKey').click()">
-                            <i data-feather="upload" class="mb-1"></i>
-                            <div class="small text-muted">Drop .pem file or click to browse</div>
-                            <div class="file-name" id="nameIntermediateKey"></div>
-                        </div>
-                        <input type="file" class="d-none" id="fileIntermediateKey" accept=".pem,.key" onchange="onFileSelect(this, 'IntermediateKey')">
+                        <input type="file" class="d-none" id="fileCAChain" accept=".pem,.crt,.cer" onchange="onFileSelect(this, 'CAChain')">
                     </div>
                 </div>
             </div>
@@ -563,7 +555,7 @@ function openCreateChainModal() {
     document.getElementById('chainDuration').value = '2160h';
     document.getElementById('chainAllowWildcard').checked = true;
     selectedFiles = {};
-    var fileNames = ['RootCert', 'RootKey', 'IntermediateCert', 'IntermediateKey'];
+    var fileNames = ['SigningCert', 'SigningKey', 'CAChain'];
     for (var i = 0; i < fileNames.length; i++) {
         document.getElementById('name' + fileNames[i]).textContent = '';
         document.getElementById('drop' + fileNames[i]).classList.remove('has-file');
@@ -574,7 +566,7 @@ function openCreateChainModal() {
 }
 
 function setupDropZones() {
-    var zones = ['RootCert', 'RootKey', 'IntermediateCert', 'IntermediateKey'];
+    var zones = ['SigningCert', 'SigningKey', 'CAChain'];
     for (var i = 0; i < zones.length; i++) {
         (function(zone) {
             var el = document.getElementById('drop' + zone);
@@ -615,8 +607,8 @@ async function createCAChain() {
 
     if (!name) { showToast('Name is required', 'warning'); return; }
     if (!eventId) { showToast('Event is required', 'warning'); return; }
-    if (!selectedFiles.RootCert || !selectedFiles.RootKey || !selectedFiles.IntermediateCert || !selectedFiles.IntermediateKey) {
-        showToast('All 4 CA files are required', 'warning');
+    if (!selectedFiles.SigningCert || !selectedFiles.SigningKey || !selectedFiles.CAChain) {
+        showToast('All 3 CA files are required (signing cert, signing key, CA chain)', 'warning');
         return;
     }
 
@@ -631,10 +623,9 @@ async function createCAChain() {
         formData.append('description', description);
         formData.append('default_duration', duration || '2160h');
         formData.append('allow_wildcard', allowWildcard);
-        formData.append('root_cert', selectedFiles.RootCert);
-        formData.append('root_key', selectedFiles.RootKey);
-        formData.append('intermediate_cert', selectedFiles.IntermediateCert);
-        formData.append('intermediate_key', selectedFiles.IntermediateKey);
+        formData.append('signing_cert', selectedFiles.SigningCert);
+        formData.append('signing_key', selectedFiles.SigningKey);
+        formData.append('ca_chain_file', selectedFiles.CAChain);
 
         var response = await csrfFetch('/api/admin/tls/ca-chains', {
             method: 'POST',

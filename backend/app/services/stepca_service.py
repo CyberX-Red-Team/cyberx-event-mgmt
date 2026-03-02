@@ -115,32 +115,93 @@ class StepCAService:
             raise ValueError(f"Invalid PEM private key: {e}")
 
     @staticmethod
-    def validate_chain(root_pem: bytes, intermediate_pem: bytes) -> bool:
-        """Validate that the intermediate cert is signed by the root cert.
+    def parse_pem_chain(chain_pem: bytes) -> list[x509.Certificate]:
+        """Parse a PEM file containing one or more concatenated certificates.
 
-        Raises ValueError if the chain is invalid.
+        Returns list of certificates in order (first cert in file = first element).
+        Raises ValueError if no valid certificates found.
+        """
+        from cryptography.x509 import load_pem_x509_certificate
+
+        certs = []
+        pem_str = chain_pem.decode("utf-8", errors="replace")
+        # Split on BEGIN markers
+        parts = pem_str.split("-----BEGIN CERTIFICATE-----")
+        for part in parts[1:]:  # skip empty first split
+            end_idx = part.find("-----END CERTIFICATE-----")
+            if end_idx == -1:
+                continue
+            pem_block = "-----BEGIN CERTIFICATE-----" + part[:end_idx + len("-----END CERTIFICATE-----")]
+            try:
+                cert = load_pem_x509_certificate(pem_block.encode())
+                certs.append(cert)
+            except Exception:
+                continue
+
+        if not certs:
+            raise ValueError("No valid PEM certificates found in chain file")
+        return certs
+
+    @staticmethod
+    def validate_signing_chain(signing_cert_pem: bytes, chain_pem: bytes) -> bool:
+        """Validate that the signing cert is signed by the first cert in the chain.
+
+        The chain file should contain certs in order from the signing cert's
+        issuer up to the root. The first cert in the chain must be the
+        signing cert's issuer.
+
+        Raises ValueError if validation fails.
         """
         try:
-            root = x509.load_pem_x509_certificate(root_pem)
-            intermediate = x509.load_pem_x509_certificate(intermediate_pem)
+            signing_cert = x509.load_pem_x509_certificate(signing_cert_pem)
+            chain_certs = StepCAService.parse_pem_chain(chain_pem)
 
-            # Check issuer matches
-            if intermediate.issuer != root.subject:
+            # The first cert in the chain should be the signing cert's issuer
+            issuer_cert = chain_certs[0]
+            if signing_cert.issuer != issuer_cert.subject:
                 raise ValueError(
-                    "Intermediate certificate issuer does not match root certificate subject"
+                    f"Signing certificate issuer ({signing_cert.issuer}) does not match "
+                    f"first certificate in chain ({issuer_cert.subject})"
                 )
 
-            # Verify the intermediate cert's signature using the root's public key
-            root.public_key().verify(
-                intermediate.signature,
-                intermediate.tbs_certificate_bytes,
-                intermediate.signature_hash_algorithm,
+            # Verify signature
+            issuer_cert.public_key().verify(
+                signing_cert.signature,
+                signing_cert.tbs_certificate_bytes,
+                signing_cert.signature_hash_algorithm,
             )
+
+            # Validate the rest of the chain (each cert signed by the next)
+            for i in range(len(chain_certs) - 1):
+                child = chain_certs[i]
+                parent = chain_certs[i + 1]
+                if child.issuer != parent.subject:
+                    raise ValueError(
+                        f"Chain broken: cert {i} issuer ({child.issuer}) does not match "
+                        f"cert {i+1} subject ({parent.subject})"
+                    )
+                parent.public_key().verify(
+                    child.signature,
+                    child.tbs_certificate_bytes,
+                    child.signature_hash_algorithm,
+                )
+
             return True
         except ValueError:
             raise
         except Exception as e:
             raise ValueError(f"Chain validation failed: {e}")
+
+    @staticmethod
+    def extract_root_cert(chain_pem: bytes) -> bytes:
+        """Extract the root (last/self-signed) certificate from a chain PEM.
+
+        Returns PEM bytes of the root certificate.
+        """
+        certs = StepCAService.parse_pem_chain(chain_pem)
+        # The root is the last cert (self-signed: issuer == subject)
+        root = certs[-1]
+        return root.public_bytes(serialization.Encoding.PEM)
 
     # -------------------------------------------------------------------------
     # Sidecar Lifecycle Management
@@ -149,23 +210,21 @@ class StepCAService:
     async def initialize_ca_chain(
         self,
         ca_chain,
-        root_cert_bytes: bytes,
-        root_key_bytes: bytes,
-        intermediate_cert_bytes: bytes,
-        intermediate_key_bytes: bytes,
+        signing_cert_bytes: bytes,
+        signing_key_bytes: bytes,
+        ca_chain_bytes: bytes,
         db,
     ) -> bool:
         """Create a new Render private service for this CA chain.
 
-        Downloads CA files, base64-encodes them, and passes as env vars
+        Base64-encodes the CA files and passes them as env vars
         to a new step-ca Render service.
 
         Args:
             ca_chain: CAChain model instance
-            root_cert_bytes: Raw PEM bytes for root certificate
-            root_key_bytes: Raw PEM bytes for root private key
-            intermediate_cert_bytes: Raw PEM bytes for intermediate certificate
-            intermediate_key_bytes: Raw PEM bytes for intermediate private key
+            signing_cert_bytes: PEM bytes for the signing CA certificate
+            signing_key_bytes: PEM bytes for the signing CA private key
+            ca_chain_bytes: PEM bytes for the chain above the signing cert (up to root)
             db: Database session
 
         Returns:
@@ -176,12 +235,14 @@ class StepCAService:
             logger.error("STEPCA_PROVISIONER_PASSWORD not configured")
             return False
 
+        # Extract root cert from chain for step-ca trust anchor
+        root_cert_bytes = self.extract_root_cert(ca_chain_bytes)
+
         # Base64 encode CA files for env vars
         env_vars = [
             {"key": "STEPCA_ROOT_CERT_B64", "value": base64.b64encode(root_cert_bytes).decode()},
-            {"key": "STEPCA_ROOT_KEY_B64", "value": base64.b64encode(root_key_bytes).decode()},
-            {"key": "STEPCA_INTERMEDIATE_CERT_B64", "value": base64.b64encode(intermediate_cert_bytes).decode()},
-            {"key": "STEPCA_INTERMEDIATE_KEY_B64", "value": base64.b64encode(intermediate_key_bytes).decode()},
+            {"key": "STEPCA_SIGNING_CERT_B64", "value": base64.b64encode(signing_cert_bytes).decode()},
+            {"key": "STEPCA_SIGNING_KEY_B64", "value": base64.b64encode(signing_key_bytes).decode()},
             {"key": "STEPCA_PROVISIONER_PASSWORD", "value": provisioner_password},
             {"key": "STEPCA_PROVISIONER_NAME", "value": ca_chain.step_ca_provisioner or "cyberx"},
         ]

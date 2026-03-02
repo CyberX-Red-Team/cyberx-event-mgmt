@@ -193,11 +193,18 @@ async def request_certificate(
     stepca_service.upload_to_r2(cert_bundle_key, cert_bundle.encode())
     stepca_service.upload_to_r2(private_key_key, encrypted_key.encode())
 
-    # Also upload the full CA chain (root + intermediate) for the download bundle
-    if ca_pem and ca_chain.root_cert_r2_key:
-        root_cert_bytes = stepca_service.download_from_r2(ca_chain.root_cert_r2_key)
-        if root_cert_bytes:
-            full_chain = ca_pem + "\n" + root_cert_bytes.decode()
+    # Build and upload the full CA chain for the download bundle:
+    # signing cert + chain above it (intermediates + root)
+    if ca_chain.ca_chain_r2_key:
+        chain_pem_bytes = stepca_service.download_from_r2(ca_chain.ca_chain_r2_key)
+        if chain_pem_bytes:
+            # Full chain: signing cert (returned by step-ca as ca_pem) + uploaded chain
+            if ca_pem:
+                full_chain = ca_pem + "\n" + chain_pem_bytes.decode()
+            else:
+                # If step-ca didn't return ca, use signing cert from R2
+                signing_cert_bytes = stepca_service.download_from_r2(ca_chain.signing_cert_r2_key)
+                full_chain = (signing_cert_bytes.decode() if signing_cert_bytes else "") + "\n" + chain_pem_bytes.decode()
             ca_chain_key = f"{r2_prefix}/{cn_safe}.ca-chain.crt"
             stepca_service.upload_to_r2(ca_chain_key, full_chain.encode())
 
