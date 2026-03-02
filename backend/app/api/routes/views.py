@@ -329,6 +329,23 @@ async def admin_licenses_page(
     )
 
 
+@router.get("/admin/tls-certificates", response_class=HTMLResponse)
+async def admin_tls_certificates_page(
+    request: Request,
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Render TLS certificate management page (admin only)."""
+    return templates.TemplateResponse(
+        "pages/admin/tls_certificates.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "active_page": "tls-certificates",
+            "now": datetime.now()
+        }
+    )
+
+
 @router.get("/admin/action-responses", response_class=HTMLResponse)
 async def admin_action_responses_page(
     request: Request,

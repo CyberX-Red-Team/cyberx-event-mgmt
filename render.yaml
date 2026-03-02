@@ -99,11 +99,18 @@ services:
         sync: false
       - key: GOTENBERG_URL
         value: http://cyberx-gotenberg:3000
-      # Render API (optional - for auto suspend/resume of Gotenberg)
+      # Render API (for sidecar lifecycle management)
       - key: RENDER_API_KEY
+        sync: false
+      - key: RENDER_OWNER_ID
         sync: false
       - key: GOTENBERG_RENDER_SERVICE_ID
         sync: false
+      # step-ca Configuration (for TLS certificate issuance)
+      - key: STEPCA_PROVISIONER_PASSWORD
+        sync: false
+      - key: STEPCA_DEFAULT_DURATION
+        value: "2160h"
 
   # Gotenberg - DOCX to PDF conversion for CPE certificates
   - type: pserv

@@ -176,6 +176,31 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # step-ca - TLS certificate signing (local dev, one instance per CA chain)
+  # Duplicate and rename for additional CA chains as needed
+  stepca:
+    build:
+      context: .
+      dockerfile: Dockerfile.stepca
+    container_name: cyberx_stepca
+    restart: unless-stopped
+    environment:
+      STEPCA_ROOT_CERT_B64: ${STEPCA_ROOT_CERT_B64:-}
+      STEPCA_ROOT_KEY_B64: ${STEPCA_ROOT_KEY_B64:-}
+      STEPCA_INTERMEDIATE_CERT_B64: ${STEPCA_INTERMEDIATE_CERT_B64:-}
+      STEPCA_INTERMEDIATE_KEY_B64: ${STEPCA_INTERMEDIATE_KEY_B64:-}
+      STEPCA_PROVISIONER_PASSWORD: ${STEPCA_PROVISIONER_PASSWORD:-changeme}
+      STEPCA_PROVISIONER_NAME: ${STEPCA_PROVISIONER_NAME:-cyberx}
+    volumes:
+      - stepca_data:/home/step
+    networks:
+      - cyberx-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Database backup service
   backup:
     image: postgres:15-alpine
@@ -270,4 +295,6 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  stepca_data:
     driver: local

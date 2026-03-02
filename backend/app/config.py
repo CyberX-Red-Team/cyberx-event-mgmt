@@ -53,9 +53,15 @@ class Settings(BaseSettings):
     POWERDNS_API_KEY: str = ""          # API key for zone operations (created in PowerDNS-Admin UI)
     POWERDNS_ACCOUNT_NAME: str = "cyberx"  # Account to auto-assign users to on first login
 
-    # Render API (optional - for Gotenberg lifecycle management)
+    # Render API (optional - for sidecar lifecycle management)
     RENDER_API_KEY: str = ""
+    RENDER_OWNER_ID: str = ""  # Render owner ID for creating new services
     GOTENBERG_RENDER_SERVICE_ID: str = ""
+
+    # step-ca Configuration (optional - for TLS certificate issuance)
+    STEPCA_DEFAULT_DURATION: str = "2160h"  # 90 days
+    STEPCA_PROVISIONER_PASSWORD: str = ""
+    STEPCA_CA_FILES_R2_PREFIX: str = "tls/ca-chains"
 
     # VPN Server Configuration (optional - only needed if using VPN features)
     VPN_SERVER_PUBLIC_KEY: str = ""

@@ -3,6 +3,9 @@
 Handles user-account management and zone-account association via the
 PowerDNS-Admin REST API. Used by the Keycloak webhook to auto-assign
 users to the configured account on first login to PowerDNS-Admin.
+
+Also provides domain validation for TLS certificate issuance — verifying
+that requested FQDNs correspond to zones that exist in PowerDNS.
 """
 import logging
 from typing import Optional
@@ -12,6 +15,22 @@ import httpx
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Bare TLDs that cannot have certificates issued for them directly
+BARE_TLDS = {
+    "com", "net", "org", "biz", "info", "io", "co", "us", "uk", "de", "fr",
+    "jp", "cn", "ru", "br", "au", "ca", "in", "it", "es", "nl", "se", "no",
+    "fi", "dk", "pl", "cz", "at", "ch", "be", "pt", "ie", "nz", "za", "mx",
+    "ar", "cl", "edu", "gov", "mil", "int", "name", "pro", "aero", "coop",
+    "museum", "travel", "jobs", "mobi", "cat", "asia", "tel", "xxx", "post",
+    "bike", "clothing", "guru", "holdings", "plumbing", "singles", "ventures",
+    "today", "technology", "directory", "tips", "voyage", "construction",
+    "contractors", "kitchen", "land", "camera", "equipment", "estate",
+    "gallery", "graphics", "lighting", "photography", "sexy", "tattoo",
+    "buzz", "wiki", "bar", "club", "company", "email", "solutions",
+    "support", "training", "recipes", "shoes", "cab", "domains", "limo",
+    "maison", "management", "monolithic", "systems", "center", "computer",
+}
 
 
 class PowerDNSService:
@@ -353,3 +372,48 @@ class PowerDNSService:
             }
 
         return {"status": "error", "detail": "add_user_failed"}
+
+    # -------------------------------------------------------------------------
+    # Domain validation for TLS certificate issuance
+    # -------------------------------------------------------------------------
+
+    async def validate_domain_for_cert(self, fqdn: str) -> tuple[bool, str]:
+        """Validate that an FQDN is eligible for TLS certificate issuance.
+
+        Rules:
+        1. FQDN must not be a bare TLD (e.g. 'com', 'org')
+        2. FQDN must have at least 2 labels (e.g. 'widgets.com', not 'com')
+        3. The parent zone must exist in PowerDNS
+
+        For wildcards (e.g. '*.example.com'), the base domain is checked.
+
+        Returns:
+            Tuple of (is_valid, error_message). error_message is empty if valid.
+        """
+        clean = fqdn.strip().rstrip(".")
+
+        # Strip wildcard prefix for validation
+        check_domain = clean
+        if check_domain.startswith("*."):
+            check_domain = check_domain[2:]
+
+        parts = check_domain.split(".")
+        if len(parts) < 2:
+            return False, "Domain must have at least two labels (e.g. example.com)"
+
+        if check_domain.lower() in BARE_TLDS:
+            return False, f"Cannot issue certificate for bare TLD '{check_domain}'"
+
+        # Check if any parent zone exists in PowerDNS
+        zones = await self.list_zones()
+        if not zones:
+            return False, "Unable to connect to PowerDNS or no zones configured"
+
+        zone_names = {z.get("name", "").rstrip(".").lower() for z in zones}
+
+        for i in range(len(parts) - 1):
+            candidate = ".".join(parts[i:]).lower()
+            if candidate in zone_names:
+                return True, ""
+
+        return False, f"No matching zone found in PowerDNS for '{fqdn}'"

@@ -14,6 +14,7 @@ from app.api.routes import instances as instances_routes, cloud_init as cloud_in
 from app.api.routes import instance_templates, participant_instances
 from app.api.routes import settings as settings_routes
 from app.api.routes import admin_actions, participant_actions, admin_keycloak, admin_cpe, participant_cpe
+from app.api.routes import admin_tls, participant_tls
 from app.tasks import start_scheduler, stop_scheduler, list_jobs
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
@@ -231,6 +232,8 @@ app.include_router(participant_actions.router)  # Participant actions (view & re
 app.include_router(admin_keycloak.router)  # Admin Keycloak sync management
 app.include_router(admin_cpe.router)  # Admin CPE certificate management
 app.include_router(participant_cpe.router)  # Participant CPE certificate download
+app.include_router(admin_tls.router)  # Admin TLS certificate / CA chain management
+app.include_router(participant_tls.router)  # Participant TLS certificate self-service
 
 # Include view routes (HTML pages)
 app.include_router(views.router)

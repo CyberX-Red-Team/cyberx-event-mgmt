@@ -64,6 +64,31 @@
         transition: all 0.3s ease;
     }
 
+    /* TLS Certificate SANs chips */
+    .san-chip {
+        display: inline-flex;
+        align-items: center;
+        background: var(--hover-bg, rgba(0, 0, 0, 0.05));
+        border: 1px solid var(--border-color, #dee2e6);
+        border-radius: 1rem;
+        padding: 0.15rem 0.5rem;
+        font-size: 0.8rem;
+        margin: 0.15rem;
+        color: var(--text-primary, #212529);
+    }
+    .san-chip .remove-san {
+        background: none;
+        border: none;
+        padding: 0 0 0 0.3rem;
+        cursor: pointer;
+        color: var(--text-secondary, #6c757d);
+        font-size: 1rem;
+        line-height: 1;
+    }
+    .san-chip .remove-san:hover {
+        color: var(--bs-danger, #dc3545);
+    }
+
     .action-completing {
         animation: actionComplete 0.6s ease forwards;
         pointer-events: none;
@@ -415,6 +440,81 @@
                     <div class="text-center py-4">
                         <div class="spinner-border spinner-border-sm me-2"></div>
                         Loading certificates...
+                    </div>
+                </div>
+            </div>
+
+            <!-- TLS Certificates Card -->
+            <div class="card shadow-sm mb-4" id="tlsCertificatesCard" style="display: none;">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i data-feather="shield" class="me-2"></i>TLS Certificates</h5>
+                    <span class="badge bg-success" id="tlsCertCountBadge" style="display: none;">0</span>
+                </div>
+                <div class="card-body">
+                    <!-- Request Form -->
+                    <div id="tlsRequestForm">
+                        <p class="text-muted small mb-3">Request a TLS certificate for domains in your exercise environment.</p>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label small">CA Chain</label>
+                                <select class="form-select form-select-sm" id="tlsCAChainSelect">
+                                    <option value="">Loading...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">Common Name</label>
+                                <input type="text" class="form-control form-control-sm" id="tlsCommonName" placeholder="e.g. web.example.com">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">Subject Alternative Names</label>
+                                <div class="d-flex gap-1">
+                                    <input type="text" class="form-control form-control-sm" id="tlsSanInput" placeholder="e.g. api.example.com">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="addTlsSan()" type="button">Add</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="tlsSanChips" class="mb-2"></div>
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="tlsWildcard">
+                                <label class="form-check-label small" for="tlsWildcard">Wildcard certificate (*.domain)</label>
+                            </div>
+                            <button class="btn btn-sm btn-primary" onclick="requestTlsCertificate()" id="tlsRequestBtn">
+                                <i data-feather="shield" class="me-1"></i>Request Certificate
+                            </button>
+                        </div>
+                        <div id="tlsRequestError" class="alert alert-danger mt-2 small" style="display: none;"></div>
+                    </div>
+
+                    <!-- No CA Chains Available -->
+                    <div id="tlsNoChains" class="text-center text-muted py-3" style="display: none;">
+                        <p class="mb-0">No CA chains are currently available for certificate issuance.</p>
+                    </div>
+
+                    <!-- My TLS Certificates Table -->
+                    <div id="tlsCertTable" class="mt-3" style="display: none;">
+                        <hr>
+                        <h6 class="mb-2">My Certificates</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Domain</th>
+                                        <th>SANs</th>
+                                        <th>CA Chain</th>
+                                        <th>Expires</th>
+                                        <th>Status</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tlsCertBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div id="tlsCertEmpty" class="text-center text-muted small mt-3" style="display: none;">
+                        No certificates issued yet. Use the form above to request one.
                     </div>
                 </div>
             </div>
@@ -1555,6 +1655,198 @@ async function loadCPECertificates() {
     }
 }
 
+// =============================================================================
+// TLS Certificates Functions
+// =============================================================================
+var tlsSanList = [];
+
+async function loadTlsCAChains() {
+    try {
+        var response = await csrfFetch('/api/tls/ca-chains');
+        if (!response.ok) return;
+
+        var chains = await response.json();
+        var card = document.getElementById('tlsCertificatesCard');
+        var select = document.getElementById('tlsCAChainSelect');
+        var requestForm = document.getElementById('tlsRequestForm');
+        var noChains = document.getElementById('tlsNoChains');
+
+        if (chains.length === 0) {
+            // Still show card but with "no chains" message
+            card.style.display = 'block';
+            requestForm.style.display = 'none';
+            noChains.style.display = 'block';
+        } else {
+            card.style.display = 'block';
+            requestForm.style.display = 'block';
+            noChains.style.display = 'none';
+            select.innerHTML = '<option value="">Select CA chain...</option>';
+            for (var i = 0; i < chains.length; i++) {
+                var opt = document.createElement('option');
+                opt.value = chains[i].id;
+                opt.textContent = chains[i].name;
+                if (chains[i].description) opt.textContent += ' - ' + chains[i].description;
+                select.appendChild(opt);
+            }
+            if (chains.length === 1) {
+                select.selectedIndex = 1;
+            }
+        }
+
+        // Also load certificates
+        loadTlsCertificates();
+    } catch (error) {
+        console.error('Failed to load TLS CA chains:', error);
+    }
+}
+
+async function loadTlsCertificates() {
+    try {
+        var response = await csrfFetch('/api/tls/certificates');
+        if (!response.ok) return;
+
+        var certs = await response.json();
+        var table = document.getElementById('tlsCertTable');
+        var tbody = document.getElementById('tlsCertBody');
+        var empty = document.getElementById('tlsCertEmpty');
+        var badge = document.getElementById('tlsCertCountBadge');
+        var card = document.getElementById('tlsCertificatesCard');
+
+        if (certs.length === 0) {
+            table.style.display = 'none';
+            empty.style.display = 'block';
+            badge.style.display = 'none';
+            // Show card if CA chains are available (already handled by loadTlsCAChains)
+            return;
+        }
+
+        // Always show card if certs exist
+        card.style.display = 'block';
+        badge.style.display = 'inline';
+        badge.textContent = certs.length;
+        empty.style.display = 'none';
+        table.style.display = 'block';
+
+        tbody.innerHTML = '';
+        for (var i = 0; i < certs.length; i++) {
+            var cert = certs[i];
+            var row = document.createElement('tr');
+            var sans = (cert.sans && cert.sans.length > 0) ? cert.sans.join(', ') : '-';
+            var expiresDate = cert.expires_at ? new Date(cert.expires_at).toLocaleDateString() : '-';
+
+            var statusBadge = '';
+            if (cert.status === 'issued') statusBadge = '<span class="badge bg-success">Issued</span>';
+            else if (cert.status === 'revoked') statusBadge = '<span class="badge bg-danger">Revoked</span>';
+            else if (cert.status === 'expired') statusBadge = '<span class="badge bg-warning">Expired</span>';
+
+            var downloadBtn = '';
+            if (cert.status === 'issued') {
+                downloadBtn = '<a href="/api/tls/certificates/' + cert.id + '/download" class="btn btn-sm btn-outline-primary" title="Download bundle"><i data-feather="download"></i></a>';
+            }
+
+            row.innerHTML =
+                '<td><code>' + escapeHtml(cert.common_name) + '</code></td>' +
+                '<td class="small text-muted">' + escapeHtml(sans) + '</td>' +
+                '<td>' + escapeHtml(cert.ca_chain_name) + '</td>' +
+                '<td>' + expiresDate + '</td>' +
+                '<td>' + statusBadge + '</td>' +
+                '<td>' + downloadBtn + '</td>';
+
+            tbody.appendChild(row);
+        }
+
+        refreshFeatherIcons();
+    } catch (error) {
+        console.error('Failed to load TLS certificates:', error);
+    }
+}
+
+function addTlsSan() {
+    var input = document.getElementById('tlsSanInput');
+    var san = input.value.trim().toLowerCase();
+    if (!san) return;
+    if (tlsSanList.indexOf(san) !== -1) return;
+
+    tlsSanList.push(san);
+    input.value = '';
+    renderTlsSanChips();
+}
+
+function removeTlsSan(index) {
+    tlsSanList.splice(index, 1);
+    renderTlsSanChips();
+}
+
+function renderTlsSanChips() {
+    var container = document.getElementById('tlsSanChips');
+    container.innerHTML = '';
+    for (var i = 0; i < tlsSanList.length; i++) {
+        var chip = document.createElement('span');
+        chip.className = 'san-chip';
+        chip.innerHTML = escapeHtml(tlsSanList[i]) + '<button class="remove-san" onclick="removeTlsSan(' + i + ')" type="button">&times;</button>';
+        container.appendChild(chip);
+    }
+}
+
+async function requestTlsCertificate() {
+    var chainId = document.getElementById('tlsCAChainSelect').value;
+    var commonName = document.getElementById('tlsCommonName').value.trim();
+    var isWildcard = document.getElementById('tlsWildcard').checked;
+    var errorDiv = document.getElementById('tlsRequestError');
+
+    if (!chainId) { showToast('Please select a CA chain', 'warning'); return; }
+    if (!commonName) { showToast('Please enter a common name', 'warning'); return; }
+
+    var btn = document.getElementById('tlsRequestBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner-border spinner-border-sm me-1"></div> Requesting...';
+    errorDiv.style.display = 'none';
+
+    try {
+        var response = await csrfFetch('/api/tls/certificates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ca_chain_id: parseInt(chainId),
+                common_name: commonName,
+                sans: tlsSanList,
+                is_wildcard: isWildcard
+            })
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast(data.message || 'Certificate issued!', 'success');
+            // Reset form
+            document.getElementById('tlsCommonName').value = '';
+            document.getElementById('tlsWildcard').checked = false;
+            tlsSanList = [];
+            renderTlsSanChips();
+            // Reload certificates
+            loadTlsCertificates();
+        } else {
+            errorDiv.textContent = data.detail || 'Failed to request certificate';
+            errorDiv.style.display = 'block';
+        }
+    } catch (error) {
+        errorDiv.textContent = 'Error: ' + error.message;
+        errorDiv.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-feather="shield" class="me-1"></i>Request Certificate';
+        refreshFeatherIcons();
+    }
+}
+
+// Handle Enter key in SAN input
+document.addEventListener('DOMContentLoaded', function() {
+    var sanInput = document.getElementById('tlsSanInput');
+    if (sanInput) {
+        sanInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); addTlsSan(); }
+        });
+    }
+});
+
 // Load event info and VPN status on page load
 document.addEventListener('DOMContentLoaded', async function() {
     // Load event info first
@@ -1569,6 +1861,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Load CPE certificates
     loadCPECertificates();
+
+    // Load TLS certificates
+    loadTlsCAChains();
 
     // Check if VPN is available and load instance provisioning if so
     if (currentEvent && currentEvent.vpn_available) {

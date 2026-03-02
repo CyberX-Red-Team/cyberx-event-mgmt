@@ -279,7 +279,35 @@ Used for generating time-limited, secure download links for participant resource
 
 | Variable | Required | Web | Worker | Default | Description |
 |----------|----------|-----|--------|---------|-------------|
-| `RENDER_API_KEY` | No | Yes | No | `""` | Render.com API key for deployment automation features. |
+| `RENDER_API_KEY` | No | Yes | No | `""` | Render.com API key for sidecar lifecycle management (Gotenberg, step-ca). |
+| `RENDER_OWNER_ID` | No | Yes | No | `""` | Render owner/team ID. Required for dynamically creating new private services (step-ca sidecars). Find via `curl -s -H "Authorization: Bearer $RENDER_API_KEY" https://api.render.com/v1/owners \| jq '.[0].owner.id'`. |
+| `GOTENBERG_RENDER_SERVICE_ID` | No | Yes | No | `""` | Render service ID for the Gotenberg sidecar (CPE PDF generation). |
+
+---
+
+## step-ca (TLS Certificate Issuance)
+
+Used for self-service TLS certificate issuance via step-ca sidecars. Each CA chain gets its own step-ca instance running as a Render private service.
+
+| Variable | Required | Web | Worker | Default | Description |
+|----------|----------|-----|--------|---------|-------------|
+| `STEPCA_PROVISIONER_PASSWORD` | Yes (for TLS) | Yes | No | `""` | Password for the step-ca JWK provisioner. Shared across all step-ca instances. Generate with `openssl rand -hex 32`. |
+| `STEPCA_DEFAULT_DURATION` | No | Yes | No | `2160h` | Default certificate validity duration (2160h = 90 days). Can be overridden per CA chain. |
+| `STEPCA_CA_FILES_R2_PREFIX` | No | Yes | No | `tls/ca-chains` | R2 object key prefix for storing encrypted CA files. |
+
+**Prerequisites:**
+- `RENDER_API_KEY` and `RENDER_OWNER_ID` must be set (for creating step-ca sidecar services on Render)
+- `R2_*` variables must be configured (CA files and certificates are stored in R2)
+- `ENCRYPTION_KEY` should be set (private keys are encrypted with Fernet before R2 storage)
+
+**How it works:**
+1. Admin uploads root + intermediate CA PEM files via the UI
+2. Files are validated (PEM format, chain integrity), private keys encrypted, and stored in R2
+3. Admin clicks "Initialize" → creates a new Render private service running step-ca with CA files as base64 env vars
+4. step-ca entrypoint: initializes with throwaway CA → replaces with uploaded CAs → starts signing server
+5. Admin manually starts/stops sidecar via UI (resume/suspend on Render)
+6. Participants request certificates: domain validated against PowerDNS → CSR generated → signed via step-ca `/1.0/sign` → cert+key stored in R2
+7. Participants download zip bundle containing `{domain}.crt` (leaf + intermediate PEM), `{domain}.key` (private key PEM), `ca-chain.crt` (intermediate + root PEM)
 
 ---
 
@@ -333,6 +361,36 @@ FRONTEND_URL=https://events.cyberxredteam.org
 ALLOWED_HOSTS=events.cyberxredteam.org
 ```
 
+### TLS Certificate Issuance (step-ca)
+
+```bash
+# Required: Render API for creating step-ca sidecar services
+RENDER_API_KEY=rnd_abcdef1234567890abcdef1234567890
+RENDER_OWNER_ID=usr-abcdef1234567890   # or tea-abcdef1234567890 for teams
+
+# Required: step-ca provisioner password (shared across all instances)
+STEPCA_PROVISIONER_PASSWORD=a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+
+# Required: R2 storage for CA files and certificates
+R2_ACCOUNT_ID=abcdef1234567890abcdef1234567890
+R2_ACCESS_KEY_ID=abcdef1234567890abcdef1234567890
+R2_SECRET_ACCESS_KEY=abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+R2_BUCKET=cyberx-assets
+
+# Required: Encryption key for private key storage
+ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz1234567890ABCDEFG=
+
+# Optional: Override default certificate duration (default: 2160h = 90 days)
+STEPCA_DEFAULT_DURATION=2160h
+
+# Optional: Override R2 prefix for CA files (default: tls/ca-chains)
+STEPCA_CA_FILES_R2_PREFIX=tls/ca-chains
+
+# Required for domain validation: PowerDNS must be configured
+POWERDNS_API_URL=https://dns-admin.example.com/api/v1/pdnsadmin/
+POWERDNS_API_KEY=your-powerdns-api-key
+```
+
 ---
 
 ## Security Notes
@@ -344,8 +402,9 @@ ALLOWED_HOSTS=events.cyberxredteam.org
 - `DATABASE_URL`, `SENDGRID_API_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
 - `KEYCLOAK_ADMIN_CLIENT_SECRET`, `KEYCLOAK_WEBHOOK_SECRET`
 - `POWERDNS_PASSWORD`, `POWERDNS_API_KEY`
-- `DISCORD_BOT_TOKEN`, `DO_API_TOKEN`, `RENDER_API_KEY`
+- `DISCORD_BOT_TOKEN`, `DO_API_TOKEN`, `RENDER_API_KEY`, `RENDER_OWNER_ID`
 - `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
+- `STEPCA_PROVISIONER_PASSWORD`
 
 **Password encoding in DATABASE_URL:**
 - `@` -> `%40`, `#` -> `%23`, `$` -> `%24`, `:` -> `%3A`
