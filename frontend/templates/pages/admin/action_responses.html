@@ -63,25 +63,33 @@
     gap: 4px;
     background: #e8edf2;
     border: 1px solid #c5ccd6;
-    border-radius: 3px;
-    padding: 2px 6px 2px 8px;
+    border-radius: 4px;
+    padding: 3px 4px 3px 8px;
     font-size: 0.8rem;
     line-height: 1.4;
     white-space: nowrap;
-    max-width: 250px;
+    max-width: 300px;
 }
 .token-chip .chip-name { font-weight: 500; }
 .token-chip .chip-email { color: #69707a; font-size: 0.75rem; }
 .token-chip .chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
     color: #69707a;
-    font-size: 14px;
+    font-size: 16px;
+    font-weight: bold;
     line-height: 1;
-    padding: 0 2px;
+    width: 18px;
+    height: 18px;
     border: none;
-    background: none;
+    background: rgba(0,0,0,0.08);
+    border-radius: 3px;
+    margin-left: 2px;
+    flex-shrink: 0;
 }
-.token-chip .chip-remove:hover { color: #e81500; }
+.token-chip .chip-remove:hover { color: #fff; background: #e81500; }
 .token-input-field {
     flex: 1;
     min-width: 120px;
