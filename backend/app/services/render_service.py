@@ -398,6 +398,7 @@ class RenderServiceManager:
             "type": "private_service",
             "name": name,
             "ownerId": self.render_owner_id,
+            "repo": self.render_repo_url,
             "serviceDetails": {
                 "plan": plan,
                 "region": region,
@@ -409,7 +410,6 @@ class RenderServiceManager:
                 "envVars": env_vars,
                 "branch": branch,
                 "autoDeploy": "no",
-                "repo": self.render_repo_url,
             },
         }
 
