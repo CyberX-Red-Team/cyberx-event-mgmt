@@ -12,7 +12,7 @@ from typing import Optional
 import httpx
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa, utils
 from cryptography.x509.oid import NameOID
 
 from app.config import get_settings
@@ -143,6 +143,26 @@ class StepCAService:
         return certs
 
     @staticmethod
+    def _verify_cert_signature(child_cert: x509.Certificate, issuer_cert: x509.Certificate) -> None:
+        """Verify that child_cert was signed by issuer_cert.
+
+        Handles both RSA and EC key types (different verify() signatures).
+        Raises an exception if verification fails.
+        """
+        pub_key = issuer_cert.public_key()
+        sig = child_cert.signature
+        data = child_cert.tbs_certificate_bytes
+        algo = child_cert.signature_hash_algorithm
+
+        if isinstance(pub_key, rsa.RSAPublicKey):
+            pub_key.verify(sig, data, padding.PKCS1v15(), algo)
+        elif isinstance(pub_key, ec.EllipticCurvePublicKey):
+            pub_key.verify(sig, data, ec.ECDSA(algo))
+        else:
+            # Fallback for other key types (Ed25519, etc.)
+            pub_key.verify(sig, data)
+
+    @staticmethod
     def validate_signing_chain(signing_cert_pem: bytes, chain_pem: bytes) -> bool:
         """Validate that the signing cert chains to the certs in chain_pem.
 
@@ -187,11 +207,7 @@ class StepCAService:
                 )
 
             # Verify signature
-            issuer_cert.public_key().verify(
-                signing_cert.signature,
-                signing_cert.tbs_certificate_bytes,
-                signing_cert.signature_hash_algorithm,
-            )
+            StepCAService._verify_cert_signature(signing_cert, issuer_cert)
 
             # Validate the rest of the chain (each cert signed by the next)
             for i in range(len(chain_certs) - 1):
@@ -203,11 +219,7 @@ class StepCAService:
                         f"({child.issuer.rfc4514_string()}) does not match "
                         f"cert {i+1} subject ({parent.subject.rfc4514_string()})"
                     )
-                parent.public_key().verify(
-                    child.signature,
-                    child.tbs_certificate_bytes,
-                    child.signature_hash_algorithm,
-                )
+                StepCAService._verify_cert_signature(child, parent)
 
             return True
         except ValueError:
