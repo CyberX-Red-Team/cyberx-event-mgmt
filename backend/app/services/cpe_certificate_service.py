@@ -436,16 +436,22 @@ class CPECertificateService:
     ) -> str:
         """
         Generate a filled DOCX from the template, convert to PDF,
-        and upload to R2. Returns the R2 storage key.
+        overlay signature image, and upload to R2. Returns the R2 storage key.
         """
         # Fetch template from R2 (cached after first download)
         template_bytes = self._get_template_bytes()
 
-        # Fill the DOCX template
+        # Fill the DOCX template (text only — signature handled as PDF overlay)
         docx_bytes = self._fill_template(certificate, user, event, template_bytes)
 
-        # Convert DOCX to PDF
+        # Convert DOCX to PDF via Gotenberg/LibreOffice
         pdf_bytes = await self._convert_to_pdf(docx_bytes)
+
+        # Overlay signature image onto the PDF
+        if self.settings.CPE_SIGNATURE_IMAGE_R2_KEY:
+            sig_bytes = self._get_signature_image()
+            if sig_bytes:
+                pdf_bytes = self._overlay_signature(pdf_bytes, sig_bytes)
 
         # Upload to R2
         storage_key = f"certificates/{event.slug}/{certificate.certificate_number}.pdf"
@@ -542,6 +548,57 @@ class CPECertificateService:
             logger.error(f"Failed to download signature image from R2: {e}")
             return None
 
+    @staticmethod
+    def _overlay_signature(pdf_bytes: bytes, signature_bytes: bytes) -> bytes:
+        """Overlay the signature image onto the PDF using reportlab + pypdf.
+
+        This is done AFTER Gotenberg converts the DOCX to PDF, avoiding all
+        LibreOffice rendering issues with inline images in table cells.
+        The signature is placed at exact coordinates above the signature line.
+        """
+        from reportlab.pdfgen import canvas as rl_canvas
+        from reportlab.lib.utils import ImageReader
+        from pypdf import PdfReader, PdfWriter
+
+        # Read page dimensions from the actual PDF
+        base_reader = PdfReader(io.BytesIO(pdf_bytes))
+        page = base_reader.pages[0]
+        page_w = float(page.mediabox.width)
+        page_h = float(page.mediabox.height)
+
+        # Create overlay PDF with just the signature image
+        overlay_buf = io.BytesIO()
+        c = rl_canvas.Canvas(overlay_buf, pagesize=(page_w, page_h))
+
+        img = ImageReader(io.BytesIO(signature_bytes))
+        img_w, img_h = img.getSize()
+        target_w = 140  # ~2 inches
+        target_h = target_w * (img_h / img_w)  # maintain aspect ratio
+
+        c.drawImage(
+            img,
+            160,   # x: left edge of signature area
+            145,   # y: just above the signature line
+            width=target_w,
+            height=target_h,
+            mask="auto",  # preserve PNG transparency
+        )
+        c.save()
+
+        # Merge overlay onto the PDF
+        overlay_reader = PdfReader(io.BytesIO(overlay_buf.getvalue()))
+        page.merge_page(overlay_reader.pages[0])
+
+        writer = PdfWriter()
+        writer.add_page(page)
+
+        output = io.BytesIO()
+        writer.write(output)
+        result = output.getvalue()
+
+        logger.info(f"Overlaid signature image onto PDF ({len(result)} bytes)")
+        return result
+
     def _fill_template(
         self, certificate: CPECertificate, user: User,
         event: Event, template_bytes: bytes
@@ -633,29 +690,9 @@ class CPECertificateService:
                     tcPr.append(vAlign)
                 vAlign.set(_qn('w:val'), 'bottom')
 
-            # Insert signature image directly into P0 (the line paragraph).
-            # P0 has the bottom-border that forms the signature line. Placing the
-            # image as a run inside P0 means no inter-paragraph gap — the image
-            # sits right above the border. With vAlign=bottom on all cells, the
-            # bottom borders still align across cells despite the height difference.
-            if self.settings.CPE_SIGNATURE_IMAGE_R2_KEY:
-                sig_cell = sig_table.rows[0].cells[1]
-                if sig_cell.paragraphs:
-                    sig_img_bytes = self._get_signature_image()
-                    if sig_img_bytes:
-                        from docx.shared import Inches
-
-                        p0 = sig_cell.paragraphs[0]
-                        # Insert image run at the START of P0 (before any existing runs)
-                        run = p0.add_run()
-                        run.add_picture(io.BytesIO(sig_img_bytes), width=Inches(2.0))
-                        # Move the run element to be the first child after pPr
-                        run_elem = run._element
-                        p0_pPr = p0._element.find(_qn('w:pPr'))
-                        if p0_pPr is not None:
-                            p0_pPr.addnext(run_elem)
-                        else:
-                            p0._element.insert(0, run_elem)
+            # Signature image is NOT inserted into the DOCX — it's overlaid
+            # onto the PDF after Gotenberg conversion via _overlay_signature().
+            # This avoids LibreOffice rendering issues with inline images in tables.
 
         # Reduce spacing to fit on one page (LibreOffice renders slightly larger than Word)
         self._reduce_spacing_for_libreoffice(doc)
