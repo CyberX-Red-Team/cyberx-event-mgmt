@@ -647,17 +647,30 @@ class CPECertificateService:
 
                         # Create a new paragraph element for the image
                         img_para_elem = OxmlElement('w:p')
-                        # Set spacing to 0 so image sits flush against the line
+                        # Zero all spacing AND set line rule to exact so
+                        # LibreOffice doesn't add extra space below the image
                         img_pPr = OxmlElement('w:pPr')
                         img_spacing = OxmlElement('w:spacing')
                         img_spacing.set(_qn('w:after'), '0')
                         img_spacing.set(_qn('w:before'), '0')
+                        img_spacing.set(_qn('w:line'), '240')  # 12pt exactly
+                        img_spacing.set(_qn('w:lineRule'), 'exact')
                         img_pPr.append(img_spacing)
                         img_para_elem.append(img_pPr)
 
                         # Insert before P0
                         p0_elem = sig_cell.paragraphs[0]._element
                         p0_elem.addprevious(img_para_elem)
+
+                        # Also zero out spacing on P0 (the line paragraph)
+                        # so there's no gap between image and the line
+                        p0_pPr = p0_elem.find(_qn('w:pPr'))
+                        if p0_pPr is not None:
+                            p0_spacing = p0_pPr.find(_qn('w:spacing'))
+                            if p0_spacing is None:
+                                p0_spacing = OxmlElement('w:spacing')
+                                p0_pPr.append(p0_spacing)
+                            p0_spacing.set(_qn('w:before'), '0')
 
                         # Add image run to the new paragraph
                         from docx.text.paragraph import Paragraph
