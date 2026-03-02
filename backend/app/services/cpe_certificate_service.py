@@ -603,7 +603,11 @@ class CPECertificateService:
         self, certificate: CPECertificate, user: User,
         event: Event, template_bytes: bytes
     ) -> bytes:
-        """Fill the DOCX template with certificate data using python-docx."""
+        """Fill the DOCX template with certificate data using python-docx.
+
+        Only does text replacement — no image insertion or layout adjustments.
+        The signature image is overlaid onto the PDF after conversion.
+        """
         from docx import Document
 
         doc = Document(io.BytesIO(template_bytes))
@@ -619,9 +623,8 @@ class CPECertificateService:
             "[MM/DD/YYYY] – [MM/DD/YYYY]": f"{start_str} – {end_str}",
             "CX-[YYYY]-[####]": certificate.certificate_number,
             "[Name / Title]": self.settings.CPE_SIGNER_NAME or "",
+            "[MM/DD/YYYY]": issue_date_str,
         }
-        # Note: [MM/DD/YYYY] for issue date is handled separately below
-        # (moved above the signature line in the template)
 
         # Replace in paragraphs
         for paragraph in doc.paragraphs:
@@ -645,85 +648,10 @@ class CPECertificateService:
                     for paragraph in footer.paragraphs:
                         self._replace_in_paragraph(paragraph, replacements)
 
-        # Fix signature table: move date value above the line
-        # Table 1 = signature table, Cell [0,3] = Date Issued column
-        # Template layout: P0 (empty, has bottom-border line), P1 "Date Issued", P2 "[MM/DD/YYYY]"
-        # Desired:          P0 (date value, has bottom-border line), P1 "Date Issued", P2 (empty)
-        if len(doc.tables) >= 2:
-            sig_table = doc.tables[1]
-            if len(sig_table.rows[0].cells) >= 4:
-                date_cell = sig_table.rows[0].cells[3]
-                if len(date_cell.paragraphs) >= 3:
-                    # Copy formatting from P2 runs to P0, set date text
-                    p0 = date_cell.paragraphs[0]
-                    p2 = date_cell.paragraphs[2]
-                    if p0.runs:
-                        p0.runs[0].text = issue_date_str
-                    elif p2.runs:
-                        # Copy the run with formatting from P2 to P0
-                        from copy import deepcopy
-                        from docx.oxml.ns import qn
-                        new_run = deepcopy(p2.runs[0]._element)
-                        new_run.find(qn('w:t')).text = issue_date_str
-                        p0._element.append(new_run)
-                    # Clear P2
-                    for run in p2.runs:
-                        run.text = ""
-
-        # Insert signature image and fix signature table alignment
-        if len(doc.tables) >= 2:
-            from docx.oxml.ns import qn as _qn
-            from docx.oxml import OxmlElement
-
-            sig_table = doc.tables[1]
-
-            # Set all cells in signature row to vertical-align bottom
-            # so Certificate ID and Date Issued align with the signature line
-            for cell in sig_table.rows[0].cells:
-                tcPr = cell._element.find(_qn('w:tcPr'))
-                if tcPr is None:
-                    tcPr = OxmlElement('w:tcPr')
-                    cell._element.insert(0, tcPr)
-                vAlign = tcPr.find(_qn('w:vAlign'))
-                if vAlign is None:
-                    vAlign = OxmlElement('w:vAlign')
-                    tcPr.append(vAlign)
-                vAlign.set(_qn('w:val'), 'bottom')
-
-            # Signature image is NOT inserted into the DOCX — it's overlaid
-            # onto the PDF after Gotenberg conversion via _overlay_signature().
-            # This avoids LibreOffice rendering issues with inline images in tables.
-
-        # Reduce spacing to fit on one page (LibreOffice renders slightly larger than Word)
-        self._reduce_spacing_for_libreoffice(doc)
-
         # Save to bytes
         buffer = io.BytesIO()
         doc.save(buffer)
         return buffer.getvalue()
-
-    @staticmethod
-    def _reduce_spacing_for_libreoffice(doc):
-        """Reduce paragraph spacing so LibreOffice keeps output to one page.
-
-        Word and LibreOffice have different text metrics; the original template
-        fits on one page in Word but overflows in LibreOffice.  We trim
-        before/after spacing on all body paragraphs by 50% to reclaim enough
-        space (including room for the signature image).
-        """
-        from docx.oxml.ns import qn
-
-        for p in doc.paragraphs:
-            pPr = p._element.find(qn('w:pPr'))
-            if pPr is None:
-                continue
-            spacing = pPr.find(qn('w:spacing'))
-            if spacing is None:
-                continue
-            for attr in (qn('w:after'), qn('w:before')):
-                val = spacing.get(attr)
-                if val and int(val) > 0:
-                    spacing.set(attr, str(int(int(val) * 0.50)))
 
     @staticmethod
     def _replace_in_paragraph(paragraph, replacements: dict):
