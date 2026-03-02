@@ -633,11 +633,11 @@ class CPECertificateService:
                     tcPr.append(vAlign)
                 vAlign.set(_qn('w:val'), 'bottom')
 
-            # Insert signature image in its OWN paragraph BEFORE P0, not inside P0.
-            # P0 has the bottom-border that forms the signature line. If the image
-            # is in P0, it makes P0 much taller than P0 in other cells, causing
-            # the lines to misalign. By putting the image in a separate paragraph
-            # above P0, all cells' P0 (the line) remain the same height and align.
+            # Insert signature image directly into P0 (the line paragraph).
+            # P0 has the bottom-border that forms the signature line. Placing the
+            # image as a run inside P0 means no inter-paragraph gap — the image
+            # sits right above the border. With vAlign=bottom on all cells, the
+            # bottom borders still align across cells despite the height difference.
             if self.settings.CPE_SIGNATURE_IMAGE_R2_KEY:
                 sig_cell = sig_table.rows[0].cells[1]
                 if sig_cell.paragraphs:
@@ -645,37 +645,17 @@ class CPECertificateService:
                     if sig_img_bytes:
                         from docx.shared import Inches
 
-                        # Create a new paragraph element for the image
-                        img_para_elem = OxmlElement('w:p')
-                        # Zero before/after spacing so image sits close to P0's line.
-                        # Do NOT set lineRule=exact — that clips the image to the
-                        # line height. Let line spacing auto-expand for the image.
-                        img_pPr = OxmlElement('w:pPr')
-                        img_spacing = OxmlElement('w:spacing')
-                        img_spacing.set(_qn('w:after'), '0')
-                        img_spacing.set(_qn('w:before'), '0')
-                        img_pPr.append(img_spacing)
-                        img_para_elem.append(img_pPr)
-
-                        # Insert before P0
-                        p0_elem = sig_cell.paragraphs[0]._element
-                        p0_elem.addprevious(img_para_elem)
-
-                        # Also zero out spacing on P0 (the line paragraph)
-                        # so there's no gap between image and the line
-                        p0_pPr = p0_elem.find(_qn('w:pPr'))
-                        if p0_pPr is not None:
-                            p0_spacing = p0_pPr.find(_qn('w:spacing'))
-                            if p0_spacing is None:
-                                p0_spacing = OxmlElement('w:spacing')
-                                p0_pPr.append(p0_spacing)
-                            p0_spacing.set(_qn('w:before'), '0')
-
-                        # Add image run to the new paragraph
-                        from docx.text.paragraph import Paragraph
-                        img_para = Paragraph(img_para_elem, sig_cell)
-                        run = img_para.add_run()
+                        p0 = sig_cell.paragraphs[0]
+                        # Insert image run at the START of P0 (before any existing runs)
+                        run = p0.add_run()
                         run.add_picture(io.BytesIO(sig_img_bytes), width=Inches(2.0))
+                        # Move the run element to be the first child after pPr
+                        run_elem = run._element
+                        p0_pPr = p0._element.find(_qn('w:pPr'))
+                        if p0_pPr is not None:
+                            p0_pPr.addnext(run_elem)
+                        else:
+                            p0._element.insert(0, run_elem)
 
         # Reduce spacing to fit on one page (LibreOffice renders slightly larger than Word)
         self._reduce_spacing_for_libreoffice(doc)
