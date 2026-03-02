@@ -743,7 +743,7 @@ class CPECertificateService:
         if not gotenberg_url:
             raise ValueError("GOTENBERG_URL is not configured")
 
-        max_retries = 4
+        max_retries = 3
         retry_delay = 3  # seconds
 
         async with httpx.AsyncClient() as client:
