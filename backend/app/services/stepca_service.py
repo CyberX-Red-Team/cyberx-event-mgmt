@@ -672,12 +672,23 @@ class StepCAService:
                     return ""
 
                 # Step 4: Build JWT claims
+                # The audience must match step-ca's configured dnsNames.
+                # step-ca always includes "localhost" in its audiences, so use
+                # https://localhost:{port}/1.0/sign as the audience URL.
+                try:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(base_url)
+                    port = parsed.port or 10000
+                except Exception:
+                    port = 10000
+                aud_url = f"https://localhost:{port}/1.0/sign"
+
                 now = int(time.time())
                 alg = private_jwk_dict.get("alg", pub_jwk.get("alg", "ES256"))
                 claims = {
                     "iss": provisioner_name,
                     "sub": common_name,
-                    "aud": f"{base_url}/1.0/sign",
+                    "aud": aud_url,
                     "iat": now,
                     "nbf": now,
                     "exp": now + 300,  # 5 minute validity
