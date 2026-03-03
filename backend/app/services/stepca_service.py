@@ -339,7 +339,9 @@ class StepCAService:
 
         service_id = service.get("id")
         ca_chain.render_service_id = service_id
-        ca_chain.step_ca_url = f"https://{service_name}:9000"
+        # Render private services use the PORT env var (default 10000 for Docker)
+        # and are accessible via https://{service-name}:{port} on the private network
+        ca_chain.step_ca_url = f"https://{service_name}:10000"
         await db.commit()
 
         # Wait for deploy

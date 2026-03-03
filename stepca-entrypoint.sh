@@ -8,8 +8,9 @@ SECRETS_DIR="${STEPPATH}/secrets"
 CA_JSON="${CONFIG_DIR}/ca.json"
 PASSWORD_FILE="${SECRETS_DIR}/password"
 
-# step-ca listens on port 9000 by default
-LISTEN_ADDRESS="${STEPCA_LISTEN_ADDRESS:-:9000}"
+# Use PORT env var from Render if set, otherwise 9000
+STEPCA_PORT="${PORT:-9000}"
+LISTEN_ADDRESS="${STEPCA_LISTEN_ADDRESS:-:${STEPCA_PORT}}"
 PROVISIONER_NAME="${STEPCA_PROVISIONER_NAME:-cyberx}"
 
 echo "=== CyberX step-ca entrypoint ==="
@@ -69,7 +70,12 @@ echo ">>> Phase 3: Updating ca.json configuration..."
 # Use step's built-in tool to get the fingerprint of the root cert
 ROOT_FINGERPRINT=$(step certificate fingerprint "${CERTS_DIR}/root_ca.crt" 2>/dev/null || echo "")
 
-# Build the ca.json with imported CA files
+# Build the ca.json with imported CA files.
+# NOTE: We intentionally omit "authority.provisioners" here. The provisioner
+# (with its encrypted JWK key) was created by `step ca init` in Phase 1 and
+# stored in the badgerv2 database. step-ca reads provisioners from the DB
+# when a DB backend is configured, so including them in ca.json is unnecessary
+# (and would fail — we don't have the encrypted key to put here).
 cat > "${CA_JSON}" << CAJSON
 {
     "root": "${CERTS_DIR}/root_ca.crt",
@@ -86,17 +92,10 @@ cat > "${CA_JSON}" << CAJSON
         "badgerFileLoadingMode": ""
     },
     "authority": {
-        "provisioners": [
-            {
-                "type": "JWK",
-                "name": "${PROVISIONER_NAME}",
-                "encryptedKey": "",
-                "claims": {
-                    "maxTLSCertDuration": "8760h",
-                    "defaultTLSCertDuration": "2160h"
-                }
-            }
-        ]
+        "claims": {
+            "maxTLSCertDuration": "8760h",
+            "defaultTLSCertDuration": "2160h"
+        }
     },
     "tls": {
         "cipherSuites": [
@@ -111,12 +110,6 @@ cat > "${CA_JSON}" << CAJSON
     }
 }
 CAJSON
-
-# Re-initialize the provisioner with the correct key
-# step ca provisioner add will set up the JWK provisioner with the password
-step ca provisioner remove "${PROVISIONER_NAME}" --type JWK 2>/dev/null || true
-step ca provisioner add "${PROVISIONER_NAME}" --type JWK --create \
-    --password-file="${PASSWORD_FILE}" 2>/dev/null || true
 
 echo ">>> Configuration updated"
 
