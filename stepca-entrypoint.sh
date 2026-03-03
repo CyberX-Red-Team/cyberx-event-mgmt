@@ -101,7 +101,9 @@ cat > "${CA_JSON}" << CAJSON
     "tls": {
         "cipherSuites": [
             "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
-            "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+            "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+            "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
         ],
         "minVersion": 1.2,
         "maxVersion": 1.3,
@@ -120,4 +122,6 @@ echo ">>> Configuration updated"
 
 # Phase 4: Start step-ca
 echo ">>> Phase 4: Starting step-ca on ${LISTEN_ADDRESS}..."
-exec step-ca "${CA_JSON}" --password-file="${PASSWORD_FILE}"
+# Use full path — exec may fail on some runtimes due to capability inheritance
+STEPCA_BIN=$(which step-ca 2>/dev/null || echo "/usr/local/bin/step-ca")
+exec "${STEPCA_BIN}" "${CA_JSON}" --password-file="${PASSWORD_FILE}"
