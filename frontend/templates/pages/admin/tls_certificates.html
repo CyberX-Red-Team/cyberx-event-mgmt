@@ -184,6 +184,9 @@
                             <option value="revoked">Revoked</option>
                             <option value="expired">Expired</option>
                         </select>
+                        <button class="btn btn-sm btn-primary" onclick="openRequestCertModal()">
+                            <i data-feather="plus" class="me-1"></i> Request Certificate
+                        </button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -313,6 +316,59 @@
         </div>
     </div>
 </div>
+<!-- Request Certificate Modal (Admin) -->
+<div class="modal fade" id="requestCertModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i data-feather="file-plus" class="me-2"></i>Request TLS Certificate</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning small mb-3">
+                    <i data-feather="alert-triangle" class="me-1" style="width:16px;height:16px;"></i>
+                    <strong>Admin mode:</strong> PowerDNS zone validation is not enforced. Certificates will be issued for any domain, but a warning will be logged if the domain has no matching zone.
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">CA Chain <span class="text-danger">*</span></label>
+                        <select class="form-select" id="reqCertChainId">
+                            <option value="">Select CA chain...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Event</label>
+                        <select class="form-select" id="reqCertEventId"></select>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Common Name (CN) <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="reqCertCN" placeholder="e.g. web.example.com">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="reqCertWildcard">
+                            <label class="form-check-label" for="reqCertWildcard">Wildcard (*.domain)</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Subject Alternative Names (SANs)</label>
+                        <div class="input-group mb-2">
+                            <input type="text" class="form-control" id="reqCertSANInput" placeholder="e.g. api.example.com" onkeydown="if(event.key==='Enter'){event.preventDefault();addReqSAN();}">
+                            <button class="btn btn-outline-secondary" type="button" onclick="addReqSAN()">Add</button>
+                        </div>
+                        <div id="reqCertSANList" class="d-flex flex-wrap gap-1"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitAdminCertRequest()" id="btnRequestCert">
+                    <i data-feather="shield" class="me-1"></i> Issue Certificate
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -325,8 +381,10 @@ var chainsData = [];
 var certsData = [];
 var createChainModal = null;
 var revokeModal = null;
+var requestCertModal = null;
 var revokeCertId = null;
 var selectedFiles = {};
+var reqSANs = [];
 
 // =============================================================================
 // Initialization
@@ -334,6 +392,7 @@ var selectedFiles = {};
 document.addEventListener('DOMContentLoaded', function() {
     createChainModal = new bootstrap.Modal(document.getElementById('createChainModal'));
     revokeModal = new bootstrap.Modal(document.getElementById('revokeModal'));
+    requestCertModal = new bootstrap.Modal(document.getElementById('requestCertModal'));
     setupDropZones();
     loadChains();
     loadCertificates();
@@ -789,6 +848,116 @@ function updateStats() {
     document.getElementById('statRunning').textContent = running;
     document.getElementById('statCerts').textContent = totalCerts;
     document.getElementById('statActive').textContent = activeCerts;
+}
+
+// =============================================================================
+// Admin Certificate Request
+// =============================================================================
+function openRequestCertModal() {
+    // Populate CA chain dropdown (only running chains)
+    var sel = document.getElementById('reqCertChainId');
+    sel.innerHTML = '<option value="">Select CA chain...</option>';
+    for (var i = 0; i < chainsData.length; i++) {
+        if (chainsData[i].step_ca_status === 'running') {
+            var opt = document.createElement('option');
+            opt.value = chainsData[i].id;
+            opt.textContent = chainsData[i].name;
+            sel.appendChild(opt);
+        }
+    }
+
+    // Populate event dropdown (reuse events from chain modal)
+    var eventSel = document.getElementById('reqCertEventId');
+    var chainEventSel = document.getElementById('chainEventId');
+    eventSel.innerHTML = chainEventSel.innerHTML;
+
+    // Reset form
+    document.getElementById('reqCertCN').value = '';
+    document.getElementById('reqCertWildcard').checked = false;
+    document.getElementById('reqCertSANInput').value = '';
+    reqSANs = [];
+    renderReqSANs();
+
+    requestCertModal.show();
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+function addReqSAN() {
+    var input = document.getElementById('reqCertSANInput');
+    var val = input.value.trim().toLowerCase();
+    if (!val) return;
+    if (reqSANs.indexOf(val) === -1) {
+        reqSANs.push(val);
+        renderReqSANs();
+    }
+    input.value = '';
+    input.focus();
+}
+
+function removeReqSAN(idx) {
+    reqSANs.splice(idx, 1);
+    renderReqSANs();
+}
+
+function renderReqSANs() {
+    var container = document.getElementById('reqCertSANList');
+    container.innerHTML = '';
+    for (var i = 0; i < reqSANs.length; i++) {
+        var chip = document.createElement('span');
+        chip.className = 'badge bg-secondary d-inline-flex align-items-center gap-1';
+        chip.innerHTML = escapeHtml(reqSANs[i]) +
+            ' <a href="#" class="text-white text-decoration-none" onclick="removeReqSAN(' + i + ');return false;">&times;</a>';
+        container.appendChild(chip);
+    }
+}
+
+async function submitAdminCertRequest() {
+    var chainId = document.getElementById('reqCertChainId').value;
+    var eventId = document.getElementById('reqCertEventId').value;
+    var cn = document.getElementById('reqCertCN').value.trim();
+    var isWildcard = document.getElementById('reqCertWildcard').checked;
+
+    if (!chainId) { showToast('CA chain is required', 'warning'); return; }
+    if (!cn) { showToast('Common Name is required', 'warning'); return; }
+
+    var btn = document.getElementById('btnRequestCert');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner-border spinner-border-sm me-1"></div> Issuing...';
+
+    try {
+        var payload = {
+            ca_chain_id: parseInt(chainId),
+            common_name: cn,
+            sans: reqSANs,
+            is_wildcard: isWildcard
+        };
+        if (eventId) payload.event_id = parseInt(eventId);
+
+        var response = await csrfFetch('/api/admin/tls/certificates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        var data = await response.json();
+        if (response.ok) {
+            // Show warnings if any
+            if (data.dns_warnings && data.dns_warnings.length > 0) {
+                showToast(data.message, 'warning');
+            } else {
+                showToast(data.message || 'Certificate issued', 'success');
+            }
+            requestCertModal.hide();
+            loadCertificates();
+        } else {
+            showToast(data.detail || 'Failed to issue certificate', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-feather="shield" class="me-1"></i> Issue Certificate';
+        if (typeof feather !== 'undefined') feather.replace();
+    }
 }
 
 // =============================================================================

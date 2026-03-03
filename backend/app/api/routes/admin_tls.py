@@ -541,6 +541,182 @@ async def list_certificates(
     return response
 
 
+class AdminCertificateRequest(BaseModel):
+    ca_chain_id: int
+    common_name: str
+    sans: list[str] = []
+    is_wildcard: bool = False
+    event_id: Optional[int] = None  # defaults to active event
+
+
+@router.post("/certificates")
+async def admin_request_certificate(
+    data: AdminCertificateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Admin-only certificate request. Bypasses PowerDNS validation with a warning.
+
+    Unlike the participant endpoint, this does not require the domain to have
+    a matching zone in PowerDNS. It still attempts validation and includes
+    a warning in the response if validation fails.
+    """
+    from app.models.event import Event
+    from app.services.powerdns_service import PowerDNSService
+    from datetime import timedelta
+
+    # Resolve event
+    if data.event_id:
+        event_result = await db.execute(
+            select(Event).where(Event.id == data.event_id)
+        )
+        event = event_result.scalar_one_or_none()
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+    else:
+        event_result = await db.execute(
+            select(Event).where(Event.is_active == True)
+        )
+        event = event_result.scalar_one_or_none()
+        if not event:
+            raise HTTPException(status_code=400, detail="No active event and no event_id specified")
+
+    # Validate CA chain
+    chain_result = await db.execute(
+        select(CAChain).where(CAChain.id == data.ca_chain_id)
+    )
+    ca_chain = chain_result.scalar_one_or_none()
+    if not ca_chain:
+        raise HTTPException(status_code=404, detail="CA chain not found")
+    if ca_chain.step_ca_status != CAChainStatus.RUNNING.value:
+        raise HTTPException(status_code=400, detail="CA chain is not running")
+    if data.is_wildcard and not ca_chain.allow_wildcard:
+        raise HTTPException(status_code=400, detail="This CA chain does not allow wildcard certificates")
+
+    # Prepare domain list
+    common_name = data.common_name.strip().lower()
+    if data.is_wildcard and not common_name.startswith("*."):
+        common_name = f"*.{common_name}"
+
+    all_domains = [common_name] + [s.strip().lower() for s in data.sans if s.strip()]
+
+    # Attempt PowerDNS validation but don't block on failure
+    dns_warnings = []
+    try:
+        pdns = PowerDNSService()
+        for domain in all_domains:
+            is_valid, error_msg = await pdns.validate_domain_for_cert(domain)
+            if not is_valid:
+                dns_warnings.append(f"{domain}: {error_msg}")
+    except Exception as e:
+        dns_warnings.append(f"PowerDNS unavailable: {e}")
+
+    # Generate CSR and sign via step-ca
+    stepca_service = StepCAService()
+    csr_pem, key_pem = stepca_service.generate_csr(common_name, data.sans)
+
+    duration = ca_chain.default_duration or "2160h"
+    sign_result = await stepca_service.sign_certificate(ca_chain, csr_pem, duration)
+
+    if not sign_result:
+        raise HTTPException(status_code=500, detail="Failed to sign certificate via step-ca")
+
+    cert_pem = sign_result.get("crt", "")
+    ca_pem = sign_result.get("ca", "")
+    serial_number = sign_result.get("serial_number", "")
+
+    if not cert_pem:
+        raise HTTPException(status_code=500, detail="step-ca returned empty certificate")
+
+    # Build cert bundle
+    cert_bundle = cert_pem
+    if ca_pem:
+        cert_bundle = cert_pem + "\n" + ca_pem
+
+    # Calculate expiry
+    hours = int(duration.replace("h", ""))
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(hours=hours)
+
+    # Get fingerprint
+    from cryptography import x509 as cx509
+    try:
+        parsed_cert = cx509.load_pem_x509_certificate(cert_pem.encode())
+        fingerprint = parsed_cert.fingerprint(parsed_cert.signature_hash_algorithm).hex()
+        serial_number = serial_number or format(parsed_cert.serial_number, 'x')
+    except Exception:
+        fingerprint = ""
+
+    # Upload to R2
+    cn_safe = common_name.replace("*.", "wildcard.").replace("/", "_")
+    r2_prefix = f"tls/certificates/{event.id}/{current_user.id}"
+    cert_bundle_key = f"{r2_prefix}/{cn_safe}.crt"
+    private_key_key = f"{r2_prefix}/{cn_safe}.key"
+
+    encrypted_key = encrypt_field(key_pem)
+    stepca_service.upload_to_r2(cert_bundle_key, cert_bundle.encode())
+    stepca_service.upload_to_r2(private_key_key, encrypted_key.encode())
+
+    # Build CA chain file
+    if ca_chain.ca_chain_r2_key:
+        chain_pem_bytes = stepca_service.download_from_r2(ca_chain.ca_chain_r2_key)
+        if chain_pem_bytes:
+            if ca_pem:
+                full_chain = ca_pem + "\n" + chain_pem_bytes.decode()
+            else:
+                signing_cert_bytes = stepca_service.download_from_r2(ca_chain.signing_cert_r2_key)
+                full_chain = (signing_cert_bytes.decode() if signing_cert_bytes else "") + "\n" + chain_pem_bytes.decode()
+            ca_chain_key = f"{r2_prefix}/{cn_safe}.ca-chain.crt"
+            stepca_service.upload_to_r2(ca_chain_key, full_chain.encode())
+
+    # Create DB record
+    tls_cert = TLSCertificate(
+        user_id=current_user.id,
+        event_id=event.id,
+        ca_chain_id=ca_chain.id,
+        common_name=common_name,
+        sans=json.dumps(data.sans) if data.sans else None,
+        is_wildcard=data.is_wildcard,
+        serial_number=serial_number,
+        fingerprint=fingerprint,
+        cert_bundle_r2_key=cert_bundle_key,
+        private_key_r2_key=private_key_key,
+        status=TLSCertificateStatus.ISSUED.value,
+        issued_at=now,
+        expires_at=expires_at,
+    )
+    db.add(tls_cert)
+    await db.commit()
+    await db.refresh(tls_cert)
+
+    # Audit log
+    audit_service = AuditService(db)
+    await audit_service.log(
+        user_id=current_user.id,
+        action="admin_tls_cert_request",
+        resource_type="tls_certificate",
+        details={
+            "message": f"Admin issued TLS cert for '{common_name}'",
+            "cert_id": tls_cert.id,
+            "dns_validated": len(dns_warnings) == 0,
+            "dns_warnings": dns_warnings,
+        }
+    )
+
+    response = {
+        "success": True,
+        "certificate_id": tls_cert.id,
+        "common_name": common_name,
+        "expires_at": expires_at.isoformat(),
+        "message": f"Certificate issued for '{common_name}'",
+    }
+    if dns_warnings:
+        response["dns_warnings"] = dns_warnings
+        response["message"] += f" (WARNING: {len(dns_warnings)} domain(s) not validated in PowerDNS)"
+
+    return response
+
+
 class RevokeCertRequest(BaseModel):
     reason: str = ""
 
