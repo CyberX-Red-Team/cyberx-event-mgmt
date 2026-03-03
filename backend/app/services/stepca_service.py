@@ -532,42 +532,27 @@ class StepCAService:
 
                 provisioners_data = resp.json()
 
-                # Log raw response structure for debugging
-                if isinstance(provisioners_data, dict):
-                    logger.info(f"Provisioners response keys: {list(provisioners_data.keys())}")
-                else:
-                    logger.info(f"Provisioners response type: {type(provisioners_data).__name__}")
-
                 # step-ca returns {"provisioners": [...], "nextCursor": "..."}
-                # Handle pagination: follow nextCursor to collect all provisioners
-                if isinstance(provisioners_data, list):
-                    provisioners = provisioners_data
-                elif isinstance(provisioners_data, dict):
-                    provisioners = provisioners_data.get("provisioners", [])
-                    if provisioners is None:
-                        provisioners = []
+                provisioners_data = provisioners_data if isinstance(provisioners_data, dict) else {}
+                provisioners = provisioners_data.get("provisioners") or []
 
-                    # Follow pagination cursor if present
-                    next_cursor = provisioners_data.get("nextCursor", "")
-                    while next_cursor:
-                        logger.info(f"Following provisioner pagination cursor: {next_cursor}")
-                        page_resp = await client.get(
-                            f"{base_url}/1.0/provisioners?cursor={next_cursor}",
-                            timeout=10.0,
-                        )
-                        if page_resp.status_code != 200:
-                            break
-                        page_data = page_resp.json()
-                        page_items = page_data.get("provisioners", []) or []
-                        provisioners.extend(page_items)
-                        next_cursor = page_data.get("nextCursor", "")
-                        if not page_items:
-                            break
-                else:
-                    provisioners = []
+                # Follow pagination cursor if present
+                next_cursor = provisioners_data.get("nextCursor", "")
+                while next_cursor:
+                    page_resp = await client.get(
+                        f"{base_url}/1.0/provisioners?cursor={next_cursor}",
+                        timeout=10.0,
+                    )
+                    if page_resp.status_code != 200:
+                        break
+                    page_data = page_resp.json()
+                    page_items = page_data.get("provisioners") or []
+                    provisioners.extend(page_items)
+                    next_cursor = page_data.get("nextCursor", "")
+                    if not page_items:
+                        break
 
-                logger.info(f"Found {len(provisioners)} provisioner(s), "
-                            f"raw response: {json.dumps(provisioners_data)[:500]}")
+                logger.debug(f"Found {len(provisioners)} provisioner(s)")
 
                 # Find our JWK provisioner by name
                 provisioner = None

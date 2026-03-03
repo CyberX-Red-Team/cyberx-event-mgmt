@@ -51,8 +51,18 @@ else
     echo ">>> step-ca already initialized, skipping init"
 fi
 
-# Phase 2: Decode and replace CA files from base64 env vars
-echo ">>> Phase 2: Importing CA files from environment..."
+# Phase 2: Save provisioners from init-generated ca.json
+# step ca init writes the JWK provisioner (with its encrypted private key) to
+# ca.json's authority.provisioners array. The provisioner only migrates to the
+# badgerv2 DB when step-ca actually starts — but we need to overwrite ca.json
+# before that happens. So we extract and re-inject the provisioners.
+echo ">>> Phase 2: Extracting provisioners from init ca.json..."
+INIT_PROVISIONERS=$(jq '.authority.provisioners // []' "${CA_JSON}" 2>/dev/null || echo '[]')
+PROVISIONER_COUNT=$(echo "${INIT_PROVISIONERS}" | jq 'length' 2>/dev/null || echo '0')
+echo "  - Found ${PROVISIONER_COUNT} provisioner(s) to preserve"
+
+# Phase 3: Decode and replace CA files from base64 env vars
+echo ">>> Phase 3: Importing CA files from environment..."
 
 echo "${STEPCA_ROOT_CERT_B64}" | base64 -d > "${CERTS_DIR}/root_ca.crt"
 echo "  - root_ca.crt written (trust anchor)"
@@ -64,18 +74,9 @@ echo "${STEPCA_SIGNING_KEY_B64}" | base64 -d > "${SECRETS_DIR}/signing_ca_key"
 chmod 600 "${SECRETS_DIR}/signing_ca_key"
 echo "  - signing_ca_key written"
 
-# Phase 3: Update ca.json to use imported CA files
-echo ">>> Phase 3: Updating ca.json configuration..."
+# Phase 4: Rewrite ca.json with imported CA files + preserved provisioners
+echo ">>> Phase 4: Writing ca.json configuration..."
 
-# Use step's built-in tool to get the fingerprint of the root cert
-ROOT_FINGERPRINT=$(step certificate fingerprint "${CERTS_DIR}/root_ca.crt" 2>/dev/null || echo "")
-
-# Build the ca.json with imported CA files.
-# NOTE: We intentionally omit "authority.provisioners" here. The provisioner
-# (with its encrypted JWK key) was created by `step ca init` in Phase 1 and
-# stored in the badgerv2 database. step-ca reads provisioners from the DB
-# when a DB backend is configured, so including them in ca.json is unnecessary
-# (and would fail — we don't have the encrypted key to put here).
 cat > "${CA_JSON}" << CAJSON
 {
     "root": "${CERTS_DIR}/root_ca.crt",
@@ -92,6 +93,7 @@ cat > "${CA_JSON}" << CAJSON
         "badgerFileLoadingMode": ""
     },
     "authority": {
+        "provisioners": ${INIT_PROVISIONERS},
         "claims": {
             "maxTLSCertDuration": "8760h",
             "defaultTLSCertDuration": "2160h"
@@ -111,10 +113,10 @@ cat > "${CA_JSON}" << CAJSON
 }
 CAJSON
 
-echo ">>> Configuration updated"
+echo ">>> Configuration updated (${PROVISIONER_COUNT} provisioner(s) preserved)"
 
-# Phase 4: Start step-ca
-echo ">>> Phase 4: Starting step-ca on ${LISTEN_ADDRESS}..."
+# Phase 5: Start step-ca
+echo ">>> Phase 5: Starting step-ca on ${LISTEN_ADDRESS}..."
 # Use full path — exec may fail on some runtimes due to capability inheritance
 STEPCA_BIN=$(which step-ca 2>/dev/null || echo "/usr/local/bin/step-ca")
 exec "${STEPCA_BIN}" "${CA_JSON}" --password-file="${PASSWORD_FILE}"
