@@ -385,14 +385,6 @@ class StepCAService:
         root_cert_bytes = self.extract_root_cert(ca_chain_bytes)
 
         # Base64 encode CA files for env vars
-        env_vars = [
-            {"key": "STEPCA_ROOT_CERT_B64", "value": base64.b64encode(root_cert_bytes).decode()},
-            {"key": "STEPCA_SIGNING_CERT_B64", "value": base64.b64encode(signing_cert_bytes).decode()},
-            {"key": "STEPCA_SIGNING_KEY_B64", "value": base64.b64encode(signing_key_bytes).decode()},
-            {"key": "STEPCA_PROVISIONER_PASSWORD", "value": provisioner_password},
-            {"key": "STEPCA_PROVISIONER_NAME", "value": ca_chain.step_ca_provisioner or "cyberx"},
-        ]
-
         # Build service name from signing cert CN (e.g. "cyberx-stepca-chiton")
         try:
             signing_cert = x509.load_pem_x509_certificate(signing_cert_bytes)
@@ -403,6 +395,15 @@ class StepCAService:
         # Sanitize for Render service name: lowercase, alphanumeric + hyphens, max 63 chars
         cn_slug = re.sub(r'[^a-z0-9]+', '-', cn.lower()).strip('-')[:40]
         service_name = f"cyberx-stepca-{cn_slug}"
+
+        env_vars = [
+            {"key": "STEPCA_ROOT_CERT_B64", "value": base64.b64encode(root_cert_bytes).decode()},
+            {"key": "STEPCA_SIGNING_CERT_B64", "value": base64.b64encode(signing_cert_bytes).decode()},
+            {"key": "STEPCA_SIGNING_KEY_B64", "value": base64.b64encode(signing_key_bytes).decode()},
+            {"key": "STEPCA_PROVISIONER_PASSWORD", "value": provisioner_password},
+            {"key": "STEPCA_PROVISIONER_NAME", "value": ca_chain.step_ca_provisioner or "cyberx"},
+            {"key": "STEPCA_SERVICE_NAME", "value": service_name},
+        ]
 
         # Update status
         ca_chain.step_ca_status = "starting"

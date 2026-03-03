@@ -77,6 +77,15 @@ echo "  - signing_ca_key written"
 # Phase 4: Rewrite ca.json with imported CA files + preserved provisioners
 echo ">>> Phase 4: Writing ca.json configuration..."
 
+# Build dnsNames array — always include localhost, plus service name if provided
+if [ -n "${STEPCA_SERVICE_NAME}" ]; then
+    DNS_NAMES_JSON='["localhost", "'"${STEPCA_SERVICE_NAME}"'"]'
+    echo "  - dnsNames: localhost, ${STEPCA_SERVICE_NAME}"
+else
+    DNS_NAMES_JSON='["localhost"]'
+    echo "  - dnsNames: localhost"
+fi
+
 cat > "${CA_JSON}" << CAJSON
 {
     "root": "${CERTS_DIR}/root_ca.crt",
@@ -85,7 +94,7 @@ cat > "${CA_JSON}" << CAJSON
     "key": "${SECRETS_DIR}/signing_ca_key",
     "address": "${LISTEN_ADDRESS}",
     "insecureAddress": "",
-    "dnsNames": ["localhost"],
+    "dnsNames": ${DNS_NAMES_JSON},
     "logger": {"format": "text"},
     "db": {
         "type": "badgerv2",
