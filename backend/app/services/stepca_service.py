@@ -451,7 +451,7 @@ class StepCAService:
 
         # Parse CSR to extract CN and SANs for the token
         try:
-            csr = x509.load_pem_x509_certificate_request(csr_pem.encode())
+            csr = x509.load_pem_x509_csr(csr_pem.encode())
             cn_attrs = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
             cn = cn_attrs[0].value if cn_attrs else ""
             sans = []
