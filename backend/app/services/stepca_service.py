@@ -4,9 +4,12 @@ Handles step-ca sidecar lifecycle (create, start, stop) and certificate
 operations (CSR generation, signing, revocation) via step-ca's API.
 """
 import base64
+import hashlib
 import json
 import logging
 import re
+import time
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -427,6 +430,9 @@ class StepCAService:
     ) -> Optional[dict]:
         """Sign a CSR via step-ca's /sign endpoint.
 
+        Authenticates using the JWK provisioner's encrypted key (decrypted with
+        the provisioner password) to generate a signed JWT one-time token (OTT).
+
         Args:
             ca_chain: CAChain model instance
             csr_pem: PEM-encoded CSR string
@@ -443,15 +449,35 @@ class StepCAService:
         provisioner_password = self.settings.STEPCA_PROVISIONER_PASSWORD
         provisioner_name = ca_chain.step_ca_provisioner or "cyberx"
 
-        # step-ca /sign requires a token from the provisioner
-        # First get a token, then sign
+        # Parse CSR to extract CN and SANs for the token
+        try:
+            csr = x509.load_pem_x509_certificate_request(csr_pem.encode())
+            cn_attrs = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+            cn = cn_attrs[0].value if cn_attrs else ""
+            sans = []
+            try:
+                san_ext = csr.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+                sans = san_ext.value.get_values_for_type(x509.DNSName)
+            except x509.ExtensionNotFound:
+                pass
+            if not sans:
+                sans = [cn] if cn else []
+        except Exception as e:
+            logger.error(f"Failed to parse CSR: {e}")
+            return None
+
         sign_url = f"{ca_chain.step_ca_url}/1.0/sign"
+
+        ott = await self._get_provisioner_token(
+            ca_chain, provisioner_name, provisioner_password, cn, sans
+        )
+        if not ott:
+            logger.error("Failed to generate provisioner token")
+            return None
 
         payload = {
             "csr": csr_pem,
-            "ott": await self._get_provisioner_token(
-                ca_chain, provisioner_name, provisioner_password
-            ),
+            "ott": ott,
             "notAfter": duration,
         }
 
@@ -462,7 +488,7 @@ class StepCAService:
                     json=payload,
                     timeout=30.0,
                 )
-                if resp.status_code == 200 or resp.status_code == 201:
+                if resp.status_code in (200, 201):
                     data = resp.json()
                     return {
                         "crt": data.get("crt", ""),
@@ -477,34 +503,156 @@ class StepCAService:
             return None
 
     async def _get_provisioner_token(
-        self, ca_chain, provisioner_name: str, password: str
+        self,
+        ca_chain,
+        provisioner_name: str,
+        password: str,
+        common_name: str,
+        sans: list[str],
     ) -> str:
-        """Get a one-time token from step-ca for signing.
+        """Generate a signed JWT one-time token for step-ca's /sign endpoint.
 
-        Uses the /provisioners endpoint to get the provisioner's encrypted key,
-        then generates a token locally.
+        Flow:
+        1. Fetch provisioner list from step-ca to get the encrypted JWK key
+        2. Decrypt the JWK private key using the provisioner password (PBES2-HS256+A128KW)
+        3. Fetch root CA cert and compute SHA-256 fingerprint
+        4. Build and sign a JWT with required claims (iss, sub, aud, sha, sans, etc.)
         """
-        # For JWK provisioners, we need to call the step CLI or use the API
-        # The simplest approach is to use step-ca's /1.0/sign with inline credentials
-        # step-ca supports password-based provisioner auth
-        token_url = f"{ca_chain.step_ca_url}/1.0/provisioners"
+        from jwcrypto import jwe, jwk, jwt as jwcrypto_jwt
+
+        base_url = ca_chain.step_ca_url
 
         try:
             async with httpx.AsyncClient(verify=False) as client:
-                # Get provisioner info
-                resp = await client.get(token_url, timeout=10.0)
+                # Step 1: Get provisioner info (public key + encrypted private key)
+                resp = await client.get(f"{base_url}/1.0/provisioners", timeout=10.0)
                 if resp.status_code != 200:
                     logger.error(f"Failed to get provisioners: {resp.status_code}")
                     return ""
 
-                # For now, use empty OTT — step-ca may accept direct CSR signing
-                # with provisioner password in the request
-                # TODO: Implement proper JWK token generation
-                return password
+                provisioners_data = resp.json()
+                provisioners = provisioners_data.get("provisioners", [])
+
+                # Find our JWK provisioner by name
+                provisioner = None
+                for p in provisioners:
+                    if p.get("type") == "JWK" and p.get("name") == provisioner_name:
+                        provisioner = p
+                        break
+
+                if not provisioner:
+                    logger.error(f"JWK provisioner '{provisioner_name}' not found. "
+                                 f"Available: {[p.get('name') for p in provisioners]}")
+                    return ""
+
+                pub_jwk = provisioner.get("key", {})
+                encrypted_key = provisioner.get("encryptedKey", "")
+                kid = pub_jwk.get("kid", "")
+
+                if not encrypted_key:
+                    logger.error("Provisioner has no encryptedKey")
+                    return ""
+
+                # Step 2: Decrypt the JWK private key using provisioner password
+                # jwcrypto PBES2 requires a JWK password key, not raw bytes
+                try:
+                    password_key = jwk.JWK.from_password(password)
+                    jwe_token = jwe.JWE()
+                    jwe_token.deserialize(encrypted_key)
+                    jwe_token.decrypt(password_key)
+                    private_jwk_dict = json.loads(jwe_token.payload)
+                    private_key = jwk.JWK(**private_jwk_dict)
+                except Exception as e:
+                    logger.error(f"Failed to decrypt provisioner key: {e}")
+                    return ""
+
+                # Step 3: Get root CA fingerprint (SHA-256 of DER-encoded root cert)
+                root_fingerprint = await self._get_root_fingerprint(client, base_url, ca_chain)
+                if not root_fingerprint:
+                    logger.error("Failed to get root CA fingerprint")
+                    return ""
+
+                # Step 4: Build JWT claims
+                now = int(time.time())
+                alg = private_jwk_dict.get("alg", pub_jwk.get("alg", "ES256"))
+                claims = {
+                    "iss": provisioner_name,
+                    "sub": common_name,
+                    "aud": f"{base_url}/1.0/sign",
+                    "iat": now,
+                    "nbf": now,
+                    "exp": now + 300,  # 5 minute validity
+                    "jti": str(uuid.uuid4()),
+                    "sha": root_fingerprint,
+                    "sans": sans if sans else [common_name],
+                }
+
+                # Step 5: Sign the JWT
+                token = jwcrypto_jwt.JWT(
+                    header={"alg": alg, "kid": kid, "typ": "JWT"},
+                    claims=claims,
+                )
+                token.make_signed_token(private_key)
+                ott = token.serialize()
+
+                logger.info(f"Generated OTT for provisioner '{provisioner_name}', "
+                            f"sub='{common_name}', alg={alg}")
+                return ott
 
         except Exception as e:
-            logger.error(f"Failed to get provisioner token: {e}")
+            logger.error(f"Failed to generate provisioner token: {e}")
             return ""
+
+    async def _get_root_fingerprint(
+        self, client: httpx.AsyncClient, base_url: str, ca_chain=None
+    ) -> str:
+        """Get SHA-256 fingerprint of the root CA certificate from step-ca.
+
+        Tries multiple methods in order:
+        1. /1.0/roots JSON endpoint
+        2. /roots.pem PEM endpoint
+        3. Root cert from R2 storage (via ca_chain record)
+        Returns hex-encoded fingerprint or empty string on failure.
+        """
+        # Try JSON endpoint first
+        try:
+            resp = await client.get(f"{base_url}/1.0/roots", timeout=10.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                root_certs = data.get("crts", [])
+                if root_certs:
+                    root_cert = x509.load_pem_x509_certificate(root_certs[0].encode())
+                    return hashlib.sha256(
+                        root_cert.public_bytes(serialization.Encoding.DER)
+                    ).hexdigest()
+        except Exception as e:
+            logger.debug(f"/1.0/roots JSON failed: {e}")
+
+        # Fallback to PEM endpoint
+        try:
+            resp = await client.get(f"{base_url}/roots.pem", timeout=10.0)
+            if resp.status_code == 200:
+                root_cert = x509.load_pem_x509_certificate(resp.content)
+                return hashlib.sha256(
+                    root_cert.public_bytes(serialization.Encoding.DER)
+                ).hexdigest()
+        except Exception as e:
+            logger.debug(f"/roots.pem failed: {e}")
+
+        # Fallback: compute from CA chain files in R2
+        if ca_chain and ca_chain.ca_chain_r2_key:
+            try:
+                chain_bytes = self.download_from_r2(ca_chain.ca_chain_r2_key)
+                if chain_bytes:
+                    root_pem = self.extract_root_cert(chain_bytes)
+                    root_cert = x509.load_pem_x509_certificate(root_pem)
+                    return hashlib.sha256(
+                        root_cert.public_bytes(serialization.Encoding.DER)
+                    ).hexdigest()
+            except Exception as e:
+                logger.debug(f"R2 root cert fallback failed: {e}")
+
+        return ""
 
     async def revoke_certificate(
         self, ca_chain, serial_number: str, reason: str = ""
