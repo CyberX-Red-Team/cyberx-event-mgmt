@@ -403,6 +403,7 @@ class RenderServiceManager:
             "repo": self.render_repo_url,
             "branch": branch,
             "autoDeploy": "no",
+            "envVars": env_vars,
             "serviceDetails": {
                 "plan": plan,
                 "region": region,
@@ -411,7 +412,6 @@ class RenderServiceManager:
                     "dockerfilePath": dockerfile_path,
                     "dockerContext": ".",
                 },
-                "envVars": env_vars,
             },
         }
 
