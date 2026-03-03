@@ -532,16 +532,30 @@ class StepCAService:
 
                 provisioners_data = resp.json()
 
+                # Log raw response structure for debugging
+                if isinstance(provisioners_data, dict):
+                    logger.info(f"Provisioners response keys: {list(provisioners_data.keys())}")
+                else:
+                    logger.info(f"Provisioners response type: {type(provisioners_data).__name__}")
+
                 # step-ca may return {"provisioners": [...]} or just [...]
+                # or may nest items under a different key
                 if isinstance(provisioners_data, list):
                     provisioners = provisioners_data
                 elif isinstance(provisioners_data, dict):
-                    provisioners = provisioners_data.get("provisioners") or []
+                    # Try common keys: "provisioners", items at top level
+                    provisioners = (
+                        provisioners_data.get("provisioners")
+                        or provisioners_data.get("items")
+                        or []
+                    )
+                    # If still empty, check if the dict itself looks like a single provisioner
+                    if not provisioners and provisioners_data.get("type") == "JWK":
+                        provisioners = [provisioners_data]
                 else:
                     provisioners = []
 
-                logger.debug(f"Provisioners response keys: {list(provisioners_data.keys()) if isinstance(provisioners_data, dict) else 'list'}, "
-                             f"count: {len(provisioners)}")
+                logger.info(f"Found {len(provisioners)} provisioner(s)")
 
                 # Find our JWK provisioner by name
                 provisioner = None
