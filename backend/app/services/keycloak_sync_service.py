@@ -500,6 +500,106 @@ class KeycloakSyncService:
 
         return users[0]["id"]
 
+    async def ensure_webhook(self) -> dict:
+        """Check if a Keycloak webhook exists pointing at this app; create one if not.
+
+        Uses the p2-inc/keycloak-events plugin REST API:
+          GET  /realms/{realm}/webhooks  — list existing webhooks
+          POST /realms/{realm}/webhooks  — create a new webhook
+
+        Returns:
+            Dict with 'status' ('exists', 'created', 'error') and optional details.
+        """
+        if not self.settings.KEYCLOAK_URL:
+            return {"status": "error", "detail": "Keycloak URL not configured"}
+
+        webhook_secret = self.settings.KEYCLOAK_WEBHOOK_SECRET
+        if not webhook_secret:
+            return {"status": "error", "detail": "KEYCLOAK_WEBHOOK_SECRET not configured"}
+
+        # Build the target URL that Keycloak should POST events to
+        target_url = f"{self.settings.FRONTEND_URL}/api/webhooks/keycloak"
+        realm = self.settings.KEYCLOAK_REALM
+        webhooks_url = (
+            f"{self.settings.KEYCLOAK_URL}/realms/{realm}/webhooks"
+        )
+
+        try:
+            admin_token = await self._get_admin_token()
+        except Exception as e:
+            return {"status": "error", "detail": f"Failed to get admin token: {e}"}
+
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # List existing webhooks
+                resp = await client.get(webhooks_url, headers=headers)
+
+                if resp.status_code == 404:
+                    return {
+                        "status": "error",
+                        "detail": (
+                            "Webhook endpoint not found — is the p2-inc/keycloak-events "
+                            "plugin installed in Keycloak?"
+                        ),
+                    }
+
+                if resp.status_code != 200:
+                    return {
+                        "status": "error",
+                        "detail": f"Failed to list webhooks: {resp.status_code} {resp.text}",
+                    }
+
+                webhooks = resp.json()
+
+                # Check if one already points to our target URL
+                for wh in webhooks:
+                    if wh.get("url") == target_url:
+                        wh_id = wh.get("id", "")
+                        enabled = wh.get("enabled", False)
+                        logger.info(
+                            f"Keycloak webhook already exists (id={wh_id}, enabled={enabled})"
+                        )
+                        return {
+                            "status": "exists",
+                            "webhook_id": wh_id,
+                            "enabled": enabled,
+                            "url": target_url,
+                        }
+
+                # Create a new webhook
+                payload = {
+                    "enabled": True,
+                    "url": target_url,
+                    "secret": webhook_secret,
+                    "eventTypes": ["*"],
+                }
+                create_resp = await client.post(
+                    webhooks_url, headers=headers, json=payload
+                )
+
+                if create_resp.status_code in (200, 201):
+                    created = create_resp.json() if create_resp.text else {}
+                    wh_id = created.get("id", "")
+                    logger.info(f"Created Keycloak webhook (id={wh_id}) → {target_url}")
+                    return {
+                        "status": "created",
+                        "webhook_id": wh_id,
+                        "url": target_url,
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "detail": f"Failed to create webhook: {create_resp.status_code} {create_resp.text}",
+                    }
+
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            return {"status": "error", "detail": f"Keycloak unreachable: {e}"}
+        except Exception as e:
+            logger.error(f"Webhook setup error: {e}")
+            return {"status": "error", "detail": str(e)}
+
     async def check_keycloak_health(self) -> bool:
         """Check if Keycloak is reachable."""
         if not self.settings.KEYCLOAK_URL:

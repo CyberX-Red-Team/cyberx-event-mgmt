@@ -160,6 +160,9 @@
                     </div>
                 </div>
                 <div class="col-md-4 text-end">
+                    <button class="btn btn-sm btn-outline-warning me-1" onclick="setupKeycloakWebhook()" id="webhookBtn" title="Ensure webhook is configured in Keycloak">
+                        <i data-feather="link" class="me-1"></i> Setup Webhook
+                    </button>
                     <button class="btn btn-sm btn-outline-primary me-1" onclick="syncAllUnsynced()" id="syncAllBtn">
                         <i data-feather="refresh-cw" class="me-1"></i> Sync All Unsynced
                     </button>
@@ -1977,6 +1980,47 @@ window.bulkSyncKeycloak = async function() {
     } catch (error) {
         console.error('Error:', error);
         showToast('Bulk sync failed', 'danger');
+    }
+};
+
+window.setupKeycloakWebhook = async function() {
+    const btn = document.getElementById('webhookBtn');
+    const resultEl = document.getElementById('kcSyncResult');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Checking...';
+
+    try {
+        const response = await csrfFetch('/api/admin/keycloak/setup-webhook', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            if (data.status === 'exists') {
+                const enabledText = data.enabled ? 'enabled' : 'disabled';
+                showToast(`Webhook already exists (${enabledText})`, 'info');
+            } else if (data.status === 'created') {
+                showToast('Webhook created successfully', 'success');
+            }
+
+            resultEl.innerHTML = `
+                <div class="alert alert-${data.status === 'created' ? 'success' : 'info'} alert-dismissible mb-0 py-2 small">
+                    Webhook ${data.status === 'created' ? 'created' : 'exists'}: <code>${data.url || ''}</code>
+                    <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            resultEl.style.display = 'block';
+        } else {
+            showToast(data.detail || 'Webhook setup failed', 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Failed to setup webhook', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-feather="link" class="me-1"></i> Setup Webhook';
+        feather.replace();
     }
 };
 

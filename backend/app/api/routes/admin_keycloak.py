@@ -153,6 +153,43 @@ async def sync_single_user(
     }
 
 
+@router.post("/setup-webhook")
+async def setup_keycloak_webhook(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Check if a Keycloak webhook exists for this app; create one if not.
+
+    Requires the p2-inc/keycloak-events plugin to be installed in Keycloak.
+    Uses KEYCLOAK_WEBHOOK_SECRET for HMAC signing and FRONTEND_URL as the
+    webhook target.
+    """
+    settings = get_settings()
+
+    if not settings.KEYCLOAK_URL:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Keycloak URL is not configured"
+        )
+
+    if not settings.KEYCLOAK_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="KEYCLOAK_WEBHOOK_SECRET is not configured"
+        )
+
+    service = KeycloakSyncService(db)
+    result = await service.ensure_webhook()
+
+    if result["status"] == "error":
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=result.get("detail", "Webhook setup failed")
+        )
+
+    return result
+
+
 class BulkSyncRequest(BaseModel):
     user_ids: List[int] = []  # Empty = all unsynced confirmed users
 
