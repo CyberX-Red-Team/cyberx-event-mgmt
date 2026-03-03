@@ -531,18 +531,29 @@ class StepCAService:
                     return ""
 
                 provisioners_data = resp.json()
-                provisioners = provisioners_data.get("provisioners", [])
+
+                # step-ca may return {"provisioners": [...]} or just [...]
+                if isinstance(provisioners_data, list):
+                    provisioners = provisioners_data
+                elif isinstance(provisioners_data, dict):
+                    provisioners = provisioners_data.get("provisioners") or []
+                else:
+                    provisioners = []
+
+                logger.debug(f"Provisioners response keys: {list(provisioners_data.keys()) if isinstance(provisioners_data, dict) else 'list'}, "
+                             f"count: {len(provisioners)}")
 
                 # Find our JWK provisioner by name
                 provisioner = None
                 for p in provisioners:
-                    if p.get("type") == "JWK" and p.get("name") == provisioner_name:
+                    if isinstance(p, dict) and p.get("type") == "JWK" and p.get("name") == provisioner_name:
                         provisioner = p
                         break
 
                 if not provisioner:
+                    names = [p.get('name') for p in provisioners if isinstance(p, dict)]
                     logger.error(f"JWK provisioner '{provisioner_name}' not found. "
-                                 f"Available: {[p.get('name') for p in provisioners]}")
+                                 f"Available: {names}")
                     return ""
 
                 pub_jwk = provisioner.get("key", {})
