@@ -576,8 +576,14 @@ class StepCAService:
                     return ""
 
                 # Step 2: Decrypt the JWK private key using provisioner password
-                # jwcrypto PBES2 requires a JWK password key, not raw bytes
+                # jwcrypto PBES2 requires a JWK password key, not raw bytes.
+                # step-ca uses p2c=100000 which exceeds jwcrypto's default limit.
                 try:
+                    from jwcrypto import jwa
+                    jwa.default_max_pbkdf2_iterations = max(
+                        jwa.default_max_pbkdf2_iterations, 200000
+                    )
+
                     password_key = jwk.JWK.from_password(password)
                     jwe_token = jwe.JWE()
                     jwe_token.deserialize(encrypted_key)
