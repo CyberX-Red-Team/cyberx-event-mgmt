@@ -6,6 +6,7 @@ operations (CSR generation, signing, revocation) via step-ca's API.
 import base64
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -308,7 +309,16 @@ class StepCAService:
             {"key": "STEPCA_PROVISIONER_NAME", "value": ca_chain.step_ca_provisioner or "cyberx"},
         ]
 
-        service_name = f"cyberx-stepca-{ca_chain.id}"
+        # Build service name from signing cert CN (e.g. "cyberx-stepca-chiton")
+        try:
+            signing_cert = x509.load_pem_x509_certificate(signing_cert_bytes)
+            cn_attr = signing_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+            cn = cn_attr[0].value if cn_attr else str(ca_chain.id)
+        except Exception:
+            cn = str(ca_chain.id)
+        # Sanitize for Render service name: lowercase, alphanumeric + hyphens, max 63 chars
+        cn_slug = re.sub(r'[^a-z0-9]+', '-', cn.lower()).strip('-')[:40]
+        service_name = f"cyberx-stepca-{cn_slug}"
 
         # Update status
         ca_chain.step_ca_status = "starting"
