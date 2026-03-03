@@ -19,9 +19,16 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa, utils
 from cryptography.x509.oid import NameOID
 
+from jwcrypto import jwe, jwk, jwa
+from jwcrypto import jwt as jwcrypto_jwt
+
 from app.config import get_settings
 from app.services.render_service import RenderServiceManager
 from app.utils.encryption import encrypt_field, decrypt_field
+
+# step-ca encrypts provisioner JWK keys with PBES2 using p2c=100000 iterations.
+# jwcrypto defaults to max 16384 — raise it so we can decrypt provisioner keys.
+jwa.default_max_pbkdf2_iterations = 200000
 
 logger = logging.getLogger(__name__)
 
@@ -518,8 +525,6 @@ class StepCAService:
         3. Fetch root CA cert and compute SHA-256 fingerprint
         4. Build and sign a JWT with required claims (iss, sub, aud, sha, sans, etc.)
         """
-        from jwcrypto import jwe, jwk, jwt as jwcrypto_jwt
-
         base_url = ca_chain.step_ca_url
 
         try:
@@ -577,13 +582,8 @@ class StepCAService:
 
                 # Step 2: Decrypt the JWK private key using provisioner password
                 # jwcrypto PBES2 requires a JWK password key, not raw bytes.
-                # step-ca uses p2c=100000 which exceeds jwcrypto's default limit.
+                # p2c limit is raised at module level (see top of file).
                 try:
-                    from jwcrypto import jwa
-                    jwa.default_max_pbkdf2_iterations = max(
-                        jwa.default_max_pbkdf2_iterations, 200000
-                    )
-
                     password_key = jwk.JWK.from_password(password)
                     jwe_token = jwe.JWE()
                     jwe_token.deserialize(encrypted_key)
