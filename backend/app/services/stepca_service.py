@@ -17,20 +17,94 @@ import httpx
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa, utils
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
 from cryptography.x509.oid import NameOID
-
-from jwcrypto import jwe, jwk, jwa
-from jwcrypto import jwt as jwcrypto_jwt
+from jose import jwt as jose_jwt
+from jose.constants import Algorithms
 
 from app.config import get_settings
 from app.services.render_service import RenderServiceManager
 from app.utils.encryption import encrypt_field, decrypt_field
 
-# step-ca encrypts provisioner JWK keys with PBES2 using p2c=100000 iterations.
-# jwcrypto defaults to max 16384 — raise it so we can decrypt provisioner keys.
-jwa.default_max_pbkdf2_iterations = 200000
-
 logger = logging.getLogger(__name__)
+
+
+def _base64url_decode(data: str) -> bytes:
+    """Decode base64url string (no padding required)."""
+    # Add padding if needed
+    rem = len(data) % 4
+    if rem:
+        data += "=" * (4 - rem)
+    return base64.urlsafe_b64decode(data)
+
+
+def _base64url_encode(data: bytes) -> str:
+    """Encode bytes as base64url string (no padding)."""
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _decrypt_jwe_pbes2(jwe_compact: str, password: str) -> bytes:
+    """Decrypt a JWE compact serialization encrypted with PBES2-HS256+A128KW + A256GCM.
+
+    This implements the decryption manually using the `cryptography` library,
+    bypassing jwcrypto's PBKDF2 iteration limit which blocks step-ca's p2c=100000.
+
+    Args:
+        jwe_compact: JWE compact serialization string (5 base64url parts separated by dots)
+        password: Password used to derive the key encryption key
+
+    Returns:
+        Decrypted plaintext bytes.
+    """
+    parts = jwe_compact.split(".")
+    if len(parts) != 5:
+        raise ValueError(f"Invalid JWE compact serialization: expected 5 parts, got {len(parts)}")
+
+    header_b64, ek_b64, iv_b64, ct_b64, tag_b64 = parts
+
+    # Decode header
+    header = json.loads(_base64url_decode(header_b64))
+    alg = header.get("alg", "")
+    enc = header.get("enc", "")
+    p2c = header.get("p2c", 0)
+    p2s_b64 = header.get("p2s", "")
+
+    if alg != "PBES2-HS256+A128KW":
+        raise ValueError(f"Unsupported JWE algorithm: {alg}")
+    if enc != "A256GCM":
+        raise ValueError(f"Unsupported JWE encryption: {enc}")
+
+    # Decode the JWE parts
+    encrypted_key = _base64url_decode(ek_b64)
+    iv = _base64url_decode(iv_b64)
+    ciphertext = _base64url_decode(ct_b64)
+    tag = _base64url_decode(tag_b64)
+    p2s = _base64url_decode(p2s_b64)
+
+    # Derive KEK using PBKDF2 (RFC 7518 Section 4.8.1.1)
+    # Salt = UTF8(alg) || 0x00 || p2s
+    salt = alg.encode("utf-8") + b"\x00" + p2s
+
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=16,  # 128 bits for A128KW
+        salt=salt,
+        iterations=p2c,
+    )
+    kek = kdf.derive(password.encode("utf-8"))
+
+    # Unwrap CEK using AES Key Wrap (RFC 3394)
+    cek = aes_key_unwrap(kek, encrypted_key)
+
+    # Decrypt ciphertext using AES-256-GCM
+    # AAD = ASCII bytes of the base64url-encoded header (NOT decoded)
+    aad = header_b64.encode("ascii")
+    aesgcm = AESGCM(cek)
+    plaintext = aesgcm.decrypt(iv, ciphertext + tag, aad)
+
+    return plaintext
 
 
 class StepCAService:
@@ -581,15 +655,11 @@ class StepCAService:
                     return ""
 
                 # Step 2: Decrypt the JWK private key using provisioner password
-                # jwcrypto PBES2 requires a JWK password key, not raw bytes.
-                # p2c limit is raised at module level (see top of file).
+                # Uses manual PBES2-HS256+A128KW + A256GCM decryption via cryptography
+                # to avoid jwcrypto's PBKDF2 iteration limit (step-ca uses p2c=100000).
                 try:
-                    password_key = jwk.JWK.from_password(password)
-                    jwe_token = jwe.JWE()
-                    jwe_token.deserialize(encrypted_key)
-                    jwe_token.decrypt(password_key)
-                    private_jwk_dict = json.loads(jwe_token.payload)
-                    private_key = jwk.JWK(**private_jwk_dict)
+                    decrypted = _decrypt_jwe_pbes2(encrypted_key, password)
+                    private_jwk_dict = json.loads(decrypted)
                 except Exception as e:
                     logger.error(f"Failed to decrypt provisioner key: {e}")
                     return ""
@@ -615,13 +685,12 @@ class StepCAService:
                     "sans": sans if sans else [common_name],
                 }
 
-                # Step 5: Sign the JWT
-                token = jwcrypto_jwt.JWT(
-                    header={"alg": alg, "kid": kid, "typ": "JWT"},
-                    claims=claims,
-                )
-                token.make_signed_token(private_key)
-                ott = token.serialize()
+                # Step 5: Sign the JWT using python-jose with the decrypted JWK
+                jose_alg = {"ES256": Algorithms.ES256, "ES384": Algorithms.ES384,
+                            "ES512": Algorithms.ES512, "RS256": Algorithms.RS256,
+                            }.get(alg, Algorithms.ES256)
+                headers = {"kid": kid, "typ": "JWT"}
+                ott = jose_jwt.encode(claims, private_jwk_dict, algorithm=jose_alg, headers=headers)
 
                 logger.info(f"Generated OTT for provisioner '{provisioner_name}', "
                             f"sub='{common_name}', alg={alg}")

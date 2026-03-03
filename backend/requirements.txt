@@ -12,8 +12,7 @@ alembic==1.14.0
 bcrypt==4.2.1
 passlib==1.7.4
 python-jose[cryptography]==3.3.0
-cryptography==44.0.0  # For field encryption (Fernet)
-jwcrypto==1.5.6  # For step-ca JWK/JWE provisioner token generation
+cryptography==44.0.0  # For field encryption (Fernet) + step-ca JWE decryption
 itsdangerous==2.2.0  # For CSRF token signing
 
 # Email
