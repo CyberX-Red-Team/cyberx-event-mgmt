@@ -753,9 +753,9 @@ class CPECertificateService:
                     for paragraph in footer.paragraphs:
                         self._replace_in_paragraph(paragraph, replacements)
 
-        # Reduce paragraph spacing so LibreOffice keeps output to one page.
-        # Without this, the disclaimer text overflows past the page boundary.
-        self._reduce_spacing_for_libreoffice(doc)
+        # NOTE: spacing reduction removed — the landscape two-signature template
+        # fits on one page without it, and the 30% reduction caused overlay position
+        # drift across different LibreOffice versions (local vs Render Gotenberg).
 
         # Save to bytes
         buffer = io.BytesIO()
