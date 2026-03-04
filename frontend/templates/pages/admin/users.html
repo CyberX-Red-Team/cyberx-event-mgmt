@@ -256,9 +256,6 @@
                             <label class="form-label small">Country</label>
                             <select class="form-select" id="userCountryFilter">
                                 <option value="">All Countries</option>
-                                <option value="United States">🇺🇸 United States</option>
-                                <option value="Canada">🇨🇦 Canada</option>
-                                <option value="United Kingdom">🇬🇧 United Kingdom</option>
                             </select>
                         </div>
                         <div class="col-md-1 d-flex align-items-end gap-1">
@@ -445,9 +442,6 @@
                             <label class="form-label">Country</label>
                             <select class="form-select" id="userCountry">
                                 <option value="">Select country...</option>
-                                <option value="United States">🇺🇸 United States</option>
-                                <option value="Canada">🇨🇦 Canada</option>
-                                <option value="United Kingdom">🇬🇧 United Kingdom</option>
                             </select>
                         </div>
                         <div class="col-md-6">
@@ -728,6 +722,7 @@ const formatDateTime = window.formatDateTime || function(dateStr) {
 // Initialization
 // =============================================================================
 document.addEventListener('DOMContentLoaded', () => {
+    loadCountries();
     loadStats();
     loadUsers(1);
     loadSponsors();
@@ -1081,13 +1076,49 @@ function getEmailStatusBadge(emailStatus) {
     return badges[emailStatus] || '<span class="badge bg-secondary">-</span>';
 }
 
+let countriesData = null;
+
+async function loadCountries() {
+    try {
+        const response = await csrfFetch('/api/public/countries');
+        if (!response.ok) throw new Error('Failed to load countries');
+        const data = await response.json();
+        countriesData = data;
+    } catch (error) {
+        console.error('Error loading countries:', error);
+        countriesData = {
+            countries: [
+                { value: 'United States', flag: '🇺🇸', label: 'United States' }
+            ],
+            default: 'United States'
+        };
+    }
+    populateCountryDropdown('userCountry', countriesData.default);
+    populateCountryDropdown('userCountryFilter', null, true);
+}
+
+function populateCountryDropdown(elementId, defaultValue, keepFirst = false) {
+    const select = document.getElementById(elementId);
+    if (!select || !countriesData) return;
+    const placeholder = select.options[0];
+    select.innerHTML = '';
+    if (keepFirst && placeholder) select.appendChild(placeholder);
+    else if (!keepFirst) select.innerHTML = '<option value="">Select country...</option>';
+    countriesData.countries.forEach(c => {
+        const option = document.createElement('option');
+        option.value = c.value;
+        option.textContent = `${c.flag} ${c.label}`;
+        if (defaultValue && c.value === defaultValue) option.selected = true;
+        select.appendChild(option);
+    });
+}
+
 function getCountryFlag(country) {
-    const flags = {
-        'United States': '🇺🇸',
-        'Canada': '🇨🇦',
-        'United Kingdom': '🇬🇧'
-    };
-    return flags[country] || '🌐';
+    if (countriesData && countriesData.countries) {
+        const match = countriesData.countries.find(c => c.value === country);
+        if (match) return match.flag;
+    }
+    return '🌐';
 }
 
 function formatCountryDisplay(country) {
