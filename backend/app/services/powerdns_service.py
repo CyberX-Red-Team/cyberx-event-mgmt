@@ -212,6 +212,44 @@ class PowerDNSService:
             logger.error(f"Error in PowerDNS list_zones: {e}")
             return []
 
+    async def get_zone_rrsets(self, zone_name: str) -> list[dict]:
+        """Get all RRsets for a zone from the PowerDNS server.
+
+        Uses the API key to call GET /servers/localhost/zones/{zone_name}.
+        Returns a list of rrset dicts (each has 'name', 'type', 'records', etc.)
+        or an empty list on failure.
+        """
+        if not self.api_key:
+            return []
+
+        # Ensure zone name ends with a dot for the API
+        api_zone = zone_name.rstrip(".") + "."
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.get(
+                    f"{self.server_base_url}/servers/localhost/zones/{api_zone}",
+                    headers={"X-API-Key": self.api_key},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get("rrsets", [])
+                if response.status_code == 404:
+                    return []
+                logger.error(
+                    f"Failed to get zone '{zone_name}': "
+                    f"{response.status_code} {response.text}"
+                )
+                return []
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            logger.warning(
+                f"PowerDNS-Admin unavailable (get_zone_rrsets): {e}"
+            )
+            return []
+        except Exception as e:
+            logger.error(f"Error in PowerDNS get_zone_rrsets: {e}")
+            return []
+
     async def set_zone_account(
         self, zone_name: str, account_name: str
     ) -> bool:
@@ -380,12 +418,20 @@ class PowerDNSService:
     async def validate_domain_for_cert(self, fqdn: str) -> tuple[bool, str]:
         """Validate that an FQDN is eligible for TLS certificate issuance.
 
-        Rules:
-        1. FQDN must not be a bare TLD (e.g. 'com', 'org')
-        2. FQDN must have at least 2 labels (e.g. 'widgets.com', not 'com')
-        3. The parent zone must exist in PowerDNS
+        Zones in PowerDNS are bare TLDs (e.g. 'biz', 'com'). Records are
+        organized by depth relative to the zone:
+          depth 0 = zone apex (biz)
+          depth 1 = direct child (test.biz)
+          depth 2 = sub-child (www.test.biz)
 
-        For wildcards (e.g. '*.example.com'), the base domain is checked.
+        Rules:
+        1. FQDN must have at least 2 labels (e.g. 'test.biz', not 'biz')
+        2. A parent zone must exist in PowerDNS
+        3. Non-wildcard: exact DNS record must exist (e.g. 'test.biz')
+        4. Wildcard (*.test.biz): any record under the depth-1 label 'test'
+           proves the participant owns that domain space — accepts test.biz,
+           www.test.biz, mail.test.biz, etc.
+        5. *.biz (bare TLD wildcard) is blocked by the 2-label check
 
         Returns:
             Tuple of (is_valid, error_message). error_message is empty if valid.
@@ -410,10 +456,77 @@ class PowerDNSService:
             return False, "Unable to connect to PowerDNS or no zones configured"
 
         zone_names = {z.get("name", "").rstrip(".").lower() for z in zones}
+        logger.debug(
+            f"Domain validation: fqdn='{fqdn}', check_domain='{check_domain}', "
+            f"zone_names={zone_names}"
+        )
 
-        for i in range(len(parts) - 1):
+        # Find the matching parent zone
+        matched_zone = None
+        for i in range(len(parts)):
             candidate = ".".join(parts[i:]).lower()
             if candidate in zone_names:
+                matched_zone = candidate
+                break
+
+        if not matched_zone:
+            return False, f"No matching zone found in PowerDNS for '{fqdn}'"
+
+        # Verify DNS records exist within the zone
+        rrsets = await self.get_zone_rrsets(matched_zone)
+        if not rrsets:
+            return False, f"Zone '{matched_zone}' has no records or is unreachable"
+
+        # Build set of record names (PowerDNS uses trailing dot, strip it)
+        zone_suffix = "." + matched_zone + "."
+        record_names = {r.get("name", "").lower() for r in rrsets}
+        logger.debug(
+            f"Record validation: check_domain='{check_domain}', "
+            f"is_wildcard={clean.startswith('*.')}, records={record_names}"
+        )
+
+        is_wildcard = clean.startswith("*.")
+        base_name = check_domain.lower().rstrip(".") + "."
+
+        # For non-wildcard requests, check for an exact record match
+        if not is_wildcard:
+            if base_name in record_names:
+                return True, ""
+            return False, (
+                f"No DNS record found for '{check_domain}' in zone "
+                f"'{matched_zone}'. Create the record in PowerDNS first."
+            )
+
+        # For wildcard requests (e.g. *.test.biz with zone 'biz'):
+        # Organize records by depth relative to the zone.
+        #   depth 0 = zone apex (biz.)
+        #   depth 1 = direct child (test.biz.)
+        #   depth 2 = sub-child (www.test.biz.)
+        # The wildcard base domain (test.biz) is at depth 1.
+        # Accept the wildcard if ANY record exists under that depth-1 label,
+        # i.e. the base domain itself (test.biz.) or any sub-record (www.test.biz.).
+        wildcard_base_label = check_domain.split(".")[0].lower()  # e.g. "test"
+
+        for name in record_names:
+            # Strip zone suffix to get the relative part
+            if not name.endswith(zone_suffix):
+                continue
+            relative = name[: -len(zone_suffix)]  # e.g. "test" or "www.test"
+            if not relative:
+                continue  # depth 0 (zone apex), skip
+
+            # Check if this record's depth-1 label matches the wildcard base
+            rel_parts = relative.split(".")
+            depth1_label = rel_parts[-1]  # rightmost label = depth 1
+            if depth1_label == wildcard_base_label:
+                logger.debug(
+                    f"Wildcard validated: record '{name}' matches "
+                    f"depth-1 label '{wildcard_base_label}'"
+                )
                 return True, ""
 
-        return False, f"No matching zone found in PowerDNS for '{fqdn}'"
+        return False, (
+            f"No DNS records found under '{check_domain}' in zone "
+            f"'{matched_zone}'. Create at least one record (e.g. "
+            f"'{check_domain}' or 'www.{check_domain}') in PowerDNS first."
+        )

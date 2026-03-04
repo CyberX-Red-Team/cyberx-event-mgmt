@@ -1168,6 +1168,68 @@
             color: #fff !important;
         }
 
+        /* Global text utilities dark mode */
+        [data-theme="dark"] .text-muted {
+            color: var(--text-muted) !important;
+        }
+        [data-theme="dark"] .text-dark {
+            color: var(--text-primary) !important;
+        }
+        [data-theme="dark"] .text-body {
+            color: var(--text-primary) !important;
+        }
+        [data-theme="dark"] .border {
+            border-color: var(--border-color) !important;
+        }
+        [data-theme="dark"] .border-bottom {
+            border-color: var(--border-color) !important;
+        }
+
+        /* Modals dark mode */
+        [data-theme="dark"] .modal-content {
+            background-color: var(--modal-bg);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+        [data-theme="dark"] .modal-header {
+            border-color: var(--border-color);
+        }
+        [data-theme="dark"] .modal-footer {
+            border-color: var(--border-color);
+        }
+
+        /* Dropdown menus dark mode */
+        [data-theme="dark"] .dropdown-menu {
+            background-color: var(--bg-card);
+            border-color: var(--border-color);
+        }
+        [data-theme="dark"] .dropdown-item {
+            color: var(--text-primary);
+        }
+        [data-theme="dark"] .dropdown-item:hover,
+        [data-theme="dark"] .dropdown-item:focus {
+            background-color: var(--hover-bg);
+            color: var(--text-primary);
+        }
+        [data-theme="dark"] .dropdown-divider {
+            border-color: var(--border-color);
+        }
+
+        /* Dashboard top navbar dark mode */
+        [data-theme="dark"] .navbar.navbar-light {
+            background-color: var(--navbar-bg) !important;
+        }
+        [data-theme="dark"] .navbar.navbar-light .nav-link,
+        [data-theme="dark"] .navbar.navbar-light .navbar-text {
+            color: var(--text-primary) !important;
+        }
+        [data-theme="dark"] .navbar.navbar-light .nav-link:hover {
+            color: var(--primary-color) !important;
+        }
+        [data-theme="dark"] .navbar.navbar-light .navbar-toggler-icon {
+            filter: invert(1);
+        }
+
         /* Force authentication pages to always use light mode styling */
         #layoutAuthentication {
             /* Reset all theme variables to light mode values */

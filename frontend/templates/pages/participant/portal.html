@@ -7,10 +7,10 @@
     .vpn-cell {
         cursor: pointer;
         user-select: text;
-        border-bottom: 1px dotted #dee2e6;
+        border-bottom: 1px dotted var(--border-color, #dee2e6);
     }
     .vpn-cell:hover {
-        background-color: #f8f9fa;
+        background-color: var(--hover-bg, rgba(0, 0, 0, 0.05));
     }
     .popover-body {
         user-select: text;
@@ -35,7 +35,7 @@
             background-color: transparent;
         }
         30% {
-            background-color: #d1e7dd;
+            background-color: rgba(25, 135, 84, 0.2);
             transform: scale(1.02);
         }
         100% {
@@ -51,7 +51,7 @@
             background-color: transparent;
         }
         30% {
-            background-color: #f8d7da;
+            background-color: rgba(220, 53, 69, 0.2);
             transform: scale(1.02);
         }
         100% {
@@ -105,7 +105,7 @@
 
 {% block body %}
 <!-- Navigation -->
-<nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #212529;">
+<nav class="navbar navbar-expand-lg navbar-dark" style="background-color: var(--sidebar-bg, #212529);">
     <div class="container">
         <a class="navbar-brand" href="/portal">
             <img src="/static/img/cyberx-star-logo.svg" alt="CyberX" style="width: 28px; height: 28px; vertical-align: middle;" class="me-2">CyberX Portal
