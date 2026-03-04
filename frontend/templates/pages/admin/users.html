@@ -166,6 +166,9 @@
                     <button class="btn btn-sm btn-outline-primary me-1" onclick="syncAllUnsynced()" id="syncAllBtn">
                         <i data-feather="refresh-cw" class="me-1"></i> Sync All Unsynced
                     </button>
+                    <button class="btn btn-sm btn-outline-danger me-1" onclick="forceSyncAll()" id="forceSyncBtn" title="Re-sync ALL users to Keycloak (use after stack rebuild)">
+                        <i data-feather="zap" class="me-1"></i> Force Re-sync All
+                    </button>
                     <button class="btn btn-sm btn-outline-secondary" onclick="loadKeycloakStatus()" title="Refresh status">
                         <i data-feather="refresh-cw"></i>
                     </button>
@@ -1975,6 +1978,54 @@ window.syncAllUnsynced = async function() {
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i data-feather="refresh-cw" class="me-1"></i> Sync All Unsynced';
+        feather.replace();
+    }
+};
+
+window.forceSyncAll = async function() {
+    if (!confirm('Force re-sync ALL users to Keycloak?\n\nThis will re-create/update every user with credentials in Keycloak, regardless of current sync status. Use this after rebuilding the Keycloak stack.')) return;
+
+    const btn = document.getElementById('forceSyncBtn');
+    const resultEl = document.getElementById('kcSyncResult');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Force Syncing...';
+    resultEl.style.display = 'none';
+
+    try {
+        const response = await csrfFetch('/api/admin/keycloak/sync-confirmed', {
+            method: 'POST',
+            body: { user_ids: [], force: true }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            let alertClass = 'alert-success';
+            if (data.failed > 0) alertClass = 'alert-warning';
+            if (data.queued === 0) alertClass = 'alert-info';
+
+            resultEl.innerHTML = `
+                <div class="alert ${alertClass} alert-dismissible mb-0 py-2 small">
+                    ${data.queued === 0
+                        ? 'No users with credentials found.'
+                        : `Force synced ${data.queued} user(s): ${data.synced} synced, ${data.failed} failed, ${data.skipped} skipped`}
+                    <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            resultEl.style.display = 'block';
+        } else {
+            showToast(data.detail || 'Force sync failed', 'danger');
+        }
+
+        loadUsers(currentPage);
+        loadKeycloakStatus();
+
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Force sync failed', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-feather="zap" class="me-1"></i> Force Re-sync All';
         feather.replace();
     }
 };

@@ -192,6 +192,7 @@ async def setup_keycloak_webhook(
 
 class BulkSyncRequest(BaseModel):
     user_ids: List[int] = []  # Empty = all unsynced confirmed users
+    force: bool = False  # When True, re-sync ALL users with credentials (even already-synced)
 
 
 @router.post("/sync-confirmed")
@@ -205,6 +206,7 @@ async def sync_confirmed_users(
 
     If user_ids is provided, syncs only those users.
     If user_ids is empty, syncs all confirmed users who aren't yet synced.
+    If force is True, syncs ALL users with credentials regardless of sync status.
     """
     settings = get_settings()
     if not settings.KEYCLOAK_URL:
@@ -221,8 +223,8 @@ async def sync_confirmed_users(
 
     if request.user_ids:
         query = query.where(User.id.in_(request.user_ids))
-    else:
-        # Only unsynced users when doing bulk all
+    elif not request.force:
+        # Only unsynced users when doing bulk all (unless force=True)
         query = query.where(User.keycloak_synced == False)
 
     result = await db.execute(query)
@@ -234,6 +236,11 @@ async def sync_confirmed_users(
             "queued": 0,
             "message": "No users to sync"
         }
+
+    # When force syncing, reset keycloak_synced so status reflects re-sync
+    if request.force:
+        for user in users:
+            user.keycloak_synced = False
 
     # Queue sync entries for each user
     service = KeycloakSyncService(db)
