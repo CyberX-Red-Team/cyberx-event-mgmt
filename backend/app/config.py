@@ -117,11 +117,13 @@ class Settings(BaseSettings):
     DOWNLOAD_LINK_EXPIRY: int = 3600   # Default 1 hour
 
     # CPE Certificate Configuration
-    CPE_TEMPLATE_R2_KEY: str = ""         # R2 object key for DOCX template (e.g. "templates/cpe_template.docx")
-    CPE_SIGNATURE_IMAGE_R2_KEY: str = ""  # R2 object key for signature image (PNG, transparent bg)
-    CPE_SIGNER_NAME: str = ""             # Signer name+title for certificate (e.g. "John Doe, CISSP / Director")
+    CPE_TEMPLATE_R2_KEY: str = ""           # R2 object key for DOCX template (e.g. "templates/cpe_template.docx")
+    CPE_SIGNATURE_1_R2_KEY: str = ""        # R2 object key for first signer's signature image (PNG, transparent bg)
+    CPE_SIGNATURE_2_R2_KEY: str = ""        # R2 object key for second signer's signature image (PNG, transparent bg)
+    CPE_SIGNER_1_NAME: str = ""             # First signer name+title (e.g. "Wes Spencer / Director")
+    CPE_SIGNER_2_NAME: str = ""             # Second signer name+title (e.g. "Yves Manzi / Lead Instructor")
     CPE_CONVERSION_MODE: str = "gotenberg"  # "gotenberg" or "libreoffice"
-    GOTENBERG_URL: str = ""               # e.g. "http://gotenberg:3000"
+    GOTENBERG_URL: str = ""                 # e.g. "http://gotenberg:3000"
     CPE_HOURS_DEFAULT: float = 32.0
 
     # Cloud-Init Template Variables

@@ -319,8 +319,10 @@ Used for generating Continuing Professional Education certificates as PDFs.
 | Variable | Required | Web | Worker | Default | Description |
 |----------|----------|-----|--------|---------|-------------|
 | `CPE_TEMPLATE_R2_KEY` | No | Yes | No | `""` | R2 object key for the DOCX certificate template (e.g., `templates/cpe_template.docx`). Required if issuing CPE certificates. |
-| `CPE_SIGNATURE_IMAGE_R2_KEY` | No | Yes | No | `""` | R2 object key for the signature image (PNG with transparent background). Used for signature overlay on generated PDFs. |
-| `CPE_SIGNER_NAME` | No | Yes | No | `""` | Signer name and title printed on certificates (e.g., `John Doe, CISSP / Director`). |
+| `CPE_SIGNATURE_1_R2_KEY` | No | Yes | No | `""` | R2 object key for the first signer's signature image (PNG with transparent background). |
+| `CPE_SIGNATURE_2_R2_KEY` | No | Yes | No | `""` | R2 object key for the second signer's signature image (PNG with transparent background). |
+| `CPE_SIGNER_1_NAME` | No | Yes | No | `""` | First signer name and title printed on certificates (e.g., `Wes Spencer / Director`). |
+| `CPE_SIGNER_2_NAME` | No | Yes | No | `""` | Second signer name and title printed on certificates (e.g., `Yves Manzi / Lead Instructor`). |
 | `CPE_CONVERSION_MODE` | No | Yes | No | `gotenberg` | PDF conversion backend: `gotenberg` (Gotenberg/LibreOffice) or `libreoffice` (local LibreOffice). |
 | `GOTENBERG_URL` | No | Yes | No | `""` | Gotenberg service URL (e.g., `http://gotenberg:3000`). Required if `CPE_CONVERSION_MODE=gotenberg`. For Render.com, the Gotenberg sidecar URL is auto-discovered. |
 | `CPE_HOURS_DEFAULT` | No | Yes | No | `32.0` | Default CPE credit hours per certificate. |

@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Module-level caches (downloaded from R2 once per process)
 _template_cache: Optional[bytes] = None
-_signature_cache: Optional[bytes] = None
+_signature_1_cache: Optional[bytes] = None
+_signature_2_cache: Optional[bytes] = None
 
 
 class CPECertificateService:
@@ -441,17 +442,21 @@ class CPECertificateService:
         # Fetch template from R2 (cached after first download)
         template_bytes = self._get_template_bytes()
 
-        # Fill the DOCX template (text only — signature handled as PDF overlay)
+        # Fill the DOCX template (text only — signatures handled as PDF overlay)
         docx_bytes = self._fill_template(certificate, user, event, template_bytes)
 
         # Convert DOCX to PDF via Gotenberg/LibreOffice
         pdf_bytes = await self._convert_to_pdf(docx_bytes)
 
-        # Overlay signature image onto the PDF
-        if self.settings.CPE_SIGNATURE_IMAGE_R2_KEY:
-            sig_bytes = self._get_signature_image()
-            if sig_bytes:
-                pdf_bytes = self._overlay_signature(pdf_bytes, sig_bytes)
+        # Overlay signature images onto the PDF
+        sig1_bytes = self._get_signature_image(
+            self.settings.CPE_SIGNATURE_1_R2_KEY, "_signature_1_cache"
+        )
+        sig2_bytes = self._get_signature_image(
+            self.settings.CPE_SIGNATURE_2_R2_KEY, "_signature_2_cache"
+        )
+        if sig1_bytes or sig2_bytes:
+            pdf_bytes = self._overlay_signatures(pdf_bytes, sig1_bytes, sig2_bytes)
 
         # Upload to R2
         storage_key = f"certificates/{event.slug}/{certificate.certificate_number}.pdf"
@@ -505,16 +510,17 @@ class CPECertificateService:
         logger.info(f"Downloaded CPE template from R2: {r2_key} ({len(_template_cache)} bytes)")
         return _template_cache
 
-    def _get_signature_image(self) -> Optional[bytes]:
-        """Download the signature image from R2, caching in memory after first fetch."""
-        global _signature_cache
+    def _get_signature_image(self, r2_key: str, cache_name: str) -> Optional[bytes]:
+        """Download a signature image from R2, caching in memory after first fetch."""
+        global _signature_1_cache, _signature_2_cache
 
-        if _signature_cache is not None:
-            return _signature_cache
-
-        r2_key = self.settings.CPE_SIGNATURE_IMAGE_R2_KEY
         if not r2_key:
             return None
+
+        # Check module-level cache
+        cached = globals().get(cache_name)
+        if cached is not None:
+            return cached
 
         import boto3
         from botocore.config import Config
@@ -541,51 +547,151 @@ class CPECertificateService:
 
         try:
             response = s3.get_object(Bucket=bucket, Key=r2_key)
-            _signature_cache = response["Body"].read()
-            logger.info(f"Downloaded signature image from R2: {r2_key} ({len(_signature_cache)} bytes)")
-            return _signature_cache
+            data = response["Body"].read()
+            globals()[cache_name] = data
+            logger.info(f"Downloaded signature image from R2: {r2_key} ({len(data)} bytes)")
+            return data
         except Exception as e:
             logger.error(f"Failed to download signature image from R2: {e}")
             return None
 
     @staticmethod
-    def _overlay_signature(pdf_bytes: bytes, signature_bytes: bytes) -> bytes:
-        """Overlay the signature image onto the PDF using reportlab + pypdf.
+    def _make_canadian_flag(width: int = 300, height: int = 150, alpha: int = 40) -> io.BytesIO:
+        """Generate a translucent Canadian flag PNG in memory.
+
+        Maple leaf polygon extracted from the official Government of Canada
+        construction sheet SVG (Wikimedia Commons Flag_of_Canada_(Pantone).svg).
+        """
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+
+        d.rectangle([0, 0, width // 4, height], fill=(255, 0, 0, alpha))
+        d.rectangle([width // 4, 0, 3 * width // 4, height], fill=(255, 255, 255, alpha))
+        d.rectangle([3 * width // 4, 0, width, height], fill=(255, 0, 0, alpha))
+
+        leaf_norm = [
+            (0.0742, -0.6783), (0.2125, -0.4067), (0.3488, -0.4854),
+            (0.2637, -0.0471), (0.4400, -0.2362), (0.4838, -0.1333),
+            (0.7096, -0.1812), (0.6321, 0.0571), (0.7204, 0.0983),
+            (0.3283, 0.4158), (0.3767, 0.5492), (0.0187, 0.4863),
+            (0.0375, 0.8458), (-0.1108, 0.8458), (-0.1296, 0.4863),
+            (-0.2283, 0.5492), (-0.1800, 0.4158), (-0.5721, 0.0983),
+            (-0.4838, 0.0571), (-0.5613, -0.1812), (-0.3354, -0.1333),
+            (-0.2917, -0.2362), (-0.1154, -0.0471), (-0.2004, -0.4854),
+            (-0.0642, -0.4067),
+        ]
+        cx, cy = width // 2, height // 2
+        s = height * 0.55
+        leaf = [(cx + int(x * s), cy + int(y * s)) for x, y in leaf_norm]
+        d.polygon(leaf, fill=(213, 43, 30, alpha))
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf
+
+    @staticmethod
+    def _make_american_flag(width: int = 304, height: int = 160, alpha: int = 40) -> io.BytesIO:
+        """Generate a translucent American flag PNG in memory."""
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+
+        stripe_h = height / 13
+        for i in range(13):
+            color = (191, 10, 48, alpha) if i % 2 == 0 else (255, 255, 255, alpha)
+            d.rectangle([0, int(i * stripe_h), width, int((i + 1) * stripe_h)], fill=color)
+
+        canton_w = int(width * 0.4)
+        canton_h = int(7 * stripe_h)
+        d.rectangle([0, 0, canton_w, canton_h], fill=(0, 40, 104, alpha))
+
+        for row in range(5):
+            for col in range(6):
+                sx = int(canton_w * (col + 0.5) / 6)
+                sy = int(canton_h * (row + 0.5) / 5)
+                d.ellipse([sx - 3, sy - 3, sx + 3, sy + 3], fill=(255, 255, 255, alpha))
+        for row in range(4):
+            for col in range(5):
+                sx = int(canton_w * (col + 1) / 6)
+                sy = int(canton_h * (row + 1) / 5)
+                d.ellipse([sx - 3, sy - 3, sx + 3, sy + 3], fill=(255, 255, 255, alpha))
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf
+
+    @staticmethod
+    def _overlay_signatures(
+        pdf_bytes: bytes,
+        sig1_bytes: Optional[bytes],
+        sig2_bytes: Optional[bytes],
+    ) -> bytes:
+        """Overlay two signature images with translucent country flags onto the PDF.
 
         This is done AFTER Gotenberg converts the DOCX to PDF, avoiding all
         LibreOffice rendering issues with inline images in table cells.
-        The signature is placed at exact coordinates above the signature line.
+
+        The template is landscape (792x612pt) with a 6-column signature table.
+        Signature 1 (left) has a Canadian flag watermark behind it.
+        Signature 2 (right) has an American flag watermark behind it.
         """
         from reportlab.pdfgen import canvas as rl_canvas
         from reportlab.lib.utils import ImageReader
         from pypdf import PdfReader, PdfWriter
 
-        # Read page dimensions from the actual PDF
         base_reader = PdfReader(io.BytesIO(pdf_bytes))
         page = base_reader.pages[0]
         page_w = float(page.mediabox.width)
         page_h = float(page.mediabox.height)
 
-        # Create overlay PDF with just the signature image
         overlay_buf = io.BytesIO()
         c = rl_canvas.Canvas(overlay_buf, pagesize=(page_w, page_h))
 
-        img = ImageReader(io.BytesIO(signature_bytes))
-        img_w, img_h = img.getSize()
-        target_w = 140  # ~2 inches
-        target_h = target_w * (img_h / img_w)  # maintain aspect ratio
+        # Signature positions (tuned against Gotenberg output)
+        sig1_x, sig1_y, sig1_w = 125, 160, 140   # left (Yves)
+        sig2_x, sig2_y, sig2_w = 545, 172, 140    # right (Wes)
 
-        c.drawImage(
-            img,
-            160,   # x: left edge of signature area
-            148,   # y: just above the signature line (~150 in Gotenberg output)
-            width=target_w,
-            height=target_h,
-            mask="auto",  # preserve PNG transparency
-        )
+        # Translucent country flags behind signatures
+        flag_w = 80
+        flag_cy = 185  # common vertical center
+
+        canada_flag = CPECertificateService._make_canadian_flag(alpha=40)
+        flag1_img = ImageReader(canada_flag)
+        flag1_h = flag_w * 0.5
+        flag1_x = sig1_x + (sig1_w - flag_w) / 2 - 10
+        c.drawImage(flag1_img, flag1_x, flag_cy - flag1_h / 2,
+                     width=flag_w, height=flag1_h, mask="auto")
+
+        usa_flag = CPECertificateService._make_american_flag(alpha=40)
+        flag2_img = ImageReader(usa_flag)
+        flag2_h = flag_w * 0.527
+        flag2_x = sig2_x + (sig2_w - flag_w) / 2 - 10
+        c.drawImage(flag2_img, flag2_x, flag_cy - flag2_h / 2,
+                     width=flag_w, height=flag2_h, mask="auto")
+
+        # Signature 1 (left — Yves, Canadian)
+        if sig1_bytes:
+            img1 = ImageReader(io.BytesIO(sig1_bytes))
+            img1_w, img1_h = img1.getSize()
+            target_h1 = sig1_w * (img1_h / img1_w)
+            c.drawImage(img1, sig1_x, sig1_y, width=sig1_w,
+                         height=target_h1, mask="auto")
+
+        # Signature 2 (right — Wes, American)
+        if sig2_bytes:
+            img2 = ImageReader(io.BytesIO(sig2_bytes))
+            img2_w, img2_h = img2.getSize()
+            target_h2 = sig2_w * (img2_h / img2_w)
+            c.drawImage(img2, sig2_x, sig2_y, width=sig2_w,
+                         height=target_h2, mask="auto")
+
         c.save()
 
-        # Merge overlay onto the PDF
         overlay_reader = PdfReader(io.BytesIO(overlay_buf.getvalue()))
         page.merge_page(overlay_reader.pages[0])
 
@@ -596,7 +702,7 @@ class CPECertificateService:
         writer.write(output)
         result = output.getvalue()
 
-        logger.info(f"Overlaid signature image onto PDF ({len(result)} bytes)")
+        logger.info(f"Overlaid signature images onto PDF ({len(result)} bytes)")
         return result
 
     def _fill_template(
@@ -612,18 +718,19 @@ class CPECertificateService:
 
         doc = Document(io.BytesIO(template_bytes))
 
-        # Build replacement map from template placeholders
+        # Build replacement map from handlebar template placeholders
         start_str = event.start_date.strftime("%m/%d/%Y") if event.start_date else "TBA"
         end_str = event.end_date.strftime("%m/%d/%Y") if event.end_date else "TBA"
         issue_date_str = certificate.created_at.strftime("%m/%d/%Y") if certificate.created_at else datetime.now(timezone.utc).strftime("%m/%d/%Y")
 
         replacements = {
-            "[PARTICIPANT NAME]": f"{user.first_name} {user.last_name}",
-            "[MM/DD/YYYY] \u2013 [MM/DD/YYYY]": f"{start_str} \u2013 {end_str}",
-            "[MM/DD/YYYY] – [MM/DD/YYYY]": f"{start_str} – {end_str}",
-            "CX-[YYYY]-[####]": certificate.certificate_number,
-            "[Name / Title]": self.settings.CPE_SIGNER_NAME or "",
-            "[MM/DD/YYYY]": issue_date_str,
+            "{{PARTICIPANT_NAME}}": f"{user.first_name} {user.last_name}",
+            "{{EVENT_START_DATE}}": start_str,
+            "{{EVENT_END_DATE}}": end_str,
+            "{{CERT_ID}}": certificate.certificate_number,
+            "{{DATE_ISSUED}}": issue_date_str,
+            "{{SIGNER_1}}": self.settings.CPE_SIGNER_1_NAME or "",
+            "{{SIGNER_2}}": self.settings.CPE_SIGNER_2_NAME or "",
         }
 
         # Replace in paragraphs
