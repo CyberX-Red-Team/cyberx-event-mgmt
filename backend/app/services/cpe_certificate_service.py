@@ -555,37 +555,35 @@ class CPECertificateService:
             logger.error(f"Failed to download signature image from R2: {e}")
             return None
 
+    # Official Canadian flag SVG (Pantone colors) from Wikimedia Commons.
+    # Embedded to avoid external downloads at runtime.
+    _CANADA_FLAG_SVG = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 9600 4800">'
+        '<path fill="#d52b1e" d="m0 0h2400l99 99h4602l99-99h2400v4800h-2400l-99-99h-4602l-99 99H0z"/>'
+        '<path fill="#fff" d="m2400 0h4800v4800h-4800zm2490 4430-45-863a95 95 0 0 1 111-98l859 151-116-320'
+        'a65 65 0 0 1 20-73l941-762-212-99a65 65 0 0 1-34-79l186-572-542 115a65 65 0 0 1-73-38l-105-247-423'
+        ' 454a65 65 0 0 1-111-57l204-1052-327 189a65 65 0 0 1-91-27l-332-652-332 652a65 65 0 0 1-91 27l-327'
+        '-189 204 1052a65 65 0 0 1-111 57l-423-454-105 247a65 65 0 0 1-73 38l-542-115 186 572a65 65 0 0 1-34'
+        ' 79l-212 99 941 762a65 65 0 0 1 20 73l-116 320 859-151a95 95 0 0 1 111 98l-45 863z"/>'
+        '</svg>'
+    )
+
     @staticmethod
     def _make_canadian_flag(width: int = 300, height: int = 150, alpha: int = 40) -> io.BytesIO:
-        """Generate a translucent Canadian flag PNG in memory.
+        """Render the official Canadian flag SVG to a translucent PNG."""
+        import cairosvg
+        from PIL import Image
 
-        Maple leaf polygon extracted from the official Government of Canada
-        construction sheet SVG (Wikimedia Commons Flag_of_Canada_(Pantone).svg).
-        """
-        from PIL import Image, ImageDraw
+        png_bytes = cairosvg.svg2png(
+            bytestring=CPECertificateService._CANADA_FLAG_SVG.encode(),
+            output_width=width, output_height=height,
+        )
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
 
-        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-
-        d.rectangle([0, 0, width // 4, height], fill=(255, 0, 0, alpha))
-        d.rectangle([width // 4, 0, 3 * width // 4, height], fill=(255, 255, 255, alpha))
-        d.rectangle([3 * width // 4, 0, width, height], fill=(255, 0, 0, alpha))
-
-        leaf_norm = [
-            (0.0742, -0.6783), (0.2125, -0.4067), (0.3488, -0.4854),
-            (0.2637, -0.0471), (0.4400, -0.2362), (0.4838, -0.1333),
-            (0.7096, -0.1812), (0.6321, 0.0571), (0.7204, 0.0983),
-            (0.3283, 0.4158), (0.3767, 0.5492), (0.0187, 0.4863),
-            (0.0375, 0.8458), (-0.1108, 0.8458), (-0.1296, 0.4863),
-            (-0.2283, 0.5492), (-0.1800, 0.4158), (-0.5721, 0.0983),
-            (-0.4838, 0.0571), (-0.5613, -0.1812), (-0.3354, -0.1333),
-            (-0.2917, -0.2362), (-0.1154, -0.0471), (-0.2004, -0.4854),
-            (-0.0642, -0.4067),
-        ]
-        cx, cy = width // 2, height // 2
-        s = height * 0.55
-        leaf = [(cx + int(x * s), cy + int(y * s)) for x, y in leaf_norm]
-        d.polygon(leaf, fill=(213, 43, 30, alpha))
+        # Scale alpha channel to desired opacity
+        r, g, b, a = img.split()
+        a = a.point(lambda x: int(x * (alpha / 255)))
+        img = Image.merge("RGBA", (r, g, b, a))
 
         buf = io.BytesIO()
         img.save(buf, format="PNG")
