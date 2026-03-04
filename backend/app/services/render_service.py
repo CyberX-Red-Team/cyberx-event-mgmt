@@ -124,13 +124,15 @@ class RenderServiceManager:
                             deploy_data = deploys[0]
                             deploy = deploy_data.get("deploy", deploy_data)
                             status = deploy.get("status")
-                            logger.debug(f"Deploy status: {status} (elapsed={elapsed}s)")
+                            logger.info(f"Gotenberg deploy status: {status} (elapsed={elapsed}s)")
                             if status == "live":
                                 logger.info(f"Render deploy is live after {elapsed}s")
                                 return True
                             if status in ("build_failed", "update_failed", "canceled"):
                                 logger.error(f"Deploy failed with status: {status}")
                                 return False
+                        else:
+                            logger.warning(f"Deploy list empty (elapsed={elapsed}s)")
                 except (httpx.ConnectError, httpx.TimeoutException) as e:
                     logger.debug(f"Deploy check failed: {e}")
 
