@@ -1,22 +1,16 @@
 """SSH key generation utility."""
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import ec
 
 
 def generate_ssh_keypair() -> tuple[str, str]:
     """
-    Generate an RSA SSH key pair.
+    Generate an ECDSA (P-256) SSH key pair.
 
     Returns:
         tuple: (public_key_str, private_key_str)
     """
-    # Generate RSA key pair
-    key = rsa.generate_private_key(
-        backend=default_backend(),
-        public_exponent=65537,
-        key_size=4096
-    )
+    key = ec.generate_private_key(ec.SECP256R1())
 
     # Get private key in OpenSSH format
     private_key = key.private_bytes(
