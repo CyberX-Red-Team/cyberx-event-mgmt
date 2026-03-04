@@ -281,6 +281,7 @@ Used for generating time-limited, secure download links for participant resource
 |----------|----------|-----|--------|---------|-------------|
 | `RENDER_API_KEY` | No | Yes | No | `""` | Render.com API key for sidecar lifecycle management (Gotenberg, step-ca). |
 | `RENDER_OWNER_ID` | No | Yes | No | `""` | Render owner/team ID. Required for dynamically creating new private services (step-ca sidecars). Find via `curl -s -H "Authorization: Bearer $RENDER_API_KEY" https://api.render.com/v1/owners \| jq '.[0].owner.id'`. |
+| `RENDER_REPO_URL` | No | Yes | No | `""` | GitHub repo URL for creating new Render services (e.g., `https://github.com/org/repo`). Required for step-ca sidecar creation. |
 | `GOTENBERG_RENDER_SERVICE_ID` | No | Yes | No | `""` | Render service ID for the Gotenberg sidecar (CPE PDF generation). |
 
 ---
@@ -311,6 +312,34 @@ Used for self-service TLS certificate issuance via step-ca sidecars. Each CA cha
 
 ---
 
+## CPE Certificate Generation
+
+Used for generating Continuing Professional Education certificates as PDFs.
+
+| Variable | Required | Web | Worker | Default | Description |
+|----------|----------|-----|--------|---------|-------------|
+| `CPE_TEMPLATE_R2_KEY` | No | Yes | No | `""` | R2 object key for the DOCX certificate template (e.g., `templates/cpe_template.docx`). Required if issuing CPE certificates. |
+| `CPE_SIGNATURE_IMAGE_R2_KEY` | No | Yes | No | `""` | R2 object key for the signature image (PNG with transparent background). Used for signature overlay on generated PDFs. |
+| `CPE_SIGNER_NAME` | No | Yes | No | `""` | Signer name and title printed on certificates (e.g., `John Doe, CISSP / Director`). |
+| `CPE_CONVERSION_MODE` | No | Yes | No | `gotenberg` | PDF conversion backend: `gotenberg` (Gotenberg/LibreOffice) or `libreoffice` (local LibreOffice). |
+| `GOTENBERG_URL` | No | Yes | No | `""` | Gotenberg service URL (e.g., `http://gotenberg:3000`). Required if `CPE_CONVERSION_MODE=gotenberg`. For Render.com, the Gotenberg sidecar URL is auto-discovered. |
+| `CPE_HOURS_DEFAULT` | No | Yes | No | `32.0` | Default CPE credit hours per certificate. |
+
+**Prerequisites:**
+- `R2_*` variables must be configured (template, signature, and generated PDFs are stored in R2)
+- Gotenberg must be running (either Docker sidecar or Render private service)
+- `GOTENBERG_RENDER_SERVICE_ID` must be set if using Render (for auto-resume/suspend)
+
+**How it works:**
+1. DOCX template is downloaded from R2 (cached in memory after first fetch)
+2. Template is filled with participant data using python-docx
+3. Filled DOCX is converted to PDF via Gotenberg (LibreOffice)
+4. Signature image is overlaid on the PDF using reportlab + pypdf
+5. Final PDF is uploaded to R2
+6. Participants download via time-limited signed R2 URLs
+
+---
+
 ## Background Scheduler Control
 
 | Variable | Required | Web | Worker | Default | Description |
@@ -318,6 +347,52 @@ Used for self-service TLS certificate issuance via step-ca sidecars. Each CA cha
 | `ENABLE_SCHEDULER_IN_WEB` | No | Yes | No | `false` | Run the background scheduler inside the web process. **Only for local development** -- use a dedicated worker service in production. |
 
 **Warning:** Running with `--workers 2+` and `ENABLE_SCHEDULER_IN_WEB=true` causes duplicate job execution.
+
+---
+
+## Docker Compose Only
+
+These variables are only used in the Docker Compose production stack (`docker-compose.prod.yml`). They are **not** read by the Python application directly.
+
+### PostgreSQL
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `POSTGRES_DB` | No | `cyberx_events` | PostgreSQL database name. |
+| `POSTGRES_USER` | No | `cyberx` | PostgreSQL username. |
+| `POSTGRES_PASSWORD` | Yes | - | PostgreSQL password. The app's `DATABASE_URL` is constructed from these values in docker-compose. |
+
+### Redis
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `REDIS_PASSWORD` | Yes | - | Redis password. Used by the `redis-server --requirepass` command. |
+
+### step-ca Sidecar (Docker)
+
+These are passed directly to the step-ca container. On Render.com, these are set automatically during CA chain initialization.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `STEPCA_ROOT_CERT_B64` | No | `""` | Base64-encoded root CA certificate PEM. |
+| `STEPCA_SIGNING_CERT_B64` | No | `""` | Base64-encoded signing (intermediate) certificate PEM. |
+| `STEPCA_SIGNING_KEY_B64` | No | `""` | Base64-encoded signing private key PEM. |
+| `STEPCA_PROVISIONER_NAME` | No | `cyberx` | step-ca JWK provisioner name. |
+
+### Database Backups
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `BACKUP_SCHEDULE` | No | `0 2 * * *` | Cron schedule for database backups (default: daily at 2 AM UTC). |
+| `BACKUP_RETENTION_DAYS` | No | `30` | Number of days to retain backup files before automatic deletion. |
+
+### Monitoring (Optional Profile)
+
+These are only used when running with the `monitoring` Docker Compose profile (`docker compose --profile monitoring up`).
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GRAFANA_PASSWORD` | Yes (if monitoring) | - | Grafana admin password. |
 
 ---
 
@@ -402,9 +477,10 @@ POWERDNS_API_KEY=your-powerdns-api-key
 - `DATABASE_URL`, `SENDGRID_API_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
 - `KEYCLOAK_ADMIN_CLIENT_SECRET`, `KEYCLOAK_WEBHOOK_SECRET`
 - `POWERDNS_PASSWORD`, `POWERDNS_API_KEY`
-- `DISCORD_BOT_TOKEN`, `DO_API_TOKEN`, `RENDER_API_KEY`, `RENDER_OWNER_ID`
+- `DISCORD_BOT_TOKEN`, `DO_API_TOKEN`, `RENDER_API_KEY`, `RENDER_OWNER_ID`, `RENDER_REPO_URL`
 - `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
 - `STEPCA_PROVISIONER_PASSWORD`
+- `GOTENBERG_URL`, `GOTENBERG_RENDER_SERVICE_ID`
 
 **Password encoding in DATABASE_URL:**
 - `@` -> `%40`, `#` -> `%23`, `$` -> `%24`, `:` -> `%3A`

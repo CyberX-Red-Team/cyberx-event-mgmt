@@ -38,9 +38,12 @@
 - Key types: cyber, kinetic
 - Self-service VPN requests from participant portal (rate-limited: 3 per 5 minutes)
 - Admin bulk import, assignment, and deletion
+- Bulk update of assignment types
 - WireGuard config file generation with optional encryption
+- Configurable VPN naming patterns for config files
 - VPN config delivery via email attachment
-- Request batch tracking
+- Request batch tracking with batch download
+- Instance pool statistics (per-provider VPN assignment tracking)
 - Usage statistics dashboard
 
 ## Instance Provisioning
@@ -49,11 +52,13 @@
 - Admin instance creation with provider-specific options (flavor, image, network, region)
 - Bulk instance creation with name prefix
 - Instance templates: reusable configurations bundling provider settings, cloud-init, and license products
+- Per-template max instances limit per user (0 = unlimited)
 - Participant self-service provisioning from published templates
 - Instance status sync from cloud providers (building, active, error, shutoff, deleted)
 - Cloud-init template system with variable substitution for VPN injection, license tokens, and SSH keys
 - Per-provider resource listing (flavors, images, networks, sizes, regions)
 - SSH key pair management per event
+- Configurable provider limits (max instances per provider per user)
 
 ## License Management
 
@@ -70,12 +75,16 @@
 
 - SendGrid integration with template management
 - Email template CRUD with variable placeholders ({{first_name}}, {{event_name}}, etc.)
-- Template import from SendGrid
+- Template import and sync from SendGrid
+- Template duplication and preview with variable substitution
 - Single and bulk email sending with queue persistence
+- Custom email composition
 - Email workflow engine: trigger-based automation (user confirmed, VPN assigned, password reset, action assigned, etc.)
 - Per-workflow configuration: template, from address, priority, delay, enable/disable
+- Priority queue system (lower number = higher priority)
+- Scheduled email sending with delayed delivery
 - Queued email processing on configurable interval (default 45 minutes)
-- Retry logic with exponential backoff
+- Retry logic with exponential backoff (max 3 attempts)
 - SendGrid webhook processing: delivery, open, click, bounce, spam report, unsubscribe tracking
 - Sandbox mode for staging (no real emails sent)
 - Email analytics: per-template stats, daily stats, full history
@@ -109,10 +118,11 @@
   - VPN credential assignment
 - Single and bulk issuance with eligibility override option
 - Randomized hex certificate serial numbers (CX-YYYY-XXXX format)
-- PDF generation pipeline: DOCX template (from R2) filled with python-docx, converted via Gotenberg, uploaded to R2
+- PDF generation pipeline: DOCX template (from R2) filled with python-docx, converted via Gotenberg, signature overlay via reportlab, uploaded to R2
 - Eligibility snapshot recorded at issuance for audit trail
 - Certificate revocation with reason tracking
-- PDF regeneration for existing certificates
+- Certificate reinstatement for revoked certificates
+- PDF regeneration (single and bulk) for existing certificates
 - Participant self-service download via signed R2 URLs
 
 ## Keycloak Integration
@@ -122,6 +132,9 @@
 - Scoped to invitees and sponsors (admins not synced)
 - Inbound webhook listener for Keycloak events (user lifecycle, group membership)
 - Auto-assignment of PowerDNS-Admin accounts on first Keycloak login
+- Bulk sync of all confirmed users
+- Manual sync trigger and single-user sync endpoints
+- Health check endpoint for Keycloak connectivity
 
 ## Discord Integration
 
@@ -130,10 +143,26 @@
 - Lazy validation: checks Discord to detect if invite was consumed
 - Portal display with join status
 
+## TLS Certificate Management
+
+- Certificate Authority chain configuration per event (signing cert, private key, chain of trust)
+- Dedicated step-ca sidecar instances on Render.com per CA chain
+- CA sidecar lifecycle management: start, stop, initialize, health check
+- R2 storage for CA files with encrypted private keys
+- TLS certificate issuance via step-ca with configurable duration (default 90 days)
+- Common name and Subject Alternative Names (SAN) support
+- Wildcard certificate support
+- Domain validation against PowerDNS zones for participant requests
+- Certificate status tracking: issued, revoked, expired
+- Serial number and fingerprint tracking
+- Certificate revocation and reinstatement
+- Participant self-service certificate requests with domain validation
+- Certificate bundle download (cert + chain PEM)
+
 ## PowerDNS Integration
 
 - Auto-account creation in PowerDNS-Admin on first Keycloak login
-- Domain ownership used for CPE eligibility verification
+- Domain ownership used for CPE eligibility and TLS certificate validation
 - API-based user-to-account assignment
 
 ## Audit Logging
@@ -146,25 +175,35 @@
 ## Admin Dashboard
 
 - KPI overview with event statistics
-- 14 admin management pages: participants, events, VPN, instances, instance templates, cloud-init, email, workflows, audit, users, license products, participant actions, settings
+- Admin management pages: participants, events, VPN, instances, instance templates, cloud-init, email, workflows, audit, users, license products, participant actions, TLS certificates, scheduler, settings
 - System settings UI for live configuration of all integrations without restart
+- Scheduler status monitoring with background job health tracking
 
 ## Participant Portal
 
 - Self-service dashboard with event information
-- VPN credential request and config download
-- Instance provisioning from templates
+- VPN credential request and config download (single, all, or by batch)
+- Instance provisioning from templates with per-provider statistics
+- TLS certificate requests with domain validation and bundle download
 - CPE certificate listing and PDF download
-- Discord invite display
+- Discord invite display with join status
 - Participant action response interface
-- SSH key management
+- SSH key display
 - Password change
 - Profile and theme preferences (light/dark)
 
 ## Sponsor Portal
 
-- Sponsored invitee list with filtering
+- Sponsored invitee list with filtering and statistics
 - Visibility into invitee confirmation status
+- Create, update, and delete sponsored invitees
+- Reset invitee passwords and resend invitations
+
+## Public Endpoints
+
+- Event confirmation and decline from invitation links
+- Terms of participation display and acceptance
+- Country list for registration forms
 
 ## Background Jobs
 
@@ -180,6 +219,6 @@
 ## Deployment
 
 - Docker Compose production stack: PostgreSQL, Redis, FastAPI, Nginx, Certbot, Gotenberg, Prometheus, Grafana, automated backups
-- Render.com blueprint: Python web service + Gotenberg Docker sidecar with Supabase PostgreSQL
+- Render.com blueprint: Python web service + Gotenberg Docker sidecar + step-ca sidecars with Supabase PostgreSQL
 - Alembic database migrations
 - Environment-based configuration with sensible defaults
