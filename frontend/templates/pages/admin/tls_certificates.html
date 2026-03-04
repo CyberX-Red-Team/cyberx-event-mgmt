@@ -198,6 +198,7 @@
                             <thead>
                                 <tr>
                                     <th>Domain (CN)</th>
+                                    <th>Serial</th>
                                     <th>SANs</th>
                                     <th>User</th>
                                     <th>CA Chain</th>
@@ -774,8 +775,15 @@ function renderCertsTable() {
             actions = '<span class="small text-muted">' + escapeHtml(cert.revocation_reason || 'Revoked') + '</span>';
         }
 
+        var serial = cert.serial_number || '-';
+        // Truncate long serials for display, show full on hover
+        var serialDisplay = serial.length > 16
+            ? '<span title="' + escapeHtml(serial) + '">' + escapeHtml(serial.substring(0, 16)) + '&hellip;</span>'
+            : escapeHtml(serial);
+
         row.innerHTML =
             '<td><code>' + cn + '</code></td>' +
+            '<td class="small"><code>' + serialDisplay + '</code></td>' +
             '<td class="small text-muted">' + escapeHtml(sans) + '</td>' +
             '<td>' + escapeHtml(cert.user_name || cert.user_email) + '</td>' +
             '<td>' + escapeHtml(cert.ca_chain_name) + '</td>' +
