@@ -684,15 +684,18 @@ class CPECertificateService:
         c = rl_canvas.Canvas(overlay_buf, pagesize=(page_w, page_h))
 
         # Signature positions — x and width are fixed (column layout doesn't shift),
-        # y is relative to the detected "Signature" text position
+        # y is relative to the detected "Signature" text position.
+        # "Signature" label is at sig_text_y; the horizontal signature line
+        # sits ~8-10pt above that.  Offsets are kept small so signatures
+        # don't extend up past the "Program Hours" line.
         sig1_x, sig1_w = 125, 140    # left (Yves)
         sig2_x, sig2_w = 545, 140    # right (Wes)
-        sig1_y = sig_text_y + 12     # just above "Signature" text
-        sig2_y = sig_text_y + 24     # slightly higher (Wes sig is flatter)
+        sig1_y = sig_text_y - 8      # bottom edge on the signature line
+        sig2_y = sig_text_y + 0      # Wes sig is flatter, sits slightly higher
 
         # Translucent country flags behind signatures
         flag_w = 80
-        flag_cy = sig_text_y + 37    # centered above signature line
+        flag_cy = sig_text_y + 12    # centered behind signature area
 
         canada_flag = CPECertificateService._make_canadian_flag(alpha=40)
         flag1_img = ImageReader(canada_flag)
