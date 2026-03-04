@@ -147,7 +147,15 @@
                             <input type="text" class="form-control" id="eventTermsVersion" placeholder="e.g., 2026-v1">
                         </div>
                         <div class="col-md-6">
-                            <div class="form-check mt-4">
+                            <label class="form-label" for="eventDiscordChannelId">Discord Channel ID</label>
+                            <input type="text" class="form-control" id="eventDiscordChannelId" placeholder="e.g., 1234567890123456789">
+                            <small class="text-muted">Right-click channel in Discord (Developer Mode) &rarr; Copy Channel ID</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check mt-2">
                                 <input class="form-check-input" type="checkbox" id="eventRegistrationOpen">
                                 <label class="form-check-label" for="eventRegistrationOpen">
                                     Registration Open
@@ -332,7 +340,8 @@
         document.getElementById('eventTermsVersion').value = `${currentYear + 1}-v1`;
         document.getElementById('eventConfirmationDays').value = 30;
 
-        // Clear SSH keys
+        // Clear Discord and SSH keys
+        document.getElementById('eventDiscordChannelId').value = '';
         document.getElementById('eventSshPublicKey').value = '';
         document.getElementById('eventSshPrivateKey').value = '';
         document.getElementById('downloadKeysBtn').style.display = 'none';
@@ -368,6 +377,7 @@
             document.getElementById('eventTermsVersion').value = event.terms_version || '';
             document.getElementById('eventTermsContent').value = event.terms_content || '';
             document.getElementById('eventRegistrationOpen').checked = event.registration_open;
+            document.getElementById('eventDiscordChannelId').value = event.discord_channel_id || '';
             document.getElementById('eventSshPublicKey').value = event.ssh_public_key || '';
             document.getElementById('eventSshPrivateKey').value = event.ssh_private_key || '';
 
@@ -405,6 +415,7 @@
             terms_version: document.getElementById('eventTermsVersion').value || null,
             terms_content: document.getElementById('eventTermsContent').value || null,
             registration_open: document.getElementById('eventRegistrationOpen').checked,
+            discord_channel_id: document.getElementById('eventDiscordChannelId').value.trim() || null,
             ssh_public_key: sshPublicKey || null,
             ssh_private_key: sshPrivateKey || null
         };
