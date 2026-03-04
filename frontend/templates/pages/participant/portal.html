@@ -744,6 +744,24 @@
 
 {% block extra_js %}
 <script>
+// Toast helper (portal uses base.html which doesn't include dashboard.html's showToast)
+function showToast(message, type) {
+    type = type || 'info';
+    var typeMap = { 'success': 'alert-success', 'danger': 'alert-danger', 'warning': 'alert-warning', 'info': 'alert-info' };
+    var alertClass = typeMap[type] || 'alert-info';
+    var toast = document.createElement('div');
+    toast.className = 'alert ' + alertClass + ' alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
+    toast.style.zIndex = '9999';
+    toast.style.minWidth = '300px';
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+    document.body.appendChild(toast);
+    setTimeout(function() {
+        toast.classList.remove('show');
+        setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 150);
+    }, 5000);
+}
+
 async function logout() {
     try {
         const response = await csrfFetch('/api/auth/logout', {
