@@ -52,6 +52,11 @@ class Instance(Base):
     error_message = Column(Text, nullable=True)
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
+    # Agent fields
+    agent_token_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hex of agent token
+    agent_registered_ip = Column(String(50), nullable=True)  # Recorded on first agent connection
+    agent_last_heartbeat = Column(TIMESTAMP(timezone=True), nullable=True)
+
     # Participant self-service fields
     visibility = Column(String(20), default="private", nullable=False, index=True)  # private, public
     notes = Column(Text, nullable=True)

@@ -129,6 +129,23 @@ class InstanceService:
                 assigned_vpn_id = vpn_data["vpn_id"]
                 user_data = vpn_data["user_data"]  # Re-rendered with VPN vars
 
+        # Generate agent token and inject into cloud-init
+        raw_agent_token = secrets.token_urlsafe(48)
+        agent_token_hash = hashlib.sha256(
+            raw_agent_token.encode()
+        ).hexdigest()
+
+        if user_data:
+            agent_endpoint = (
+                f"{self.settings.FRONTEND_URL}/api/agent"
+            )
+            user_data = user_data.replace(
+                "{{agent_token}}", raw_agent_token
+            )
+            user_data = user_data.replace(
+                "{{agent_api_endpoint}}", agent_endpoint
+            )
+
         # Create on provider
         instance_data = await provider_service.create_instance(
             name=name,
@@ -177,6 +194,8 @@ class InstanceService:
             vpn_ip=vpn_ip,
             vpn_config_token=vpn_token_hash,
             vpn_config_token_expires_at=vpn_token_expires_at,
+            # Agent fields
+            agent_token_hash=agent_token_hash,
         )
         self.session.add(instance)
         await self.session.commit()

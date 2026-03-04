@@ -9,6 +9,7 @@ from app.tasks.session_cleanup import session_cleanup_job
 from app.tasks.instance_status_sync import instance_status_sync_job
 from app.tasks.license_slot_reaper import license_slot_reaper_job
 from app.tasks.keycloak_sync import keycloak_sync_job
+from app.tasks.agent_task_timeout import agent_task_timeout_job
 
 __all__ = [
     "get_scheduler",
@@ -19,4 +20,5 @@ __all__ = [
     "instance_status_sync_job",
     "license_slot_reaper_job",
     "keycloak_sync_job",
+    "agent_task_timeout_job",
 ]

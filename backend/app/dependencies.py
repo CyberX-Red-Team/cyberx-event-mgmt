@@ -1,14 +1,18 @@
 """FastAPI dependencies for authentication and authorization."""
+import hashlib
+import logging
 from typing import Optional
-from fastapi import Cookie, Depends, HTTPException, status, Request
+from fastapi import Cookie, Depends, HTTPException, status, Header, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.models.user import User, UserRole
+from app.models.instance import Instance
 from app.services.auth_service import AuthService
 from app.config import get_settings
 
-
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
@@ -325,3 +329,86 @@ class PermissionChecker:
 
 # Global permission checker instance
 permissions = PermissionChecker()
+
+
+def _extract_client_ip(request: Request) -> str:
+    """Extract client IP, respecting proxy headers when configured."""
+    if settings.AGENT_TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+    return request.client.host if request.client else "unknown"
+
+
+async def get_current_agent_instance(
+    request: Request,
+    authorization: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+) -> Instance:
+    """Authenticate an instance agent via Bearer token + IP binding.
+
+    1. Extract Bearer token, SHA-256 hash it, look up instance
+    2. Verify instance is not soft-deleted
+    3. First connection: record source IP as agent_registered_ip
+    4. Subsequent connections: verify source IP matches
+    """
+    # Extract Bearer token
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format",
+        )
+    raw_token = parts[1]
+
+    # Hash and look up
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    result = await db.execute(
+        select(Instance).where(
+            Instance.agent_token_hash == token_hash,
+            Instance.deleted_at.is_(None),
+        )
+    )
+    instance = result.scalar_one_or_none()
+
+    if not instance:
+        logger.warning(
+            "Agent auth failed: invalid token from %s",
+            _extract_client_ip(request),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid agent token",
+        )
+
+    # IP binding
+    client_ip = _extract_client_ip(request)
+
+    if instance.agent_registered_ip is None:
+        # First connection — record IP
+        instance.agent_registered_ip = client_ip
+        await db.commit()
+        logger.info(
+            "Agent for instance %d registered IP: %s",
+            instance.id, client_ip,
+        )
+    elif instance.agent_registered_ip != client_ip:
+        logger.warning(
+            "Agent IP mismatch for instance %d: "
+            "registered=%s, actual=%s",
+            instance.id, instance.agent_registered_ip, client_ip,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agent IP does not match registered IP",
+        )
+
+    return instance

@@ -148,6 +148,11 @@ class Settings(BaseSettings):
     PASSWORD_SYNC_INTERVAL_MINUTES: int = 5
     PASSWORD_SYNC_MAX_RETRIES: int = 5
 
+    # Instance Agent Configuration
+    AGENT_TASK_TIMEOUT_MINUTES: int = 10
+    AGENT_HEARTBEAT_STALE_MINUTES: int = 2
+    AGENT_TRUST_PROXY_HEADERS: bool = False  # Trust X-Forwarded-For (set True on Render)
+
     # Invitation Reminder Configuration
     REMINDER_1_ENABLED: bool = False
     REMINDER_1_DAYS_AFTER_INVITE: int = 7  # First reminder: 7 days after initial invitation

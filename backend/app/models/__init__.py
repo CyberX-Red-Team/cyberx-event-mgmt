@@ -15,6 +15,7 @@ from app.models.license import LicenseProduct, LicenseToken, LicenseSlot
 from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
 from app.models.cpe_certificate import CPECertificate, CertificateStatus
 from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, TLSCertificateStatus
+from app.models.agent_task import AgentTask
 
 __all__ = [
     "User",
@@ -48,4 +49,5 @@ __all__ = [
     "CAChainStatus",
     "TLSCertificate",
     "TLSCertificateStatus",
+    "AgentTask",
 ]
