@@ -624,6 +624,33 @@ class CPECertificateService:
         return buf
 
     @staticmethod
+    def _find_signature_line_y(pdf_bytes: bytes) -> float:
+        """Find the y-position (reportlab coords, 0=bottom) of the "Signature" text.
+
+        Uses pdfplumber to extract word positions from the generated PDF,
+        so overlays are anchored to the actual rendered layout rather than
+        hardcoded coordinates that drift across LibreOffice versions.
+        """
+        import pdfplumber
+
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            page = pdf.pages[0]
+            page_h = page.height
+            for word in page.extract_words():
+                if word["text"] == "Signature":
+                    # pdfplumber y is top-down; convert to reportlab bottom-up
+                    # word["top"] is distance from top of page to top of text
+                    sig_y_reportlab = page_h - word["top"]
+                    logger.info(
+                        f"Found 'Signature' text at pdfplumber y={word['top']:.1f}, "
+                        f"reportlab y={sig_y_reportlab:.1f}"
+                    )
+                    return sig_y_reportlab
+
+        logger.warning("Could not find 'Signature' text in PDF, using fallback y=148")
+        return 148.0
+
+    @staticmethod
     def _overlay_signatures(
         pdf_bytes: bytes,
         sig1_bytes: Optional[bytes],
@@ -637,6 +664,9 @@ class CPECertificateService:
         The template is landscape (792x612pt) with a 6-column signature table.
         Signature 1 (left) has a Canadian flag watermark behind it.
         Signature 2 (right) has an American flag watermark behind it.
+
+        Positions are anchored to the "Signature" text detected in the PDF
+        via pdfplumber, so they're correct regardless of LibreOffice version.
         """
         from reportlab.pdfgen import canvas as rl_canvas
         from reportlab.lib.utils import ImageReader
@@ -647,16 +677,22 @@ class CPECertificateService:
         page_w = float(page.mediabox.width)
         page_h = float(page.mediabox.height)
 
+        # Detect where "Signature" text is in the actual rendered PDF
+        sig_text_y = CPECertificateService._find_signature_line_y(pdf_bytes)
+
         overlay_buf = io.BytesIO()
         c = rl_canvas.Canvas(overlay_buf, pagesize=(page_w, page_h))
 
-        # Signature positions (tuned against Gotenberg output)
-        sig1_x, sig1_y, sig1_w = 125, 160, 140   # left (Yves)
-        sig2_x, sig2_y, sig2_w = 545, 172, 140    # right (Wes)
+        # Signature positions — x and width are fixed (column layout doesn't shift),
+        # y is relative to the detected "Signature" text position
+        sig1_x, sig1_w = 125, 140    # left (Yves)
+        sig2_x, sig2_w = 545, 140    # right (Wes)
+        sig1_y = sig_text_y + 12     # just above "Signature" text
+        sig2_y = sig_text_y + 24     # slightly higher (Wes sig is flatter)
 
         # Translucent country flags behind signatures
         flag_w = 80
-        flag_cy = 185  # common vertical center
+        flag_cy = sig_text_y + 37    # centered above signature line
 
         canada_flag = CPECertificateService._make_canadian_flag(alpha=40)
         flag1_img = ImageReader(canada_flag)
