@@ -1,6 +1,5 @@
 """Agent task model for instance-side task execution."""
-from sqlalchemy import Column, Integer, String, TIMESTAMP, ForeignKey, Text, Index
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, Integer, String, TIMESTAMP, ForeignKey, Text, Index, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -14,9 +13,9 @@ class AgentTask(Base):
     id = Column(Integer, primary_key=True, index=True)
     instance_id = Column(Integer, ForeignKey("instances.id", ondelete="CASCADE"), nullable=False)
     task_type = Column(String(50), nullable=False, index=True)  # e.g. "cycle_vpn"
-    payload = Column(JSONB, nullable=True)  # Task-specific input
+    payload = Column(JSON, nullable=True)  # Task-specific input
     status = Column(String(20), default="PENDING", nullable=False)  # PENDING, IN_PROGRESS, COMPLETED, FAILED
-    result = Column(JSONB, nullable=True)  # Task output
+    result = Column(JSON, nullable=True)  # Task output
     error_message = Column(Text, nullable=True)
 
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
