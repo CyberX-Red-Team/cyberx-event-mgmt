@@ -2,7 +2,9 @@
 from datetime import datetime
 from typing import Optional, List
 from enum import Enum
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.utils.name_utils import normalize_name
 
 
 class UserRoleEnum(str, Enum):
@@ -32,6 +34,13 @@ class ParticipantBase(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=255)
     last_name: str = Field(..., min_length=1, max_length=255)
     country: str = Field(default="USA", max_length=100)
+
+    @field_validator("first_name", "last_name", mode="before")
+    @classmethod
+    def normalize_names(cls, v: str) -> str:
+        if isinstance(v, str):
+            return normalize_name(v)
+        return v
 
 
 class ParticipantCreate(ParticipantBase):
@@ -76,6 +85,13 @@ class ParticipantUpdate(BaseModel):
     role: Optional[UserRoleEnum] = None
     is_admin: Optional[bool] = None  # Legacy support
     is_active: Optional[bool] = None
+
+    @field_validator("first_name", "last_name", mode="before")
+    @classmethod
+    def normalize_names(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return normalize_name(v)
+        return v
 
 
 class ParticipantResponse(BaseModel):
@@ -243,6 +259,13 @@ class InviteeCreateRequest(BaseModel):
     confirmed: str = Field(default="UNKNOWN")
     discord_username: Optional[str] = None
 
+    @field_validator("first_name", "last_name", mode="before")
+    @classmethod
+    def normalize_names(cls, v: str) -> str:
+        if isinstance(v, str):
+            return normalize_name(v)
+        return v
+
 
 class InviteeUpdateRequest(BaseModel):
     """
@@ -258,3 +281,10 @@ class InviteeUpdateRequest(BaseModel):
     country: Optional[str] = Field(None, max_length=100)
     confirmed: Optional[str] = None
     discord_username: Optional[str] = None
+
+    @field_validator("first_name", "last_name", mode="before")
+    @classmethod
+    def normalize_names(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return normalize_name(v)
+        return v

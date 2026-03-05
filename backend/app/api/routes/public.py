@@ -26,18 +26,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 async def generate_username(first_name: str, last_name: str, db: AsyncSession) -> str:
     """
     Generate a unique username in the format: first_initial + last_name.
-    If conflict exists, append incrementing numbers (2, 3, 4, etc.).
+    If conflict exists, append incrementing numbers (1, 2, 3, etc.).
 
-    Args:
-        first_name: User's first name
-        last_name: User's last name
-        db: Database session
-
-    Returns:
-        Unique username
+    Handles accented characters (é→e, ñ→n) and strips punctuation.
     """
-    # Generate base username: first initial + last name (lowercase, no spaces)
-    base_username = f"{first_name[0]}{last_name}".lower().replace(" ", "")
+    from app.utils.name_utils import sanitize_username
+    base_username = sanitize_username(first_name, last_name)
 
     # Check if base username is available
     result = await db.execute(
@@ -47,15 +41,21 @@ async def generate_username(first_name: str, last_name: str, db: AsyncSession) -
         return base_username
 
     # If conflict, try with incrementing numbers
-    counter = 2
+    counter = 1
     while True:
-        candidate = f"{base_username}{counter}"
+        suffix = str(counter)
+        max_base_len = 50 - len(suffix)
+        candidate = f"{base_username[:max_base_len]}{suffix}"
         result = await db.execute(
             select(User).where(User.pandas_username == candidate)
         )
         if not result.scalar_one_or_none():
             return candidate
         counter += 1
+        if counter > 999:
+            import time
+            timestamp = str(int(time.time()))[-6:]
+            return f"{base_username[:44]}{timestamp}"
 
 
 def generate_password(length: int = 12) -> str:

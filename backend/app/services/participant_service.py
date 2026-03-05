@@ -977,12 +977,8 @@ class ParticipantService:
         Format: first_initial + lastname (e.g., jsmith for John Smith)
         If conflict exists, appends numbers (jsmith1, jsmith2, etc.)
         """
-        # Get first initial and combine with last name
-        first_initial = first_name[0].lower() if first_name else ""
-        base = f"{first_initial}{last_name.lower()}"
-        # Remove special characters (keep only alphanumeric)
-        base = "".join(c for c in base if c.isalnum())
-        base = base[:50]  # Max 50 chars
+        from app.utils.name_utils import sanitize_username
+        base = sanitize_username(first_name, last_name)
 
         # Check for conflicts and add number suffix if needed
         username = base
