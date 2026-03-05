@@ -134,13 +134,11 @@ class AgentService:
         old_vpn = await vpn_svc.get_instance_vpn(instance.id)
         old_vpn_id = old_vpn.id if old_vpn else None
 
-        # Release old VPN
+        # Burn old VPN — keep assigned for audit trail, mark unavailable
         if old_vpn:
-            old_vpn.is_available = True
-            old_vpn.assigned_to_instance_id = None
-            old_vpn.assigned_instance_at = None
+            old_vpn.is_available = False
             logger.info(
-                "Released VPN %d from instance %d",
+                "Burned VPN %d for instance %d (removed from pool)",
                 old_vpn.id, instance.id,
             )
 
