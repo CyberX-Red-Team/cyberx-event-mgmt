@@ -97,16 +97,16 @@ class TestUsernameGeneration:
 
         # First call returns existing user (conflict), second call returns None (available)
         mock_result1 = mocker.Mock()
-        mock_result1.scalar_one_or_none.return_value = Mock(id=1)  # Exists
+        mock_result1.scalar_one_or_none.return_value = Mock(id=1)  # jsmith taken
 
         mock_result2 = mocker.Mock()
-        mock_result2.scalar_one_or_none.return_value = None  # Available
+        mock_result2.scalar_one_or_none.return_value = None  # jsmith1 available
 
         mock_db.execute = mocker.AsyncMock(side_effect=[mock_result1, mock_result2])
 
         username = await generate_username("John", "Smith", mock_db)
 
-        assert username == "jsmith2"
+        assert username == "jsmith1"
 
     async def test_generate_username_multiple_conflicts(self, mocker):
         """Test generating username with multiple conflicts."""
@@ -115,16 +115,16 @@ class TestUsernameGeneration:
         # First 3 calls return conflicts, 4th is available
         mock_results = [
             mocker.Mock(scalar_one_or_none=lambda: Mock(id=1)),  # jsmith taken
-            mocker.Mock(scalar_one_or_none=lambda: Mock(id=2)),  # jsmith2 taken
-            mocker.Mock(scalar_one_or_none=lambda: Mock(id=3)),  # jsmith3 taken
-            mocker.Mock(scalar_one_or_none=lambda: None),        # jsmith4 available
+            mocker.Mock(scalar_one_or_none=lambda: Mock(id=2)),  # jsmith1 taken
+            mocker.Mock(scalar_one_or_none=lambda: Mock(id=3)),  # jsmith2 taken
+            mocker.Mock(scalar_one_or_none=lambda: None),        # jsmith3 available
         ]
 
         mock_db.execute = mocker.AsyncMock(side_effect=mock_results)
 
         username = await generate_username("John", "Smith", mock_db)
 
-        assert username == "jsmith4"
+        assert username == "jsmith3"
 
 
 @pytest.mark.unit
