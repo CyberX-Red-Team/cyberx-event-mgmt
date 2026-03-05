@@ -74,5 +74,9 @@ class Instance(Base):
     license_product = relationship("LicenseProduct", backref="instances")
     instance_template = relationship("InstanceTemplate", backref="instances")
 
+    @property
+    def has_agent(self) -> bool:
+        return self.agent_token_hash is not None
+
     def __repr__(self):
         return f"<Instance(id={self.id}, name={self.name}, status={self.status})>"

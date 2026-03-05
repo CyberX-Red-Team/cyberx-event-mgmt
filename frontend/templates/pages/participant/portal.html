@@ -610,6 +610,7 @@
                                             <th>Status</th>
                                             <th>IP</th>
                                             <th>VPN IP</th>
+                                            <th>Agent</th>
                                             <th>Visibility</th>
                                             <th>Actions</th>
                                         </tr>
@@ -1285,11 +1286,13 @@ async function loadMyInstances() {
                         <td><span class="badge bg-${statusBadge}">${i.status}</span></td>
                         <td>${i.ip_address || '-'}</td>
                         <td>${i.vpn_ip || '-'}</td>
+                        <td>${i.has_agent ? agentStatusBadge(i.agent_last_heartbeat) : '-'}</td>
                         <td>
                             <span class="badge bg-${visibilityBadge}">${i.visibility}</span>
                             ${i.visibility !== 'private' && i.created_by_username ? `<br><small>by ${i.created_by_username}</small>` : ''}
                         </td>
                         <td>
+                            ${i.has_agent && i.status === 'ACTIVE' ? `<button class="btn btn-sm btn-outline-warning me-1" onclick="cycleVPN(${i.id})" title="Cycle VPN"><i data-feather="repeat"></i></button>` : ''}
                             ${i.notes ? `<button class="btn btn-sm btn-outline-info me-1" onclick="showNotes('${i.notes.replace(/'/g, "\\'")}')"><i data-feather="info"></i></button>` : ''}
                             ${canDelete ? `
                                 <button class="btn btn-sm btn-outline-primary me-1" onclick="showEditModal(${i.id}, '${i.name.replace(/'/g, "\\'")}', '${i.visibility}', '${(i.notes || '').replace(/'/g, "\\'")}')">
@@ -1357,6 +1360,14 @@ function providerIcon(provider) {
     return '';
 }
 
+function agentStatusBadge(lastHeartbeat) {
+    if (!lastHeartbeat) return '<span class="badge bg-secondary">Waiting</span>';
+    const ago = (Date.now() - new Date(lastHeartbeat).getTime()) / 1000;
+    if (ago < 120) return `<span class="badge bg-success" title="Last seen ${Math.round(ago)}s ago">Online</span>`;
+    if (ago < 300) return `<span class="badge bg-warning" title="Last seen ${Math.round(ago / 60)}m ago">Stale</span>`;
+    return `<span class="badge bg-danger" title="Last seen ${Math.round(ago / 60)}m ago">Offline</span>`;
+}
+
 function getVisibilityBadge(visibility) {
     const map = {
         'private': 'secondary',
@@ -1422,6 +1433,29 @@ async function deleteInstance(instanceId) {
     } catch (error) {
         console.error('Failed to delete instance:', error);
         alert('Failed to delete instance');
+    }
+}
+
+async function cycleVPN(instanceId) {
+    if (!confirm('Cycle VPN for this instance? The VPN connection will briefly drop while a new config is applied.')) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch(`/api/instances/${instanceId}/tasks`, {
+            method: 'POST',
+            body: { task_type: 'cycle_vpn' }
+        });
+
+        if (response.ok) {
+            alert('VPN cycle task created. The agent will process it shortly.');
+        } else {
+            const error = await response.json();
+            alert(error.detail || 'Failed to create VPN cycle task');
+        }
+    } catch (error) {
+        console.error('Failed to create VPN cycle task:', error);
+        alert('Failed to create VPN cycle task');
     }
 }
 

@@ -142,6 +142,7 @@
                             <th>Status</th>
                             <th>IP Address</th>
                             <th>VPN IP</th>
+                            <th>Agent</th>
                             <th>Visibility</th>
                             <th>Event</th>
                             <th>Created By</th>
@@ -150,7 +151,7 @@
                         </tr>
                     </thead>
                     <tbody id="instanceBody">
-                        <tr><td colspan="10" class="text-center py-4">
+                        <tr><td colspan="11" class="text-center py-4">
                             <div class="spinner-border spinner-border-sm me-2"></div> Loading instances...
                         </td></tr>
                     </tbody>
@@ -461,7 +462,7 @@ async function loadInstances(page = 1) {
     } catch (e) {
         console.error(e);
         document.getElementById('instanceBody').innerHTML =
-            '<tr><td colspan="10" class="text-center text-danger py-4">Failed to load instances.</td></tr>';
+            '<tr><td colspan="11" class="text-center text-danger py-4">Failed to load instances.</td></tr>';
     }
 }
 
@@ -482,10 +483,18 @@ function providerIcon(provider) {
     return '';
 }
 
+function agentStatusBadge(lastHeartbeat) {
+    if (!lastHeartbeat) return '<span class="badge bg-secondary">Waiting</span>';
+    const ago = (Date.now() - new Date(lastHeartbeat).getTime()) / 1000;
+    if (ago < 120) return `<span class="badge bg-success" title="Last seen ${Math.round(ago)}s ago">Online</span>`;
+    if (ago < 300) return `<span class="badge bg-warning" title="Last seen ${Math.round(ago / 60)}m ago">Stale</span>`;
+    return `<span class="badge bg-danger" title="Last seen ${Math.round(ago / 60)}m ago">Offline</span>`;
+}
+
 function renderInstances(items) {
     const tbody = document.getElementById('instanceBody');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">No instances found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted">No instances found.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(i => `
@@ -503,6 +512,7 @@ function renderInstances(items) {
             <td>${statusBadge(i.status)}</td>
             <td><code>${i.ip_address || '-'}</code></td>
             <td>${i.vpn_ip ? `<code class="text-success">${i.vpn_ip}</code>` : '<span class="text-muted">-</span>'}</td>
+            <td>${i.has_agent ? agentStatusBadge(i.agent_last_heartbeat) : '<span class="text-muted">-</span>'}</td>
             <td>
                 <span class="badge ${i.visibility === 'public' ? 'bg-success' : 'bg-secondary'}" style="cursor:pointer;" onclick="toggleVisibility(${i.id}, '${i.visibility}')" title="Click to toggle">
                     ${i.visibility === 'public' ? '<i data-feather="globe" class="feather-sm me-1"></i>Public' : '<i data-feather="lock" class="feather-sm me-1"></i>Private'}
@@ -513,6 +523,7 @@ function renderInstances(items) {
             <td>${formatDateTime(i.created_at)}</td>
             <td>
                 <div class="btn-group btn-group-sm">
+                    ${i.has_agent && i.status === 'ACTIVE' ? `<button class="btn btn-outline-warning" onclick="cycleVPN(${i.id})" title="Cycle VPN"><i data-feather="repeat"></i></button>` : ''}
                     <button class="btn btn-outline-primary" onclick="syncInstance(${i.id})" title="Sync Status"><i data-feather="refresh-cw"></i></button>
                     <button class="btn btn-outline-danger" onclick="deleteInstance(${i.id}, '${i.name}')" title="Delete"><i data-feather="trash-2"></i></button>
                 </div>
@@ -758,6 +769,19 @@ async function syncInstance(id) {
             showToast('Instance synced', 'success');
         }
     } catch (e) { showToast('Sync failed', 'danger'); }
+}
+
+async function cycleVPN(id) {
+    if (!confirm('Cycle VPN for this instance? The VPN connection will briefly drop.')) return;
+    try {
+        const resp = await csrfFetch(`/api/admin/instances/${id}/tasks`, { method: 'POST', body: { task_type: 'cycle_vpn' } });
+        if (resp.ok) {
+            showToast('VPN cycle task created — agent will process shortly', 'success');
+        } else {
+            const error = await resp.json();
+            showToast(error.detail || 'Failed to create task', 'danger');
+        }
+    } catch (e) { showToast('Failed to create VPN cycle task', 'danger'); }
 }
 
 async function deleteInstance(id, name) {

@@ -84,6 +84,10 @@ class InstanceResponse(BaseModel):
     instance_template_id: Optional[int] = None
     instance_template_name: Optional[str] = None  # Computed: template name
 
+    # Agent fields
+    has_agent: bool = False  # Computed: whether agent token is configured
+    agent_last_heartbeat: Optional[datetime] = None
+
     created_at: datetime
     updated_at: datetime
     last_synced_at: Optional[datetime] = None  # Last successful status sync from provider
