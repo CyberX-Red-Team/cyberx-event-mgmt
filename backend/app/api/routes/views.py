@@ -52,6 +52,40 @@ async def login_page(
     )
 
 
+@router.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(
+    request: Request,
+    current_user: User = Depends(get_optional_user)
+):
+    """Render forgot password page."""
+    if current_user:
+        if current_user.is_admin or current_user.role == 'admin':
+            return RedirectResponse(url="/admin/dashboard", status_code=302)
+        return RedirectResponse(url="/portal", status_code=302)
+
+    return templates.TemplateResponse(
+        "pages/auth/forgot_password.html",
+        {"request": request, "now": datetime.now()}
+    )
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page(
+    request: Request,
+    current_user: User = Depends(get_optional_user)
+):
+    """Render reset password page."""
+    if current_user:
+        if current_user.is_admin or current_user.role == 'admin':
+            return RedirectResponse(url="/admin/dashboard", status_code=302)
+        return RedirectResponse(url="/portal", status_code=302)
+
+    return templates.TemplateResponse(
+        "pages/auth/reset_password.html",
+        {"request": request, "now": datetime.now()}
+    )
+
+
 @router.get("/confirm", response_class=HTMLResponse)
 async def confirmation_page(
     request: Request
