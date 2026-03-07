@@ -103,6 +103,44 @@
             padding-top: 90px;
         }
 
+        /* Email live banner (staging warning) */
+        .email-live-banner {
+            position: fixed;
+            top: 56px;
+            left: 0;
+            right: 0;
+            z-index: 1035;
+            background: #dc3545;
+            color: #fff;
+            font-size: 0.8rem;
+            padding: 6px 16px;
+            text-align: center;
+        }
+        .email-live-banner .banner-inner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .email-live-banner .pulse-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #fff;
+            animation: pulse-blink 1.5s ease-in-out infinite;
+        }
+        .email-live-banner .separator {
+            display: inline-block;
+            width: 1px;
+            height: 14px;
+            background: rgba(255,255,255,0.4);
+        }
+        @keyframes pulse-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
         /* Ensure fixed navbar stays on top */
         .navbar.fixed-top {
             z-index: 1040;
