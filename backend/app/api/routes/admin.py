@@ -552,17 +552,25 @@ async def bulk_action(
 async def reset_participant_password(
     participant_id: int,
     request: Request,
-    send_email: bool = Query(True, description="Send password email to participant"),
     current_user: User = Depends(get_current_sponsor_user),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Reset a participant's password.
+    Send a password reset link to a participant.
+
+    Generates a reset token and triggers the PASSWORD_RESET workflow,
+    which emails the participant a secure link to choose their own password.
 
     - Admins can reset any participant's password
     - Sponsors can only reset passwords for participants they sponsor
     """
+    import secrets
+    from datetime import timedelta
+    from app.services.workflow_service import WorkflowService
+    from app.models.email_workflow import WorkflowTriggerEvent
+    from app.config import get_settings
+
     # Get the participant first to check permissions
     participant = await service.get_participant(participant_id)
     if not participant:
@@ -571,10 +579,31 @@ async def reset_participant_password(
     # Check permission to edit this participant
     permissions.can_edit_participant(current_user, participant)
 
-    success, new_password = await service.reset_password(participant_id)
+    # Generate reset token (same flow as self-service)
+    reset_token = secrets.token_urlsafe(32)
+    reset_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
 
-    if not success:
-        raise not_found("Participant")
+    participant.password_reset_token = reset_token
+    participant.password_reset_expires = reset_expires
+    await db.commit()
+
+    # Trigger PASSWORD_RESET workflow (sends reset link email)
+    settings = get_settings()
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+
+    workflow_service = WorkflowService(db)
+    await workflow_service.trigger_workflow(
+        trigger_event=WorkflowTriggerEvent.PASSWORD_RESET,
+        user_id=participant.id,
+        custom_vars={
+            "reset_url": reset_url,
+            "reset_token": reset_token,
+            "first_name": participant.first_name,
+            "last_name": participant.last_name,
+            "email": participant.email,
+            "expiry_time": "15 minutes",
+        }
+    )
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
@@ -586,12 +615,9 @@ async def reset_participant_password(
         user_agent=user_agent
     )
 
-    # TODO: Send email if send_email is True
-
     return PasswordResetResponse(
         success=True,
-        message="Password reset successfully" + (" (email sent)" if send_email else ""),
-        new_password=new_password if not send_email else None
+        message=f"Password reset link sent to {participant.email}"
     )
 
 

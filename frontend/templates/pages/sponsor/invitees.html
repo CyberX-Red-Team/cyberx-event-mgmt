@@ -661,7 +661,7 @@ async function submitEditInvitee() {
 
 // Reset Password
 async function resetPassword(inviteeId) {
-    if (!confirm('Reset password for this invitee? They will receive an email with their new credentials.')) {
+    if (!confirm('Send a password reset link to this invitee? They will receive an email to choose their own password.')) {
         return;
     }
 

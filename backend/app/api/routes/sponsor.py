@@ -334,9 +334,18 @@ async def reset_invitee_password(
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
-    Reset an invitee's password and send them an email.
+    Send a password reset link to an invitee.
+
+    Generates a reset token and triggers the PASSWORD_RESET workflow,
+    which emails the invitee a secure link to choose their own password.
     """
-    logger.info(f"Sponsor {current_user.id} resetting password for invitee {invitee_id}")
+    import secrets
+    from datetime import timedelta
+    from app.services.workflow_service import WorkflowService
+    from app.models.email_workflow import WorkflowTriggerEvent
+    from app.config import get_settings
+
+    logger.info(f"Sponsor {current_user.id} sending reset link for invitee {invitee_id}")
 
     permissions = PermissionChecker()
 
@@ -352,11 +361,31 @@ async def reset_invitee_password(
     # Permission check
     permissions.can_edit_participant(current_user, invitee)
 
-    # Reset password
-    success = await service.reset_password(invitee_id)
+    # Generate reset token (same flow as self-service)
+    reset_token = secrets.token_urlsafe(32)
+    reset_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
 
-    if not success:
-        raise server_error("Failed to reset password")
+    invitee.password_reset_token = reset_token
+    invitee.password_reset_expires = reset_expires
+    await db.commit()
+
+    # Trigger PASSWORD_RESET workflow (sends reset link email)
+    settings = get_settings()
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+
+    workflow_service = WorkflowService(db)
+    await workflow_service.trigger_workflow(
+        trigger_event=WorkflowTriggerEvent.PASSWORD_RESET,
+        user_id=invitee.id,
+        custom_vars={
+            "reset_url": reset_url,
+            "reset_token": reset_token,
+            "first_name": invitee.first_name,
+            "last_name": invitee.last_name,
+            "email": invitee.email,
+            "expiry_time": "15 minutes",
+        }
+    )
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
@@ -364,7 +393,7 @@ async def reset_invitee_password(
     audit_service = AuditService(db)
     await audit_service.log(
         user_id=current_user.id,
-        action="RESET_INVITEE_PASSWORD",
+        action="SEND_RESET_LINK_INVITEE",
         resource_type="USER",
         resource_id=invitee_id,
         details={
@@ -375,11 +404,11 @@ async def reset_invitee_password(
         user_agent=user_agent
     )
 
-    logger.info(f"Sponsor {current_user.id} reset password for invitee {invitee_id}")
+    logger.info(f"Sponsor {current_user.id} sent reset link for invitee {invitee_id}")
 
     return {
         "success": True,
-        "message": "Password reset successfully. An email has been sent to the invitee."
+        "message": f"Password reset link sent to {invitee.email}"
     }
 
 

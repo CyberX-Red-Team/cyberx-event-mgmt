@@ -199,11 +199,10 @@ class PasswordResetRequest(BaseModel):
 
 
 class PasswordResetResponse(BaseModel):
-    """Response for password reset."""
+    """Response for sending a password reset link."""
 
     success: bool
     message: str
-    new_password: Optional[str] = None  # Only returned if send_email is False
 
 
 class RoleUpdateRequest(BaseModel):

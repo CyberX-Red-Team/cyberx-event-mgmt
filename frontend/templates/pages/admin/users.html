@@ -1419,19 +1419,22 @@ window.resetUserPassword = async function() {
     const userId = document.getElementById('userId').value;
     if (!userId) return;
 
-    if (!confirm('Generate a new password for this invitee?')) return;
+    if (!confirm('Send a password reset link to this user? They will receive an email to choose their own password.')) return;
 
     try {
-        const response = await csrfFetch(`/api/admin/participants/${userId}/reset-password?send_email=false`, {
+        const response = await csrfFetch(`/api/admin/participants/${userId}/reset-password`, {
             method: 'POST'
         });
 
         const result = await response.json();
-        document.getElementById('userPandasPassword').value = result.new_password || '';
-        alert('Password reset successfully. New password: ' + result.new_password);
+        if (response.ok) {
+            showToast(result.message, 'success');
+        } else {
+            showToast(result.detail || 'Failed to send reset link', 'error');
+        }
     } catch (error) {
-        console.error('Error resetting password:', error);
-        alert('Failed to reset password');
+        console.error('Error sending reset link:', error);
+        showToast('Failed to send reset link', 'error');
     }
 }
 
