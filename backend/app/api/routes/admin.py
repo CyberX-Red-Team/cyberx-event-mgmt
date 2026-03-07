@@ -1356,6 +1356,7 @@ async def trigger_reminders(
     user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to target. Omit for all eligible."),
     force: bool = Query(False, description="Re-send even if reminder was already sent for this stage."),
     dry_run: bool = Query(False, description="Preview eligible users without actually queuing emails."),
+    skip_checks: bool = Query(False, description="Skip confirmation_sent_at and participation status checks (testing only)."),
 ):
     """
     Manually trigger reminder processing, bypassing all date/time checks.
@@ -1363,7 +1364,7 @@ async def trigger_reminders(
     Useful for testing reminder workflows without waiting for the configured
     timeframes (days-after-invite, min-days-before-event, etc.).
 
-    The only checks that remain:
+    The only checks that remain (unless skip_checks=true):
     - User must have confirmation_sent_at set (was actually invited)
     - User's participation status must be INVITED or NO_RESPONSE
     - User must be active
@@ -1407,16 +1408,21 @@ async def trigger_reminders(
     results = {}
 
     for s in stages_to_run:
-        # Build query: invited/no-response users who were actually sent an invitation
+        # Build query
         conditions = [
             EventParticipation.event_id == event.id,
-            EventParticipation.status.in_([
-                ParticipationStatus.INVITED.value,
-                ParticipationStatus.NO_RESPONSE.value,
-            ]),
-            User.confirmation_sent_at.isnot(None),
             User.is_active == True,
         ]
+
+        # Unless skip_checks, require invitation status and confirmation_sent_at
+        if not skip_checks:
+            conditions.extend([
+                EventParticipation.status.in_([
+                    ParticipationStatus.INVITED.value,
+                    ParticipationStatus.NO_RESPONSE.value,
+                ]),
+                User.confirmation_sent_at.isnot(None),
+            ])
 
         # Unless force, skip users who already got this stage
         if not force:
@@ -1471,7 +1477,7 @@ async def trigger_reminders(
 
     logger.info(
         f"Manual reminder trigger by {current_user.email}: "
-        f"stages={stages_to_run}, force={force}, dry_run={dry_run}, results={results}"
+        f"stages={stages_to_run}, force={force}, dry_run={dry_run}, skip_checks={skip_checks}, results={results}"
     )
 
     return {

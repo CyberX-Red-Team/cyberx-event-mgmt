@@ -83,6 +83,7 @@ async def trigger_reminders(
     user_ids: str | None = None,
     force: bool = False,
     dry_run: bool = True,
+    skip_checks: bool = False,
 ) -> dict | None:
     """Call POST /api/admin/reminders/trigger and return the response."""
     params = {}
@@ -94,6 +95,8 @@ async def trigger_reminders(
         params["force"] = "true"
     if dry_run:
         params["dry_run"] = "true"
+    if skip_checks:
+        params["skip_checks"] = "true"
 
     label = "DRY RUN" if dry_run else "LIVE SEND"
     stage_label = f"stage {stage}" if stage else "all stages"
@@ -101,7 +104,9 @@ async def trigger_reminders(
     if user_ids:
         print(f"   Targeting user IDs: {user_ids}")
     if force:
-        print(f"   Force mode: re-sending even if already sent")
+        print("   Force mode: re-sending even if already sent")
+    if skip_checks:
+        print("   Skip checks: bypassing invitation/status requirements")
 
     resp = await client.post(
         f"{base_url}/api/admin/reminders/trigger",
@@ -213,6 +218,7 @@ async def main():
     parser.add_argument("--stage", type=int, choices=[1, 2, 3], default=None, help="Reminder stage (1, 2, or 3). Omit for all.")
     parser.add_argument("--user-ids", default=None, help="Comma-separated user IDs to target")
     parser.add_argument("--force", action="store_true", help="Re-send even if already sent for this stage")
+    parser.add_argument("--skip-checks", action="store_true", help="Skip confirmation_sent_at and participation status checks")
     parser.add_argument("--send", action="store_true", help="Actually send (default is dry-run)")
     parser.add_argument("--dry-run", action="store_true", default=True, help="Preview only (default)")
     parser.add_argument("--queue-stats", action="store_true", help="Also show email queue stats")
@@ -247,6 +253,7 @@ async def main():
             user_ids=args.user_ids,
             force=args.force,
             dry_run=dry_run,
+            skip_checks=args.skip_checks,
         )
 
         if data is None:
