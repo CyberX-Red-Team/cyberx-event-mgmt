@@ -466,6 +466,23 @@ function renderVPNCredentials(credentials) {
     let lastGroupValue = null;
     const rows = [];
 
+    // Pre-compute group counts
+    const groupCounts = {};
+    if (groupBy) {
+        credentials.forEach(v => {
+            let gk;
+            if (groupBy === 'assignment_type') gk = v.assignment_type || 'USER_REQUESTABLE';
+            else if (groupBy === 'endpoint') gk = v.endpoint || 'Unknown';
+            else if (groupBy === 'is_available') gk = v.is_available ? 'available' : 'assigned';
+            else if (groupBy === 'assigned_to_user_id') {
+                if (v.assigned_to_name) gk = v.assigned_to_user_id;
+                else if (v.assigned_instance_name) gk = 'instance_' + v.assigned_to_instance_id;
+                else gk = 0;
+            }
+            groupCounts[gk] = (groupCounts[gk] || 0) + 1;
+        });
+    }
+
     credentials.forEach(v => {
         // Insert group header row if grouping is active
         if (groupBy) {
@@ -499,7 +516,7 @@ function renderVPNCredentials(credentials) {
                 }
             }
             if (groupValue !== lastGroupValue) {
-                rows.push(`<tr class="table-secondary"><td colspan="12" class="fw-bold py-2"><i data-feather="${groupIcon}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel}</td></tr>`);
+                rows.push(`<tr class="table-secondary"><td colspan="12" class="fw-bold py-2"><i data-feather="${groupIcon}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel} <span class="badge bg-secondary ms-2">${groupCounts[groupValue]}</span></td></tr>`);
                 lastGroupValue = groupValue;
             }
         }

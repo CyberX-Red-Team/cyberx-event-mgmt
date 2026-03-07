@@ -972,6 +972,19 @@ function renderUsersTable() {
     let lastGroupKey = null;
     let rows = [];
 
+    // Pre-compute group counts
+    const groupCounts = {};
+    if (groupBy) {
+        users.forEach(u => {
+            let gk;
+            if (groupBy === 'sponsor') gk = u.sponsor ? u.sponsor.id : 0;
+            else if (groupBy === 'confirmed') gk = u.confirmed || 'UNKNOWN';
+            else if (groupBy === 'role') gk = u.role || 'unknown';
+            else if (groupBy === 'country') gk = u.country || '';
+            groupCounts[gk] = (groupCounts[gk] || 0) + 1;
+        });
+    }
+
     users.forEach(user => {
         // Insert group header when grouping is active
         if (groupBy) {
@@ -1001,6 +1014,7 @@ function renderUsersTable() {
                         <td colspan="13" class="fw-bold small py-1 ps-3">
                             <i data-feather="${groupIcon}" style="width:14px;height:14px;" class="me-1"></i>
                             ${groupBy === 'country' ? groupName : escapeHtml(groupName)}
+                            <span class="badge bg-secondary ms-2">${groupCounts[groupKey]}</span>
                         </td>
                     </tr>
                 `);

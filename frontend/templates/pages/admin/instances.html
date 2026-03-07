@@ -535,6 +535,19 @@ function renderInstances(items) {
     let lastGroupValue = null;
     const rows = [];
 
+    // Pre-compute group counts
+    const groupCounts = {};
+    if (groupBy) {
+        items.forEach(item => {
+            let gk;
+            if (groupBy === 'status') gk = item.status;
+            else if (groupBy === 'event_id') gk = item.event_id || 0;
+            else if (groupBy === 'visibility') gk = item.visibility || 'private';
+            else if (groupBy === 'created_by_user_id') gk = item.created_by_user_id || 0;
+            groupCounts[gk] = (groupCounts[gk] || 0) + 1;
+        });
+    }
+
     items.forEach(i => {
         if (groupBy) {
             let groupValue, groupLabel, groupIcon;
@@ -556,7 +569,7 @@ function renderInstances(items) {
                 groupIcon = 'user';
             }
             if (groupValue !== lastGroupValue) {
-                rows.push(`<tr class="table-secondary"><td colspan="11" class="fw-bold py-2"><i data-feather="${groupIcon}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel}</td></tr>`);
+                rows.push(`<tr class="table-secondary"><td colspan="11" class="fw-bold py-2"><i data-feather="${groupIcon}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel} <span class="badge bg-secondary ms-2">${groupCounts[groupValue]}</span></td></tr>`);
                 lastGroupValue = groupValue;
             }
         }

@@ -293,6 +293,17 @@ function renderParticipants(participants) {
     let lastGroupKey = null;
     let rows = [];
 
+    // Pre-compute group counts
+    const groupCounts = {};
+    if (groupBy) {
+        participants.forEach(p => {
+            let gk;
+            if (groupBy === 'sponsor') gk = p.sponsor ? p.sponsor.id : 0;
+            else if (groupBy === 'confirmed') gk = p.confirmed || 'UNKNOWN';
+            groupCounts[gk] = (groupCounts[gk] || 0) + 1;
+        });
+    }
+
     participants.forEach(p => {
         // Insert group header when grouping is active
         if (groupBy) {
@@ -313,6 +324,7 @@ function renderParticipants(participants) {
                         <td colspan="11" class="fw-bold small py-1 ps-3">
                             <i data-feather="${groupIcon}" style="width:14px;height:14px;" class="me-1"></i>
                             ${groupName}
+                            <span class="badge bg-secondary ms-2">${groupCounts[groupKey]}</span>
                         </td>
                     </tr>
                 `);
