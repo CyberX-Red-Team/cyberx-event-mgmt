@@ -379,9 +379,9 @@ async def request_password_reset(
         import secrets
         from datetime import datetime, timezone, timedelta
 
-        # Generate secure reset token
+        # Generate secure reset token with 15-minute expiry
         reset_token = secrets.token_urlsafe(32)
-        reset_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+        reset_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
 
         user.password_reset_token = reset_token
         user.password_reset_expires = reset_expires
@@ -399,16 +399,16 @@ async def request_password_reset(
         )
 
         # Send password reset email via workflow
+        # Delivery mode (immediate vs queued) is controlled by the workflow's
+        # send_immediately flag in the DB, configurable from Admin → Workflows.
         from app.services.workflow_service import WorkflowService
         from app.models.email_workflow import WorkflowTriggerEvent
         from app.config import get_settings
 
         settings = get_settings()
-        workflow_service = WorkflowService(db)
-
-        # Build password reset URL using configured frontend URL
         reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
 
+        workflow_service = WorkflowService(db)
         await workflow_service.trigger_workflow(
             trigger_event=WorkflowTriggerEvent.PASSWORD_RESET,
             user_id=user.id,
@@ -417,7 +417,8 @@ async def request_password_reset(
                 "reset_token": reset_token,
                 "first_name": user.first_name,
                 "last_name": user.last_name,
-                "email": user.email
+                "email": user.email,
+                "expiry_time": reset_expires.strftime("%B %d, %Y %H:%M UTC"),
             }
         )
 

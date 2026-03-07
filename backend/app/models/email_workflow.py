@@ -38,7 +38,10 @@ class EmailWorkflow(Base):
     # Use JSON for cross-database compatibility (PostgreSQL and SQLite)
     custom_vars = Column(JSON, nullable=True, default=dict)  # Default template variables
 
-    # Scheduling (optional)
+    # Delivery Mode
+    send_immediately = Column(Boolean, default=False, nullable=False)  # True = bypass queue, send inline via SendGrid
+
+    # Scheduling (optional, ignored when send_immediately=True)
     delay_minutes = Column(Integer, nullable=True)  # Delay before sending (null = immediate)
 
     # Status

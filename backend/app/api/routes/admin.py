@@ -2164,6 +2164,7 @@ async def create_workflow(
         priority=workflow_create.priority,
         custom_vars=workflow_create.custom_vars or {},
         delay_minutes=workflow_create.delay_minutes,
+        send_immediately=workflow_create.send_immediately,
         is_enabled=workflow_create.is_enabled,
         from_email=workflow_create.from_email,
         from_name=workflow_create.from_name,
@@ -2240,6 +2241,9 @@ async def update_workflow(
     if workflow_update.delay_minutes is not None:
         changes["delay_minutes"] = {"old": workflow.delay_minutes, "new": workflow_update.delay_minutes}
         workflow.delay_minutes = workflow_update.delay_minutes
+    if workflow_update.send_immediately is not None:
+        changes["send_immediately"] = {"old": workflow.send_immediately, "new": workflow_update.send_immediately}
+        workflow.send_immediately = workflow_update.send_immediately
     if workflow_update.is_enabled is not None:
         changes["is_enabled"] = {"old": workflow.is_enabled, "new": workflow_update.is_enabled}
         workflow.is_enabled = workflow_update.is_enabled

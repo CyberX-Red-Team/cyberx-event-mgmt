@@ -113,8 +113,16 @@
                             <div class="form-text" id="triggerEventDescription"></div>
                         </div>
 
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="workflowSendImmediately" onchange="onSendImmediatelyChange()">
+                            <label class="form-check-label" for="workflowSendImmediately">
+                                <strong>Send Immediately</strong>
+                                <div class="small text-muted">Bypass email queue and send inline via SendGrid. Use for time-sensitive emails like password resets.</div>
+                            </label>
+                        </div>
+
                         <div class="row">
-                            <div class="col-md-6">
+                            <div class="col-md-6" id="delayGroup">
                                 <label class="form-label">Delay (minutes)</label>
                                 <input type="number" class="form-control" id="workflowDelay" min="0" placeholder="0">
                                 <div class="form-text">Optional delay before sending (0 = immediate)</div>
@@ -300,7 +308,7 @@ function renderWorkflowsTable() {
                 </td>
                 <td>
                     <code class="small">${escapeHtml(wf.trigger_event)}</code>
-                    ${wf.delay_minutes ? `<br><small class="text-muted">Delay: ${wf.delay_minutes}m</small>` : ''}
+                    ${wf.send_immediately ? '<br><span class="badge bg-warning text-dark" style="font-size: 0.65em;">Immediate</span>' : wf.delay_minutes ? `<br><small class="text-muted">Delay: ${wf.delay_minutes}m</small>` : ''}
                 </td>
                 <td><code class="small">${escapeHtml(wf.template_name)}</code></td>
                 <td><span class="badge bg-${priorityColor}">${wf.priority}</span></td>
@@ -387,6 +395,8 @@ function openCreateWorkflowModal() {
     document.getElementById('workflowTemplate').value = '';
     document.getElementById('workflowPriority').value = '5';
     document.getElementById('workflowDelay').value = '';
+    document.getElementById('workflowSendImmediately').checked = false;
+    onSendImmediatelyChange();
     document.getElementById('workflowCustomVars').value = '';
     document.getElementById('workflowFromEmail').value = '';
     document.getElementById('workflowFromName').value = '';
@@ -415,6 +425,8 @@ async function editWorkflow(id) {
         document.getElementById('workflowTemplate').value = workflow.template_name;
         document.getElementById('workflowPriority').value = workflow.priority;
         document.getElementById('workflowDelay').value = workflow.delay_minutes || '';
+        document.getElementById('workflowSendImmediately').checked = workflow.send_immediately || false;
+        onSendImmediatelyChange();
         document.getElementById('workflowCustomVars').value = workflow.custom_vars ? JSON.stringify(workflow.custom_vars, null, 2) : '';
         document.getElementById('workflowFromEmail').value = workflow.from_email || '';
         document.getElementById('workflowFromName').value = workflow.from_name || '';
@@ -452,6 +464,7 @@ async function saveWorkflow() {
         template_name: document.getElementById('workflowTemplate').value,
         priority: parseInt(document.getElementById('workflowPriority').value),
         delay_minutes: document.getElementById('workflowDelay').value ? parseInt(document.getElementById('workflowDelay').value) : null,
+        send_immediately: document.getElementById('workflowSendImmediately').checked,
         custom_vars: customVars,
         from_email: document.getElementById('workflowFromEmail').value || null,
         from_name: document.getElementById('workflowFromName').value || null,
@@ -544,7 +557,20 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function onSendImmediatelyChange() {
+    const immediate = document.getElementById('workflowSendImmediately').checked;
+    const delayGroup = document.getElementById('delayGroup');
+    if (immediate) {
+        delayGroup.style.opacity = '0.5';
+        delayGroup.querySelector('input').disabled = true;
+    } else {
+        delayGroup.style.opacity = '1';
+        delayGroup.querySelector('input').disabled = false;
+    }
+}
+
 // Expose functions to global scope for onclick handlers
+window.onSendImmediatelyChange = onSendImmediatelyChange;
 window.openCreateWorkflowModal = openCreateWorkflowModal;
 window.editWorkflow = editWorkflow;
 window.saveWorkflow = saveWorkflow;
