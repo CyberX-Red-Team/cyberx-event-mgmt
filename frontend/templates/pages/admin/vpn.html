@@ -215,6 +215,8 @@
                         <option value="">None</option>
                         <option value="assignment_type">Assignment Type</option>
                         <option value="endpoint">Endpoint</option>
+                        <option value="is_available">Status</option>
+                        <option value="assigned_to_user_id">Assigned To</option>
                     </select>
                 </div>
                 <div class="col-md-3 d-flex align-items-end">
@@ -467,17 +469,37 @@ function renderVPNCredentials(credentials) {
     credentials.forEach(v => {
         // Insert group header row if grouping is active
         if (groupBy) {
-            let groupValue, groupLabel;
+            let groupValue, groupLabel, groupIcon;
             if (groupBy === 'assignment_type') {
                 groupValue = v.assignment_type || 'USER_REQUESTABLE';
                 const labels = { USER_REQUESTABLE: 'User Requestable', INSTANCE_AUTO_ASSIGN: 'Instance Auto-Assign', RESERVED: 'Reserved' };
                 groupLabel = labels[groupValue] || groupValue;
+                groupIcon = 'tag';
             } else if (groupBy === 'endpoint') {
                 groupValue = v.endpoint || 'Unknown';
                 groupLabel = groupValue;
+                groupIcon = 'server';
+            } else if (groupBy === 'is_available') {
+                groupValue = v.is_available ? 'available' : 'assigned';
+                groupLabel = v.is_available ? 'Available' : 'Assigned';
+                groupIcon = v.is_available ? 'check-circle' : 'user-check';
+            } else if (groupBy === 'assigned_to_user_id') {
+                if (v.assigned_to_name) {
+                    groupValue = v.assigned_to_user_id;
+                    groupLabel = v.assigned_to_name;
+                    groupIcon = 'user';
+                } else if (v.assigned_instance_name) {
+                    groupValue = 'instance_' + v.assigned_to_instance_id;
+                    groupLabel = 'Instance: ' + v.assigned_instance_name;
+                    groupIcon = 'server';
+                } else {
+                    groupValue = 0;
+                    groupLabel = 'Unassigned';
+                    groupIcon = 'minus-circle';
+                }
             }
             if (groupValue !== lastGroupValue) {
-                rows.push(`<tr class="table-secondary"><td colspan="12" class="fw-bold py-2"><i data-feather="${groupBy === 'assignment_type' ? 'tag' : 'server'}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel}</td></tr>`);
+                rows.push(`<tr class="table-secondary"><td colspan="12" class="fw-bold py-2"><i data-feather="${groupIcon}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel}</td></tr>`);
                 lastGroupValue = groupValue;
             }
         }

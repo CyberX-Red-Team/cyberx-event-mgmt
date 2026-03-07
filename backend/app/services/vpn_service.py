@@ -55,7 +55,7 @@ class VPNService:
 
     _SORTABLE_VPN_COLUMNS = {
         "id", "ipv4_address", "endpoint", "assignment_type",
-        "is_available", "assigned_at", "created_at",
+        "is_available", "assigned_at", "assigned_to_user_id", "created_at",
     }
 
     async def list_credentials(

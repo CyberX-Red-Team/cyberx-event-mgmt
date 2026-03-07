@@ -282,6 +282,9 @@
                             <select class="form-select" id="userGroupByFilter" onchange="handleGroupByChange()">
                                 <option value="">None</option>
                                 <option value="sponsor">Sponsor</option>
+                                <option value="confirmed">Status</option>
+                                <option value="role">Role</option>
+                                <option value="country">Country</option>
                             </select>
                         </div>
                     </div>
@@ -802,9 +805,14 @@ window.loadUsers = async function(page = 1) {
 
     // Sort: group-by overrides column sort
     let sortBy, sortOrder;
-    if (groupBy === 'sponsor') {
-        sortBy = 'sponsor_id';
-        sortOrder = 'asc';
+    const groupSortMap = {
+        sponsor: ['sponsor_id', 'asc'],
+        confirmed: ['confirmed', 'asc'],
+        role: ['role', 'asc'],
+        country: ['country', 'asc']
+    };
+    if (groupBy && groupSortMap[groupBy]) {
+        [sortBy, sortOrder] = groupSortMap[groupBy];
     } else {
         const sort = userSorter ? userSorter.getSort() : { sortBy: 'created_at', sortOrder: 'desc' };
         sortBy = sort.sortBy;
@@ -965,16 +973,34 @@ function renderUsersTable() {
     let rows = [];
 
     users.forEach(user => {
-        // Insert group header when grouping by sponsor
-        if (groupBy === 'sponsor') {
-            const groupKey = user.sponsor ? user.sponsor.id : 0;
+        // Insert group header when grouping is active
+        if (groupBy) {
+            let groupKey, groupName, groupIcon;
+            if (groupBy === 'sponsor') {
+                groupKey = user.sponsor ? user.sponsor.id : 0;
+                groupName = user.sponsor ? `${user.sponsor.first_name} ${user.sponsor.last_name}` : 'No Sponsor';
+                groupIcon = 'user';
+            } else if (groupBy === 'confirmed') {
+                groupKey = user.confirmed || 'UNKNOWN';
+                const labels = { YES: 'Confirmed', NO: 'Declined', UNKNOWN: 'Pending' };
+                groupName = labels[groupKey] || groupKey;
+                groupIcon = groupKey === 'YES' ? 'check-circle' : groupKey === 'NO' ? 'x-circle' : 'clock';
+            } else if (groupBy === 'role') {
+                groupKey = user.role || 'unknown';
+                const roleLabels = { admin: 'Admin', sponsor: 'Sponsor', participant: 'Participant' };
+                groupName = roleLabels[groupKey] || groupKey;
+                groupIcon = groupKey === 'admin' ? 'shield' : groupKey === 'sponsor' ? 'briefcase' : 'user';
+            } else if (groupBy === 'country') {
+                groupKey = user.country || '';
+                groupName = groupKey ? `${getCountryFlag(groupKey)} ${groupKey}` : 'No Country';
+                groupIcon = 'globe';
+            }
             if (groupKey !== lastGroupKey) {
-                const groupName = user.sponsor ? `${user.sponsor.first_name} ${user.sponsor.last_name}` : 'No Sponsor';
                 rows.push(`
                     <tr class="table-secondary">
                         <td colspan="13" class="fw-bold small py-1 ps-3">
-                            <i data-feather="user" style="width:14px;height:14px;" class="me-1"></i>
-                            ${escapeHtml(groupName)}
+                            <i data-feather="${groupIcon}" style="width:14px;height:14px;" class="me-1"></i>
+                            ${groupBy === 'country' ? groupName : escapeHtml(groupName)}
                         </td>
                     </tr>
                 `);

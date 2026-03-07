@@ -115,6 +115,7 @@
                     <select class="form-select" id="groupByFilter" onchange="handleGroupByChange()">
                         <option value="">None</option>
                         <option value="sponsor">Sponsor</option>
+                        <option value="confirmed">Status</option>
                     </select>
                 </div>
             </div>
@@ -229,6 +230,9 @@ async function loadParticipants(page = 1) {
     if (groupBy === 'sponsor') {
         sortBy = 'sponsor_id';
         sortOrder = 'asc';
+    } else if (groupBy === 'confirmed') {
+        sortBy = 'confirmed';
+        sortOrder = 'asc';
     } else {
         const sort = participantSorter.getSort();
         sortBy = sort.sortBy;
@@ -290,15 +294,24 @@ function renderParticipants(participants) {
     let rows = [];
 
     participants.forEach(p => {
-        // Insert group header when grouping by sponsor
-        if (groupBy === 'sponsor') {
-            const groupKey = p.sponsor ? p.sponsor.id : 0;
+        // Insert group header when grouping is active
+        if (groupBy) {
+            let groupKey, groupName, groupIcon;
+            if (groupBy === 'sponsor') {
+                groupKey = p.sponsor ? p.sponsor.id : 0;
+                groupName = p.sponsor ? p.sponsor.full_name : 'No Sponsor';
+                groupIcon = 'user';
+            } else if (groupBy === 'confirmed') {
+                groupKey = p.confirmed || 'UNKNOWN';
+                const labels = { YES: 'Confirmed', NO: 'Declined', UNKNOWN: 'Pending' };
+                groupName = labels[groupKey] || groupKey;
+                groupIcon = groupKey === 'YES' ? 'check-circle' : groupKey === 'NO' ? 'x-circle' : 'clock';
+            }
             if (groupKey !== lastGroupKey) {
-                const groupName = p.sponsor ? p.sponsor.full_name : 'No Sponsor';
                 rows.push(`
                     <tr class="table-secondary">
                         <td colspan="11" class="fw-bold small py-1 ps-3">
-                            <i data-feather="user" style="width:14px;height:14px;" class="me-1"></i>
+                            <i data-feather="${groupIcon}" style="width:14px;height:14px;" class="me-1"></i>
                             ${groupName}
                         </td>
                     </tr>
