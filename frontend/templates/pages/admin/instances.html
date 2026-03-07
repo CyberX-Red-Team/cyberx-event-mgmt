@@ -93,11 +93,11 @@
         </div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label small">Search</label>
                     <input type="text" class="form-control" id="searchInput" placeholder="Name, IP, Provider ID...">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label small">Status</label>
                     <select class="form-select" id="statusFilter">
                         <option value="">All</option>
@@ -105,6 +105,16 @@
                         <option value="BUILDING">Building</option>
                         <option value="ERROR">Error</option>
                         <option value="SHUTOFF">Shutoff</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Group By</label>
+                    <select class="form-select" id="instanceGroupByFilter" onchange="handleInstanceGroupByChange()">
+                        <option value="">None</option>
+                        <option value="status">Status</option>
+                        <option value="event_id">Event</option>
+                        <option value="visibility">Visibility</option>
+                        <option value="created_by_user_id">Created By</option>
                     </select>
                 </div>
                 <div class="col-md-5 d-flex align-items-end">
@@ -134,19 +144,19 @@
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover">
+                <table class="table table-hover" id="instancesTable">
                     <thead>
                         <tr>
                             <th width="30"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleSelectAll()"></th>
-                            <th>Name</th>
-                            <th>Status</th>
-                            <th>IP Address</th>
-                            <th>VPN IP</th>
+                            <th data-sort-key="name">Name</th>
+                            <th data-sort-key="status">Status</th>
+                            <th data-sort-key="ip_address">IP Address</th>
+                            <th data-sort-key="vpn_ip">VPN IP</th>
                             <th>Agent</th>
-                            <th>Visibility</th>
-                            <th>Event</th>
+                            <th data-sort-key="visibility">Visibility</th>
+                            <th data-sort-key="event_id">Event</th>
                             <th>Created By</th>
-                            <th>Created</th>
+                            <th data-sort-key="created_at">Created</th>
                             <th width="120">Actions</th>
                         </tr>
                     </thead>
@@ -423,6 +433,7 @@
 {{ super() }}
 <script>
 let currentPage = 1;
+let instanceSorter;
 
 // ── Stats ──
 async function loadStats() {
@@ -438,14 +449,36 @@ async function loadStats() {
     } catch (e) { console.error('Failed to load stats:', e); }
 }
 
+function handleInstanceGroupByChange() {
+    const groupBy = document.getElementById('instanceGroupByFilter').value;
+    if (groupBy) {
+        instanceSorter.setSort(groupBy, 'asc');
+        instanceSorter.setDisabled(true);
+    } else {
+        instanceSorter.setDisabled(false);
+        instanceSorter.setSort('created_at', 'desc');
+    }
+    loadInstances(1);
+}
+
 // ── Load Instances ──
 async function loadInstances(page = 1) {
     currentPage = page;
     const pageSize = document.getElementById('pageSizeSelect').value;
     const search = document.getElementById('searchInput').value;
     const status = document.getElementById('statusFilter').value;
+    const groupBy = document.getElementById('instanceGroupByFilter').value;
+
+    let sortBy, sortOrder;
+    if (groupBy) {
+        sortBy = groupBy;
+        sortOrder = 'asc';
+    } else {
+        ({ sortBy, sortOrder } = instanceSorter.getSort());
+    }
 
     let url = `/api/instances?page=${page}&page_size=${pageSize}`;
+    url += `&sort_by=${sortBy}&sort_order=${sortOrder}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (status) url += `&status=${encodeURIComponent(status)}`;
 
@@ -497,7 +530,38 @@ function renderInstances(items) {
         tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted">No instances found.</td></tr>';
         return;
     }
-    tbody.innerHTML = items.map(i => `
+
+    const groupBy = document.getElementById('instanceGroupByFilter').value;
+    let lastGroupValue = null;
+    const rows = [];
+
+    items.forEach(i => {
+        if (groupBy) {
+            let groupValue, groupLabel, groupIcon;
+            if (groupBy === 'status') {
+                groupValue = i.status;
+                groupLabel = statusBadge(i.status);
+                groupIcon = 'activity';
+            } else if (groupBy === 'event_id') {
+                groupValue = i.event_id || 0;
+                groupLabel = i.event_name || 'No Event';
+                groupIcon = 'calendar';
+            } else if (groupBy === 'visibility') {
+                groupValue = i.visibility || 'private';
+                groupLabel = groupValue === 'public' ? 'Public' : 'Private';
+                groupIcon = groupValue === 'public' ? 'globe' : 'lock';
+            } else if (groupBy === 'created_by_user_id') {
+                groupValue = i.created_by_user_id || 0;
+                groupLabel = i.created_by_username || 'Unknown';
+                groupIcon = 'user';
+            }
+            if (groupValue !== lastGroupValue) {
+                rows.push(`<tr class="table-secondary"><td colspan="11" class="fw-bold py-2"><i data-feather="${groupIcon}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel}</td></tr>`);
+                lastGroupValue = groupValue;
+            }
+        }
+
+        rows.push(`
         <tr>
             <td><input type="checkbox" class="form-check-input inst-cb" value="${i.id}" onchange="updateSelectionCount()"></td>
             <td style="padding: 0.5rem 0.75rem;">
@@ -529,7 +593,10 @@ function renderInstances(items) {
                 </div>
             </td>
         </tr>
-    `).join('');
+        `);
+    });
+
+    tbody.innerHTML = rows.join('');
     feather.replace();
     updateSelectionCount();
 }
@@ -552,6 +619,9 @@ function applyFilters() { loadInstances(1); }
 function clearFilters() {
     document.getElementById('searchInput').value = '';
     document.getElementById('statusFilter').value = '';
+    document.getElementById('instanceGroupByFilter').value = '';
+    instanceSorter.setDisabled(false);
+    instanceSorter.setSort('created_at', 'desc');
     loadInstances(1);
 }
 
@@ -830,6 +900,12 @@ async function toggleVisibility(id, current) {
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
+    instanceSorter = new SortableTable({
+        tableId: 'instancesTable',
+        defaultSort: { column: 'created_at', order: 'desc' },
+        onSort: () => loadInstances(1)
+    });
+
     loadStats();
     loadInstances(1);
     document.getElementById('searchInput').addEventListener('keypress', e => { if (e.key === 'Enter') applyFilters(); });

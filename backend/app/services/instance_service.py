@@ -466,6 +466,11 @@ class InstanceService:
 
         return instance
 
+    _SORTABLE_INSTANCE_COLUMNS = {
+        "id", "name", "status", "ip_address", "vpn_ip", "visibility",
+        "event_id", "created_by_user_id", "created_at",
+    }
+
     async def list_tracked_instances(
         self,
         page: int = 1,
@@ -476,6 +481,8 @@ class InstanceService:
         assigned_to_user_id: int | None = None,
         visibility: str | None = None,
         created_by_user_id: int | None = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
     ) -> tuple[list[Instance], int]:
         """List tracked instances with filtering and pagination (all providers)."""
         from sqlalchemy.orm import selectinload
@@ -505,6 +512,12 @@ class InstanceService:
         count_q = select(func.count(Instance.id)).where(*conditions)
         total = (await self.session.execute(count_q)).scalar() or 0
 
+        # Dynamic sort
+        if sort_by not in self._SORTABLE_INSTANCE_COLUMNS:
+            sort_by = "created_at"
+        sort_col = getattr(Instance, sort_by)
+        order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+
         # Fetch with relationships
         offset = (page - 1) * page_size
         q = (
@@ -515,7 +528,7 @@ class InstanceService:
                 selectinload(Instance.instance_template),
             )
             .where(*conditions)
-            .order_by(Instance.created_at.desc())
+            .order_by(order)
             .offset(offset)
             .limit(page_size)
         )

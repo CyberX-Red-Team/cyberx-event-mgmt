@@ -196,7 +196,6 @@
 </div>
 {% endblock %}
 
-{% block extra_css %}
 <style>
 /* Email-live warning banner (staging only) */
 .email-live-banner {
@@ -253,10 +252,17 @@
 #layoutSidenav_content.full-width main {
     padding-top: 3.5rem;
 }
+
+/* Sortable table headers */
+.sortable-header:hover { background-color: rgba(0,0,0,0.04); }
+.sortable-header.sorted { background-color: rgba(13,110,253,0.05); }
+.sort-indicator { font-size: 0.7em; opacity: 0.4; }
+.sortable-header.sorted .sort-indicator { opacity: 1; color: #0d6efd; }
 </style>
-{% endblock %}
+{% block extra_css %}{% endblock %}
 
 {% block extra_js %}
+<script src="/static/js/sortable-table.js"></script>
 <script>
 // =============================================================================
 // Global Timezone Management

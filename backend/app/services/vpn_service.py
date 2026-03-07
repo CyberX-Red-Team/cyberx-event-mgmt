@@ -53,6 +53,11 @@ class VPNService:
         )
         return result.scalar() or 0
 
+    _SORTABLE_VPN_COLUMNS = {
+        "id", "ipv4_address", "endpoint", "assignment_type",
+        "is_available", "assigned_at", "created_at",
+    }
+
     async def list_credentials(
         self,
         page: int = 1,
@@ -60,7 +65,9 @@ class VPNService:
         is_available: Optional[bool] = None,
         assignment_type: Optional[str] = None,
         assigned_to_user_id: Optional[int] = None,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        sort_by: str = "id",
+        sort_order: str = "asc",
     ) -> Tuple[List[VPNCredential], int]:
         """List VPN credentials with filtering and pagination."""
         query = select(VPNCredential)
@@ -91,9 +98,16 @@ class VPNService:
         total_result = await self.session.execute(count_query)
         total = total_result.scalar()
 
-        # Apply pagination
+        # Apply sorting and pagination
+        if sort_by not in self._SORTABLE_VPN_COLUMNS:
+            sort_by = "id"
+        sort_column = getattr(VPNCredential, sort_by, VPNCredential.id)
+        if sort_order == "desc":
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
         offset = (page - 1) * page_size
-        query = query.order_by(VPNCredential.id).offset(offset).limit(page_size)
+        query = query.offset(offset).limit(page_size)
 
         result = await self.session.execute(query)
         credentials = result.scalars().all()

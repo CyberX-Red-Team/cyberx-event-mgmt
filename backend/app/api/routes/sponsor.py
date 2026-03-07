@@ -36,6 +36,8 @@ async def list_my_invitees(
     confirmed: Optional[str] = None,
     has_vpn: Optional[bool] = None,
     is_active: Optional[bool] = None,
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_sponsor_user),
     service: ParticipantService = Depends(get_participant_service)
@@ -43,7 +45,7 @@ async def list_my_invitees(
     """
     List all invitees sponsored by the current user.
 
-    Supports pagination, search, and filtering.
+    Supports pagination, search, filtering, and sorting.
     """
     logger.info(f"Sponsor {current_user.id} listing invitees (page={page}, search={search})")
 
@@ -55,7 +57,9 @@ async def list_my_invitees(
         search=search,
         confirmed=confirmed,
         has_vpn=has_vpn,
-        is_active=is_active
+        is_active=is_active,
+        sort_by=sort_by,
+        sort_order=sort_order
     )
 
     # Build responses

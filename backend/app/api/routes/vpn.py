@@ -189,6 +189,8 @@ async def list_vpn_credentials(
     is_available: Optional[bool] = Query(None, description="Filter by availability"),
     assignment_type: Optional[str] = Query(None, description="Filter by assignment type"),
     search: Optional[str] = Query(None, description="Search by IP or username"),
+    sort_by: str = Query("id", description="Sort field"),
+    sort_order: str = Query("asc", description="Sort order: asc or desc"),
     current_user: User = Depends(get_current_sponsor_user),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
@@ -199,7 +201,9 @@ async def list_vpn_credentials(
         page_size=page_size,
         is_available=is_available,
         assignment_type=assignment_type,
-        search=search
+        search=search,
+        sort_by=sort_by,
+        sort_order=sort_order
     )
 
     items = []

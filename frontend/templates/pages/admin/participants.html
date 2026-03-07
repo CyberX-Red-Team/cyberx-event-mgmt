@@ -78,6 +78,46 @@
                     </button>
                 </div>
             </div>
+            <div class="row g-3 mt-1">
+                <div class="col-md-2">
+                    <label class="form-label small">Role</label>
+                    <select class="form-select" id="roleFilter">
+                        <option value="">All</option>
+                        <option value="admin">Admin</option>
+                        <option value="sponsor">Sponsor</option>
+                        <option value="invitee">Invitee</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Sponsor</label>
+                    <select class="form-select" id="sponsorFilter">
+                        <option value="">All Sponsors</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Country</label>
+                    <select class="form-select" id="countryFilter">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Email Status</label>
+                    <select class="form-select" id="emailStatusFilter">
+                        <option value="">All</option>
+                        <option value="GOOD">Good</option>
+                        <option value="BOUNCED">Bounced</option>
+                        <option value="SPAM_REPORTED">Spam</option>
+                        <option value="UNSUBSCRIBED">Unsubscribed</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Group By</label>
+                    <select class="form-select" id="groupByFilter" onchange="handleGroupByChange()">
+                        <option value="">None</option>
+                        <option value="sponsor">Sponsor</option>
+                    </select>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -124,15 +164,15 @@
                             <th width="30">
                                 <input type="checkbox" class="form-check-input" id="selectAll" onclick="toggleSelectAll()">
                             </th>
-                            <th>First Name</th>
-                            <th>Last Name</th>
-                            <th>Email</th>
+                            <th data-sort-key="first_name">First Name</th>
+                            <th data-sort-key="last_name">Last Name</th>
+                            <th data-sort-key="email">Email</th>
                             <th>Username</th>
-                            <th>Confirmed</th>
+                            <th data-sort-key="confirmed">Confirmed</th>
                             <th>VPN</th>
                             <th title="Keycloak Sync Status">KC</th>
                             <th>Participation</th>
-                            <th>Status</th>
+                            <th data-sort-key="is_active">Status</th>
                             <th width="150">Actions</th>
                         </tr>
                     </thead>
@@ -169,6 +209,7 @@
 <script>
 let currentPage = 1;
 let selectedIds = new Set();
+let participantSorter;
 
 async function loadParticipants(page = 1) {
     currentPage = page;
@@ -177,12 +218,33 @@ async function loadParticipants(page = 1) {
     const confirmed = document.getElementById('confirmedFilter').value;
     const hasVpn = document.getElementById('vpnFilter').value;
     const isActive = document.getElementById('activeFilter').value;
+    const role = document.getElementById('roleFilter').value;
+    const sponsorId = document.getElementById('sponsorFilter').value;
+    const country = document.getElementById('countryFilter').value;
+    const emailStatus = document.getElementById('emailStatusFilter').value;
+    const groupBy = document.getElementById('groupByFilter').value;
+
+    // Sort: group-by overrides column sort
+    let sortBy, sortOrder;
+    if (groupBy === 'sponsor') {
+        sortBy = 'sponsor_id';
+        sortOrder = 'asc';
+    } else {
+        const sort = participantSorter.getSort();
+        sortBy = sort.sortBy;
+        sortOrder = sort.sortOrder;
+    }
 
     let url = `/api/admin/participants?page=${page}&page_size=${pageSize}`;
+    url += `&sort_by=${sortBy}&sort_order=${sortOrder}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (confirmed) url += `&confirmed=${confirmed}`;
     if (hasVpn) url += `&has_vpn=${hasVpn}`;
     if (isActive) url += `&is_active=${isActive}`;
+    if (role) url += `&role=${role}`;
+    if (sponsorId) url += `&sponsor_id=${sponsorId}`;
+    if (country) url += `&country=${encodeURIComponent(country)}`;
+    if (emailStatus) url += `&email_status=${emailStatus}`;
 
     try {
         const response = await csrfFetch(url);
@@ -204,7 +266,7 @@ async function loadParticipants(page = 1) {
     } catch (error) {
         console.error('Error:', error);
         document.getElementById('participantsBody').innerHTML = `
-            <tr><td colspan="10" class="text-center text-danger py-4">
+            <tr><td colspan="11" class="text-center text-danger py-4">
                 Failed to load participants. Please try again.
             </td></tr>
         `;
@@ -213,17 +275,39 @@ async function loadParticipants(page = 1) {
 
 function renderParticipants(participants) {
     const tbody = document.getElementById('participantsBody');
+    const groupBy = document.getElementById('groupByFilter').value;
 
     if (participants.length === 0) {
         tbody.innerHTML = `
-            <tr><td colspan="10" class="text-center py-4 text-muted">
+            <tr><td colspan="11" class="text-center py-4 text-muted">
                 No invitees found matching your criteria.
             </td></tr>
         `;
         return;
     }
 
-    tbody.innerHTML = participants.map(p => `
+    let lastGroupKey = null;
+    let rows = [];
+
+    participants.forEach(p => {
+        // Insert group header when grouping by sponsor
+        if (groupBy === 'sponsor') {
+            const groupKey = p.sponsor ? p.sponsor.id : 0;
+            if (groupKey !== lastGroupKey) {
+                const groupName = p.sponsor ? p.sponsor.full_name : 'No Sponsor';
+                rows.push(`
+                    <tr class="table-secondary">
+                        <td colspan="11" class="fw-bold small py-1 ps-3">
+                            <i data-feather="user" style="width:14px;height:14px;" class="me-1"></i>
+                            ${groupName}
+                        </td>
+                    </tr>
+                `);
+                lastGroupKey = groupKey;
+            }
+        }
+
+        rows.push(`
         <tr class="${p.should_recommend_removal ? 'table-warning' : ''}">
             <td>
                 <input type="checkbox" class="form-check-input participant-checkbox"
@@ -290,7 +374,10 @@ function renderParticipants(participants) {
                 </div>
             </td>
         </tr>
-    `).join('');
+    `);
+    });
+
+    tbody.innerHTML = rows.join('');
 
     // Re-initialize feather icons
     feather.replace();
@@ -368,7 +455,52 @@ function clearFilters() {
     document.getElementById('confirmedFilter').value = '';
     document.getElementById('vpnFilter').value = '';
     document.getElementById('activeFilter').value = '';
+    document.getElementById('roleFilter').value = '';
+    document.getElementById('sponsorFilter').value = '';
+    document.getElementById('countryFilter').value = '';
+    document.getElementById('emailStatusFilter').value = '';
+    document.getElementById('groupByFilter').value = '';
+    participantSorter.setDisabled(false);
+    participantSorter.setSort('created_at', 'desc');
     loadParticipants(1);
+}
+
+function handleGroupByChange() {
+    const groupBy = document.getElementById('groupByFilter').value;
+    participantSorter.setDisabled(groupBy !== '');
+    loadParticipants(1);
+}
+
+async function loadSponsorList() {
+    try {
+        const resp = await csrfFetch('/api/admin/sponsors');
+        if (resp.ok) {
+            const sponsors = await resp.json();
+            const sel = document.getElementById('sponsorFilter');
+            sponsors.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = `${s.first_name} ${s.last_name}`;
+                sel.appendChild(opt);
+            });
+        }
+    } catch (e) { console.error('Failed to load sponsors', e); }
+}
+
+async function loadCountryList() {
+    try {
+        const resp = await csrfFetch('/api/public/countries');
+        if (resp.ok) {
+            const data = await resp.json();
+            const sel = document.getElementById('countryFilter');
+            data.countries.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.value;
+                opt.textContent = `${c.flag} ${c.label}`;
+                sel.appendChild(opt);
+            });
+        }
+    } catch (e) { console.error('Failed to load countries', e); }
 }
 
 function toggleSelectAll() {
@@ -540,7 +672,15 @@ async function bulkResendInvitation() {
 
 // Load on page load
 document.addEventListener('DOMContentLoaded', () => {
+    participantSorter = new SortableTable({
+        tableId: 'participantsTable',
+        defaultSort: { column: 'created_at', order: 'desc' },
+        onSort: () => loadParticipants(1)
+    });
+
     loadParticipants(1);
+    loadSponsorList();
+    loadCountryList();
 
     // Enter key triggers search
     document.getElementById('searchInput').addEventListener('keypress', (e) => {

@@ -200,7 +200,7 @@
                         <option value="false">Assigned</option>
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label small">Assignment Type</label>
                     <select class="form-select" id="assignmentTypeFilter">
                         <option value="">All Types</option>
@@ -209,7 +209,15 @@
                         <option value="RESERVED">Reserved</option>
                     </select>
                 </div>
-                <div class="col-md-4 d-flex align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small">Group By</label>
+                    <select class="form-select" id="vpnGroupByFilter" onchange="handleVpnGroupByChange()">
+                        <option value="">None</option>
+                        <option value="assignment_type">Assignment Type</option>
+                        <option value="endpoint">Endpoint</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
                     <button class="btn btn-primary me-2" onclick="applyFilters()">
                         <i data-feather="search" class="me-1"></i> Search
                     </button>
@@ -248,16 +256,16 @@
                             <th width="30">
                                 <input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleSelectAll()">
                             </th>
-                            <th>ID</th>
-                            <th>IPv4 Address</th>
+                            <th data-sort-key="id">ID</th>
+                            <th data-sort-key="ipv4_address">IPv4 Address</th>
                             <th>Interface IP</th>
-                            <th>Endpoint</th>
-                            <th>Type</th>
+                            <th data-sort-key="endpoint">Endpoint</th>
+                            <th data-sort-key="assignment_type">Type</th>
                             <th>SHA256 Hash</th>
                             <th>Request ID</th>
-                            <th>Status</th>
+                            <th data-sort-key="is_available">Status</th>
                             <th>Assigned To</th>
-                            <th>Assigned At</th>
+                            <th data-sort-key="assigned_at">Assigned At</th>
                             <th width="100">Actions</th>
                         </tr>
                     </thead>
@@ -342,6 +350,7 @@
 {{ super() }}
 <script>
 let currentPage = 1;
+let vpnSorter;
 let searchTimeout = null;
 
 // Load VPN stats
@@ -366,6 +375,18 @@ async function loadStats() {
     }
 }
 
+function handleVpnGroupByChange() {
+    const groupBy = document.getElementById('vpnGroupByFilter').value;
+    if (groupBy) {
+        vpnSorter.setSort(groupBy, 'asc');
+        vpnSorter.setDisabled(true);
+    } else {
+        vpnSorter.setDisabled(false);
+        vpnSorter.setSort('id', 'asc');
+    }
+    loadVPNCredentials(1);
+}
+
 // Load VPN credentials
 async function loadVPNCredentials(page = 1) {
     currentPage = page;
@@ -373,8 +394,17 @@ async function loadVPNCredentials(page = 1) {
     const search = document.getElementById('searchInput').value;
     const isAvailable = document.getElementById('availableFilter').value;
     const assignmentType = document.getElementById('assignmentTypeFilter').value;
+    const groupBy = document.getElementById('vpnGroupByFilter').value;
 
+    let sortBy, sortOrder;
+    if (groupBy) {
+        sortBy = groupBy;
+        sortOrder = 'asc';
+    } else {
+        ({ sortBy, sortOrder } = vpnSorter.getSort());
+    }
     let url = `/api/vpn/credentials?page=${page}&page_size=${pageSize}`;
+    url += `&sort_by=${sortBy}&sort_order=${sortOrder}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (isAvailable) url += `&is_available=${isAvailable}`;
     if (assignmentType) url += `&assignment_type=${encodeURIComponent(assignmentType)}`;
@@ -430,7 +460,29 @@ function renderVPNCredentials(credentials) {
         return '<span class="badge bg-secondary">Unknown</span>';
     }
 
-    tbody.innerHTML = credentials.map(v => `
+    const groupBy = document.getElementById('vpnGroupByFilter').value;
+    let lastGroupValue = null;
+    const rows = [];
+
+    credentials.forEach(v => {
+        // Insert group header row if grouping is active
+        if (groupBy) {
+            let groupValue, groupLabel;
+            if (groupBy === 'assignment_type') {
+                groupValue = v.assignment_type || 'USER_REQUESTABLE';
+                const labels = { USER_REQUESTABLE: 'User Requestable', INSTANCE_AUTO_ASSIGN: 'Instance Auto-Assign', RESERVED: 'Reserved' };
+                groupLabel = labels[groupValue] || groupValue;
+            } else if (groupBy === 'endpoint') {
+                groupValue = v.endpoint || 'Unknown';
+                groupLabel = groupValue;
+            }
+            if (groupValue !== lastGroupValue) {
+                rows.push(`<tr class="table-secondary"><td colspan="12" class="fw-bold py-2"><i data-feather="${groupBy === 'assignment_type' ? 'tag' : 'server'}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel}</td></tr>`);
+                lastGroupValue = groupValue;
+            }
+        }
+
+        rows.push(`
         <tr>
             <td>
                 <input type="checkbox" class="form-check-input vpn-checkbox" value="${v.id}" onchange="updateSelectionCount()">
@@ -466,7 +518,10 @@ function renderVPNCredentials(credentials) {
                 </div>
             </td>
         </tr>
-    `).join('');
+        `);
+    });
+
+    tbody.innerHTML = rows.join('');
 
     feather.replace();
     updateSelectionCount();
@@ -561,6 +616,9 @@ function clearFilters() {
     document.getElementById('searchInput').value = '';
     document.getElementById('availableFilter').value = '';
     document.getElementById('assignmentTypeFilter').value = '';
+    document.getElementById('vpnGroupByFilter').value = '';
+    vpnSorter.setDisabled(false);
+    vpnSorter.setSort('id', 'asc');
     loadVPNCredentials(1);
 }
 
@@ -1009,6 +1067,12 @@ function getNamingPattern() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    vpnSorter = new SortableTable({
+        tableId: 'vpnTable',
+        defaultSort: { column: 'id', order: 'asc' },
+        onSort: () => loadVPNCredentials(1)
+    });
+
     loadStats();
     loadVPNCredentials(1);
 

@@ -40,6 +40,8 @@ async def list_instances(
     event_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     current_user: User = Depends(get_current_admin_user),
     service: InstanceService = Depends(get_instance_service),
 ):
@@ -50,6 +52,8 @@ async def list_instances(
         event_id=event_id,
         status=status,
         search=search,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
 
     total_pages = (total + page_size - 1) // page_size
