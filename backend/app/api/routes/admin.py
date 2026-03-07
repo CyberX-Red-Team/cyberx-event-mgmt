@@ -1470,7 +1470,7 @@ async def trigger_reminders(
             }
 
     logger.info(
-        f"Manual reminder trigger by {current_user.username}: "
+        f"Manual reminder trigger by {current_user.email}: "
         f"stages={stages_to_run}, force={force}, dry_run={dry_run}, results={results}"
     )
 
