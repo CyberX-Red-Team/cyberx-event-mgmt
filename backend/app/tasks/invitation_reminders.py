@@ -14,11 +14,17 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: datetime) -> datetime:
-    """Return a UTC-aware datetime, handling both naive and aware inputs."""
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
+def _ensure_utc(dt) -> datetime:
+    """Return a UTC-aware datetime from a date or datetime object."""
+    from datetime import date
+    if isinstance(dt, datetime):
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+    # datetime.date — convert to datetime at midnight UTC
+    if isinstance(dt, date):
+        return datetime.combine(dt, datetime.min.time(), tzinfo=timezone.utc)
+    raise TypeError(f"Expected date or datetime, got {type(dt)}")
 
 
 async def process_invitation_reminders():

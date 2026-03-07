@@ -1390,7 +1390,13 @@ async def trigger_reminders(
 
     now = datetime.now(timezone.utc)
     if event.start_date:
-        event_start_utc = event.start_date if event.start_date.tzinfo else event.start_date.replace(tzinfo=timezone.utc)
+        import datetime as dt_mod
+        if isinstance(event.start_date, datetime):
+            event_start_utc = event.start_date if event.start_date.tzinfo else event.start_date.replace(tzinfo=timezone.utc)
+        elif isinstance(event.start_date, dt_mod.date):
+            event_start_utc = datetime.combine(event.start_date, datetime.min.time(), tzinfo=timezone.utc)
+        else:
+            event_start_utc = now
     else:
         event_start_utc = now
     days_until_event = (event_start_utc - now).days
