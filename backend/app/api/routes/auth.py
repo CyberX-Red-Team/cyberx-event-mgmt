@@ -418,7 +418,7 @@ async def request_password_reset(
                 "first_name": user.first_name,
                 "last_name": user.last_name,
                 "email": user.email,
-                "expiry_time": reset_expires.strftime("%B %d, %Y %H:%M UTC"),
+                "expiry_time": "15 minutes",
             }
         )
 
