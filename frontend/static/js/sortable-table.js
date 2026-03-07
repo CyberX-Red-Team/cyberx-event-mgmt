@@ -88,3 +88,42 @@ class SortableTable {
         this._updateIndicators();
     }
 }
+
+/**
+ * makeGroupsCollapsible — makes group header rows (tr.table-secondary)
+ * clickable to collapse/expand the data rows beneath them.
+ *
+ * Call after rendering a grouped table body.
+ *
+ * @param {string} tbodyId - The id of the <tbody> element.
+ */
+function makeGroupsCollapsible(tbodyId) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+
+    let currentHeader = null;
+
+    Array.from(tbody.children).forEach(row => {
+        if (row.classList.contains('table-secondary')) {
+            currentHeader = row;
+            currentHeader._groupRows = [];
+
+            const td = row.querySelector('td');
+            if (!td) return;
+
+            // Insert chevron before existing content
+            const chevron = document.createElement('span');
+            chevron.className = 'group-chevron';
+            chevron.textContent = '\u25BE'; // ▾
+            td.insertBefore(chevron, td.firstChild);
+
+            row.classList.add('group-header');
+            row.addEventListener('click', function () {
+                const collapsed = this.classList.toggle('group-collapsed');
+                this._groupRows.forEach(r => r.style.display = collapsed ? 'none' : '');
+            });
+        } else if (currentHeader) {
+            currentHeader._groupRows.push(row);
+        }
+    });
+}

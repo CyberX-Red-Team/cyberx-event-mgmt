@@ -598,6 +598,7 @@ function renderInstances(items) {
 
     tbody.innerHTML = rows.join('');
     feather.replace();
+    makeGroupsCollapsible('instanceBody');
     updateSelectionCount();
 }
 

@@ -1055,6 +1055,7 @@ function renderUsersTable() {
 
     tbody.innerHTML = rows.join('');
     feather.replace();
+    makeGroupsCollapsible('usersBody');
 }
 
 function renderPagination(total) {

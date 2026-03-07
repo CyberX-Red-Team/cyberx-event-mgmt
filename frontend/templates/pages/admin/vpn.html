@@ -524,6 +524,7 @@ function renderVPNCredentials(credentials) {
     tbody.innerHTML = rows.join('');
 
     feather.replace();
+    makeGroupsCollapsible('vpnBody');
     updateSelectionCount();
 
     // Initialize popovers and store instances
