@@ -136,27 +136,29 @@ async def notify_admins_of_lockout(
         logger.warning(f"Security lockout ({lockout_type}) but no active admins to notify")
         return
 
-    from app.services.email_queue_service import EmailQueueService
-    queue_service = EmailQueueService(db)
+    from app.services.email_service import EmailService
+    email_service = EmailService(db)
+
+    custom_vars = {
+        "lockout_type": lockout_type,
+        "ip_address": ip_address,
+        "user_agent": user_agent or "Unknown",
+        "target_email": target_email or "N/A",
+        "details": details,
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+    }
 
     for admin in admins:
         try:
-            await queue_service.enqueue_email(
-                user_id=admin.id,
+            success, message, _ = await email_service.send_email(
+                user=admin,
                 template_name="admin_security_alert",
-                priority=1,  # Highest priority
-                custom_vars={
-                    "admin_name": admin.first_name or "Admin",
-                    "lockout_type": lockout_type,
-                    "ip_address": ip_address,
-                    "user_agent": user_agent or "Unknown",
-                    "target_email": target_email or "N/A",
-                    "details": details,
-                    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-                }
+                custom_vars={**custom_vars, "admin_name": admin.first_name or "Admin"},
             )
+            if not success:
+                logger.error(f"Failed to send security alert to {admin.email}: {message}")
         except Exception as e:
-            logger.error(f"Failed to queue security alert for admin {admin.email}: {e}")
+            logger.error(f"Failed to send security alert to {admin.email}: {e}")
 
 
 @router.post("/login", response_model=LoginResponse)
