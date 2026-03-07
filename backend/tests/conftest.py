@@ -184,11 +184,72 @@ async def client(async_engine, db_session: AsyncSession, test_settings: Settings
 
 
 # ============================================================================
+# Role Fixtures
+# ============================================================================
+
+@pytest_asyncio.fixture
+async def admin_role(db_session: AsyncSession):
+    """Create and return the admin role for testing."""
+    from app.models.role import Role, BaseType
+    from app.utils.permissions import ALL_PERMISSIONS
+
+    role = Role(
+        name="Admin",
+        slug="admin",
+        base_type=BaseType.ADMIN.value,
+        permissions=sorted(ALL_PERMISSIONS),
+        is_system=True,
+    )
+    db_session.add(role)
+    await db_session.commit()
+    await db_session.refresh(role)
+    return role
+
+
+@pytest_asyncio.fixture
+async def sponsor_role(db_session: AsyncSession):
+    """Create and return the sponsor role for testing."""
+    from app.models.role import Role, BaseType
+    from app.utils.permissions import ROLE_PERMISSIONS
+
+    role = Role(
+        name="Sponsor",
+        slug="sponsor",
+        base_type=BaseType.SPONSOR.value,
+        permissions=sorted(ROLE_PERMISSIONS["sponsor"]),
+        is_system=True,
+    )
+    db_session.add(role)
+    await db_session.commit()
+    await db_session.refresh(role)
+    return role
+
+
+@pytest_asyncio.fixture
+async def invitee_role(db_session: AsyncSession):
+    """Create and return the invitee role for testing."""
+    from app.models.role import Role, BaseType
+    from app.utils.permissions import ROLE_PERMISSIONS
+
+    role = Role(
+        name="Invitee",
+        slug="invitee",
+        base_type=BaseType.INVITEE.value,
+        permissions=sorted(ROLE_PERMISSIONS["invitee"]),
+        is_system=True,
+    )
+    db_session.add(role)
+    await db_session.commit()
+    await db_session.refresh(role)
+    return role
+
+
+# ============================================================================
 # User Fixtures
 # ============================================================================
 
 @pytest_asyncio.fixture
-async def admin_user(db_session: AsyncSession) -> User:
+async def admin_user(db_session: AsyncSession, admin_role) -> User:
     """
     Create and return an admin user for testing.
     """
@@ -199,6 +260,7 @@ async def admin_user(db_session: AsyncSession) -> User:
         last_name="User",
         country="USA",
         role=UserRole.ADMIN.value,
+        role_id=admin_role.id,
         is_admin=True,
         is_active=True,
         confirmed="YES",
@@ -211,7 +273,7 @@ async def admin_user(db_session: AsyncSession) -> User:
 
 
 @pytest_asyncio.fixture
-async def sponsor_user(db_session: AsyncSession) -> User:
+async def sponsor_user(db_session: AsyncSession, sponsor_role) -> User:
     """
     Create and return a sponsor user for testing.
     """
@@ -222,6 +284,7 @@ async def sponsor_user(db_session: AsyncSession) -> User:
         last_name="User",
         country="USA",
         role=UserRole.SPONSOR.value,
+        role_id=sponsor_role.id,
         is_active=True,
         confirmed="YES",
         password_hash=hash_password("sponsor123"),
@@ -233,7 +296,7 @@ async def sponsor_user(db_session: AsyncSession) -> User:
 
 
 @pytest_asyncio.fixture
-async def invitee_user(db_session: AsyncSession, sponsor_user: User) -> User:
+async def invitee_user(db_session: AsyncSession, sponsor_user: User, invitee_role) -> User:
     """
     Create and return an invitee user for testing.
     """
@@ -244,6 +307,7 @@ async def invitee_user(db_session: AsyncSession, sponsor_user: User) -> User:
         last_name="User",
         country="USA",
         role=UserRole.INVITEE.value,
+        role_id=invitee_role.id,
         sponsor_id=sponsor_user.id,
         is_active=True,
         confirmed="UNKNOWN",

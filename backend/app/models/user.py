@@ -1,5 +1,5 @@
 """User/Invitee model."""
-from sqlalchemy import Column, Integer, String, Boolean, BigInteger, TIMESTAMP, Index, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Boolean, BigInteger, TIMESTAMP, Index, ForeignKey, Enum, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -45,6 +45,17 @@ class User(Base):
         nullable=False,
         index=True
     )
+
+    # Dynamic role (FK to roles table)
+    role_id = Column(
+        Integer,
+        ForeignKey('roles.id', ondelete='SET NULL'),
+        nullable=True,
+        index=True
+    )
+
+    # Per-user permission overrides: {"add": [...], "remove": [...]}
+    permission_overrides = Column(JSON, default=dict, nullable=False)
 
     # Sponsor relationship - who sponsored this invitee
     sponsor_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
@@ -132,6 +143,13 @@ class User(Base):
         cascade="all, delete-orphan"
     )
 
+    # Dynamic role relationship
+    role_obj = relationship(
+        "Role",
+        back_populates="users",
+        foreign_keys=[role_id]
+    )
+
     # Indexes
     __table_args__ = (
         Index('idx_users_email', 'email'),
@@ -140,6 +158,7 @@ class User(Base):
         Index('idx_users_email_status', 'email_status'),
         Index('idx_users_role', 'role'),
         Index('idx_users_sponsor_id', 'sponsor_id'),
+        Index('idx_users_role_id', 'role_id'),
     )
 
     # Helper properties for role checking
@@ -172,6 +191,40 @@ class User(Base):
     def full_name(self) -> str:
         """Get user's full name."""
         return f"{self.first_name} {self.last_name}"
+
+    # Permission resolution methods
+    def get_effective_permissions(self) -> set:
+        """
+        Calculate effective permissions for this user.
+
+        Resolution: (role.permissions + overrides.add) - overrides.remove
+        Falls back to legacy role string if role_obj is not set.
+        """
+        from app.utils.permissions import get_permissions_for_role_string
+
+        # New system: use role relationship
+        if self.role_obj:
+            base_perms = set(self.role_obj.permissions or [])
+            overrides = self.permission_overrides or {}
+            add_perms = set(overrides.get("add", []))
+            remove_perms = set(overrides.get("remove", []))
+            return (base_perms | add_perms) - remove_perms
+
+        # Legacy fallback: derive from role string
+        if self.role:
+            return get_permissions_for_role_string(self.role)
+
+        return set()
+
+    def has_permission(self, *perms: str) -> bool:
+        """Check if user has ALL specified permissions."""
+        effective = self.get_effective_permissions()
+        return all(p in effective for p in perms)
+
+    def has_any_permission(self, *perms: str) -> bool:
+        """Check if user has ANY of the specified permissions."""
+        effective = self.get_effective_permissions()
+        return any(p in effective for p in perms)
 
     # Participation tracking properties
     @property

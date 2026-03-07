@@ -1,4 +1,5 @@
 """SQLAlchemy models."""
+from app.models.role import Role, BaseType
 from app.models.user import User, UserRole
 from app.models.vpn import VPNCredential
 from app.models.session import Session
@@ -18,6 +19,8 @@ from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, T
 from app.models.agent_task import AgentTask
 
 __all__ = [
+    "Role",
+    "BaseType",
     "User",
     "UserRole",
     "VPNCredential",

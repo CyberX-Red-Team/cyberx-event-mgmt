@@ -126,6 +126,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("  Template seeding: Failed - %s", e)
 
+    # Seed required roles (idempotent — creates if missing, updates system role permissions)
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.role_seeder import seed_required_roles
+        async with AsyncSessionLocal() as session:
+            await seed_required_roles(session)
+        logger.info("  Role seeding: Complete")
+    except Exception as e:
+        logger.error("  Role seeding: Failed - %s", e)
+
     # Start the background scheduler
     # Runs scheduled jobs for email processing, session cleanup, and reminders
     logger.info("  Background scheduler: Starting...")
