@@ -1248,6 +1248,38 @@ async def cancel_queued_email(
     return {"success": True, "message": "Email cancelled successfully"}
 
 
+@router.post("/email-queue/bulk-cancel")
+async def bulk_cancel_queued_emails(
+    data: dict,
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Bulk cancel pending emails in the queue.
+
+    Requires admin role.
+    """
+    email_ids = data.get("email_ids", [])
+    if not email_ids:
+        return {"success": False, "message": "No email IDs provided", "affected_count": 0, "failed_ids": []}
+
+    queue_service = EmailQueueService(db)
+    affected_count, failed_ids = await queue_service.bulk_cancel_emails(email_ids)
+
+    audit_service = AuditService(db)
+    await audit_service.log(
+        action="BULK_CANCEL_QUEUED_EMAILS",
+        user_id=current_user.id,
+        details={"requested": len(email_ids), "cancelled": affected_count, "failed_ids": failed_ids},
+    )
+
+    message = f"Cancelled {affected_count} of {len(email_ids)} emails"
+    if failed_ids:
+        message += f" ({len(failed_ids)} were not pending)"
+
+    return {"success": True, "message": message, "affected_count": affected_count, "failed_ids": failed_ids}
+
+
 @router.get("/email-batch-logs")
 async def list_email_batch_logs(
     page: int = Query(1, ge=1, description="Page number"),

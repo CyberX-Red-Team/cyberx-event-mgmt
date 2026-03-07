@@ -680,14 +680,21 @@
                 <div class="card-body">
                     <!-- Pending Emails Section -->
                     <div class="mb-4">
-                        <h6 class="mb-3">
-                            <span class="badge bg-warning text-dark me-2">Pending</span>
-                            <span class="text-muted small" id="pendingCount">-</span>
-                        </h6>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="mb-0">
+                                <span class="badge bg-warning text-dark me-2">Pending</span>
+                                <span class="text-muted small" id="pendingCount">-</span>
+                            </h6>
+                            <button class="btn btn-sm btn-outline-danger d-none" id="bulkCancelBtn" onclick="bulkCancelEmails()">
+                                <i data-feather="x-circle" class="feather-sm me-1"></i>
+                                Cancel Selected (<span id="bulkCancelCount">0</span>)
+                            </button>
+                        </div>
                         <div class="table-responsive">
                             <table class="table table-hover table-sm">
                                 <thead>
                                     <tr>
+                                        <th style="width: 30px;"><input type="checkbox" id="selectAllPending" onchange="toggleSelectAllPending(this)"></th>
                                         <th>ID</th>
                                         <th>Recipient</th>
                                         <th>Template</th>
@@ -701,7 +708,7 @@
                                 </thead>
                                 <tbody id="pendingQueueBody">
                                     <tr>
-                                        <td colspan="9" class="text-center py-4">
+                                        <td colspan="10" class="text-center py-4">
                                             <div class="spinner-border spinner-border-sm me-2"></div>
                                             Loading pending emails...
                                         </td>
@@ -2218,7 +2225,7 @@ async function loadQueueStats() {
 async function loadEmailQueue() {
     // Show loading spinners
     document.getElementById('pendingQueueBody').innerHTML =
-        '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading pending emails...</td></tr>';
+        '<tr><td colspan="10" class="text-center py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading pending emails...</td></tr>';
     document.getElementById('recentQueueBody').innerHTML =
         '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading recent activity...</td></tr>';
 
@@ -2248,7 +2255,7 @@ async function loadEmailQueue() {
     } catch (error) {
         console.error('Error loading queue:', error);
         document.getElementById('pendingQueueBody').innerHTML =
-            '<tr><td colspan="9" class="text-center text-danger py-4">Failed to load pending emails</td></tr>';
+            '<tr><td colspan="10" class="text-center text-danger py-4">Failed to load pending emails</td></tr>';
         document.getElementById('recentQueueBody').innerHTML =
             '<tr><td colspan="9" class="text-center text-danger py-4">Failed to load recent activity</td></tr>';
     } finally {
@@ -2266,8 +2273,13 @@ function renderPendingQueueTable(items) {
     const tbody = document.getElementById('pendingQueueBody');
     document.getElementById('pendingCount').textContent = `(${items.length} emails)`;
 
+    // Reset select-all checkbox and bulk cancel button
+    const selectAll = document.getElementById('selectAllPending');
+    if (selectAll) selectAll.checked = false;
+    updateBulkCancelBtn();
+
     if (items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">No pending emails</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">No pending emails</td></tr>';
         return;
     }
 
@@ -2279,6 +2291,7 @@ function renderPendingQueueTable(items) {
 
         return `
             <tr>
+                <td><input type="checkbox" class="pending-email-cb" value="${item.id}" onchange="updateBulkCancelBtn()"></td>
                 <td class="small">${item.id}</td>
                 <td class="small">
                     <div>${item.recipient_name || '-'}</div>
@@ -2422,6 +2435,52 @@ async function triggerManualBatch() {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
         feather.replace();
+    }
+}
+
+function toggleSelectAllPending(checkbox) {
+    document.querySelectorAll('.pending-email-cb').forEach(cb => cb.checked = checkbox.checked);
+    updateBulkCancelBtn();
+}
+
+function updateBulkCancelBtn() {
+    const checked = document.querySelectorAll('.pending-email-cb:checked');
+    const btn = document.getElementById('bulkCancelBtn');
+    const count = document.getElementById('bulkCancelCount');
+    if (checked.length > 0) {
+        btn.classList.remove('d-none');
+        count.textContent = checked.length;
+    } else {
+        btn.classList.add('d-none');
+    }
+}
+
+async function bulkCancelEmails() {
+    const checked = document.querySelectorAll('.pending-email-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    if (ids.length === 0) return;
+
+    if (!confirm(`Cancel ${ids.length} queued email(s)?`)) return;
+
+    try {
+        const response = await csrfFetch('/api/admin/email-queue/bulk-cancel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email_ids: ids })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert(data.message);
+            await loadEmailQueue();
+            await loadQueueStats();
+        } else {
+            alert('Failed to cancel emails: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to cancel emails');
     }
 }
 

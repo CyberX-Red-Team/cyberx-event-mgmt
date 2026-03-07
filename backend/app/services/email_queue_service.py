@@ -337,6 +337,32 @@ class EmailQueueService:
 
         return True
 
+    async def bulk_cancel_emails(self, email_ids: List[int]) -> tuple[int, List[int]]:
+        """Cancel multiple pending emails. Returns (affected_count, failed_ids)."""
+        if not email_ids:
+            return 0, []
+
+        result = await self.session.execute(
+            select(EmailQueue).where(EmailQueue.id.in_(email_ids))
+        )
+        emails = result.scalars().all()
+
+        now = datetime.now(timezone.utc)
+        cancelled_ids = set()
+
+        for email in emails:
+            if email.status == EmailQueueStatus.PENDING:
+                email.status = EmailQueueStatus.CANCELLED
+                email.processed_at = now
+                cancelled_ids.add(email.id)
+
+        failed_ids = [eid for eid in email_ids if eid not in cancelled_ids]
+
+        if cancelled_ids:
+            await self.session.commit()
+
+        return len(cancelled_ids), failed_ids
+
     async def get_queue_stats(self) -> Dict[str, int]:
         """Get email queue statistics."""
         from sqlalchemy import func
