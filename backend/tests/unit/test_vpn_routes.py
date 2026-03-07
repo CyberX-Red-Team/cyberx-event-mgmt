@@ -57,6 +57,8 @@ class TestListVPNCredentials:
             is_available=None,
             assignment_type=None,
             search=None,
+            sort_by="id",
+            sort_order="asc",
             current_user=mock_admin_user,
             service=mock_vpn_service,
             db=mock_db
@@ -77,6 +79,8 @@ class TestListVPNCredentials:
             is_available=True,
             assignment_type=None,
             search="10.0",
+            sort_by="id",
+            sort_order="asc",
             current_user=mock_admin_user,
             service=mock_vpn_service,
             db=mock_db
@@ -87,7 +91,9 @@ class TestListVPNCredentials:
             page_size=10,
             is_available=True,
             assignment_type=None,
-            search="10.0"
+            search="10.0",
+            sort_by="id",
+            sort_order="asc"
         )
 
 
