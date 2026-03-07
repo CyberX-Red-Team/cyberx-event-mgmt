@@ -13,13 +13,16 @@ from fastapi.responses import JSONResponse
 from app.api.routes.auth import (
     check_login_rate_limit,
     clear_login_rate_limit,
+    check_rate_limit,
+    clear_rate_limit,
+    get_rate_limit_count,
+    _rate_limit_cache,
     login,
     logout,
     get_current_user_info,
     change_password,
     request_password_reset,
     complete_password_reset,
-    _login_rate_limit_cache
 )
 from app.schemas.auth import LoginRequest, PasswordChangeRequest, PasswordResetRequestSchema, PasswordResetCompleteSchema
 from app.models.user import User, UserRole
@@ -32,14 +35,14 @@ class TestRateLimiting:
 
     def setup_method(self):
         """Clear rate limit cache before each test."""
-        _login_rate_limit_cache.clear()
+        _rate_limit_cache.clear()
 
     def test_check_login_rate_limit_first_attempt(self):
         """Test rate limiting allows first attempt."""
         result = check_login_rate_limit("192.168.1.1")
 
         assert result is False  # Not rate limited
-        assert len(_login_rate_limit_cache["login_192.168.1.1"]) == 1
+        assert len(_rate_limit_cache["login_192.168.1.1"]) == 1
 
     def test_check_login_rate_limit_within_threshold(self):
         """Test rate limiting allows attempts within threshold."""
@@ -73,12 +76,12 @@ class TestRateLimiting:
 
         # Add old timestamps (16 minutes ago)
         old_time = datetime.now(timezone.utc) - timedelta(minutes=16)
-        _login_rate_limit_cache[cache_key] = [old_time] * 5
+        _rate_limit_cache[cache_key] = [old_time] * 5
 
         # New attempt should be allowed (old entries cleaned)
         result = check_login_rate_limit(ip)
         assert result is False
-        assert len(_login_rate_limit_cache[cache_key]) == 1  # Only new entry
+        assert len(_rate_limit_cache[cache_key]) == 1  # Only new entry
 
     def test_clear_login_rate_limit_existing_key(self):
         """Test clearing rate limit for existing IP."""
@@ -86,12 +89,12 @@ class TestRateLimiting:
         cache_key = f"login_{ip}"
 
         # Add some entries
-        _login_rate_limit_cache[cache_key] = [datetime.now(timezone.utc)]
+        _rate_limit_cache[cache_key] = [datetime.now(timezone.utc)]
 
         # Clear rate limit
         clear_login_rate_limit(ip)
 
-        assert cache_key not in _login_rate_limit_cache
+        assert cache_key not in _rate_limit_cache
 
     def test_clear_login_rate_limit_nonexistent_key(self):
         """Test clearing rate limit for non-existent IP doesn't error."""
@@ -443,6 +446,7 @@ class TestPasswordResetRoutes:
         mock_db.execute = mocker.AsyncMock(return_value=mock_result)
 
         mocker.patch('app.api.routes.auth.extract_client_metadata', return_value=("192.168.1.1", "TestAgent"))
+        mocker.patch('app.api.routes.auth.check_rate_limit', return_value=False)
 
         mock_audit = mocker.Mock()
         mock_audit.log_password_reset_request = mocker.AsyncMock()
@@ -472,6 +476,9 @@ class TestPasswordResetRoutes:
         mock_result.scalar_one_or_none.return_value = None  # User not found
         mock_db.execute = mocker.AsyncMock(return_value=mock_result)
 
+        mocker.patch('app.api.routes.auth.extract_client_metadata', return_value=("192.168.1.1", "TestAgent"))
+        mocker.patch('app.api.routes.auth.check_rate_limit', return_value=False)
+
         data = PasswordResetRequestSchema(email="nonexistent@example.com")
 
         result = await request_password_reset(data, mock_request, mock_db)
@@ -487,6 +494,9 @@ class TestPasswordResetRoutes:
         mock_result = mocker.Mock()
         mock_result.scalar_one_or_none.return_value = None  # Token not found
         mock_db.execute = mocker.AsyncMock(return_value=mock_result)
+
+        mocker.patch('app.api.routes.auth.extract_client_metadata', return_value=("192.168.1.1", "TestAgent"))
+        mocker.patch('app.api.routes.auth.check_rate_limit', return_value=False)
 
         data = PasswordResetCompleteSchema(
             token="invalid_token",
@@ -515,6 +525,9 @@ class TestPasswordResetRoutes:
         mock_result = mocker.Mock()
         mock_result.scalar_one_or_none.return_value = mock_user
         mock_db.execute = mocker.AsyncMock(return_value=mock_result)
+
+        mocker.patch('app.api.routes.auth.extract_client_metadata', return_value=("192.168.1.1", "TestAgent"))
+        mocker.patch('app.api.routes.auth.check_rate_limit', return_value=False)
 
         data = PasswordResetCompleteSchema(
             token="valid_token",
@@ -545,6 +558,7 @@ class TestPasswordResetRoutes:
         mock_db.execute = mocker.AsyncMock(return_value=mock_result)
 
         mocker.patch('app.api.routes.auth.extract_client_metadata', return_value=("192.168.1.1", "TestAgent"))
+        mocker.patch('app.api.routes.auth.check_rate_limit', return_value=False)
 
         mock_audit = mocker.Mock()
         mock_audit.log_password_reset_complete = mocker.AsyncMock()

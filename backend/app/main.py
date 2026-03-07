@@ -116,6 +116,16 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("  Admin bootstrap: Skipped (ADMIN_EMAIL not configured)")
 
+    # Seed required email templates (idempotent — creates if missing, no-op if exists)
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.template_seeder import seed_required_templates
+        async with AsyncSessionLocal() as session:
+            await seed_required_templates(session)
+        logger.info("  Template seeding: Complete")
+    except Exception as e:
+        logger.error("  Template seeding: Failed - %s", e)
+
     # Start the background scheduler
     # Runs scheduled jobs for email processing, session cleanup, and reminders
     logger.info("  Background scheduler: Starting...")

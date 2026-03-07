@@ -38,58 +38,125 @@ from app.api.exceptions import not_found, forbidden, bad_request, conflict, unau
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 settings = get_settings()
 
+import logging
+logger = logging.getLogger(__name__)
+
 # Rate limiting storage (in production, use Redis)
-# Key: IP address, Value: list of login attempt timestamps
-_login_rate_limit_cache: dict = {}
+# Key: "{prefix}_{ip}", Value: list of attempt timestamps
+_rate_limit_cache: dict = {}
 
 
-def check_login_rate_limit(
+def check_rate_limit(
+    prefix: str,
     ip_address: str,
     window_minutes: int = 15,
     max_attempts: int = 5
 ) -> bool:
     """
-    Check if IP address has exceeded login rate limit.
+    Check if IP address has exceeded rate limit for a given action.
 
     Args:
+        prefix: Action prefix (e.g., "login", "reset_request", "reset_complete")
         ip_address: Client IP address
-        window_minutes: Time window in minutes (default 15)
-        max_attempts: Maximum login attempts allowed (default 5)
+        window_minutes: Time window in minutes
+        max_attempts: Maximum attempts allowed
 
     Returns:
         True if rate limit exceeded, False if OK to proceed
     """
     now = datetime.now(timezone.utc)
-    cache_key = f"login_{ip_address}"
+    cache_key = f"{prefix}_{ip_address}"
 
-    if cache_key not in _login_rate_limit_cache:
-        _login_rate_limit_cache[cache_key] = []
+    if cache_key not in _rate_limit_cache:
+        _rate_limit_cache[cache_key] = []
 
     # Clean old entries outside the time window
     window_start = now - timedelta(minutes=window_minutes)
-    _login_rate_limit_cache[cache_key] = [
-        ts for ts in _login_rate_limit_cache[cache_key] if ts > window_start
+    _rate_limit_cache[cache_key] = [
+        ts for ts in _rate_limit_cache[cache_key] if ts > window_start
     ]
 
     # Check if limit exceeded
-    if len(_login_rate_limit_cache[cache_key]) >= max_attempts:
+    if len(_rate_limit_cache[cache_key]) >= max_attempts:
         return True
 
     # Record this attempt
-    _login_rate_limit_cache[cache_key].append(now)
+    _rate_limit_cache[cache_key].append(now)
     return False
 
 
+def clear_rate_limit(prefix: str, ip_address: str) -> None:
+    """Clear rate limit for an IP address after successful action."""
+    cache_key = f"{prefix}_{ip_address}"
+    if cache_key in _rate_limit_cache:
+        del _rate_limit_cache[cache_key]
+
+
+def get_rate_limit_count(prefix: str, ip_address: str) -> int:
+    """Get current attempt count for an IP within the active window."""
+    cache_key = f"{prefix}_{ip_address}"
+    return len(_rate_limit_cache.get(cache_key, []))
+
+
+# Backwards-compatible wrappers for login rate limiting
+def check_login_rate_limit(ip_address: str, window_minutes: int = 15, max_attempts: int = 5) -> bool:
+    return check_rate_limit("login", ip_address, window_minutes, max_attempts)
+
+
 def clear_login_rate_limit(ip_address: str) -> None:
+    clear_rate_limit("login", ip_address)
+
+
+async def notify_admins_of_lockout(
+    db: AsyncSession,
+    lockout_type: str,
+    ip_address: str,
+    user_agent: str,
+    target_email: str | None = None,
+    details: str = "",
+):
     """
-    Clear login rate limit for an IP address after successful login.
+    Send email notification to all active admins about a security lockout.
 
     Args:
-        ip_address: Client IP address
+        db: Database session
+        lockout_type: Type of lockout (e.g., "password_reset_request", "password_reset_completion")
+        ip_address: IP address that triggered the lockout
+        user_agent: User-Agent string of the offending client
+        target_email: Email address being targeted (if known)
+        details: Additional details about the lockout
     """
-    cache_key = f"login_{ip_address}"
-    if cache_key in _login_rate_limit_cache:
-        del _login_rate_limit_cache[cache_key]
+    # Find all active admin users
+    result = await db.execute(
+        select(User).where(User.role == "admin", User.is_active == True)
+    )
+    admins = result.scalars().all()
+
+    if not admins:
+        logger.warning(f"Security lockout ({lockout_type}) but no active admins to notify")
+        return
+
+    from app.services.email_queue_service import EmailQueueService
+    queue_service = EmailQueueService(db)
+
+    for admin in admins:
+        try:
+            await queue_service.enqueue_email(
+                user_id=admin.id,
+                template_name="admin_security_alert",
+                priority=1,  # Highest priority
+                custom_vars={
+                    "admin_name": admin.first_name or "Admin",
+                    "lockout_type": lockout_type,
+                    "ip_address": ip_address,
+                    "user_agent": user_agent or "Unknown",
+                    "target_email": target_email or "N/A",
+                    "details": details,
+                    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to queue security alert for admin {admin.email}: {e}")
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -356,6 +423,9 @@ async def request_password_reset(
     """
     Request password reset (sends email with reset link).
 
+    Rate limited to 3 requests per 15 minutes per IP to prevent
+    email flooding and enumeration timing attacks.
+
     Args:
         data: Password reset request with email
         request: FastAPI request object
@@ -367,6 +437,39 @@ async def request_password_reset(
     Note:
         Always returns success to prevent email enumeration
     """
+    ip_address, user_agent = extract_client_metadata(request)
+
+    # Rate limit: 3 reset requests per 15 minutes per IP
+    if check_rate_limit("reset_request", ip_address, window_minutes=15, max_attempts=3):
+        attempts = get_rate_limit_count("reset_request", ip_address)
+        logger.warning(
+            f"Password reset request rate limit exceeded: IP={ip_address}, "
+            f"email={data.email}, attempts={attempts}"
+        )
+
+        # Notify admins on lockout
+        audit_service = AuditService(db)
+        await audit_service.log(
+            action="PASSWORD_RESET_REQUEST_RATE_LIMITED",
+            user_id=None,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            details={"reason": "Rate limit exceeded", "email": data.email}
+        )
+        await notify_admins_of_lockout(
+            db=db,
+            lockout_type="Password Reset Request Flood",
+            ip_address=ip_address,
+            user_agent=user_agent,
+            target_email=data.email,
+            details=f"IP exceeded 3 password reset requests in 15 minutes. Targeted email: {data.email}",
+        )
+
+        # Still return success to prevent enumeration
+        return PasswordResetRequestResponse(
+            message="If an account with that email exists, a password reset link has been sent"
+        )
+
     # Find user by email_normalized (case-insensitive and Gmail alias aware)
     normalized_email_value = normalize_email(data.email)
     result = await db.execute(
@@ -377,7 +480,10 @@ async def request_password_reset(
     # If user exists, generate reset token and send email
     if user:
         import secrets
-        from datetime import datetime, timezone, timedelta
+
+        # Invalidate any existing reset token (only latest token works)
+        user.password_reset_token = None
+        user.password_reset_expires = None
 
         # Generate secure reset token with 15-minute expiry
         reset_token = secrets.token_urlsafe(32)
@@ -389,8 +495,6 @@ async def request_password_reset(
         await db.commit()
 
         # Log password reset request
-        ip_address, user_agent = extract_client_metadata(request)
-
         audit_service = AuditService(db)
         await audit_service.log_password_reset_request(
             user_id=user.id,
@@ -403,9 +507,7 @@ async def request_password_reset(
         # send_immediately flag in the DB, configurable from Admin → Workflows.
         from app.services.workflow_service import WorkflowService
         from app.models.email_workflow import WorkflowTriggerEvent
-        from app.config import get_settings
 
-        settings = get_settings()
         reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
 
         workflow_service = WorkflowService(db)
@@ -437,6 +539,9 @@ async def complete_password_reset(
     """
     Complete password reset using reset token.
 
+    Rate limited to 5 attempts per 15 minutes per IP. After exceeding the
+    limit, the IP is locked out and admins are notified.
+
     Args:
         data: Password reset completion with token and new password
         request: FastAPI request object
@@ -446,11 +551,39 @@ async def complete_password_reset(
         Password reset completion response
 
     Raises:
-        HTTPException: If token is invalid or expired
+        HTTPException: If token is invalid, expired, or rate limit exceeded
     """
-    from datetime import datetime, timezone
     from passlib.context import CryptContext
     from app.api.routes.public import generate_phonetic_password
+
+    ip_address, user_agent = extract_client_metadata(request)
+
+    # Rate limit: 5 completion attempts per 15 minutes per IP
+    if check_rate_limit("reset_complete", ip_address, window_minutes=15, max_attempts=5):
+        attempts = get_rate_limit_count("reset_complete", ip_address)
+        logger.warning(
+            f"Password reset completion rate limit exceeded: IP={ip_address}, attempts={attempts}"
+        )
+
+        audit_service = AuditService(db)
+        await audit_service.log(
+            action="PASSWORD_RESET_COMPLETE_RATE_LIMITED",
+            user_id=None,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            details={"reason": "Rate limit exceeded — possible token brute-force"}
+        )
+        await notify_admins_of_lockout(
+            db=db,
+            lockout_type="Password Reset Token Brute-Force",
+            ip_address=ip_address,
+            user_agent=user_agent,
+            details=f"IP exceeded 5 password reset completion attempts in 15 minutes. Possible token guessing attack.",
+        )
+
+        raise rate_limited(
+            "Too many password reset attempts. Please wait 15 minutes before trying again."
+        )
 
     # Find user by reset token
     result = await db.execute(
@@ -459,11 +592,19 @@ async def complete_password_reset(
     user = result.scalar_one_or_none()
 
     if not user:
+        logger.info(f"Invalid reset token attempt from IP={ip_address}")
         raise bad_request("Invalid or expired password reset token")
 
     # Check if token is expired
     if user.password_reset_expires and user.password_reset_expires < datetime.now(timezone.utc):
+        # Clear expired token
+        user.password_reset_token = None
+        user.password_reset_expires = None
+        await db.commit()
         raise bad_request("Password reset token has expired")
+
+    # Token is valid — clear the rate limit for this IP
+    clear_rate_limit("reset_complete", ip_address)
 
     # Hash new password
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -472,7 +613,7 @@ async def complete_password_reset(
     user.password_hash = pwd_context.hash(data.new_password)
     user.password_phonetic = generate_phonetic_password(data.new_password)
 
-    # Clear reset token
+    # Clear reset token (single-use)
     user.password_reset_token = None
     user.password_reset_expires = None
 
@@ -492,8 +633,6 @@ async def complete_password_reset(
     await db.commit()
 
     # Log password reset completion
-    ip_address, user_agent = extract_client_metadata(request)
-
     audit_service = AuditService(db)
     await audit_service.log_password_reset_complete(
         user_id=user.id,
