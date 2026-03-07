@@ -1389,7 +1389,10 @@ async def trigger_reminders(
         raise not_found("No active event found")
 
     now = datetime.now(timezone.utc)
-    event_start_utc = event.start_date.replace(tzinfo=timezone.utc) if event.start_date else now
+    if event.start_date:
+        event_start_utc = event.start_date if event.start_date.tzinfo else event.start_date.replace(tzinfo=timezone.utc)
+    else:
+        event_start_utc = now
     days_until_event = (event_start_utc - now).days
 
     stages_to_run = [stage] if stage else [1, 2, 3]

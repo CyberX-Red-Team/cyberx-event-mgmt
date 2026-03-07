@@ -14,6 +14,13 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+def _ensure_utc(dt: datetime) -> datetime:
+    """Return a UTC-aware datetime, handling both naive and aware inputs."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 async def process_invitation_reminders():
     """
     Process multi-stage invitation reminders.
@@ -78,7 +85,7 @@ async def process_reminder_stage_1(session: AsyncSession, event: Event, settings
     min_days_before_event = settings.REMINDER_1_MIN_DAYS_BEFORE_EVENT
 
     # Check if event is far enough away
-    days_until_event = (event.start_date.replace(tzinfo=timezone.utc) - now).days
+    days_until_event = (_ensure_utc(event.start_date) - now).days
     if days_until_event < min_days_before_event:
         logger.info(
             f"Stage 1: Event is only {days_until_event} days away (minimum: {min_days_before_event}) - skipping"
@@ -154,7 +161,7 @@ async def process_reminder_stage_2(session: AsyncSession, event: Event, settings
     min_days_before_event = settings.REMINDER_2_MIN_DAYS_BEFORE_EVENT
 
     # Check if event is far enough away
-    days_until_event = (event.start_date.replace(tzinfo=timezone.utc) - now).days
+    days_until_event = (_ensure_utc(event.start_date) - now).days
     if days_until_event < min_days_before_event:
         logger.info(
             f"Stage 2: Event is only {days_until_event} days away (minimum: {min_days_before_event}) - skipping"
@@ -229,7 +236,7 @@ async def process_reminder_stage_3(session: AsyncSession, event: Event, settings
     days_before = settings.REMINDER_3_DAYS_BEFORE_EVENT
 
     # Calculate target date range (Z days before event, with 24-hour window)
-    event_start_utc = event.start_date.replace(tzinfo=timezone.utc)
+    event_start_utc = _ensure_utc(event.start_date)
     target_date = event_start_utc - timedelta(days=days_before)
 
     # Check if today is the target date (within 24 hours)
@@ -312,7 +319,7 @@ async def queue_reminders(
     """
     # Hard guard: never send reminders if the event has already started
     now = datetime.now(timezone.utc)
-    event_start_utc = event.start_date.replace(tzinfo=timezone.utc) if event.start_date else None
+    event_start_utc = _ensure_utc(event.start_date) if event.start_date else None
     if event_start_utc and event_start_utc <= now:
         logger.info(f"Stage {stage}: Event already started - skipping reminders")
         return
