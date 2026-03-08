@@ -21,12 +21,12 @@ class TestPermissionConstants:
         assert ROLE_PERMISSIONS["admin"] == ALL_PERMISSIONS
 
     def test_sponsor_permission_count(self):
-        """Sponsor role should have 11 permissions."""
-        assert len(ROLE_PERMISSIONS["sponsor"]) == 11
+        """Sponsor role should have 12 permissions."""
+        assert len(ROLE_PERMISSIONS["sponsor"]) == 12
 
     def test_invitee_permission_count(self):
-        """Invitee role should have 7 permissions."""
-        assert len(ROLE_PERMISSIONS["invitee"]) == 7
+        """Invitee role should have 8 permissions."""
+        assert len(ROLE_PERMISSIONS["invitee"]) == 8
 
     def test_sponsor_is_superset_of_invitee(self):
         """Sponsor permissions should include all invitee permissions."""
@@ -45,6 +45,7 @@ class TestPermissionConstants:
         invitee = ROLE_PERMISSIONS["invitee"]
         assert "instances.view" in invitee
         assert "instances.provision" in invitee
+        assert "instances.manage_agent" in invitee
         assert "vpn.view" in invitee
         assert "vpn.request" in invitee
         assert "vpn.download" in invitee
