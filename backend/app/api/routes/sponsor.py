@@ -210,9 +210,10 @@ async def create_my_invitee(
 
     # Set role_id if a specific role was selected
     if target_role:
+        # Re-fetch since create_participant commits internally, detaching the instance
+        invitee = await service.get_participant(invitee.id)
         invitee.role_id = target_role.id
         await db.commit()
-        await db.refresh(invitee)
 
     # Reload with relationships
     invitee = await service.get_participant(invitee.id)
