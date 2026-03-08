@@ -186,6 +186,7 @@ async def create_my_invitee(
 
     # Resolve target role (default to system invitee role if not specified)
     target_role = None
+    logger.info(f"Sponsor create invitee: data.role_id={data.role_id!r}")
     if data.role_id:
         role_result = await db.execute(select(Role).where(Role.id == data.role_id))
         target_role = role_result.scalar_one_or_none()
@@ -203,6 +204,7 @@ async def create_my_invitee(
             select(Role).where(Role.slug == "invitee", Role.is_system == True)
         )
         target_role = role_result.scalar_one_or_none()
+        logger.info(f"Default invitee role lookup result: {target_role!r}")
 
     # Create invitee with auto-assigned sponsor_id
     invitee = await service.create_participant(
@@ -216,12 +218,17 @@ async def create_my_invitee(
         discord_username=data.discord_username
     )
 
-    # Set role_id if a specific role was selected
+    # Set role_id (always — either from explicit selection or default system role)
     if target_role:
         # Re-fetch since create_participant commits internally, detaching the instance
         invitee = await service.get_participant(invitee.id)
         invitee.role_id = target_role.id
+        logger.info(f"Setting role_id={target_role.id} on invitee {invitee.id}")
         await db.commit()
+        await db.refresh(invitee)
+        logger.info(f"After commit: invitee.role_id={invitee.role_id}")
+    else:
+        logger.warning(f"No target_role found — invitee {invitee.id} will have role_id=NULL")
 
     # Reload with relationships
     invitee = await service.get_participant(invitee.id)
