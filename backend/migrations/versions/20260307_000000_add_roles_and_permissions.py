@@ -46,9 +46,9 @@ def upgrade() -> None:
 
     op.execute(sa.text(
         "INSERT INTO roles (name, slug, base_type, permissions, is_system, description) VALUES "
-        "('Admin', 'admin', 'admin', :admin_perms::json, true, 'Full system access — all permissions enabled'), "
-        "('Sponsor', 'sponsor', 'sponsor', :sponsor_perms::json, true, 'Can manage sponsored participants and their resources'), "
-        "('Invitee', 'invitee', 'invitee', :invitee_perms::json, true, 'Standard participant access — can manage own resources')"
+        "('Admin', 'admin', 'admin', CAST(:admin_perms AS json), true, 'Full system access — all permissions enabled'), "
+        "('Sponsor', 'sponsor', 'sponsor', CAST(:sponsor_perms AS json), true, 'Can manage sponsored participants and their resources'), "
+        "('Invitee', 'invitee', 'invitee', CAST(:invitee_perms AS json), true, 'Standard participant access — can manage own resources')"
     ).bindparams(
         admin_perms=admin_perms,
         sponsor_perms=sponsor_perms,
