@@ -790,7 +790,7 @@ window.handleGroupByChange = function() {
 window.loadUsers = async function(page = 1) {
     currentPage = page;
     const search = document.getElementById('userSearch').value;
-    const role = document.getElementById('userRoleFilter').value;
+    const roleId = document.getElementById('userRoleFilter').value;
     const isActive = document.getElementById('userStatusFilter').value;
     const confirmed = document.getElementById('userConfirmedFilter').value;
     const emailStatus = document.getElementById('userEmailStatusFilter').value;
@@ -822,7 +822,7 @@ window.loadUsers = async function(page = 1) {
     });
 
     if (search) params.append('search', search);
-    if (role) params.append('role', role);
+    if (roleId) params.append('role_id', roleId);
     if (isActive) params.append('is_active', isActive);
     if (confirmed) params.append('confirmed', confirmed);
     if (emailStatus) params.append('email_status', emailStatus);
@@ -868,11 +868,27 @@ async function loadRolesForDropdowns() {
             allRoles = await response.json();
         }
 
-        // Populate filter dropdown (uses base_type for backend compatibility)
+        // Populate filter dropdown with all roles grouped by base_type
         const filterSelect = document.getElementById('userRoleFilter');
-        const baseTypes = [...new Set(allRoles.map(r => r.base_type))];
-        filterSelect.innerHTML = '<option value="">All Roles</option>' +
-            baseTypes.map(bt => `<option value="${bt}">${bt.charAt(0).toUpperCase() + bt.slice(1)}</option>`).join('');
+        if (isCurrentUserAdmin) {
+            const grouped = {};
+            allRoles.forEach(r => {
+                if (!grouped[r.base_type]) grouped[r.base_type] = [];
+                grouped[r.base_type].push(r);
+            });
+            const order = ['admin', 'sponsor', 'invitee'];
+            filterSelect.innerHTML = '<option value="">All Roles</option>' +
+                order.filter(bt => grouped[bt]).map(bt => {
+                    const label = bt.charAt(0).toUpperCase() + bt.slice(1);
+                    const opts = grouped[bt].map(r =>
+                        `<option value="${r.id}">${r.name}</option>`
+                    ).join('');
+                    return `<optgroup label="${label}">${opts}</optgroup>`;
+                }).join('');
+        } else {
+            filterSelect.innerHTML = '<option value="">All Roles</option>' +
+                allRoles.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+        }
 
         // Populate create/edit user role dropdown, grouped by base_type
         const userRoleSelect = document.getElementById('userRole');

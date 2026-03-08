@@ -81,6 +81,7 @@ class ParticipantService:
         sort_order: str = "desc",
         sponsor_id: Optional[int] = None,
         role: Optional[str] = None,
+        role_id: Optional[int] = None,
         country: Optional[str] = None,
         event_id: Optional[int] = None
     ) -> Tuple[List[User], int]:
@@ -89,7 +90,8 @@ class ParticipantService:
 
         Args:
             sponsor_id: If provided, only return participants sponsored by this user
-            role: If provided, filter by role (admin, sponsor, participant)
+            role: If provided, filter by base role type (admin, sponsor, invitee)
+            role_id: If provided, filter by specific role ID
             event_id: If provided with confirmed filter, uses event-specific EventParticipation status
 
         Returns:
@@ -107,8 +109,11 @@ class ParticipantService:
             query = query.where(User.sponsor_id == sponsor_id)
             count_query = count_query.where(User.sponsor_id == sponsor_id)
 
-        # Filter by role if provided
-        if role:
+        # Filter by role: role_id takes precedence over base type
+        if role_id:
+            query = query.where(User.role_id == role_id)
+            count_query = count_query.where(User.role_id == role_id)
+        elif role:
             query = query.where(User.role == role)
             count_query = count_query.where(User.role == role)
 

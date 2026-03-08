@@ -70,7 +70,8 @@ async def list_participants(
     has_vpn: Optional[bool] = Query(None, description="Filter by VPN status"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     email_status: Optional[str] = Query(None, description="Filter by email status"),
-    role: Optional[str] = Query(None, description="Filter by role"),
+    role: Optional[str] = Query(None, description="Filter by base role type"),
+    role_id: Optional[int] = Query(None, description="Filter by specific role ID"),
     country: Optional[str] = Query(None, description="Filter by country"),
     sponsor_id: Optional[int] = Query(None, description="Filter by sponsor ID"),
     sort_by: str = Query("created_at", description="Sort field"),
@@ -96,6 +97,7 @@ async def list_participants(
         sort_by=sort_by,
         sort_order=sort_order,
         role=role,
+        role_id=role_id,
         country=country,
         sponsor_id=sponsor_id
     )

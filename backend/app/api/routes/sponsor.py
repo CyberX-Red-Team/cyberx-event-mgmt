@@ -36,6 +36,7 @@ async def list_my_invitees(
     confirmed: Optional[str] = None,
     has_vpn: Optional[bool] = None,
     is_active: Optional[bool] = None,
+    role_id: Optional[int] = None,
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc"),
     db: AsyncSession = Depends(get_db),
@@ -58,6 +59,7 @@ async def list_my_invitees(
         confirmed=confirmed,
         has_vpn=has_vpn,
         is_active=is_active,
+        role_id=role_id,
         sort_by=sort_by,
         sort_order=sort_order
     )

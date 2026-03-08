@@ -167,6 +167,11 @@
                         <option value="false">Inactive</option>
                     </select>
                 </div>
+                <div class="col-md-2 mb-2" id="roleFilterSection" style="display: none;">
+                    <select class="form-select" id="filterRole">
+                        <option value="">All Types</option>
+                    </select>
+                </div>
                 <div class="col-md-2 mb-2">
                     <button class="btn btn-primary w-100" onclick="applyFilters()">
                         <i data-feather="filter" class="me-1"></i>
@@ -191,6 +196,7 @@
                             <th data-sort-key="last_name">Name</th>
                             <th data-sort-key="email">Email</th>
                             <th data-sort-key="country">Country</th>
+                            <th id="roleColumnHeader" style="display: none;">Role</th>
                             <th data-sort-key="confirmed">Status</th>
                             <th>VPN</th>
                             <th title="Keycloak Sync Status">KC</th>
@@ -319,6 +325,12 @@ const pageSize = 20;
 let countriesData = null;
 let inviteeSorter;
 let inviteeTypes = [];
+let hasMultipleRoles = false;
+
+function getRoleBadge(invitee) {
+    const label = invitee.role_name || 'Invitee';
+    return `<span class="badge badge-invitee">${escapeHtml(label)}</span>`;
+}
 
 // Load invitee type roles available to this sponsor
 async function loadInviteeTypes() {
@@ -326,16 +338,27 @@ async function loadInviteeTypes() {
         const response = await csrfFetch('/api/admin/roles/invitee-types');
         if (!response.ok) return;
         inviteeTypes = await response.json();
+        hasMultipleRoles = inviteeTypes.length > 1;
 
         const roleSelect = document.getElementById('addInviteeRole');
         const roleSection = document.getElementById('addRoleSection');
 
-        if (inviteeTypes.length > 1) {
-            // Multiple types available — show dropdown
+        if (hasMultipleRoles) {
+            // Multiple types available — show dropdown and role column/filter
             roleSelect.innerHTML = inviteeTypes.map(r =>
                 `<option value="${r.id}">${r.name}</option>`
             ).join('');
             roleSection.style.display = '';
+
+            // Show role column in table
+            document.getElementById('roleColumnHeader').style.display = '';
+
+            // Show role filter and populate it
+            const filterSection = document.getElementById('roleFilterSection');
+            const filterSelect = document.getElementById('filterRole');
+            filterSelect.innerHTML = '<option value="">All Types</option>' +
+                inviteeTypes.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+            filterSection.style.display = '';
         } else if (inviteeTypes.length === 1) {
             // Only one type — hide dropdown, auto-select
             roleSelect.innerHTML = `<option value="${inviteeTypes[0].id}">${inviteeTypes[0].name}</option>`;
@@ -463,6 +486,7 @@ async function loadInvitees(page = 1) {
         if (currentFilters.confirmed) params.append('confirmed', currentFilters.confirmed);
         if (currentFilters.has_vpn !== undefined) params.append('has_vpn', currentFilters.has_vpn);
         if (currentFilters.is_active !== undefined) params.append('is_active', currentFilters.is_active);
+        if (currentFilters.role_id) params.append('role_id', currentFilters.role_id);
 
         const response = await csrfFetch(`/api/sponsors/my-invitees?${params}`);
         if (!response.ok) throw new Error('Failed to load invitees');
@@ -487,7 +511,8 @@ function renderTable(invitees) {
     const tbody = document.getElementById('inviteesTableBody');
 
     if (invitees.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No invitees found</td></tr>';
+        const colCount = hasMultipleRoles ? 9 : 8;
+        tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-muted">No invitees found</td></tr>`;
         return;
     }
 
@@ -496,6 +521,7 @@ function renderTable(invitees) {
             <td>${escapeHtml(invitee.first_name)} ${escapeHtml(invitee.last_name)}</td>
             <td>${escapeHtml(invitee.email)}</td>
             <td>${getCountryFlag(invitee.country)} ${escapeHtml(invitee.country)}</td>
+            ${hasMultipleRoles ? `<td>${getRoleBadge(invitee)}</td>` : ''}
             <td>${renderStatusBadge(invitee)}</td>
             <td>${invitee.has_vpn ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-secondary">No</span>'}</td>
             <td>${invitee.keycloak_synced ? '<i data-feather="check-circle" class="text-success"></i>' : '<i data-feather="minus-circle" class="text-secondary"></i>'}</td>
@@ -578,11 +604,13 @@ function renderPagination(data) {
 
 // Apply filters
 function applyFilters() {
+    const roleFilterEl = document.getElementById('filterRole');
     currentFilters = {
         search: document.getElementById('searchInput').value.trim() || undefined,
         confirmed: document.getElementById('filterConfirmed').value || undefined,
         has_vpn: document.getElementById('filterVPN').value === '' ? undefined : document.getElementById('filterVPN').value === 'true',
-        is_active: document.getElementById('filterActive').value === '' ? undefined : document.getElementById('filterActive').value === 'true'
+        is_active: document.getElementById('filterActive').value === '' ? undefined : document.getElementById('filterActive').value === 'true',
+        role_id: roleFilterEl ? roleFilterEl.value || undefined : undefined
     };
 
     loadInvitees(1);
