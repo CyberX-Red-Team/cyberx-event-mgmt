@@ -186,7 +186,6 @@ async def create_my_invitee(
 
     # Resolve target role (default to system invitee role if not specified)
     target_role = None
-    logger.info(f"Sponsor create invitee: data.role_id={data.role_id!r}")
     if data.role_id:
         role_result = await db.execute(select(Role).where(Role.id == data.role_id))
         target_role = role_result.scalar_one_or_none()
@@ -204,11 +203,9 @@ async def create_my_invitee(
             select(Role).where(Role.slug == "invitee", Role.is_system == True)
         )
         target_role = role_result.scalar_one_or_none()
-        logger.info(f"Default invitee role lookup result: {target_role!r}")
 
-    # Create invitee with role_id set at creation time (avoids detached instance issues)
+    # Set role_id at creation time (avoids detached instance issues from post-commit updates)
     target_role_id = target_role.id if target_role else None
-    logger.info(f"Creating invitee with role_id={target_role_id}")
     invitee = await service.create_participant(
         email=data.email,
         first_name=data.first_name,
