@@ -139,6 +139,8 @@ async def build_participant_response(
         event_participation_status=event_participation_status,
         event_participation_id=event_participation_id,
         role=user.role,
+        role_id=user.role_id,
+        role_name=user.role_obj.name if user.role_obj else None,
         is_admin=user.is_admin,
         is_active=user.is_active,
         created_at=user.created_at,

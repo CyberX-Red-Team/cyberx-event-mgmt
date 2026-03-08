@@ -43,7 +43,7 @@
                             <th>Permissions</th>
                             <th>Users</th>
                             <th width="80">System</th>
-                            <th width="120">Actions</th>
+                            <th width="160">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="rolesTableBody">
@@ -81,7 +81,7 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Base Type <span class="text-danger">*</span></label>
-                        <select class="form-select" id="roleBaseType">
+                        <select class="form-select" id="roleBaseType" onchange="onBaseTypeChange()">
                             <option value="invitee">Invitee</option>
                             <option value="sponsor">Sponsor</option>
                             <option value="admin">Admin</option>
@@ -93,6 +93,14 @@
                 <div class="mb-3">
                     <label class="form-label">Description</label>
                     <textarea class="form-control" id="roleDescription" rows="2" maxlength="500"></textarea>
+                </div>
+
+                <!-- Allowed Invitee Roles (sponsor-type only) -->
+                <div id="allowedRolesSection" class="mb-3 d-none">
+                    <label class="form-label">Allowed Invitee Roles</label>
+                    <div class="form-text mb-2">Select which invitee roles this sponsor can assign when creating participants. Leave empty to allow all.</div>
+                    <div id="allowedRolesCheckboxes" class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                    </div>
                 </div>
 
                 <div id="systemRoleWarning" class="alert alert-info d-none mb-3">
@@ -116,7 +124,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="saveRole()">
+                <button type="button" class="btn btn-primary" id="saveRoleBtn" onclick="saveRole()">
                     <i data-feather="save" class="me-1"></i> <span id="saveButtonText">Create Role</span>
                 </button>
             </div>
@@ -145,7 +153,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" onclick="confirmDelete()">
+                <button type="button" class="btn btn-danger" id="deleteRoleBtn" onclick="confirmDelete()">
                     <i data-feather="trash-2" class="me-1"></i> Delete Role
                 </button>
             </div>
@@ -231,12 +239,25 @@
                     ${role.description ? `<br><small class="text-muted">${escapeHtml(role.description)}</small>` : ''}
                 </td>
                 <td>${baseTypeBadge(role.base_type)}</td>
-                <td><span class="badge bg-secondary">${role.permissions.length}</span></td>
-                <td>${role.user_count}</td>
+                <td>
+                    <span class="badge bg-secondary perm-count" role="button"
+                        onclick="togglePermPreview(${role.id})" title="Click to expand">
+                        ${role.permissions.length}
+                    </span>
+                    <div id="perm-preview-${role.id}" class="perm-preview d-none mt-1">
+                        ${role.permissions.map(p => `<span class="badge bg-light text-dark me-1 mb-1">${p}</span>`).join('')}
+                    </div>
+                </td>
+                <td>
+                    <a href="/admin/users?role=${role.base_type}" class="text-decoration-none">${role.user_count}</a>
+                </td>
                 <td>${role.is_system ? '<i data-feather="lock" class="text-muted" style="width:16px;height:16px;"></i>' : ''}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary me-1" onclick="editRole(${role.id})" title="Edit">
                         <i data-feather="edit-2" style="width:14px;height:14px;"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary me-1" onclick="cloneRole(${role.id})" title="Clone">
+                        <i data-feather="copy" style="width:14px;height:14px;"></i>
                     </button>
                     ${!role.is_system ? `
                         <button class="btn btn-sm btn-outline-danger" onclick="showDeleteModal(${role.id}, '${escapeHtml(role.name)}')" title="Delete">
@@ -248,6 +269,11 @@
         `).join('');
 
         feather.replace();
+    }
+
+    function togglePermPreview(roleId) {
+        const el = document.getElementById(`perm-preview-${roleId}`);
+        if (el) el.classList.toggle('d-none');
     }
 
     function renderPermissionsGrid(selectedPermissions = [], disabled = false) {
@@ -288,6 +314,32 @@
         `).join('');
     }
 
+    function renderAllowedRoles(selectedIds = []) {
+        const container = document.getElementById('allowedRolesCheckboxes');
+        const inviteeRoles = roles.filter(r => r.base_type === 'invitee');
+
+        if (inviteeRoles.length === 0) {
+            container.innerHTML = '<p class="text-muted small">No invitee roles defined yet</p>';
+            return;
+        }
+
+        container.innerHTML = inviteeRoles.map(r => `
+            <div class="form-check">
+                <input class="form-check-input allowed-role-cb" type="checkbox"
+                    id="allowed-role-${r.id}" value="${r.id}"
+                    ${selectedIds.includes(r.id) ? 'checked' : ''}>
+                <label class="form-check-label" for="allowed-role-${r.id}">
+                    ${escapeHtml(r.name)}
+                    ${r.is_system ? '<span class="badge bg-light text-muted ms-1">System</span>' : ''}
+                </label>
+            </div>
+        `).join('');
+    }
+
+    function getSelectedAllowedRoleIds() {
+        return Array.from(document.querySelectorAll('.allowed-role-cb:checked')).map(cb => parseInt(cb.value));
+    }
+
     function formatPermission(perm) {
         // "events.view" → "View"
         const parts = perm.split('.');
@@ -317,6 +369,19 @@
         return Array.from(document.querySelectorAll('.perm-checkbox:checked')).map(cb => cb.value);
     }
 
+    // ===== Base Type Change =====
+
+    function onBaseTypeChange() {
+        const baseType = document.getElementById('roleBaseType').value;
+        const section = document.getElementById('allowedRolesSection');
+        if (baseType === 'sponsor') {
+            section.classList.remove('d-none');
+            renderAllowedRoles([]);
+        } else {
+            section.classList.add('d-none');
+        }
+    }
+
     // ===== Modal Actions =====
 
     function showCreateModal() {
@@ -329,6 +394,7 @@
         document.getElementById('roleBaseType').disabled = false;
         document.getElementById('roleDescription').value = '';
         document.getElementById('systemRoleWarning').classList.add('d-none');
+        document.getElementById('allowedRolesSection').classList.add('d-none');
         renderPermissionsGrid([], false);
         feather.replace();
         roleModal.show();
@@ -355,12 +421,21 @@
                 document.getElementById('systemRoleWarning').classList.add('d-none');
             }
 
+            // Show allowed roles section for sponsor-type roles
+            const allowedSection = document.getElementById('allowedRolesSection');
+            if (role.base_type === 'sponsor') {
+                allowedSection.classList.remove('d-none');
+                renderAllowedRoles(role.allowed_role_ids || []);
+            } else {
+                allowedSection.classList.add('d-none');
+            }
+
             renderPermissionsGrid(role.permissions, role.is_system);
             feather.replace();
             roleModal.show();
         } catch (error) {
             console.error('Failed to load role:', error);
-            alert('Failed to load role details');
+            showToast('Failed to load role details', 'error');
         }
     }
 
@@ -371,19 +446,29 @@
         const description = document.getElementById('roleDescription').value.trim();
 
         if (!name) {
-            alert('Name is required');
+            showToast('Name is required', 'warning');
             return;
         }
 
+        const btn = document.getElementById('saveRoleBtn');
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
         const data = { name, description: description || null };
 
-        if (id) {
-            // Update — only send permissions if not a system role
-            if (!isSystemRole) {
-                data.permissions = getSelectedPermissions();
-            }
+        // Include allowed_role_ids for sponsor-type roles
+        if (baseType === 'sponsor') {
+            data.allowed_role_ids = getSelectedAllowedRoleIds();
+        }
 
-            try {
+        try {
+            if (id) {
+                // Update — only send permissions if not a system role
+                if (!isSystemRole) {
+                    data.permissions = getSelectedPermissions();
+                }
+
                 const response = await csrfFetch(`/api/admin/roles/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -392,22 +477,18 @@
 
                 if (!response.ok) {
                     const error = await response.json();
-                    alert(error.detail || 'Failed to update role');
+                    showToast(error.detail || 'Failed to update role', 'error');
                     return;
                 }
 
                 roleModal.hide();
+                showToast('Role updated successfully', 'success');
                 await loadRoles();
-            } catch (error) {
-                console.error('Failed to update role:', error);
-                alert('Failed to update role');
-            }
-        } else {
-            // Create
-            data.base_type = baseType;
-            data.permissions = getSelectedPermissions();
+            } else {
+                // Create
+                data.base_type = baseType;
+                data.permissions = getSelectedPermissions();
 
-            try {
                 const response = await csrfFetch('/api/admin/roles', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -416,16 +497,51 @@
 
                 if (!response.ok) {
                     const error = await response.json();
-                    alert(error.detail || 'Failed to create role');
+                    showToast(error.detail || 'Failed to create role', 'error');
                     return;
                 }
 
                 roleModal.hide();
+                showToast('Role created successfully', 'success');
                 await loadRoles();
-            } catch (error) {
-                console.error('Failed to create role:', error);
-                alert('Failed to create role');
             }
+        } catch (error) {
+            console.error('Failed to save role:', error);
+            showToast('Failed to save role', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+            feather.replace();
+        }
+    }
+
+    async function cloneRole(id) {
+        const btn = event.currentTarget;
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        try {
+            const response = await csrfFetch(`/api/admin/roles/${id}/clone`, {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                showToast(error.detail || 'Failed to clone role', 'error');
+                return;
+            }
+
+            const cloned = await response.json();
+            showToast(`Role cloned as "${cloned.name}"`, 'success');
+            await loadRoles();
+        } catch (error) {
+            console.error('Failed to clone role:', error);
+            showToast('Failed to clone role', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+            feather.replace();
         }
     }
 
@@ -438,6 +554,10 @@
 
     async function confirmDelete() {
         const id = document.getElementById('deleteRoleId').value;
+        const btn = document.getElementById('deleteRoleBtn');
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Deleting...';
 
         try {
             const response = await csrfFetch(`/api/admin/roles/${id}`, {
@@ -446,7 +566,7 @@
 
             if (!response.ok) {
                 const error = await response.json();
-                alert(error.detail || 'Failed to delete role');
+                showToast(error.detail || 'Failed to delete role', 'error');
                 return;
             }
 
@@ -455,11 +575,17 @@
             await loadRoles();
 
             if (result.reassigned_users > 0) {
-                alert(`Role deleted. ${result.reassigned_users} user(s) were reassigned to the default role.`);
+                showToast(`Role deleted. ${result.reassigned_users} user(s) reassigned to default role.`, 'success');
+            } else {
+                showToast('Role deleted successfully', 'success');
             }
         } catch (error) {
             console.error('Failed to delete role:', error);
-            alert('Failed to delete role');
+            showToast('Failed to delete role', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+            feather.replace();
         }
     }
 
@@ -489,6 +615,16 @@
 <style>
     .badge.bg-purple {
         background-color: #6f42c1 !important;
+    }
+    .perm-count {
+        cursor: pointer;
+    }
+    .perm-count:hover {
+        opacity: 0.8;
+    }
+    .perm-preview .badge {
+        font-size: 0.7rem;
+        font-weight: normal;
     }
 </style>
 {% endblock %}

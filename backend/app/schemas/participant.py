@@ -53,6 +53,7 @@ class ParticipantCreate(ParticipantBase):
     sponsor_email: Optional[EmailStr] = None
     sponsor_id: Optional[int] = None
     role: UserRoleEnum = UserRoleEnum.INVITEE
+    role_id: Optional[int] = None
     is_admin: bool = False  # Legacy support
 
 
@@ -109,6 +110,8 @@ class ParticipantResponse(BaseModel):
     event_participation_status: Optional[str] = None  # invited/confirmed/declined/no_response
     event_participation_id: Optional[int] = None
     role: str
+    role_id: Optional[int] = None
+    role_name: Optional[str] = None
     is_admin: bool  # Legacy field
     is_active: bool
     created_at: datetime

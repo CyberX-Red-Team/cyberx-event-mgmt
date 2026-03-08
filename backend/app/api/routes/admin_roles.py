@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
-from app.dependencies import get_db, require_permission
+from app.dependencies import get_db, get_current_active_user, require_permission
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.role import (
@@ -57,6 +57,7 @@ async def _build_role_response(role: Role, db: AsyncSession) -> dict:
         "slug": role.slug,
         "base_type": role.base_type,
         "permissions": sorted(role.permissions or []),
+        "allowed_role_ids": role.allowed_role_ids or [],
         "is_system": role.is_system,
         "description": role.description,
         "user_count": user_count,
@@ -115,6 +116,7 @@ async def create_role(
         slug=slug,
         base_type=data.base_type,
         permissions=data.permissions,
+        allowed_role_ids=data.allowed_role_ids,
         is_system=False,
         description=data.description,
     )
@@ -124,6 +126,30 @@ async def create_role(
 
     logger.info("Role '%s' created by user %d", role.name, current_user.id)
     return await _build_role_response(role, db)
+
+
+@router.get("/invitee-types")
+async def list_invitee_types(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List invitee-type roles available for participant creation.
+
+    Admins see all invitee roles. Sponsors see only their allowed roles
+    (or all if their role's allowed_role_ids is empty).
+    """
+    result = await db.execute(
+        select(Role).where(Role.base_type == "invitee").order_by(Role.is_system.desc(), Role.name)
+    )
+    invitee_roles = result.scalars().all()
+
+    # If sponsor, filter by allowed_role_ids
+    if not current_user.has_permission("admin.manage_roles"):
+        if current_user.role_obj and current_user.role_obj.allowed_role_ids:
+            allowed = set(current_user.role_obj.allowed_role_ids)
+            invitee_roles = [r for r in invitee_roles if r.id in allowed]
+
+    return [await _build_role_response(r, db) for r in invitee_roles]
 
 
 @router.get("/{role_id}")
@@ -179,6 +205,9 @@ async def update_role(
 
     if data.permissions is not None:
         role.permissions = data.permissions
+
+    if data.allowed_role_ids is not None:
+        role.allowed_role_ids = data.allowed_role_ids
 
     if data.description is not None:
         role.description = data.description
@@ -239,3 +268,49 @@ async def delete_role(
         "message": f"Role '{role_name}' deleted",
         "reassigned_users": reassigned_count,
     }
+
+
+@router.post("/{role_id}/clone", status_code=status.HTTP_201_CREATED)
+async def clone_role(
+    role_id: int,
+    current_user: User = Depends(require_permission("admin.manage_roles")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clone an existing role."""
+    result = await db.execute(select(Role).where(Role.id == role_id))
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Role not found"
+        )
+
+    # Generate unique name and slug
+    base_name = f"{source.name} (Copy)"
+    base_slug = slugify(base_name)
+    slug = base_slug
+    suffix = 1
+    while True:
+        existing = await db.execute(select(Role).where(Role.slug == slug))
+        if not existing.scalar_one_or_none():
+            break
+        suffix += 1
+        slug = f"{base_slug}-{suffix}"
+        base_name = f"{source.name} (Copy {suffix})"
+
+    role = Role(
+        name=base_name,
+        slug=slug,
+        base_type=source.base_type,
+        permissions=list(source.permissions or []),
+        allowed_role_ids=list(source.allowed_role_ids or []),
+        is_system=False,
+        description=source.description,
+    )
+    db.add(role)
+    await db.commit()
+    await db.refresh(role)
+
+    logger.info("Role '%s' cloned from '%s' by user %d", role.name, source.name, current_user.id)
+    return await _build_role_response(role, db)
+
+

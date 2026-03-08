@@ -1060,7 +1060,7 @@ function renderUsersTable() {
             <td>${escapeHtml(user.email)}</td>
             <td class="text-center">${user.country ? `<span title="${escapeHtml(user.country)}" style="font-size: 1.5rem; cursor: help;">${getCountryFlag(user.country)}</span>` : '<span class="text-muted">-</span>'}</td>
             <td>${getEmailStatusBadge(user.email_status)}</td>
-            <td>${getRoleBadge(user.role)}</td>
+            <td>${getRoleBadge(user)}</td>
             <td>${user.sponsor ? escapeHtml(user.sponsor.first_name + ' ' + user.sponsor.last_name) : '<span class="text-muted">-</span>'}</td>
             <td>${user.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
             <td>${getConfirmedBadge(user)}</td>
@@ -1157,13 +1157,12 @@ function renderPagination(total) {
     pagination.innerHTML = html;
 }
 
-function getRoleBadge(role) {
-    const badges = {
-        'admin': '<span class="badge badge-admin">Admin</span>',
-        'sponsor': '<span class="badge badge-sponsor">Sponsor</span>',
-        'invitee': '<span class="badge badge-invitee">Invitee</span>'
-    };
-    return badges[role] || '<span class="badge bg-secondary">Unknown</span>';
+function getRoleBadge(user) {
+    const baseType = user.role || 'invitee';
+    const colors = { admin: 'badge-admin', sponsor: 'badge-sponsor', invitee: 'badge-invitee' };
+    const colorClass = colors[baseType] || 'bg-secondary';
+    const label = user.role_name || baseType.charAt(0).toUpperCase() + baseType.slice(1);
+    return `<span class="badge ${colorClass}">${escapeHtml(label)}</span>`;
 }
 
 function getConfirmedBadge(user) {
@@ -1365,12 +1364,17 @@ window.saveUser = async function() {
     const sponsorId = sponsorValue ? parseInt(sponsorValue) : null;
 
     // Build request data
+    const roleSelect = document.getElementById('userRole');
+    const selectedOption = roleSelect.options[roleSelect.selectedIndex];
+    const roleId = selectedOption ? parseInt(selectedOption.getAttribute('data-role-id')) : null;
+
     const data = {
         first_name: document.getElementById('userFirstName').value.trim(),
         last_name: document.getElementById('userLastName').value.trim(),
         email: document.getElementById('userEmail').value.trim().toLowerCase(),
         country: document.getElementById('userCountry').value.trim() || 'USA',
         role: document.getElementById('userRole').value,
+        role_id: roleId || undefined,
         // confirmed: REMOVED - can only be changed through /confirm/accept or /confirm/decline endpoints
         is_active: document.getElementById('userActive').checked,
         sponsor_id: sponsorId

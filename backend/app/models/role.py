@@ -29,6 +29,7 @@ class Role(Base):
     slug = Column(String(100), unique=True, nullable=False, index=True)
     base_type = Column(String(20), nullable=False, index=True)
     permissions = Column(JSON, default=list, nullable=False)
+    allowed_role_ids = Column(JSON, default=list, nullable=False)
     is_system = Column(Boolean, default=False, nullable=False)
     description = Column(String(500), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

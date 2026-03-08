@@ -14,6 +14,7 @@ class RoleResponse(BaseModel):
     slug: str
     base_type: str
     permissions: list[str]
+    allowed_role_ids: list[int] = Field(default_factory=list)
     is_system: bool
     description: Optional[str]
     user_count: int = 0
@@ -28,6 +29,7 @@ class RoleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     base_type: str = Field(..., pattern=r"^(admin|sponsor|invitee)$")
     permissions: list[str] = Field(default_factory=list)
+    allowed_role_ids: list[int] = Field(default_factory=list)
     description: Optional[str] = Field(None, max_length=500)
 
     @field_validator("permissions")
@@ -43,6 +45,7 @@ class RoleUpdate(BaseModel):
     """Schema for updating a role."""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     permissions: Optional[list[str]] = None
+    allowed_role_ids: Optional[list[int]] = None
     description: Optional[str] = Field(None, max_length=500)
 
     @field_validator("permissions")

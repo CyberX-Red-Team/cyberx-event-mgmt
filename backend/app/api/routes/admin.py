@@ -207,15 +207,28 @@ async def create_participant(
 
     # Determine sponsor_id
     sponsor_id = data.sponsor_id
+
+    # Resolve role from role_id or legacy role enum
+    target_role = None
+    if data.role_id:
+        role_result = await db.execute(select(Role).where(Role.id == data.role_id))
+        target_role = role_result.scalar_one_or_none()
+        if not target_role:
+            raise bad_request(f"Role with ID {data.role_id} not found")
+        role_value = target_role.base_type
+    else:
+        role_value = data.role.value if data.role else UserRole.INVITEE.value
+
     if not current_user.is_admin_role:
         # Sponsors can only create participants they sponsor
         sponsor_id = current_user.id
-        # Sponsors cannot create admin or sponsor role users
-        if data.role in (UserRoleEnum.ADMIN, UserRoleEnum.SPONSOR):
+        # Sponsors can only create invitee-type roles
+        if role_value != "invitee":
             raise forbidden("Only administrators can create admin or sponsor users")
-
-    # Convert role enum to string value
-    role_value = data.role.value if data.role else UserRole.INVITEE.value
+        # If sponsor has allowed_role_ids, enforce restriction
+        if target_role and current_user.role_obj and current_user.role_obj.allowed_role_ids:
+            if target_role.id not in current_user.role_obj.allowed_role_ids:
+                raise forbidden(f"You are not allowed to create participants with the '{target_role.name}' role")
 
     participant = await service.create_participant(
         email=data.email,
@@ -231,6 +244,12 @@ async def create_participant(
         role=role_value,
         is_admin=data.is_admin
     )
+
+    # Set role_id if a specific role was selected
+    if target_role:
+        participant.role_id = target_role.id
+        await db.commit()
+        await db.refresh(participant)
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
