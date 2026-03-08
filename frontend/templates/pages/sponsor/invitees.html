@@ -252,6 +252,12 @@
                             <option value="">Loading countries...</option>
                         </select>
                     </div>
+                    <div class="mb-3" id="addRoleSection" style="display: none;">
+                        <label for="addInviteeRole" class="form-label">Invitee Type</label>
+                        <select class="form-select" id="addInviteeRole">
+                        </select>
+                        <div class="form-text">Select the type of invitee to create.</div>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -312,6 +318,33 @@ let currentFilters = {};
 const pageSize = 20;
 let countriesData = null;
 let inviteeSorter;
+let inviteeTypes = [];
+
+// Load invitee type roles available to this sponsor
+async function loadInviteeTypes() {
+    try {
+        const response = await csrfFetch('/api/admin/roles/invitee-types');
+        if (!response.ok) return;
+        inviteeTypes = await response.json();
+
+        const roleSelect = document.getElementById('addInviteeRole');
+        const roleSection = document.getElementById('addRoleSection');
+
+        if (inviteeTypes.length > 1) {
+            // Multiple types available — show dropdown
+            roleSelect.innerHTML = inviteeTypes.map(r =>
+                `<option value="${r.id}">${r.name}</option>`
+            ).join('');
+            roleSection.style.display = '';
+        } else if (inviteeTypes.length === 1) {
+            // Only one type — hide dropdown, auto-select
+            roleSelect.innerHTML = `<option value="${inviteeTypes[0].id}">${inviteeTypes[0].name}</option>`;
+            roleSection.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Failed to load invitee types:', error);
+    }
+}
 
 // Load countries from API
 async function loadCountries() {
@@ -378,6 +411,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     loadCountries();
+    loadInviteeTypes();
     loadStats();
     loadInvitees();
 
@@ -564,11 +598,15 @@ function openAddInviteeModal() {
 
 // Submit Add Invitee
 async function submitAddInvitee() {
+    const roleSelect = document.getElementById('addInviteeRole');
+    const selectedRoleId = roleSelect.value ? parseInt(roleSelect.value) : null;
+
     const data = {
         first_name: document.getElementById('addFirstName').value.trim(),
         last_name: document.getElementById('addLastName').value.trim(),
         email: document.getElementById('addEmail').value.trim(),
-        country: document.getElementById('addCountry').value || 'United States'
+        country: document.getElementById('addCountry').value || 'United States',
+        role_id: selectedRoleId || undefined
     };
 
     // Hide any previous errors

@@ -1318,16 +1318,21 @@ window.openCreateUserModal = function() {
         document.getElementById('emailStatusSection').style.display = 'none';
         updateSponsorDropdown();
 
-        // Default to system invitee role
+        // Default to system invitee role, or first available option
         const roleSelect = document.getElementById('userRole');
         const inviteeRole = allRoles.find(r => r.slug === 'invitee' && r.is_system);
+        let defaultSet = false;
         if (inviteeRole) {
             for (const opt of roleSelect.options) {
                 if (opt.getAttribute('data-role-id') === String(inviteeRole.id)) {
                     opt.selected = true;
+                    defaultSet = true;
                     break;
                 }
             }
+        }
+        if (!defaultSet && roleSelect.options.length > 0) {
+            roleSelect.selectedIndex = 0;
         }
 
         const modalEl = document.getElementById('userModal');

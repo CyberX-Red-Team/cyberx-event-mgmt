@@ -259,6 +259,7 @@ class InviteeCreateRequest(BaseModel):
     last_name: str = Field(..., min_length=1, max_length=255)
     country: str = Field(default="USA", max_length=100)
     confirmed: str = Field(default="UNKNOWN")
+    role_id: Optional[int] = None
     discord_username: Optional[str] = None
 
     @field_validator("first_name", "last_name", mode="before")

@@ -181,6 +181,21 @@ async def create_my_invitee(
 
         raise conflict(error_msg)
 
+    # Validate role_id if provided
+    target_role = None
+    if data.role_id:
+        from app.models.role import Role
+        role_result = await db.execute(select(Role).where(Role.id == data.role_id))
+        target_role = role_result.scalar_one_or_none()
+        if not target_role:
+            raise bad_request(f"Role with ID {data.role_id} not found")
+        if target_role.base_type != "invitee":
+            raise forbidden("Sponsors can only create invitee-type participants")
+        # Enforce allowed_role_ids restriction
+        if current_user.role_obj and current_user.role_obj.allowed_role_ids:
+            if target_role.id not in current_user.role_obj.allowed_role_ids:
+                raise forbidden(f"You are not allowed to create participants with the '{target_role.name}' role")
+
     # Create invitee with auto-assigned sponsor_id
     invitee = await service.create_participant(
         email=data.email,
@@ -192,6 +207,12 @@ async def create_my_invitee(
         confirmed=data.confirmed,
         discord_username=data.discord_username
     )
+
+    # Set role_id if a specific role was selected
+    if target_role:
+        invitee.role_id = target_role.id
+        await db.commit()
+        await db.refresh(invitee)
 
     # Reload with relationships
     invitee = await service.get_participant(invitee.id)
