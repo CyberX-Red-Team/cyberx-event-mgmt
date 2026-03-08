@@ -100,7 +100,7 @@ class VPNRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # User and VPN References
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     vpn_credential_id = Column(Integer, ForeignKey('vpn_credentials.id', ondelete='SET NULL'), nullable=True)
 
     # Request Details

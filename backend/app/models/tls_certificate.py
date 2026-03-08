@@ -82,7 +82,7 @@ class TLSCertificate(Base):
     __tablename__ = "tls_certificates"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
     ca_chain_id = Column(Integer, ForeignKey('ca_chains.id', ondelete='CASCADE'), nullable=False)
 

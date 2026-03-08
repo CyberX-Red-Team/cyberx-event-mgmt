@@ -11,9 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.models.user import User, UserRole
 from app.models.vpn import VPNCredential
 from app.models.session import Session
-from app.models.email_queue import EmailQueue
 from app.models.event import EventParticipation
-from app.models.audit_log import VPNRequest
 from app.utils.security import hash_password
 from app.services.email_queue_service import EmailQueueService
 from app.api.utils.validation import normalize_email
@@ -541,28 +539,21 @@ class ParticipantService:
         if not participant:
             return False
 
-        # Step 1: Delete all related records with CASCADE + NOT NULL constraints
-        # These must be deleted explicitly before the user, otherwise SQLAlchemy
-        # tries to set user_id to NULL which violates NOT NULL constraints
+        # Step 1: Delete transient records that should not survive user deletion.
+        # Sessions and event participations have CASCADE + NOT NULL on user_id,
+        # so they must be removed explicitly (SQLAlchemy ORM tries SET NULL before
+        # DB CASCADE fires). Other records (participant_actions, tls_certificates,
+        # cpe_certificates, password_sync_queue, email_queue, vpn_requests) use
+        # SET NULL and are preserved for audit trail.
 
         # Delete sessions
         await self.session.execute(
             delete(Session).where(Session.user_id == participant_id)
         )
 
-        # Delete email queue entries
-        await self.session.execute(
-            delete(EmailQueue).where(EmailQueue.user_id == participant_id)
-        )
-
         # Delete event participations
         await self.session.execute(
             delete(EventParticipation).where(EventParticipation.user_id == participant_id)
-        )
-
-        # Delete VPN requests
-        await self.session.execute(
-            delete(VPNRequest).where(VPNRequest.user_id == participant_id)
         )
 
         # Step 2: Mark VPN credentials as permanently unavailable (security: don't recycle downloaded configs)

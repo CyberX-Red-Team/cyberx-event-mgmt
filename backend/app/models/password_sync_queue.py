@@ -27,7 +27,7 @@ class PasswordSyncQueue(Base):
     __tablename__ = "password_sync_queue"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     username = Column(String(255), nullable=False)
     encrypted_password = Column(Text, nullable=True)  # Fernet encrypted; NULL for DELETE_USER
     operation = Column(String(50), nullable=False, default=SyncOperation.CREATE_USER.value)
