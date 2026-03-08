@@ -14,7 +14,7 @@ from app.api.routes import instances as instances_routes, cloud_init as cloud_in
 from app.api.routes import instance_templates, participant_instances
 from app.api.routes import settings as settings_routes
 from app.api.routes import admin_actions, participant_actions, admin_keycloak, admin_cpe, participant_cpe
-from app.api.routes import admin_tls, participant_tls
+from app.api.routes import admin_tls, participant_tls, admin_roles
 from app.api.routes.agent import agent_router, participant_router as agent_participant_router, admin_router as agent_admin_router
 from app.tasks import start_scheduler, stop_scheduler, list_jobs
 from app.utils.encryption import init_encryptor, generate_encryption_key
@@ -255,6 +255,7 @@ app.include_router(admin_keycloak.router)  # Admin Keycloak sync management
 app.include_router(admin_cpe.router)  # Admin CPE certificate management
 app.include_router(participant_cpe.router)  # Participant CPE certificate download
 app.include_router(admin_tls.router)  # Admin TLS certificate / CA chain management
+app.include_router(admin_roles.router)  # Admin role management
 app.include_router(participant_tls.router)  # Participant TLS certificate self-service
 app.include_router(agent_router)  # Agent-facing endpoints (Bearer token auth)
 app.include_router(agent_participant_router)  # Participant agent task management

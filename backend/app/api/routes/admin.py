@@ -41,6 +41,8 @@ from app.schemas.participant import (
     SponsorAssignRequest,
     MySponsoredParticipantsResponse,
 )
+from app.schemas.role import RoleAssignRequest, PermissionOverrideUpdate
+from app.models.role import Role
 from app.schemas.vpn import VPNStats
 from app.schemas.dashboard import DashboardStats, DashboardResponse
 from app.schemas.audit import (
@@ -2444,3 +2446,110 @@ async def regenerate_discord_invite(
         "message": f"Discord invite regenerated for {user.email}",
         "invite_link": f"https://discord.gg/{invite_code}"
     }
+
+
+# ============== Permission Overrides ==============
+
+@router.put("/participants/{participant_id}/permission-overrides")
+async def update_permission_overrides(
+    participant_id: int,
+    data: PermissionOverrideUpdate,
+    request: Request,
+    current_user: User = Depends(require_permission("admin.manage_roles")),
+    service: ParticipantService = Depends(get_participant_service),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update a participant's permission overrides.
+
+    Requires admin.manage_roles permission.
+    """
+    participant = await service.get_participant(participant_id)
+    if not participant:
+        raise not_found("Participant")
+
+    old_overrides = participant.permission_overrides or {}
+    new_overrides = {}
+    if data.add:
+        new_overrides["add"] = data.add
+    if data.remove:
+        new_overrides["remove"] = data.remove
+
+    participant.permission_overrides = new_overrides
+    await db.commit()
+    await db.refresh(participant)
+
+    # Audit log
+    ip_address, user_agent = extract_client_metadata(request)
+    audit_service = AuditService(db)
+    await audit_service.log_user_update(
+        user_id=current_user.id,
+        updated_user_id=participant_id,
+        changes={
+            "permission_overrides": {
+                "old": old_overrides,
+                "new": new_overrides,
+            }
+        },
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    return await build_participant_response(participant, db)
+
+
+# ============== Role Assignment by ID ==============
+
+@router.put("/participants/{participant_id}/assign-role")
+async def assign_participant_role(
+    participant_id: int,
+    data: RoleAssignRequest,
+    request: Request,
+    current_user: User = Depends(require_permission("admin.manage_roles")),
+    service: ParticipantService = Depends(get_participant_service),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Assign a role to a participant by role_id.
+
+    Sets user.role_id and syncs user.role to the role's base_type.
+    Clears any permission overrides.
+    """
+    # Look up the target role
+    role_result = await db.execute(select(Role).where(Role.id == data.role_id))
+    role = role_result.scalar_one_or_none()
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Role not found",
+        )
+
+    participant = await service.get_participant(participant_id)
+    if not participant:
+        raise not_found("Participant")
+
+    old_role = participant.role
+    old_role_id = participant.role_id
+
+    # Update role fields
+    participant.role_id = role.id
+    participant.role = role.base_type  # Keep legacy column in sync
+    participant.is_admin = role.base_type == "admin"
+    participant.permission_overrides = {}  # Reset overrides on role change
+
+    await db.commit()
+    await db.refresh(participant)
+
+    # Audit log
+    ip_address, user_agent = extract_client_metadata(request)
+    audit_service = AuditService(db)
+    await audit_service.log_role_change(
+        user_id=current_user.id,
+        target_user_id=participant_id,
+        old_role=old_role,
+        new_role=f"{role.name} ({role.base_type})",
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    return await build_participant_response(participant, db)

@@ -312,6 +312,23 @@ async def admin_instance_templates_page(
     )
 
 
+@router.get("/admin/roles", response_class=HTMLResponse)
+async def admin_roles_page(
+    request: Request,
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Render roles & permissions management page (admin only)."""
+    return templates.TemplateResponse(
+        "pages/admin/roles.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "active_page": "roles",
+            "now": datetime.now()
+        }
+    )
+
+
 @router.get("/admin/settings", response_class=HTMLResponse)
 async def admin_settings_page(
     request: Request,

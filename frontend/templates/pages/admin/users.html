@@ -221,9 +221,7 @@
                             <label class="form-label small">Role</label>
                             <select class="form-select" id="userRoleFilter">
                                 <option value="">All Roles</option>
-                                <option value="admin">Admin</option>
-                                <option value="sponsor">Sponsor</option>
-                                <option value="invitee">Invitee</option>
+                                <!-- Populated dynamically from /api/admin/roles -->
                             </select>
                         </div>
                         <div class="col-md-2">
@@ -466,11 +464,9 @@
                         <div class="col-md-6">
                             <label class="form-label">Role <span class="text-danger">*</span></label>
                             <select class="form-select" id="userRole" required>
-                                <option value="invitee">Invitee</option>
-                                <option value="sponsor">Sponsor</option>
-                                <option value="admin">Admin</option>
+                                <!-- Populated dynamically from /api/admin/roles -->
                             </select>
-                            <div class="form-text">Admins have full access. Sponsors can manage their invitees.</div>
+                            <div class="form-text">Determines the user's permissions and access level.</div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Sponsor</label>
@@ -570,9 +566,7 @@
                 <div class="mb-3">
                     <label class="form-label">New Role</label>
                     <select class="form-select" id="newRole">
-                        <option value="invitee">Invitee</option>
-                        <option value="sponsor">Sponsor</option>
-                        <option value="admin">Admin</option>
+                        <!-- Populated dynamically from /api/admin/roles -->
                     </select>
                 </div>
                 <div class="alert alert-warning small">
@@ -747,6 +741,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     loadCountries();
+    loadRolesForDropdowns();
     loadStats();
     loadUsers(1);
     loadSponsors();
@@ -854,6 +849,36 @@ window.loadUsers = async function(page = 1) {
                 </td>
             </tr>
         `;
+    }
+}
+
+let allRoles = [];
+
+async function loadRolesForDropdowns() {
+    try {
+        const response = await csrfFetch('/api/admin/roles');
+        if (!response.ok) return;
+        allRoles = await response.json();
+
+        // Populate filter dropdown (uses base_type for backend compatibility)
+        const filterSelect = document.getElementById('userRoleFilter');
+        const baseTypes = [...new Set(allRoles.map(r => r.base_type))];
+        filterSelect.innerHTML = '<option value="">All Roles</option>' +
+            baseTypes.map(bt => `<option value="${bt}">${bt.charAt(0).toUpperCase() + bt.slice(1)}</option>`).join('');
+
+        // Populate create/edit user role dropdown
+        const userRoleSelect = document.getElementById('userRole');
+        userRoleSelect.innerHTML = allRoles.map(r =>
+            `<option value="${r.base_type}" data-role-id="${r.id}">${r.name} (${r.base_type})</option>`
+        ).join('');
+
+        // Populate role change modal dropdown
+        const newRoleSelect = document.getElementById('newRole');
+        newRoleSelect.innerHTML = allRoles.map(r =>
+            `<option value="${r.id}">${r.name} (${r.base_type})</option>`
+        ).join('');
+    } catch (error) {
+        console.error('Failed to load roles:', error);
     }
 }
 
@@ -1482,12 +1507,13 @@ window.openRoleModal = function(userId, userName, currentRole) {
 
 window.saveRoleChange = async function() {
     const userId = document.getElementById('roleUserId').value;
-    const newRole = document.getElementById('newRole').value;
+    const roleId = document.getElementById('newRole').value;
 
     try {
-        const response = await csrfFetch(`/api/admin/participants/${userId}/role`, {
+        const response = await csrfFetch(`/api/admin/participants/${userId}/assign-role`, {
             method: 'PUT',
-            body: { participant_id: parseInt(userId), role: newRole }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role_id: parseInt(roleId) })
         });
 
         if (!response.ok) {

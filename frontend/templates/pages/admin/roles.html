@@ -1,0 +1,494 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Roles & Permissions{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="shield"></i></div>
+                        Roles & Permissions
+                    </h1>
+                    <div class="page-header-subtitle">Manage roles and their permissions</div>
+                </div>
+                <div class="col-12 col-xl-auto mt-4">
+                    <button class="btn btn-white btn-sm" onclick="showCreateModal()">
+                        <i data-feather="plus" class="me-1"></i> Create Role
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+    <!-- Roles Table Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="shield" class="me-2"></i>
+            All Roles
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Base Type</th>
+                            <th>Permissions</th>
+                            <th>Users</th>
+                            <th width="80">System</th>
+                            <th width="120">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rolesTableBody">
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-5">
+                                <i data-feather="loader" class="mb-2"></i>
+                                <p>Loading roles...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit Role Modal -->
+<div class="modal fade" id="roleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="roleModalTitle">
+                    <i data-feather="shield" class="me-2"></i>
+                    Create Role
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="roleId">
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="roleName" maxlength="100" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Base Type <span class="text-danger">*</span></label>
+                        <select class="form-select" id="roleBaseType">
+                            <option value="invitee">Invitee</option>
+                            <option value="sponsor">Sponsor</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <div class="form-text">Determines sidebar access and navigation</div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" id="roleDescription" rows="2" maxlength="500"></textarea>
+                </div>
+
+                <div id="systemRoleWarning" class="alert alert-info d-none mb-3">
+                    <i data-feather="info" class="me-2"></i>
+                    System role permissions are managed by the application and cannot be modified here.
+                </div>
+
+                <!-- Permissions Grid -->
+                <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between align-items-center">
+                        <span>Permissions</span>
+                        <span>
+                            <button type="button" class="btn btn-outline-primary btn-sm me-1" onclick="selectAllPermissions()">Select All</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="deselectAllPermissions()">Deselect All</button>
+                        </span>
+                    </label>
+                    <div id="permissionsGrid" class="border rounded p-3" style="max-height: 400px; overflow-y: auto;">
+                        <p class="text-muted">Loading permissions...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveRole()">
+                    <i data-feather="save" class="me-1"></i> <span id="saveButtonText">Create Role</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="trash-2" class="me-2 text-danger"></i>
+                    Delete Role
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the role <strong id="deleteRoleName"></strong>?</p>
+                <div class="alert alert-warning">
+                    <i data-feather="alert-triangle" class="me-2"></i>
+                    Users assigned to this role will be reassigned to the default system role for its base type.
+                </div>
+                <input type="hidden" id="deleteRoleId">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="confirmDelete()">
+                    <i data-feather="trash-2" class="me-1"></i> Delete Role
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let roleModal, deleteModal;
+    let roles = [];
+    let permissionGroups = [];
+    let isSystemRole = false;
+
+    function getCSRFToken() {
+        const match = document.cookie.match(/csrf_token=([^;]+)/);
+        return match ? match[1] : '';
+    }
+
+    async function csrfFetch(url, options = {}) {
+        return fetch(url, {
+            ...options,
+            headers: {
+                ...options.headers,
+                'X-CSRF-Token': getCSRFToken()
+            }
+        });
+    }
+
+    // ===== Load Data =====
+
+    async function loadRoles() {
+        try {
+            const response = await csrfFetch('/api/admin/roles');
+            if (!response.ok) throw new Error('Failed to load roles');
+            roles = await response.json();
+            renderRoles();
+        } catch (error) {
+            console.error('Failed to load roles:', error);
+            document.getElementById('rolesTableBody').innerHTML = `
+                <tr><td colspan="6" class="text-center text-danger py-5">Failed to load roles</td></tr>
+            `;
+        }
+    }
+
+    async function loadPermissions() {
+        try {
+            const response = await csrfFetch('/api/admin/roles/permissions');
+            if (!response.ok) throw new Error('Failed to load permissions');
+            permissionGroups = await response.json();
+        } catch (error) {
+            console.error('Failed to load permissions:', error);
+        }
+    }
+
+    // ===== Render =====
+
+    function renderRoles() {
+        const tbody = document.getElementById('rolesTableBody');
+
+        if (roles.length === 0) {
+            tbody.innerHTML = `
+                <tr><td colspan="6" class="text-center text-muted py-5">
+                    <i data-feather="inbox"></i><p>No roles found</p>
+                </td></tr>
+            `;
+            feather.replace();
+            return;
+        }
+
+        const baseTypeBadge = (type) => {
+            const colors = { admin: 'danger', sponsor: 'purple', invitee: 'primary' };
+            const color = colors[type] || 'secondary';
+            return `<span class="badge bg-${color}">${type}</span>`;
+        };
+
+        tbody.innerHTML = roles.map(role => `
+            <tr>
+                <td>
+                    <strong>${escapeHtml(role.name)}</strong>
+                    ${role.description ? `<br><small class="text-muted">${escapeHtml(role.description)}</small>` : ''}
+                </td>
+                <td>${baseTypeBadge(role.base_type)}</td>
+                <td><span class="badge bg-secondary">${role.permissions.length}</span></td>
+                <td>${role.user_count}</td>
+                <td>${role.is_system ? '<i data-feather="lock" class="text-muted" style="width:16px;height:16px;"></i>' : ''}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary me-1" onclick="editRole(${role.id})" title="Edit">
+                        <i data-feather="edit-2" style="width:14px;height:14px;"></i>
+                    </button>
+                    ${!role.is_system ? `
+                        <button class="btn btn-sm btn-outline-danger" onclick="showDeleteModal(${role.id}, '${escapeHtml(role.name)}')" title="Delete">
+                            <i data-feather="trash-2" style="width:14px;height:14px;"></i>
+                        </button>
+                    ` : ''}
+                </td>
+            </tr>
+        `).join('');
+
+        feather.replace();
+    }
+
+    function renderPermissionsGrid(selectedPermissions = [], disabled = false) {
+        const grid = document.getElementById('permissionsGrid');
+
+        if (permissionGroups.length === 0) {
+            grid.innerHTML = '<p class="text-muted">No permissions loaded</p>';
+            return;
+        }
+
+        grid.innerHTML = permissionGroups.map(group => `
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <strong class="small text-uppercase text-muted">${escapeHtml(group.category)}</strong>
+                    <button type="button" class="btn btn-link btn-sm p-0 text-muted"
+                        onclick="toggleCategory('${escapeAttr(group.category)}')"
+                        ${disabled ? 'disabled' : ''}>
+                        toggle
+                    </button>
+                </div>
+                <div class="row row-cols-2 row-cols-md-3 g-1">
+                    ${group.permissions.map(perm => `
+                        <div class="col">
+                            <div class="form-check">
+                                <input class="form-check-input perm-checkbox" type="checkbox"
+                                    id="perm-${perm}" value="${perm}"
+                                    data-category="${escapeAttr(group.category)}"
+                                    ${selectedPermissions.includes(perm) ? 'checked' : ''}
+                                    ${disabled ? 'disabled' : ''}>
+                                <label class="form-check-label small" for="perm-${perm}">
+                                    ${formatPermission(perm)}
+                                </label>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function formatPermission(perm) {
+        // "events.view" → "View"
+        const parts = perm.split('.');
+        const action = parts[parts.length - 1];
+        return action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+
+    // ===== Permission Toggles =====
+
+    function selectAllPermissions() {
+        if (isSystemRole) return;
+        document.querySelectorAll('.perm-checkbox:not(:disabled)').forEach(cb => cb.checked = true);
+    }
+
+    function deselectAllPermissions() {
+        if (isSystemRole) return;
+        document.querySelectorAll('.perm-checkbox:not(:disabled)').forEach(cb => cb.checked = false);
+    }
+
+    function toggleCategory(category) {
+        const checkboxes = document.querySelectorAll(`.perm-checkbox[data-category="${category}"]:not(:disabled)`);
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
+    }
+
+    function getSelectedPermissions() {
+        return Array.from(document.querySelectorAll('.perm-checkbox:checked')).map(cb => cb.value);
+    }
+
+    // ===== Modal Actions =====
+
+    function showCreateModal() {
+        isSystemRole = false;
+        document.getElementById('roleModalTitle').textContent = 'Create Role';
+        document.getElementById('saveButtonText').textContent = 'Create Role';
+        document.getElementById('roleId').value = '';
+        document.getElementById('roleName').value = '';
+        document.getElementById('roleBaseType').value = 'invitee';
+        document.getElementById('roleBaseType').disabled = false;
+        document.getElementById('roleDescription').value = '';
+        document.getElementById('systemRoleWarning').classList.add('d-none');
+        renderPermissionsGrid([], false);
+        feather.replace();
+        roleModal.show();
+    }
+
+    async function editRole(id) {
+        try {
+            const response = await csrfFetch(`/api/admin/roles/${id}`);
+            if (!response.ok) throw new Error('Failed to load role');
+            const role = await response.json();
+
+            isSystemRole = role.is_system;
+            document.getElementById('roleModalTitle').textContent = `Edit Role: ${role.name}`;
+            document.getElementById('saveButtonText').textContent = 'Save Changes';
+            document.getElementById('roleId').value = role.id;
+            document.getElementById('roleName').value = role.name;
+            document.getElementById('roleBaseType').value = role.base_type;
+            document.getElementById('roleBaseType').disabled = true; // Can't change base_type
+            document.getElementById('roleDescription').value = role.description || '';
+
+            if (role.is_system) {
+                document.getElementById('systemRoleWarning').classList.remove('d-none');
+            } else {
+                document.getElementById('systemRoleWarning').classList.add('d-none');
+            }
+
+            renderPermissionsGrid(role.permissions, role.is_system);
+            feather.replace();
+            roleModal.show();
+        } catch (error) {
+            console.error('Failed to load role:', error);
+            alert('Failed to load role details');
+        }
+    }
+
+    async function saveRole() {
+        const id = document.getElementById('roleId').value;
+        const name = document.getElementById('roleName').value.trim();
+        const baseType = document.getElementById('roleBaseType').value;
+        const description = document.getElementById('roleDescription').value.trim();
+
+        if (!name) {
+            alert('Name is required');
+            return;
+        }
+
+        const data = { name, description: description || null };
+
+        if (id) {
+            // Update — only send permissions if not a system role
+            if (!isSystemRole) {
+                data.permissions = getSelectedPermissions();
+            }
+
+            try {
+                const response = await csrfFetch(`/api/admin/roles/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert(error.detail || 'Failed to update role');
+                    return;
+                }
+
+                roleModal.hide();
+                await loadRoles();
+            } catch (error) {
+                console.error('Failed to update role:', error);
+                alert('Failed to update role');
+            }
+        } else {
+            // Create
+            data.base_type = baseType;
+            data.permissions = getSelectedPermissions();
+
+            try {
+                const response = await csrfFetch('/api/admin/roles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert(error.detail || 'Failed to create role');
+                    return;
+                }
+
+                roleModal.hide();
+                await loadRoles();
+            } catch (error) {
+                console.error('Failed to create role:', error);
+                alert('Failed to create role');
+            }
+        }
+    }
+
+    function showDeleteModal(id, name) {
+        document.getElementById('deleteRoleId').value = id;
+        document.getElementById('deleteRoleName').textContent = name;
+        feather.replace();
+        deleteModal.show();
+    }
+
+    async function confirmDelete() {
+        const id = document.getElementById('deleteRoleId').value;
+
+        try {
+            const response = await csrfFetch(`/api/admin/roles/${id}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                alert(error.detail || 'Failed to delete role');
+                return;
+            }
+
+            const result = await response.json();
+            deleteModal.hide();
+            await loadRoles();
+
+            if (result.reassigned_users > 0) {
+                alert(`Role deleted. ${result.reassigned_users} user(s) were reassigned to the default role.`);
+            }
+        } catch (error) {
+            console.error('Failed to delete role:', error);
+            alert('Failed to delete role');
+        }
+    }
+
+    // ===== Helpers =====
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function escapeAttr(str) {
+        return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // ===== Init =====
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        roleModal = new bootstrap.Modal(document.getElementById('roleModal'));
+        deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+
+        await Promise.all([loadRoles(), loadPermissions()]);
+        feather.replace();
+    });
+</script>
+
+<style>
+    .badge.bg-purple {
+        background-color: #6f42c1 !important;
+    }
+</style>
+{% endblock %}
