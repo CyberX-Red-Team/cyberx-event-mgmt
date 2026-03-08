@@ -252,12 +252,15 @@ async def create_participant(
         is_admin=data.is_admin
     )
 
-    # Set role_id if a specific role was selected
+    # Set role_id (always — either from explicit selection or default system role)
     if target_role:
         # Re-fetch since create_participant commits internally, detaching the instance
         participant = await service.get_participant(participant.id)
         participant.role_id = target_role.id
         await db.commit()
+
+    # Re-fetch after commit to get fresh attached instance
+    participant = await service.get_participant(participant.id)
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)

@@ -225,13 +225,12 @@ async def create_my_invitee(
         invitee.role_id = target_role.id
         logger.info(f"Setting role_id={target_role.id} on invitee {invitee.id}")
         await db.commit()
-        await db.refresh(invitee)
-        logger.info(f"After commit: invitee.role_id={invitee.role_id}")
     else:
         logger.warning(f"No target_role found — invitee {invitee.id} will have role_id=NULL")
 
-    # Reload with relationships
+    # Reload with relationships (fresh fetch after commit)
     invitee = await service.get_participant(invitee.id)
+    logger.info(f"Final invitee {invitee.id} role_id={invitee.role_id}")
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
