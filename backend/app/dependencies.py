@@ -208,10 +208,7 @@ def require_role(*roles: UserRole):
     """
     Factory function to create a dependency that requires specific roles.
 
-    Usage:
-        @router.get("/admin-only")
-        async def admin_endpoint(user: User = Depends(require_role(UserRole.ADMIN))):
-            ...
+    Used by views.py for base_type-level checks (sidebar, redirects).
 
     Args:
         *roles: One or more UserRole values that are allowed
@@ -232,22 +229,41 @@ def require_role(*roles: UserRole):
     return role_checker
 
 
-class PermissionChecker:
+def require_permission(*perms: str):
     """
-    Permission checker for fine-grained access control.
+    Factory function to create a dependency that requires specific permissions.
+
+    Checks the user's effective permissions (role permissions + overrides).
 
     Usage:
-        permission_checker = PermissionChecker()
+        @router.get("/admin-only")
+        async def admin_endpoint(user: User = Depends(require_permission("events.view"))):
+            ...
 
-        @router.get("/participants/{participant_id}")
-        async def get_participant(
-            participant_id: int,
-            current_user: User = Depends(get_current_active_user),
-            db: AsyncSession = Depends(get_db)
-        ):
-            participant = await get_participant_by_id(db, participant_id)
-            permission_checker.can_view_participant(current_user, participant)
-            return participant
+    Args:
+        *perms: One or more permission strings that are ALL required
+
+    Returns:
+        Dependency function
+    """
+    async def permission_checker(
+        current_user: User = Depends(get_current_active_user)
+    ) -> User:
+        if not current_user.has_permission(*perms):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permissions: {', '.join(perms)}"
+            )
+        return current_user
+    return permission_checker
+
+
+class PermissionChecker:
+    """
+    Permission checker for fine-grained access control on specific resources.
+
+    Used for participant/VPN scoping where the check depends on the
+    relationship between the user and the target resource.
     """
 
     def can_view_participant(self, user: User, participant: User) -> None:
@@ -255,9 +271,13 @@ class PermissionChecker:
         # Users can always view themselves
         if user.id == participant.id:
             return
-        # Admins and sponsors can view anyone
-        if user.is_sponsor_role:  # This includes admins (is_sponsor_role includes admin role)
+        # Users with participants.view_all can view anyone
+        if user.has_permission("participants.view_all"):
             return
+        # Users with participants.view can view their sponsored participants
+        if user.has_permission("participants.view"):
+            if participant.sponsor_id == user.id:
+                return
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view this participant"
@@ -271,11 +291,16 @@ class PermissionChecker:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Use the profile endpoint to edit your own account"
             )
-        # Admins can edit anyone
-        if user.is_admin_role:
+        if not user.has_permission("participants.edit"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to edit this participant"
+            )
+        # Users with participants.view_all can edit anyone
+        if user.has_permission("participants.view_all"):
             return
-        # Sponsors can edit their sponsored participants
-        if user.is_sponsor_role and participant.sponsor_id == user.id:
+        # Sponsors can only edit their sponsored participants
+        if participant.sponsor_id == user.id:
             return
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -284,11 +309,10 @@ class PermissionChecker:
 
     def can_delete_participant(self, user: User, participant: User) -> None:
         """Check if user can delete a participant."""
-        # Only admins can delete participants
-        if not user.is_admin_role:
+        if not user.has_permission("participants.remove"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only administrators can delete participants"
+                detail="Not authorized to delete participants"
             )
         # Cannot delete yourself
         if user.id == participant.id:
@@ -299,27 +323,32 @@ class PermissionChecker:
 
     def can_send_bulk_email(self, user: User) -> None:
         """Check if user can send bulk emails to all participants."""
-        if not user.can_send_bulk_emails:
+        if not user.has_permission("email.send_bulk"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only administrators can send bulk emails to all participants"
+                detail="Not authorized to send bulk emails"
             )
 
     def can_manage_vpn(self, user: User) -> None:
         """Check if user can manage VPN credentials."""
-        if not user.is_admin_role:
+        if not user.has_permission("vpn.manage_pool"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only administrators can manage VPN credentials"
+                detail="Not authorized to manage VPN credentials"
             )
 
     def can_assign_vpn_to_participant(self, user: User, participant: User) -> None:
         """Check if user can assign VPN to a specific participant."""
-        # Admins can assign to anyone
-        if user.is_admin_role:
+        if not user.has_permission("vpn.manage_pool"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to assign VPN credentials"
+            )
+        # Users with participants.view_all can assign to anyone
+        if user.has_permission("participants.view_all"):
             return
         # Sponsors can assign to their sponsored participants
-        if user.is_sponsor_role and participant.sponsor_id == user.id:
+        if participant.sponsor_id == user.id:
             return
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

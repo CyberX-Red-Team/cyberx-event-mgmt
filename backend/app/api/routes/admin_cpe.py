@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.dependencies import get_db, get_current_admin_user
+from app.dependencies import get_db, require_permission
 from app.models.user import User
 from app.models.event import Event
 from app.models.cpe_certificate import CPECertificate
@@ -48,7 +48,7 @@ class RevokeCertificateRequest(BaseModel):
 async def check_bulk_eligibility(
     event_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """Check CPE eligibility for all confirmed participants of an event."""
     event = await db.get(Event, event_id)
@@ -81,7 +81,7 @@ async def check_user_eligibility(
     event_id: int,
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """Check CPE eligibility for a single participant."""
     event = await db.get(Event, event_id)
@@ -112,7 +112,7 @@ async def issue_certificate(
     request_body: IssueCertificateRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """Issue a CPE certificate to a single user.
 
@@ -167,7 +167,7 @@ async def bulk_issue_certificates(
     request_body: BulkIssueRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """Issue CPE certificates in bulk for multiple users.
 
@@ -222,7 +222,7 @@ async def list_certificates(
     event_id: int,
     status_filter: Optional[str] = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """List all certificates for an event."""
     event = await db.get(Event, event_id)
@@ -268,7 +268,7 @@ async def revoke_certificate(
     request_body: RevokeCertificateRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """Revoke an issued certificate."""
     service = CPECertificateService(db)
@@ -305,7 +305,7 @@ async def reinstate_certificate(
     certificate_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """Reinstate a revoked certificate (undo revocation)."""
     service = CPECertificateService(db)
@@ -345,7 +345,7 @@ async def reinstate_certificate(
 async def regenerate_certificate_pdf(
     certificate_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """Regenerate the PDF for an existing certificate.
 
@@ -387,7 +387,7 @@ async def regenerate_certificate_pdf(
 async def bulk_regenerate_pdfs(
     request_body: BulkRegenerateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """
     Bulk regenerate PDFs for certificates.

@@ -6,9 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
     get_db,
-    get_current_admin_user,
-    get_current_sponsor_user,
-    get_current_active_user
+    get_current_active_user,
+    require_permission,
 )
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 from app.api.utils.pagination import calculate_pagination
@@ -41,7 +40,7 @@ router = APIRouter(prefix="/api/events", tags=["Events"])
 
 @router.get("", response_model=EventListResponse)
 async def list_events(
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """List all events."""
@@ -156,7 +155,7 @@ async def get_active_event(
 @router.get("/{event_id}", response_model=EventResponse)
 async def get_event(
     event_id: int,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """Get a specific event by ID."""
@@ -185,7 +184,7 @@ async def get_event(
 @router.post("", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
 async def create_event(
     data: EventCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.create")),
     service: EventService = Depends(get_event_service)
 ):
     """Create a new event. Admin only."""
@@ -232,7 +231,7 @@ async def create_event(
 async def update_event(
     event_id: int,
     data: EventUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.edit")),
     service: EventService = Depends(get_event_service)
 ):
     """Update an event. Admin only."""
@@ -314,7 +313,7 @@ async def update_event(
 @router.delete("/{event_id}")
 async def delete_event(
     event_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.delete")),
     service: EventService = Depends(get_event_service)
 ):
     """Delete an event. Admin only."""
@@ -333,7 +332,7 @@ async def list_event_participants(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None, description="Filter by status: invited, confirmed, declined, no_response"),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """List participants for an event."""
@@ -381,7 +380,7 @@ async def list_event_participants(
 async def bulk_invite_to_event(
     event_id: int,
     data: BulkInviteRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.edit")),
     service: EventService = Depends(get_event_service)
 ):
     """Bulk invite users to an event. Admin only."""
@@ -504,7 +503,7 @@ async def decline_my_participation(
 
 @router.get("/reports/chronic-non-participants")
 async def get_chronic_non_participants(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """Get list of chronic non-participants (invited 3+ years, never participated)."""
@@ -528,7 +527,7 @@ async def get_chronic_non_participants(
 
 @router.get("/reports/recommended-removals")
 async def get_recommended_removals(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """Get list of invitees recommended for removal based on participation history."""
@@ -556,7 +555,7 @@ async def get_recommended_removals(
 
 @router.post("/generate-ssh-keys", response_model=SSHKeyPairResponse)
 async def generate_event_ssh_keys(
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.edit"))
 ):
     """
     Generate a new SSH key pair for event instances (admin only).

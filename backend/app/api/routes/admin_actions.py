@@ -11,7 +11,7 @@ from app.models.user import User
 from app.models.participant_action import ParticipantAction, ActionType, ActionStatus
 from app.models.event import Event
 from app.models.email_template import EmailTemplate
-from app.dependencies import get_current_admin_user
+from app.dependencies import require_permission
 from app.services.workflow_service import WorkflowService
 from app.services.email_queue_service import EmailQueueService
 from app.models.email_workflow import WorkflowTriggerEvent
@@ -55,7 +55,7 @@ class ActionResponse(BaseModel):
 async def create_bulk_action(
     data: BulkActionCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("actions.manage"))
 ):
     """
     Create action for selected participants or all confirmed participants.
@@ -193,7 +193,7 @@ class BulkActionAssign(BaseModel):
 async def assign_action_to_participants(
     data: BulkActionAssign,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("actions.manage"))
 ):
     """
     Assign an existing action (by batch_id) to additional participants.
@@ -344,7 +344,7 @@ class BulkActionRevoke(BaseModel):
 async def revoke_actions(
     data: BulkActionRevoke,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("actions.manage"))
 ):
     """
     Revoke all pending actions in a batch.
@@ -405,7 +405,7 @@ async def list_actions(
     action_type: Optional[str] = None,
     status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("actions.manage"))
 ):
     """List all participant actions with filters."""
     from sqlalchemy.orm import selectinload
@@ -451,7 +451,7 @@ async def get_action_statistics(
     event_id: Optional[int] = None,
     action_type: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("actions.manage"))
 ):
     """Get summary statistics for actions grouped by batch."""
     from sqlalchemy import func, case

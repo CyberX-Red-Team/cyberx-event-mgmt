@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.dependencies import get_db, get_current_admin_user
+from app.dependencies import get_db, require_permission
 from app.models.user import User
 from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
 from app.services.keycloak_sync_service import KeycloakSyncService
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/admin/keycloak", tags=["Admin - Keycloak"])
 @router.get("/sync-status")
 async def get_sync_status(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("keycloak.manage"))
 ):
     """Get Keycloak sync queue statistics."""
     service = KeycloakSyncService(db)
@@ -38,7 +38,7 @@ async def get_sync_status(
 @router.post("/sync-now")
 async def trigger_sync_now(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("keycloak.manage"))
 ):
     """Manually trigger Keycloak sync processing."""
     settings = get_settings()
@@ -64,7 +64,7 @@ async def trigger_sync_now(
 async def retry_sync_entry(
     queue_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("keycloak.manage"))
 ):
     """Reset retry count for a failed sync entry to allow reprocessing."""
     result = await db.execute(
@@ -88,7 +88,7 @@ async def retry_sync_entry(
 @router.get("/health")
 async def check_keycloak_health(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("keycloak.manage"))
 ):
     """Check if Keycloak is reachable."""
     service = KeycloakSyncService(db)
@@ -108,7 +108,7 @@ async def check_keycloak_health(
 async def sync_single_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("keycloak.manage"))
 ):
     """Queue and immediately sync a single confirmed user to Keycloak."""
     settings = get_settings()
@@ -156,7 +156,7 @@ async def sync_single_user(
 @router.post("/setup-webhook")
 async def setup_keycloak_webhook(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("keycloak.manage"))
 ):
     """Check if a Keycloak webhook exists for this app; create one if not.
 
@@ -199,7 +199,7 @@ class BulkSyncRequest(BaseModel):
 async def sync_confirmed_users(
     request: BulkSyncRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("keycloak.manage"))
 ):
     """
     Queue and sync confirmed users to Keycloak.

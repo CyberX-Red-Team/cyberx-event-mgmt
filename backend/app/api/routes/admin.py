@@ -10,9 +10,8 @@ from app.api.exceptions import not_found, forbidden, bad_request, conflict, unau
 
 from app.dependencies import (
     get_db,
-    get_current_admin_user,
-    get_current_sponsor_user,
     get_current_active_user,
+    require_permission,
     permissions
 )
 from app.api.utils.request import extract_client_metadata
@@ -74,7 +73,7 @@ async def list_participants(
     sponsor_id: Optional[int] = Query(None, description="Filter by sponsor ID"),
     sort_by: str = Query("created_at", description="Sort field"),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -118,7 +117,7 @@ async def list_participants(
 
 @router.get("/participants/stats", response_model=ParticipantStats)
 async def get_participant_stats(
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -132,7 +131,7 @@ async def get_participant_stats(
 
 @router.get("/dashboard", response_model=DashboardResponse)
 async def get_dashboard(
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     participant_service: ParticipantService = Depends(get_participant_service),
     vpn_service: VPNService = Depends(get_vpn_service)
 ):
@@ -157,7 +156,7 @@ async def get_dashboard(
 @router.get("/participants/{participant_id}", response_model=ParticipantResponse)
 async def get_participant(
     participant_id: int,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -176,7 +175,7 @@ async def get_participant(
 async def create_participant(
     data: ParticipantCreate,
     request: Request,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.create")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -374,7 +373,7 @@ async def update_participant(
     participant_id: int,
     data: ParticipantUpdate,
     request: Request,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.edit")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -448,7 +447,7 @@ async def update_participant(
 async def delete_participant(
     participant_id: int,
     request: Request,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.remove")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -495,7 +494,7 @@ async def delete_participant(
 async def bulk_action(
     data: BulkActionRequest,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("participants.edit")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -552,7 +551,7 @@ async def bulk_action(
 async def reset_participant_password(
     participant_id: int,
     request: Request,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("admin.manage_users")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -625,7 +624,7 @@ async def reset_participant_password(
 async def resend_participant_invitation(
     participant_id: int,
     request: Request,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.invite")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -719,7 +718,7 @@ async def reset_participant_workflow(
     reset_event_participation: bool = True,
     reset_credentials: bool = False,
     request: Request = None,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("admin.manage_users")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -788,7 +787,7 @@ async def reset_participant_workflow(
 
 @router.get("/sponsors", response_model=List[ParticipantResponse])
 async def list_sponsors(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("participants.view_all")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -810,7 +809,7 @@ async def update_participant_role(
     participant_id: int,
     data: RoleUpdateRequest,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("participants.edit")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -851,7 +850,7 @@ async def update_participant_role(
 async def assign_participant_sponsor(
     participant_id: int,
     data: SponsorAssignRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("participants.edit")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -881,7 +880,7 @@ async def assign_participant_sponsor(
 async def get_my_sponsored_participants(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(get_current_active_user),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -918,7 +917,7 @@ async def list_audit_logs(
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
     start_date: Optional[datetime] = Query(None, description="Start date filter"),
     end_date: Optional[datetime] = Query(None, description="End date filter"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("admin.view_audit_log")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1006,7 +1005,7 @@ async def list_audit_logs(
 
 @router.get("/audit-logs/stats", response_model=AuditLogStats)
 async def get_audit_log_stats(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("admin.view_audit_log")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1103,7 +1102,7 @@ async def list_email_queue(
     exclude_status: Optional[str] = Query(None, description="Exclude specific status"),
     since: Optional[str] = Query(None, description="Filter by created/updated since (ISO datetime)"),
     template_name: Optional[str] = Query(None, description="Filter by template"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1187,7 +1186,7 @@ async def list_email_queue(
 
 @router.get("/email-queue/stats")
 async def get_email_queue_stats(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1204,7 +1203,7 @@ async def get_email_queue_stats(
 @router.post("/email-queue/process-batch")
 async def process_email_batch_manually(
     batch_size: int = Query(50, ge=1, le=100, description="Batch size"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1231,7 +1230,7 @@ async def process_email_batch_manually(
 @router.delete("/email-queue/{email_id}")
 async def cancel_queued_email(
     email_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1251,7 +1250,7 @@ async def cancel_queued_email(
 @router.post("/email-queue/bulk-cancel")
 async def bulk_cancel_queued_emails(
     data: dict,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1284,7 +1283,7 @@ async def bulk_cancel_queued_emails(
 async def list_email_batch_logs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1337,7 +1336,7 @@ async def list_email_batch_logs(
 
 @router.get("/scheduler/jobs")
 async def list_scheduler_jobs(
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("scheduler.view"))
 ):
     """
     List all scheduled jobs with their next run times.
@@ -1356,7 +1355,7 @@ async def list_scheduler_jobs(
 
 @router.get("/scheduler/status")
 async def get_scheduler_status(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("scheduler.view")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1409,7 +1408,7 @@ async def get_scheduler_status(
 async def trigger_reminders(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("participants.invite")),
     stage: Optional[int] = Query(None, description="Reminder stage (1, 2, or 3). Omit for all stages."),
     user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to target. Omit for all eligible."),
     force: bool = Query(False, description="Re-send even if reminder was already sent for this stage."),
@@ -1555,7 +1554,7 @@ async def trigger_reminders(
 @router.get("/event/current")
 async def get_current_event(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.view"))
 ):
     """Get current event configuration."""
     from app.services.event_service import EventService
@@ -1572,7 +1571,7 @@ async def get_current_event(
 @router.post("/event/toggle-active")
 async def toggle_event_active(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.edit"))
 ):
     """Toggle event active status - ADMIN ONLY."""
     from app.services.event_service import EventService
@@ -1628,7 +1627,7 @@ def _build_event_dict(event):
 @router.get("/events")
 async def list_events(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.view")),
     include_archived: bool = Query(False, description="Include archived events")
 ):
     """List all events."""
@@ -1647,7 +1646,7 @@ async def create_event(
     data: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.create"))
 ):
     """Create a new event."""
     from app.services.event_service import EventService
@@ -1712,7 +1711,7 @@ async def create_event(
 async def get_event(
     event_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.view"))
 ):
     """Get event details."""
     from app.services.event_service import EventService
@@ -1732,7 +1731,7 @@ async def update_event(
     data: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.edit"))
 ):
     """Update event details."""
     from app.services.event_service import EventService
@@ -1898,7 +1897,7 @@ async def activate_event(
     event_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.edit"))
 ):
     """Set an event as the active event (deactivates all others)."""
     from app.services.event_service import EventService
@@ -1937,7 +1936,7 @@ async def archive_event(
     event_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.edit"))
 ):
     """Archive an event."""
     from app.services.event_service import EventService
@@ -1979,7 +1978,7 @@ async def list_workflows(
     trigger_event: Optional[str] = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -2032,7 +2031,7 @@ async def list_workflows(
 
 @router.get("/email-workflows/trigger-events")
 async def get_trigger_events(
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("email.manage_workflows"))
 ):
     """Get available trigger events and their metadata."""
     from app.models.email_workflow import WorkflowTriggerEvent
@@ -2189,7 +2188,7 @@ async def get_trigger_events(
 @router.get("/email-workflows/{workflow_id}")
 async def get_workflow(
     workflow_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """Get a single workflow by ID."""
@@ -2210,7 +2209,7 @@ async def get_workflow(
 @router.post("/email-workflows")
 async def create_workflow(
     workflow_data: dict,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new email workflow."""
@@ -2270,7 +2269,7 @@ async def create_workflow(
 async def update_workflow(
     workflow_id: int,
     workflow_data: dict,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """Update an existing workflow."""
@@ -2345,7 +2344,7 @@ async def update_workflow(
 @router.delete("/email-workflows/{workflow_id}")
 async def delete_workflow(
     workflow_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """Delete a workflow (system workflows cannot be deleted)."""
@@ -2388,7 +2387,7 @@ async def delete_workflow(
 async def regenerate_discord_invite(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("participants.edit"))
 ):
     """Regenerate a Discord invite for a participant's current event."""
     from app.models.event import EventParticipation

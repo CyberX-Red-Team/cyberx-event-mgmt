@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_current_admin_user
+from app.dependencies import get_db, require_permission
 from app.api.exceptions import not_found, bad_request, server_error
 from app.models.user import User
 from app.services.instance_template_service import InstanceTemplateService
@@ -31,7 +31,7 @@ async def list_templates(
     page_size: int = Query(50, ge=1, le=100),
     event_id: Optional[int] = Query(None),
     is_active: Optional[bool] = Query(None),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: InstanceTemplateService = Depends(get_template_service),
 ):
     """List instance templates with filtering and pagination."""
@@ -73,7 +73,7 @@ async def list_templates(
 @router.post("", response_model=InstanceTemplateResponse, status_code=201)
 async def create_template(
     data: InstanceTemplateCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: InstanceTemplateService = Depends(get_template_service),
 ):
     """Create a new instance template."""
@@ -104,7 +104,7 @@ async def create_template(
 @router.get("/{template_id}", response_model=InstanceTemplateResponse)
 async def get_template(
     template_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: InstanceTemplateService = Depends(get_template_service),
 ):
     """Get a specific template."""
@@ -119,7 +119,7 @@ async def get_template(
 async def update_template(
     template_id: int,
     data: InstanceTemplateUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: InstanceTemplateService = Depends(get_template_service),
 ):
     """Update a template."""
@@ -139,7 +139,7 @@ async def update_template(
 @router.delete("/{template_id}")
 async def delete_template(
     template_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: InstanceTemplateService = Depends(get_template_service),
 ):
     """Delete a template."""

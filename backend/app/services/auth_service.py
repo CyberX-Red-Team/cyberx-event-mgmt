@@ -146,7 +146,7 @@ class AuthService:
         # Get user with sponsor relationship loaded
         result = await self.session.execute(
             select(User)
-            .options(selectinload(User.sponsor))
+            .options(selectinload(User.sponsor), selectinload(User.role_obj))
             .where(User.id == session.user_id)
         )
         user = result.scalar_one_or_none()

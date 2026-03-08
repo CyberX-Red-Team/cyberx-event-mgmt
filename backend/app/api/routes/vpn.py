@@ -8,9 +8,8 @@ from sqlalchemy import select, func
 
 from app.dependencies import (
     get_db,
-    get_current_admin_user,
     get_current_active_user,
-    get_current_sponsor_user,
+    require_permission,
     permissions
 )
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error, rate_limited
@@ -191,7 +190,7 @@ async def list_vpn_credentials(
     search: Optional[str] = Query(None, description="Search by IP or username"),
     sort_by: str = Query("id", description="Sort field"),
     sort_order: str = Query("asc", description="Sort order: asc or desc"),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -224,7 +223,7 @@ async def list_vpn_credentials(
 
 @router.get("/stats", response_model=VPNStats)
 async def get_vpn_stats(
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Get VPN statistics (admin/sponsor only)."""
@@ -235,7 +234,7 @@ async def get_vpn_stats(
 @router.post("/assign", response_model=VPNAssignResponse)
 async def assign_vpn(
     data: VPNAssignRequest,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     vpn_service: VPNService = Depends(get_vpn_service),
     participant_service: ParticipantService = Depends(get_participant_service)
 ):
@@ -266,7 +265,7 @@ async def assign_vpn(
 @router.post("/bulk-assign", response_model=VPNBulkAssignResponse)
 async def bulk_assign_vpn(
     data: VPNBulkAssignRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     vpn_service: VPNService = Depends(get_vpn_service),
     participant_service: ParticipantService = Depends(get_participant_service)
 ):
@@ -308,7 +307,7 @@ async def import_vpn_configs(
     file: UploadFile = File(..., description="ZIP file containing WireGuard .conf files"),
     endpoint: Optional[str] = Query(None, description="Optional VPN server endpoint override (ip:port)"),
     assignment_type: str = Query("USER_REQUESTABLE", description="Assignment type: USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """
@@ -351,7 +350,7 @@ async def import_vpn_configs(
 @router.get("/credentials/{vpn_id}", response_model=VPNCredentialResponse)
 async def get_vpn_credential(
     vpn_id: int,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -366,7 +365,7 @@ async def get_vpn_credential(
 @router.get("/participant/{participant_id}/credentials")
 async def get_participant_vpn_credentials(
     participant_id: int,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     vpn_service: VPNService = Depends(get_vpn_service),
     participant_service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
@@ -396,7 +395,7 @@ async def get_participant_vpn_credentials(
 async def download_participant_vpn_configs(
     participant_id: int,
     naming_pattern: str = Query("simnet_{ipv4_address}.conf", description="Filename pattern"),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     vpn_service: VPNService = Depends(get_vpn_service),
     participant_service: ParticipantService = Depends(get_participant_service)
 ):
@@ -743,7 +742,7 @@ async def get_available_vpn_count(
 @router.post("/bulk-delete", response_model=VPNBulkDeleteResponse)
 async def bulk_delete_vpn_credentials(
     request: VPNBulkDeleteRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """
@@ -772,7 +771,7 @@ async def bulk_delete_vpn_credentials(
 
 @router.post("/delete-all", response_model=VPNBulkDeleteResponse)
 async def delete_all_vpn_credentials(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """
@@ -815,7 +814,7 @@ async def get_vpn_naming_pattern(
 @router.post("/naming-pattern")
 async def set_vpn_naming_pattern(
     pattern: str = Query(..., description="Naming pattern for VPN config files"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -848,7 +847,7 @@ async def set_vpn_naming_pattern(
 async def update_vpn_assignment_type(
     vpn_id: int,
     data: VPNUpdateAssignmentTypeRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """
@@ -879,7 +878,7 @@ async def update_vpn_assignment_type(
 @router.post("/bulk-update-assignment-type", response_model=VPNBulkUpdateAssignmentTypeResponse)
 async def bulk_update_vpn_assignment_type(
     data: VPNBulkUpdateAssignmentTypeRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """
@@ -904,7 +903,7 @@ async def bulk_update_vpn_assignment_type(
 
 @router.get("/stats/instance-pool", response_model=VPNInstancePoolStats)
 async def get_instance_pool_stats(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """

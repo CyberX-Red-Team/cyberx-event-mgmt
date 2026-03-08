@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.dependencies import get_db, get_current_admin_user
+from app.dependencies import get_db, require_permission
 from app.api.exceptions import not_found, bad_request
 from app.models.user import User
 from app.models.app_setting import AppSetting
@@ -42,7 +42,7 @@ class ProviderLimitsResponse(BaseModel):
 
 @router.get("/provider-limits", response_model=ProviderLimitsResponse)
 async def get_provider_limits(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("admin.manage_settings")),
     db: AsyncSession = Depends(get_db),
 ):
     """Get provider instance limits.
@@ -73,7 +73,7 @@ async def get_provider_limits(
 @router.patch("/provider-limits", response_model=ProviderLimitsResponse)
 async def update_provider_limits(
     data: ProviderLimitUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("admin.manage_settings")),
     db: AsyncSession = Depends(get_db),
 ):
     """Update provider instance limits.
@@ -120,7 +120,7 @@ async def update_provider_limits(
 
 @router.get("/all", response_model=List[AppSettingResponse])
 async def get_all_settings(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("admin.manage_settings")),
     db: AsyncSession = Depends(get_db),
 ):
     """Get all app settings."""
@@ -143,7 +143,7 @@ async def get_all_settings(
 async def update_setting(
     key: str,
     data: AppSettingUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("admin.manage_settings")),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a specific app setting."""

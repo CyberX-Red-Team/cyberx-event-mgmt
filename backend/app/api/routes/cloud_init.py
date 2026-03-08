@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_current_admin_user
+from app.dependencies import get_db, require_permission
 from app.api.exceptions import not_found, bad_request, conflict
 from app.api.utils.dependencies import get_cloud_init_service
 from app.models.user import User
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/cloud-init", tags=["Cloud-Init Templates"])
 async def list_templates(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_images")),
     service: CloudInitService = Depends(get_cloud_init_service),
 ):
     """List cloud-init templates (paginated)."""
@@ -47,7 +47,7 @@ async def list_templates(
 @router.post("/templates", response_model=CloudInitTemplateResponse, status_code=201)
 async def create_template(
     data: CloudInitTemplateCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_images")),
     service: CloudInitService = Depends(get_cloud_init_service),
 ):
     """Create a new cloud-init template."""
@@ -69,7 +69,7 @@ async def create_template(
 @router.get("/templates/{template_id}", response_model=CloudInitTemplateResponse)
 async def get_template(
     template_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_images")),
     service: CloudInitService = Depends(get_cloud_init_service),
 ):
     """Get a specific cloud-init template."""
@@ -83,7 +83,7 @@ async def get_template(
 async def update_template(
     template_id: int,
     data: CloudInitTemplateUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_images")),
     service: CloudInitService = Depends(get_cloud_init_service),
 ):
     """Update a cloud-init template."""
@@ -101,7 +101,7 @@ async def update_template(
 @router.delete("/templates/{template_id}")
 async def delete_template(
     template_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_images")),
     service: CloudInitService = Depends(get_cloud_init_service),
 ):
     """Delete a cloud-init template."""
@@ -115,7 +115,7 @@ async def delete_template(
 async def preview_template(
     template_id: int,
     data: CloudInitPreviewRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_images")),
     service: CloudInitService = Depends(get_cloud_init_service),
 ):
     """Render a template with sample variables for preview."""

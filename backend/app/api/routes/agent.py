@@ -12,7 +12,7 @@ from app.dependencies import (
     get_db,
     get_current_agent_instance,
     get_current_active_user,
-    get_current_admin_user,
+    require_permission,
 )
 from app.api.exceptions import (
     not_found, bad_request, forbidden, rate_limited,
@@ -277,7 +277,7 @@ admin_router = APIRouter(
 async def admin_create_task(
     instance_id: int,
     body: CreateTaskRequest,
-    user: User = Depends(get_current_admin_user),
+    user: User = Depends(require_permission("instances.manage_agent")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a task for any instance (admin)."""
@@ -310,7 +310,7 @@ async def admin_create_task(
 )
 async def admin_get_instance_tasks(
     instance_id: int,
-    user: User = Depends(get_current_admin_user),
+    user: User = Depends(require_permission("instances.manage_agent")),
     db: AsyncSession = Depends(get_db),
 ):
     """List task history for any instance (admin)."""

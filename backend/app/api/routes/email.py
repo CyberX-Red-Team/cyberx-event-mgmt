@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.dependencies import get_db, get_current_admin_user
+from app.dependencies import get_db, require_permission
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 from app.api.utils.pagination import calculate_pagination
 from app.api.utils.validation import validate_bulk_email_permissions
@@ -68,7 +68,7 @@ def get_audit_service(db: AsyncSession = Depends(get_db)) -> AuditService:
 async def send_email(
     data: SendEmailRequest,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.send")),
     email_service: EmailService = Depends(get_email_service),
     participant_service: ParticipantService = Depends(get_participant_service),
     audit_service: AuditService = Depends(get_audit_service)
@@ -117,7 +117,7 @@ async def send_email(
 async def send_vpn_config_email(
     participant_id: int,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.send")),
     email_service: EmailService = Depends(get_email_service),
     participant_service: ParticipantService = Depends(get_participant_service),
     vpn_service: VPNService = Depends(get_vpn_service),
@@ -168,7 +168,7 @@ async def send_vpn_config_email(
 async def send_bulk_emails(
     data: BulkEmailRequest,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.send_bulk")),
     email_service: EmailService = Depends(get_email_service),
     participant_service: ParticipantService = Depends(get_participant_service),
     audit_service: AuditService = Depends(get_audit_service),
@@ -230,7 +230,7 @@ async def send_bulk_emails(
 async def send_custom_emails(
     data: SendCustomEmailRequest,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.send_bulk")),
     email_service: EmailService = Depends(get_email_service),
     participant_service: ParticipantService = Depends(get_participant_service),
     audit_service: AuditService = Depends(get_audit_service),
@@ -294,7 +294,7 @@ async def send_custom_emails(
 @router.post("/test", response_model=SendTestEmailResponse)
 async def send_test_email(
     data: SendTestEmailRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.send")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """
@@ -319,7 +319,7 @@ async def send_test_email(
 
 @router.get("/stats", response_model=EmailStatsResponse)
 async def get_email_stats(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.view")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Get email statistics."""
@@ -330,7 +330,7 @@ async def get_email_stats(
 @router.get("/participant/{participant_id}/status", response_model=ParticipantEmailStatus)
 async def get_participant_email_status(
     participant_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.view")),
     email_service: EmailService = Depends(get_email_service),
     participant_service: ParticipantService = Depends(get_participant_service)
 ):
@@ -370,7 +370,7 @@ async def get_participant_email_status(
 @router.get("/templates", response_model=List[EmailTemplateListItem])
 async def list_email_templates(
     active_only: bool = Query(True, description="Only return active templates"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """List all email templates."""
@@ -381,7 +381,7 @@ async def list_email_templates(
 @router.post("/templates", response_model=EmailTemplateResponse, status_code=status.HTTP_201_CREATED)
 async def create_email_template(
     data: EmailTemplateCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Create a new email template."""
@@ -408,7 +408,7 @@ async def create_email_template(
 @router.get("/templates/{template_id}", response_model=EmailTemplateResponse)
 async def get_email_template(
     template_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Get a single email template by ID."""
@@ -422,7 +422,7 @@ async def get_email_template(
 async def update_email_template(
     template_id: int,
     data: EmailTemplateUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Update an email template."""
@@ -447,7 +447,7 @@ async def update_email_template(
 @router.delete("/templates/{template_id}")
 async def delete_email_template(
     template_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Delete an email template (system templates cannot be deleted)."""
@@ -463,7 +463,7 @@ async def delete_email_template(
 async def preview_email_template(
     template_id: int,
     data: EmailPreviewRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Preview a template with sample data."""
@@ -484,7 +484,7 @@ async def preview_email_template(
 async def duplicate_email_template(
     template_id: int,
     new_name: str = Query(..., description="Name for the duplicated template"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Duplicate an existing template."""
@@ -507,7 +507,7 @@ async def duplicate_email_template(
 
 @router.get("/sendgrid/templates", response_model=SendGridTemplatesResponse)
 async def list_sendgrid_templates(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """
@@ -526,7 +526,7 @@ async def list_sendgrid_templates(
 @router.post("/sendgrid/import", response_model=ImportSendGridTemplateResponse)
 async def import_sendgrid_template(
     data: ImportSendGridTemplateRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """
@@ -548,7 +548,7 @@ async def import_sendgrid_template(
 
 @router.post("/sendgrid/sync", response_model=SyncSendGridTemplatesResponse)
 async def sync_sendgrid_templates(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_templates")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """
@@ -576,7 +576,7 @@ async def sync_sendgrid_templates(
 
 @router.get("/analytics", response_model=EmailAnalyticsResponse)
 async def get_email_analytics(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.view")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Get aggregated email analytics with delivery rates."""
@@ -587,7 +587,7 @@ async def get_email_analytics(
 @router.get("/analytics/daily", response_model=DailyStatsResponse)
 async def get_daily_email_stats(
     days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.view")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Get daily email statistics for charting."""
@@ -600,7 +600,7 @@ async def get_daily_email_stats(
 
 @router.get("/analytics/by-template", response_model=TemplateStatsResponse)
 async def get_template_stats(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.view")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Get email statistics grouped by template."""
@@ -622,7 +622,7 @@ async def get_email_history(
     days: Optional[int] = Query(30, ge=1, le=365, description="Number of days to look back"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.view")),
     email_service: EmailService = Depends(get_email_service)
 ):
     """Get paginated email history with filters."""

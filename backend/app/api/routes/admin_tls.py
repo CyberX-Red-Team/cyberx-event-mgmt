@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from app.database import get_db
 from app.models.user import User
 from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, TLSCertificateStatus
-from app.dependencies import get_current_admin_user
+from app.dependencies import require_permission
 from app.services.stepca_service import StepCAService
 from app.services.audit_service import AuditService
 from app.utils.encryption import encrypt_field, decrypt_field
@@ -81,7 +81,7 @@ async def create_ca_chain(
     signing_key: UploadFile = File(...),
     ca_chain_file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """Create a new CA chain with uploaded PEM files.
 
@@ -187,7 +187,7 @@ async def create_ca_chain(
 async def list_ca_chains(
     event_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """List all CA chains with certificate counts."""
     query = select(CAChain)
@@ -231,7 +231,7 @@ async def list_ca_chains(
 async def get_ca_chain(
     chain_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """Get CA chain details."""
     result = await db.execute(
@@ -270,7 +270,7 @@ async def get_ca_chain(
 async def delete_ca_chain(
     chain_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """Delete a CA chain. Must have no issued certificates."""
     result = await db.execute(
@@ -327,7 +327,7 @@ async def delete_ca_chain(
 async def initialize_ca_chain(
     chain_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """Initialize the step-ca Render service for this CA chain.
 
@@ -388,7 +388,7 @@ async def initialize_ca_chain(
 async def start_ca_chain(
     chain_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """Resume the step-ca Render service for this CA chain."""
     result = await db.execute(
@@ -423,7 +423,7 @@ async def start_ca_chain(
 async def stop_ca_chain(
     chain_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """Suspend the step-ca Render service for this CA chain."""
     result = await db.execute(
@@ -458,7 +458,7 @@ async def stop_ca_chain(
 async def get_ca_chain_status(
     chain_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """Get the current status of the step-ca service for this CA chain."""
     result = await db.execute(
@@ -493,7 +493,7 @@ async def list_certificates(
     ca_chain_id: Optional[int] = None,
     status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """List all issued TLS certificates with filters."""
     from sqlalchemy.orm import selectinload
@@ -553,7 +553,7 @@ class AdminCertificateRequest(BaseModel):
 async def admin_request_certificate(
     data: AdminCertificateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """Admin-only certificate request. Bypasses PowerDNS validation with a warning.
 
@@ -726,7 +726,7 @@ async def revoke_certificate(
     cert_id: int,
     data: RevokeCertRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("tls.manage")),
 ):
     """Revoke a TLS certificate."""
     from sqlalchemy.orm import selectinload

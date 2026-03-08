@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_current_admin_user
+from app.dependencies import get_db, require_permission
 from app.api.exceptions import not_found, bad_request, server_error
 from app.api.utils.dependencies import (
     get_openstack_service,
@@ -42,7 +42,7 @@ async def list_instances(
     search: Optional[str] = Query(None),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("instances.view_all")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """List instances from all cloud providers (paginated, filterable)."""
@@ -82,7 +82,7 @@ async def list_instances(
 @router.post("", response_model=InstanceResponse, status_code=201)
 async def create_instance(
     data: InstanceCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("instances.provision")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Create a single instance on any cloud provider."""
@@ -117,7 +117,7 @@ async def create_instance(
 @router.post("/bulk", response_model=BulkOperationResponse, status_code=201)
 async def bulk_create_instances(
     data: InstanceBulkCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("instances.provision")),
     service: OpenStackService = Depends(get_openstack_service),
 ):
     """Bulk create instances."""
@@ -144,7 +144,7 @@ async def bulk_create_instances(
 @router.get("/stats", response_model=InstanceStats)
 async def get_instance_stats(
     event_id: Optional[int] = Query(None),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("instances.view_all")),
     service: OpenStackService = Depends(get_openstack_service),
 ):
     """Get instance statistics."""
@@ -154,7 +154,7 @@ async def get_instance_stats(
 
 @router.get("/resources/flavors")
 async def list_flavors(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: OpenStackService = Depends(get_openstack_service),
 ):
     """List available OpenStack flavors."""
@@ -168,7 +168,7 @@ async def list_flavors(
 
 @router.get("/resources/images")
 async def list_images(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: OpenStackService = Depends(get_openstack_service),
 ):
     """List available OpenStack images."""
@@ -182,7 +182,7 @@ async def list_images(
 
 @router.get("/resources/networks")
 async def list_networks(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: OpenStackService = Depends(get_openstack_service),
 ):
     """List available OpenStack networks."""
@@ -196,7 +196,7 @@ async def list_networks(
 
 @router.get("/resources/digitalocean/sizes")
 async def list_do_sizes(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: DigitalOceanService = Depends(get_digitalocean_service),
 ):
     """List available DigitalOcean sizes."""
@@ -210,7 +210,7 @@ async def list_do_sizes(
 
 @router.get("/resources/digitalocean/images")
 async def list_do_images(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: DigitalOceanService = Depends(get_digitalocean_service),
 ):
     """List available DigitalOcean images."""
@@ -224,7 +224,7 @@ async def list_do_images(
 
 @router.get("/resources/digitalocean/regions")
 async def list_do_regions(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
     service: DigitalOceanService = Depends(get_digitalocean_service),
 ):
     """List available DigitalOcean regions."""
@@ -239,7 +239,7 @@ async def list_do_regions(
 @router.get("/{instance_id}", response_model=InstanceResponse)
 async def get_instance(
     instance_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("instances.view_all")),
     service: OpenStackService = Depends(get_openstack_service),
 ):
     """Get a specific instance."""
@@ -254,7 +254,7 @@ async def update_instance(
     instance_id: int,
     data: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("instances.view_all")),
 ):
     """Update instance fields (visibility, notes)."""
     from sqlalchemy import select
@@ -283,7 +283,7 @@ async def update_instance(
 @router.delete("/{instance_id}")
 async def delete_instance(
     instance_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Delete (terminate) an instance from its cloud provider."""
@@ -296,7 +296,7 @@ async def delete_instance(
 @router.post("/{instance_id}/sync", response_model=InstanceResponse)
 async def sync_instance(
     instance_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("instances.sync_status")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Refresh instance status from its cloud provider."""
@@ -309,7 +309,7 @@ async def sync_instance(
 @router.post("/bulk-delete", response_model=BulkOperationResponse)
 async def bulk_delete_instances(
     data: BulkDeleteRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Bulk delete instances from their cloud providers."""

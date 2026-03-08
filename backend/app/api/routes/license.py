@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_current_admin_user
+from app.dependencies import get_db, require_permission
 from app.api.exceptions import not_found, bad_request, conflict, unauthorized, server_error
 from app.api.utils.dependencies import get_license_service
 from app.models.user import User
@@ -53,7 +53,7 @@ def _extract_bearer_token(authorization: str = Header(...)) -> str:
 async def list_products(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("licenses.view")),
     service: LicenseService = Depends(get_license_service),
 ):
     """List license products (paginated)."""
@@ -72,7 +72,7 @@ async def list_products(
 @router.post("/products", response_model=LicenseProductDetailResponse, status_code=201)
 async def create_product(
     data: LicenseProductCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("licenses.manage")),
     service: LicenseService = Depends(get_license_service),
 ):
     """Create a new license product."""
@@ -97,7 +97,7 @@ async def create_product(
 @router.get("/products/{product_id}", response_model=LicenseProductDetailResponse)
 async def get_product(
     product_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("licenses.view")),
     service: LicenseService = Depends(get_license_service),
 ):
     """Get product detail (includes license_blob)."""
@@ -111,7 +111,7 @@ async def get_product(
 async def update_product(
     product_id: int,
     data: LicenseProductUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("licenses.manage")),
     service: LicenseService = Depends(get_license_service),
 ):
     """Update a license product."""
@@ -129,7 +129,7 @@ async def update_product(
 @router.delete("/products/{product_id}")
 async def delete_product(
     product_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("licenses.manage")),
     service: LicenseService = Depends(get_license_service),
 ):
     """Delete a license product."""
@@ -224,7 +224,7 @@ async def release_slot(
 @router.get("/queue/status", response_model=list[LicenseQueueStatus])
 async def get_queue_status(
     product_id: Optional[int] = Query(None),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("licenses.view")),
     service: LicenseService = Depends(get_license_service),
 ):
     """Get queue status for all or a specific product."""
@@ -235,7 +235,7 @@ async def get_queue_status(
 @router.get("/stats", response_model=LicenseStats)
 async def get_license_stats(
     product_id: Optional[int] = Query(None),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("licenses.view")),
     service: LicenseService = Depends(get_license_service),
 ):
     """Get license statistics."""

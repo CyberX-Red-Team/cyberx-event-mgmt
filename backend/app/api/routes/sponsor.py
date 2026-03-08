@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
-from app.dependencies import get_db, get_current_sponsor_user, PermissionChecker
+from app.dependencies import get_db, require_permission, PermissionChecker
 from app.api.utils.request import extract_client_metadata
 from app.api.utils.pagination import calculate_pagination
 from app.api.utils.dependencies import get_participant_service
@@ -39,7 +39,7 @@ async def list_my_invitees(
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -79,7 +79,7 @@ async def list_my_invitees(
 @router.get("/my-invitees/stats", response_model=SponsorInviteeStats)
 async def get_my_invitees_stats(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -105,7 +105,7 @@ async def get_my_invitees_stats(
 async def get_my_invitee(
     invitee_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -132,7 +132,7 @@ async def create_my_invitee(
     request: Request,
     data: InviteeCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -253,7 +253,7 @@ async def update_my_invitee(
     request: Request,
     data: InviteeUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -310,7 +310,7 @@ async def update_my_invitee(
 @router.delete("/my-invitees/{invitee_id}")
 async def delete_my_invitee(
     invitee_id: int,
-    current_user: User = Depends(get_current_sponsor_user)
+    current_user: User = Depends(require_permission("participants.view"))
 ):
     """
     Sponsors cannot delete invitees.
@@ -330,7 +330,7 @@ async def reset_invitee_password(
     invitee_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -417,7 +417,7 @@ async def resend_invitee_invitation(
     invitee_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
