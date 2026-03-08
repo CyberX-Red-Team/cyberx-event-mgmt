@@ -206,31 +206,24 @@ async def create_my_invitee(
         target_role = role_result.scalar_one_or_none()
         logger.info(f"Default invitee role lookup result: {target_role!r}")
 
-    # Create invitee with auto-assigned sponsor_id
+    # Create invitee with role_id set at creation time (avoids detached instance issues)
+    target_role_id = target_role.id if target_role else None
+    logger.info(f"Creating invitee with role_id={target_role_id}")
     invitee = await service.create_participant(
         email=data.email,
         first_name=data.first_name,
         last_name=data.last_name,
         country=data.country,
-        role="invitee",  # Always create as invitee
+        role="invitee",  # Always create as invitee base type
+        role_id=target_role_id,
         sponsor_id=current_user.id,  # Auto-assign current sponsor
         confirmed=data.confirmed,
         discord_username=data.discord_username
     )
 
-    # Set role_id (always — either from explicit selection or default system role)
-    if target_role:
-        # Re-fetch since create_participant commits internally, detaching the instance
-        invitee = await service.get_participant(invitee.id)
-        invitee.role_id = target_role.id
-        logger.info(f"Setting role_id={target_role.id} on invitee {invitee.id}")
-        await db.commit()
-    else:
-        logger.warning(f"No target_role found — invitee {invitee.id} will have role_id=NULL")
-
-    # Reload with relationships (fresh fetch after commit)
+    # Reload with relationships
     invitee = await service.get_participant(invitee.id)
-    logger.info(f"Final invitee {invitee.id} role_id={invitee.role_id}")
+    logger.info(f"Created invitee {invitee.id} with role_id={invitee.role_id}")
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)

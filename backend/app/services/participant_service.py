@@ -215,6 +215,7 @@ class ParticipantService:
         sponsor_email: Optional[str] = None,
         sponsor_id: Optional[int] = None,
         role: str = UserRole.INVITEE.value,
+        role_id: Optional[int] = None,
         is_admin: bool = False
     ) -> User:
         """Create a new participant."""
@@ -276,6 +277,7 @@ class ParticipantService:
             sponsor_email=sponsor_email,
             sponsor_id=sponsor_id,
             role=role,
+            role_id=role_id,
             is_admin=is_admin or role == UserRole.ADMIN.value,
             is_active=True
         )

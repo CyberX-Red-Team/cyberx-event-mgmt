@@ -237,6 +237,8 @@ async def create_participant(
             if target_role.id not in current_user.role_obj.allowed_role_ids:
                 raise forbidden(f"You are not allowed to create participants with the '{target_role.name}' role")
 
+    # Pass role_id at creation time (avoids detached instance issues from post-commit updates)
+    target_role_id = target_role.id if target_role else None
     participant = await service.create_participant(
         email=data.email,
         first_name=data.first_name,
@@ -249,17 +251,11 @@ async def create_participant(
         sponsor_email=data.sponsor_email,
         sponsor_id=sponsor_id,
         role=role_value,
+        role_id=target_role_id,
         is_admin=data.is_admin
     )
 
-    # Set role_id (always — either from explicit selection or default system role)
-    if target_role:
-        # Re-fetch since create_participant commits internally, detaching the instance
-        participant = await service.get_participant(participant.id)
-        participant.role_id = target_role.id
-        await db.commit()
-
-    # Re-fetch after commit to get fresh attached instance
+    # Re-fetch with relationships
     participant = await service.get_participant(participant.id)
 
     # Audit log
