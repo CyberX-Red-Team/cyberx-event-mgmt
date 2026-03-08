@@ -140,7 +140,8 @@ class User(Base):
         "EventParticipation",
         back_populates="user",
         foreign_keys="EventParticipation.user_id",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     # Dynamic role relationship
