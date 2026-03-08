@@ -303,6 +303,11 @@
                             <option value="">Select country...</option>
                         </select>
                     </div>
+                    <div class="mb-3" id="editRoleSection" style="display: none;">
+                        <label for="editInviteeRole" class="form-label">Invitee Type</label>
+                        <select class="form-select" id="editInviteeRole">
+                        </select>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -343,12 +348,20 @@ async function loadInviteeTypes() {
         const roleSelect = document.getElementById('addInviteeRole');
         const roleSection = document.getElementById('addRoleSection');
 
+        // Populate both add and edit role dropdowns
+        const editRoleSelect = document.getElementById('editInviteeRole');
+        const editRoleSection = document.getElementById('editRoleSection');
+        const roleOptions = inviteeTypes.map(r =>
+            `<option value="${r.id}">${r.name}</option>`
+        ).join('');
+
         if (hasMultipleRoles) {
             // Multiple types available — show dropdown and role column/filter
-            roleSelect.innerHTML = inviteeTypes.map(r =>
-                `<option value="${r.id}">${r.name}</option>`
-            ).join('');
+            roleSelect.innerHTML = roleOptions;
             roleSection.style.display = '';
+
+            editRoleSelect.innerHTML = roleOptions;
+            editRoleSection.style.display = '';
 
             // Show role column in table
             document.getElementById('roleColumnHeader').style.display = '';
@@ -363,6 +376,9 @@ async function loadInviteeTypes() {
             // Only one type — hide dropdown, auto-select
             roleSelect.innerHTML = `<option value="${inviteeTypes[0].id}">${inviteeTypes[0].name}</option>`;
             roleSection.style.display = 'none';
+
+            editRoleSelect.innerHTML = `<option value="${inviteeTypes[0].id}">${inviteeTypes[0].name}</option>`;
+            editRoleSection.style.display = 'none';
         }
     } catch (error) {
         console.error('Failed to load invitee types:', error);
@@ -684,6 +700,9 @@ async function openEditInviteeModal(inviteeId) {
         document.getElementById('editLastName').value = invitee.last_name;
         document.getElementById('editEmail').value = invitee.email;
         document.getElementById('editCountry').value = invitee.country || '';
+        if (invitee.role_id) {
+            document.getElementById('editInviteeRole').value = invitee.role_id;
+        }
 
         new bootstrap.Modal(document.getElementById('editInviteeModal')).show();
 
@@ -696,11 +715,14 @@ async function openEditInviteeModal(inviteeId) {
 // Submit Edit Invitee
 async function submitEditInvitee() {
     const inviteeId = document.getElementById('editInviteeId').value;
+    const editRoleSelect = document.getElementById('editInviteeRole');
+    const editRoleId = editRoleSelect.value ? parseInt(editRoleSelect.value) : null;
     const data = {
         first_name: document.getElementById('editFirstName').value.trim(),
         last_name: document.getElementById('editLastName').value.trim(),
         email: document.getElementById('editEmail').value.trim(),
-        country: document.getElementById('editCountry').value || 'United States'
+        country: document.getElementById('editCountry').value || 'United States',
+        role_id: editRoleId || undefined
     };
 
     try {

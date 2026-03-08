@@ -284,6 +284,7 @@ class InviteeUpdateRequest(BaseModel):
     last_name: Optional[str] = Field(None, min_length=1, max_length=255)
     country: Optional[str] = Field(None, max_length=100)
     confirmed: Optional[str] = None
+    role_id: Optional[int] = None
     discord_username: Optional[str] = None
 
     @field_validator("first_name", "last_name", mode="before")

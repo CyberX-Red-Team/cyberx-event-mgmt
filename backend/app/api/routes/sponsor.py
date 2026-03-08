@@ -306,8 +306,24 @@ async def update_my_invitee(
     # Permission check
     permissions.can_edit_participant(current_user, invitee)
 
-    # Update allowed fields only
+    # Validate role_id if provided
     update_data = data.model_dump(exclude_unset=True)
+    if 'role_id' in update_data and update_data['role_id'] is not None:
+        role_result = await db.execute(
+            select(Role).where(Role.id == update_data['role_id'])
+        )
+        target_role = role_result.scalar_one_or_none()
+        if not target_role:
+            raise bad_request(f"Role with ID {update_data['role_id']} not found")
+        if target_role.base_type != "invitee":
+            raise forbidden("Sponsors can only assign invitee-type roles")
+        # Enforce allowed_role_ids restriction
+        if current_user.role_obj and current_user.role_obj.allowed_role_ids:
+            if target_role.id not in current_user.role_obj.allowed_role_ids:
+                raise forbidden(f"You are not allowed to assign the '{target_role.name}' role")
+        # Sync legacy role field
+        update_data['role'] = target_role.base_type
+
     updated = await service.update_participant(invitee_id, **update_data)
 
     # Audit log
