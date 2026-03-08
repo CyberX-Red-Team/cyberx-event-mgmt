@@ -853,12 +853,20 @@ window.loadUsers = async function(page = 1) {
 }
 
 let allRoles = [];
+const isCurrentUserAdmin = {{ 'true' if current_user.is_admin or current_user.role == 'admin' else 'false' }};
 
 async function loadRolesForDropdowns() {
     try {
-        const response = await csrfFetch('/api/admin/roles');
-        if (!response.ok) return;
-        allRoles = await response.json();
+        // Admins get all roles; sponsors get only their allowed invitee types
+        if (isCurrentUserAdmin) {
+            const response = await csrfFetch('/api/admin/roles');
+            if (!response.ok) return;
+            allRoles = await response.json();
+        } else {
+            const response = await csrfFetch('/api/admin/roles/invitee-types');
+            if (!response.ok) return;
+            allRoles = await response.json();
+        }
 
         // Populate filter dropdown (uses base_type for backend compatibility)
         const filterSelect = document.getElementById('userRoleFilter');
@@ -866,17 +874,38 @@ async function loadRolesForDropdowns() {
         filterSelect.innerHTML = '<option value="">All Roles</option>' +
             baseTypes.map(bt => `<option value="${bt}">${bt.charAt(0).toUpperCase() + bt.slice(1)}</option>`).join('');
 
-        // Populate create/edit user role dropdown
+        // Populate create/edit user role dropdown, grouped by base_type
         const userRoleSelect = document.getElementById('userRole');
-        userRoleSelect.innerHTML = allRoles.map(r =>
-            `<option value="${r.base_type}" data-role-id="${r.id}">${r.name} (${r.base_type})</option>`
-        ).join('');
+        if (isCurrentUserAdmin) {
+            const grouped = {};
+            allRoles.forEach(r => {
+                if (!grouped[r.base_type]) grouped[r.base_type] = [];
+                grouped[r.base_type].push(r);
+            });
+            const order = ['admin', 'sponsor', 'invitee'];
+            userRoleSelect.innerHTML = order
+                .filter(bt => grouped[bt])
+                .map(bt => {
+                    const label = bt.charAt(0).toUpperCase() + bt.slice(1);
+                    const opts = grouped[bt].map(r =>
+                        `<option value="${r.base_type}" data-role-id="${r.id}">${r.name}</option>`
+                    ).join('');
+                    return `<optgroup label="${label}">${opts}</optgroup>`;
+                }).join('');
+        } else {
+            // Sponsors only see invitee-type roles
+            userRoleSelect.innerHTML = allRoles.map(r =>
+                `<option value="${r.base_type}" data-role-id="${r.id}">${r.name}</option>`
+            ).join('');
+        }
 
-        // Populate role change modal dropdown
+        // Populate role change modal dropdown (admin only)
         const newRoleSelect = document.getElementById('newRole');
-        newRoleSelect.innerHTML = allRoles.map(r =>
-            `<option value="${r.id}">${r.name} (${r.base_type})</option>`
-        ).join('');
+        if (newRoleSelect) {
+            newRoleSelect.innerHTML = allRoles.map(r =>
+                `<option value="${r.id}">${r.name} (${r.base_type})</option>`
+            ).join('');
+        }
     } catch (error) {
         console.error('Failed to load roles:', error);
     }
@@ -1289,6 +1318,18 @@ window.openCreateUserModal = function() {
         document.getElementById('emailStatusSection').style.display = 'none';
         updateSponsorDropdown();
 
+        // Default to system invitee role
+        const roleSelect = document.getElementById('userRole');
+        const inviteeRole = allRoles.find(r => r.slug === 'invitee' && r.is_system);
+        if (inviteeRole) {
+            for (const opt of roleSelect.options) {
+                if (opt.getAttribute('data-role-id') === String(inviteeRole.id)) {
+                    opt.selected = true;
+                    break;
+                }
+            }
+        }
+
         const modalEl = document.getElementById('userModal');
         const modal = new bootstrap.Modal(modalEl);
         modal.show();
@@ -1323,7 +1364,21 @@ window.editUser = async function(userId) {
         document.getElementById('userLastName').value = user.last_name || '';
         document.getElementById('userEmail').value = user.email || '';
         document.getElementById('userCountry').value = user.country || '';
-        document.getElementById('userRole').value = user.role || 'invitee';
+        // Select role by role_id (matching data-role-id attribute)
+        const roleSelect = document.getElementById('userRole');
+        let roleFound = false;
+        if (user.role_id) {
+            for (const opt of roleSelect.options) {
+                if (opt.getAttribute('data-role-id') === String(user.role_id)) {
+                    opt.selected = true;
+                    roleFound = true;
+                    break;
+                }
+            }
+        }
+        if (!roleFound) {
+            roleSelect.value = user.role || 'invitee';
+        }
         document.getElementById('userConfirmed').value = user.confirmed || 'UNKNOWN';
         document.getElementById('userActive').checked = user.is_active !== false;
 
