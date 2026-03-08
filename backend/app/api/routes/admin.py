@@ -220,6 +220,11 @@ async def create_participant(
         role_value = target_role.base_type
     else:
         role_value = data.role.value if data.role else UserRole.INVITEE.value
+        # Default to matching system role so role_id is always populated
+        role_result = await db.execute(
+            select(Role).where(Role.slug == role_value, Role.is_system == True)
+        )
+        target_role = role_result.scalar_one_or_none()
 
     if not current_user.is_admin_role:
         # Sponsors can only create participants they sponsor
@@ -447,6 +452,16 @@ async def update_participant(
     update_data = data.model_dump(exclude_unset=True)
     if 'role' in update_data and update_data['role'] is not None:
         update_data['role'] = update_data['role'].value
+
+    # If role_id is provided, resolve role and sync base type fields
+    if 'role_id' in update_data and update_data['role_id'] is not None:
+        role_result = await db.execute(select(Role).where(Role.id == update_data['role_id']))
+        target_role = role_result.scalar_one_or_none()
+        if not target_role:
+            raise bad_request(f"Role with ID {update_data['role_id']} not found")
+        # Sync legacy fields from role
+        update_data['role'] = target_role.base_type
+        update_data['is_admin'] = target_role.base_type == 'admin'
 
     participant = await service.update_participant(
         participant_id,

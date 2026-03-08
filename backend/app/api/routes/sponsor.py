@@ -12,6 +12,7 @@ from app.api.utils.request import extract_client_metadata
 from app.api.utils.pagination import calculate_pagination
 from app.api.utils.dependencies import get_participant_service
 from app.models.user import User
+from app.models.role import Role
 from app.services.participant_service import ParticipantService
 from app.schemas.participant import (
     ParticipantResponse,
@@ -183,10 +184,9 @@ async def create_my_invitee(
 
         raise conflict(error_msg)
 
-    # Validate role_id if provided
+    # Resolve target role (default to system invitee role if not specified)
     target_role = None
     if data.role_id:
-        from app.models.role import Role
         role_result = await db.execute(select(Role).where(Role.id == data.role_id))
         target_role = role_result.scalar_one_or_none()
         if not target_role:
@@ -197,6 +197,12 @@ async def create_my_invitee(
         if current_user.role_obj and current_user.role_obj.allowed_role_ids:
             if target_role.id not in current_user.role_obj.allowed_role_ids:
                 raise forbidden(f"You are not allowed to create participants with the '{target_role.name}' role")
+    else:
+        # Default to system invitee role
+        role_result = await db.execute(
+            select(Role).where(Role.slug == "invitee", Role.is_system == True)
+        )
+        target_role = role_result.scalar_one_or_none()
 
     # Create invitee with auto-assigned sponsor_id
     invitee = await service.create_participant(

@@ -84,6 +84,7 @@ class ParticipantUpdate(BaseModel):
     sponsor_email: Optional[EmailStr] = None
     sponsor_id: Optional[int] = None
     role: Optional[UserRoleEnum] = None
+    role_id: Optional[int] = None
     is_admin: Optional[bool] = None  # Legacy support
     is_active: Optional[bool] = None
 
