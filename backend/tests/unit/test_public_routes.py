@@ -295,10 +295,12 @@ class TestConfirmParticipationRoute:
         mock_user.role = "invitee"
         mock_user.pandas_username = None
         mock_user.pandas_password = None
+        mock_user.get_effective_permissions.return_value = {"discord.view", "instances.view"}
 
         mock_event = Mock()
         mock_event.id = 1
         mock_event.name = "CyberX 2026"
+        mock_event.discord_channel_id = None  # Skip Discord invite generation
 
         mock_db = mocker.AsyncMock()
         mock_result = mocker.Mock()
@@ -320,8 +322,9 @@ class TestConfirmParticipationRoute:
         mock_workflow.trigger_workflow = mocker.AsyncMock()
         mocker.patch('app.api.routes.public.WorkflowService', return_value=mock_workflow)
 
-        # Mock username generation
+        # Mock username generation and encryption
         mocker.patch('app.api.routes.public.generate_username', return_value="tuser")
+        mocker.patch('app.utils.encryption.encrypt_field', return_value="encrypted_password")
 
         data = {
             "confirmation_code": "code123",
@@ -352,10 +355,12 @@ class TestConfirmParticipationRoute:
         mock_user.role = "sponsor"
         mock_user.pandas_username = "tsponsor"
         mock_user.pandas_password = "existing_password"
+        mock_user.get_effective_permissions.return_value = {"discord.view", "participants.view"}
 
         mock_event = Mock()
         mock_event.id = 1
         mock_event.name = "CyberX 2026"
+        mock_event.discord_channel_id = None  # Skip Discord invite generation
 
         mock_db = mocker.AsyncMock()
         mock_result = mocker.Mock()
