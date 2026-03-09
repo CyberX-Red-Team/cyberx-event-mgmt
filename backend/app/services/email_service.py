@@ -326,18 +326,22 @@ class EmailService:
         # Use confirmation_code if available (new system), otherwise fall back to invite_id (legacy)
         confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
 
-        # Role-specific display variables
+        # Role-specific display variables — prefer dynamic role_obj when available
+        base_type = (user.role_obj.base_type if user.role_obj else user.role) or ""
+        role_display_name = user.role_obj.name if user.role_obj else base_type.capitalize()
         role_vars = {
-            "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "role_display": "Administrator", "a_or_an": "an"},
-            "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "role_display": "Sponsor", "a_or_an": "a"},
-            "invitee": {"role_label": "INVITEE", "role_upper": "INVITEE", "role_display": "Invitee", "a_or_an": "an"},
-        }.get(user.role or "", {"role_label": "", "role_upper": "", "role_display": "", "a_or_an": "a"})
+            "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "a_or_an": "an"},
+            "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "a_or_an": "a"},
+            "invitee": {"role_label": "INVITEE", "role_upper": "INVITEE", "a_or_an": "an"},
+        }.get(base_type, {"role_label": "", "role_upper": "", "a_or_an": "a"})
 
         vars = {
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "email": user.email or "",
-            "role": (user.role or "").capitalize(),
+            "role": role_display_name,
+            "role_display": role_display_name,
+            "role_name": role_display_name,
             **role_vars,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
@@ -412,19 +416,23 @@ class EmailService:
         # Build base template variables
         confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
 
-        # Role-specific display variables
+        # Role-specific display variables — prefer dynamic role_obj when available
+        base_type = (user.role_obj.base_type if user.role_obj else user.role) or ""
+        role_display_name = user.role_obj.name if user.role_obj else base_type.capitalize()
         role_vars = {
-            "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "role_display": "Administrator", "a_or_an": "an"},
-            "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "role_display": "Sponsor", "a_or_an": "a"},
-            "invitee": {"role_label": "INVITEE", "role_upper": "INVITEE", "role_display": "Invitee", "a_or_an": "an"},
-        }.get(user.role or "", {"role_label": "", "role_upper": "", "role_display": "", "a_or_an": "a"})
+            "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "a_or_an": "an"},
+            "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "a_or_an": "a"},
+            "invitee": {"role_label": "INVITEE", "role_upper": "INVITEE", "a_or_an": "an"},
+        }.get(base_type, {"role_label": "", "role_upper": "", "a_or_an": "a"})
 
         dynamic_template_data = {
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "email": user.email or "",
             "username": user.pandas_username or "",
-            "role": (user.role or "").capitalize(),
+            "role": role_display_name,
+            "role_display": role_display_name,
+            "role_name": role_display_name,
             **role_vars,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
@@ -484,6 +492,7 @@ class EmailService:
             last_name = "Doe"
             email = "john.doe@example.com"
             role = "invitee"
+            role_obj = None
             pandas_username = "jdoe"
             pandas_password = "sample_password"
             password_phonetic = "sample-PAPA-ALPHA-sierra-sierra"
