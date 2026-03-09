@@ -49,6 +49,13 @@ async def build_auth_user_response(
         event_participation_status = participation.status
         event_participation_id = participation.id
 
+    # Eagerly load role_obj to avoid lazy-load in async context
+    if user.role_id:
+        await db.execute(
+            select(Role).where(Role.id == user.role_id)
+        )
+        await db.refresh(user, ["role_obj"])
+
     # Resolve effective permissions from role + overrides
     effective_permissions = sorted(user.get_effective_permissions())
 

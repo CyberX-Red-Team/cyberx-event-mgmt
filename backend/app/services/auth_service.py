@@ -45,7 +45,9 @@ class AuthService:
 
         # Try to find user by email_normalized or pandas_username (as-is)
         result = await self.session.execute(
-            select(User).where(
+            select(User)
+            .options(selectinload(User.role_obj))
+            .where(
                 (User.email_normalized == normalized_username) | (User.pandas_username == username)
             )
         )
