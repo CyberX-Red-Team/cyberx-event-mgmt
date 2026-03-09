@@ -1285,12 +1285,12 @@ async function loadAvailableTemplates() {
                                     <strong>License:</strong> ${t.license_product_name || 'None'}
                                 </div>
                             </div>
-                            <div class="card-footer">
+                            ${hasPermission('instances.provision') ? `<div class="card-footer">
                                 <button class="btn btn-sm btn-primary w-100"
                                         onclick="showProvisionModal(${t.id}, '${t.name}')">
                                     <i data-feather="plus"></i> Provision
                                 </button>
-                            </div>
+                            </div>` : ''}
                         </div>
                     </div>
                 `;
@@ -1370,12 +1370,14 @@ async function loadMyInstances() {
                             ${i.visibility !== 'private' && i.created_by_username ? `<br><small>by ${i.created_by_username}</small>` : ''}
                         </td>
                         <td>
-                            ${i.has_agent && i.status === 'ACTIVE' ? `<button class="btn btn-sm btn-outline-warning me-1" onclick="cycleVPN(${i.id})" title="Cycle VPN"><i data-feather="repeat"></i></button>` : ''}
+                            ${i.has_agent && i.status === 'ACTIVE' && hasPermission('instances.manage_agent') ? `<button class="btn btn-sm btn-outline-warning me-1" onclick="cycleVPN(${i.id})" title="Cycle VPN"><i data-feather="repeat"></i></button>` : ''}
                             ${i.notes ? `<button class="btn btn-sm btn-outline-info me-1" onclick="showNotes('${i.notes.replace(/'/g, "\\'")}')"><i data-feather="info"></i></button>` : ''}
                             ${canDelete ? `
                                 <button class="btn btn-sm btn-outline-primary me-1" onclick="showEditModal(${i.id}, '${i.name.replace(/'/g, "\\'")}', '${i.visibility}', '${(i.notes || '').replace(/'/g, "\\'")}')">
                                     <i data-feather="edit-2"></i>
                                 </button>
+                            ` : ''}
+                            ${canDelete && hasPermission('instances.delete') ? `
                                 <button class="btn btn-sm btn-outline-danger" onclick="deleteInstance(${i.id})">
                                     <i data-feather="trash-2"></i>
                                 </button>
@@ -1987,6 +1989,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     if (!hasPermission('tls.request') && !hasPermission('tls.download')) {
         document.getElementById('tlsCertificatesCard').style.display = 'none';
+    }
+    if (!hasPermission('tls.request')) {
+        var tlsForm = document.getElementById('tlsRequestForm');
+        if (tlsForm) tlsForm.style.display = 'none';
     }
 
     // Load event info first
