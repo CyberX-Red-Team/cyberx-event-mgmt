@@ -751,7 +751,7 @@ async function viewVPN(id) {
         new bootstrap.Modal(document.getElementById('vpnDetailsModal')).show();
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load VPN details');
+        showToast('Failed to load VPN details', 'danger');
     }
 }
 
@@ -826,12 +826,12 @@ async function assignVPN() {
     const count = parseInt(document.getElementById('assignCount').value);
 
     if (!participantId) {
-        alert('Please select a participant');
+        showToast('Please select a participant', 'warning');
         return;
     }
 
     if (count < 1 || count > 25) {
-        alert('Please enter a valid count (1-25)');
+        showToast('Please enter a valid count (1-25)', 'warning');
         return;
     }
 
@@ -847,16 +847,16 @@ async function assignVPN() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            showToast(data.message, 'success');
             bootstrap.Modal.getInstance(document.getElementById('assignModal')).hide();
             loadVPNCredentials(currentPage);
             loadStats();
         } else {
-            alert(data.detail || data.message || 'Failed to assign VPN');
+            showToast(data.detail || data.message || 'Failed to assign VPN', 'danger');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign VPN');
+        showToast('Failed to assign VPN', 'danger');
     }
 }
 
@@ -891,7 +891,7 @@ fileInput.addEventListener('change', () => {
 
 async function handleFileUpload(file) {
     if (!file.name.endsWith('.zip')) {
-        alert('Please upload a ZIP file');
+        showToast('Please upload a ZIP file', 'warning');
         return;
     }
 

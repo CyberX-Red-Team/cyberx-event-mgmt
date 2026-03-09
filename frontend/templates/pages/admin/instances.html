@@ -759,7 +759,7 @@ function showBulkCreateModal() {
 
 async function createInstance() {
     const name = document.getElementById('createName').value.trim();
-    if (!name) { alert('Name is required'); return; }
+    if (!name) { showToast('Name is required', 'warning'); return; }
 
     const provider = document.getElementById('createProvider').value;
     const body = { name, provider };
@@ -800,15 +800,15 @@ async function createInstance() {
             showToast('Instance created successfully', 'success');
         } else {
             const err = await resp.json();
-            alert(err.detail || 'Failed to create instance');
+            showToast(err.detail || 'Failed to create instance', 'danger');
         }
-    } catch (e) { alert('Failed to create instance'); }
+    } catch (e) { showToast('Failed to create instance', 'danger'); }
 }
 
 async function bulkCreate() {
     const prefix = document.getElementById('bulkPrefix').value.trim();
     const count = parseInt(document.getElementById('bulkCount').value);
-    if (!prefix) { alert('Name prefix is required'); return; }
+    if (!prefix) { showToast('Name prefix is required', 'warning'); return; }
 
     const provider = document.getElementById('bulkProvider').value;
     const body = { name_prefix: prefix, count, provider };
@@ -845,7 +845,7 @@ async function bulkCreate() {
         loadInstances(1);
         loadStats();
         showToast(`Created ${data.success_count} instance(s)${data.errors.length ? `, ${data.errors.length} failed` : ''}`, data.errors.length ? 'warning' : 'success');
-    } catch (e) { alert('Bulk create failed'); }
+    } catch (e) { showToast('Bulk create failed', 'danger'); }
 }
 
 // ── Actions ──

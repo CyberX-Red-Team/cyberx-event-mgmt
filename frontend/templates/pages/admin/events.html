@@ -323,7 +323,7 @@
         } catch (error) {
             console.error('Error loading events:', error);
             loadingState.classList.add('d-none');
-            alert('Failed to load events');
+            showToast('Failed to load events', 'danger');
         }
     };
 
@@ -392,7 +392,7 @@
 
         } catch (error) {
             console.error('Error loading event:', error);
-            alert('Failed to load event details');
+            showToast('Failed to load event details', 'danger');
         }
     };
 
@@ -447,7 +447,7 @@
 
         } catch (error) {
             console.error('Error saving event:', error);
-            alert(error.message || 'Failed to save event');
+            showToast(error.message || 'Failed to save event', 'danger');
         } finally {
             saveBtn.textContent = 'Save Event';
         }
@@ -479,6 +479,7 @@
             }
 
             await loadEvents();
+            showToast(`Event ${action}d successfully`, 'success');
 
             // Reload dashboard event status if exists
             if (typeof loadEventStatus === 'function') {
@@ -487,7 +488,7 @@
 
         } catch (error) {
             console.error(`Error ${action}ing event:`, error);
-            alert(error.message || `Failed to ${action} event`);
+            showToast(error.message || `Failed to ${action} event`, 'danger');
         }
     };
 
@@ -510,7 +511,7 @@
 
         } catch (error) {
             console.error('Error archiving event:', error);
-            alert(error.message || 'Failed to archive event');
+            showToast(error.message || 'Failed to archive event', 'danger');
         }
     };
 
@@ -539,7 +540,7 @@
 
         } catch (error) {
             console.error('Error toggling VPN availability:', error);
-            alert(error.message || 'Failed to update VPN availability');
+            showToast(error.message || 'Failed to update VPN availability', 'danger');
         }
     };
 
@@ -574,7 +575,7 @@
 
         } catch (error) {
             console.error('Error toggling test mode:', error);
-            alert(error.message || 'Failed to update test mode');
+            showToast(error.message || 'Failed to update test mode', 'danger');
         }
     };
 
@@ -601,7 +602,7 @@
             showToast('SSH keys generated successfully', 'success');
         } catch (error) {
             console.error('Error generating SSH keys:', error);
-            alert('Failed to generate SSH keys');
+            showToast('Failed to generate SSH keys', 'danger');
         }
     };
 
@@ -612,7 +613,7 @@
         const slug = eventName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
         if (!publicKey || !privateKey) {
-            alert('No SSH keys to download. Generate keys first.');
+            showToast('No SSH keys to download. Generate keys first.', 'warning');
             return;
         }
 

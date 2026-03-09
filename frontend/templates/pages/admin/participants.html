@@ -590,14 +590,14 @@ async function bulkAction(action) {
         });
 
         const data = await response.json();
-        alert(data.message);
+        showToast(data.message, 'success');
         loadParticipants(currentPage);
         selectedIds.clear();
         updateBulkActionsUI();
 
     } catch (error) {
         console.error('Error:', error);
-        alert('Operation failed. Please try again.');
+        showToast('Operation failed. Please try again.', 'danger');
     }
 }
 
@@ -615,12 +615,12 @@ async function deleteInvitee(id) {
             loadParticipants(currentPage);
         } else {
             const data = await response.json();
-            alert(data.detail || 'Failed to delete invitee');
+            showToast(data.detail || 'Failed to delete invitee', 'danger');
         }
 
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to delete invitee');
+        showToast('Failed to delete invitee', 'danger');
     }
 }
 

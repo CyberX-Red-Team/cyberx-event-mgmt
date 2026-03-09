@@ -276,14 +276,14 @@ async function editTemplate(id) {
         document.getElementById('templateContent').value = t.content;
         document.getElementById('templateDefault').checked = t.is_default;
         new bootstrap.Modal(document.getElementById('templateModal')).show();
-    } catch (e) { alert('Failed to load template'); }
+    } catch (e) { showToast('Failed to load template', 'danger'); }
 }
 
 async function saveTemplate() {
     const id = document.getElementById('editTemplateId').value;
     const name = document.getElementById('templateName').value.trim();
     const content = document.getElementById('templateContent').value.trim();
-    if (!name || !content) { alert('Name and content are required'); return; }
+    if (!name || !content) { showToast('Name and content are required', 'warning'); return; }
 
     const body = {
         name,
@@ -304,11 +304,11 @@ async function saveTemplate() {
             showToast(`Template ${id ? 'updated' : 'created'} successfully`, 'success');
         } else {
             const err = await resp.json();
-            alert(err.detail || 'Failed to save template');
+            showToast(err.detail || 'Failed to save template', 'danger');
         }
     } catch (e) {
         console.error('Save template error:', e);
-        alert('Failed to save template: ' + e.message);
+        showToast('Failed to save template: ' + e.message, 'danger');
     }
 }
 
@@ -345,12 +345,12 @@ async function previewSaved(id) {
         const data = await resp.json();
         document.getElementById('previewContent').textContent = data.rendered;
         new bootstrap.Modal(document.getElementById('previewModal')).show();
-    } catch (e) { alert('Preview failed'); }
+    } catch (e) { showToast('Preview failed', 'danger'); }
 }
 
 function previewTemplate() {
     const content = document.getElementById('templateContent').value;
-    if (!content.trim()) { alert('Template content is empty'); return; }
+    if (!content.trim()) { showToast('Template content is empty', 'warning'); return; }
 
     // Client-side preview with sample values
     let rendered = content;

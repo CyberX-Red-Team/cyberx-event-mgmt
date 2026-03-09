@@ -1371,7 +1371,7 @@ window.openCreateUserModal = function() {
         }, 100);
     } catch (error) {
         console.error('Error opening create modal:', error);
-        alert('Error opening modal: ' + error.message);
+        showToast('Error opening modal: ' + error.message, 'danger');
     }
 }
 
@@ -1435,7 +1435,7 @@ window.editUser = async function(userId) {
         }, 100);
     } catch (error) {
         console.error('Error loading user:', error);
-        alert('Failed to load user details: ' + error.message);
+        showToast('Failed to load user details: ' + error.message, 'danger');
     }
 }
 
@@ -1474,14 +1474,14 @@ window.saveUser = async function() {
 
     // Validate required fields
     if (!data.first_name || !data.last_name || !data.email) {
-        alert('Please fill in all required fields (First Name, Last Name, Email)');
+        showToast('Please fill in all required fields (First Name, Last Name, Email)', 'warning');
         return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(data.email)) {
-        alert('Please enter a valid email address');
+        showToast('Please enter a valid email address', 'warning');
         return;
     }
 
@@ -1513,14 +1513,14 @@ window.saveUser = async function() {
 
         // Show success message with credentials for new users
         if (!isEdit && result.pandas_username && result.pandas_password) {
-            alert(`Invitee created successfully!\n\nLogin Credentials:\nUsername: ${result.pandas_username}\nPassword: ${result.pandas_password}\n\nPlease save these credentials.`);
+            showToast(`Invitee created successfully!<br><br>Login Credentials:<br>Username: ${result.pandas_username}<br>Password: ${result.pandas_password}<br><br>Please save these credentials.`, 'success');
         } else {
-            alert(isEdit ? 'Invitee updated successfully' : 'Invitee created successfully');
+            showToast(isEdit ? 'Invitee updated successfully' : 'Invitee created successfully', 'success');
         }
 
     } catch (error) {
         console.error('Error saving invitee:', error);
-        alert(error.message || 'Failed to save invitee. Please try again.');
+        showToast(error.message || 'Failed to save invitee. Please try again.', 'danger');
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i data-feather="save" class="me-1"></i> Save Invitee';
@@ -1554,30 +1554,30 @@ window.resetUserPassword = async function() {
 window.copyUsername = function() {
     const username = document.getElementById('userPandasUsername').value;
     if (!username) {
-        alert('No username to copy');
+        showToast('No username to copy', 'warning');
         return;
     }
 
     navigator.clipboard.writeText(username).then(() => {
-        alert('Username copied to clipboard');
+        showToast('Username copied to clipboard', 'success');
     }).catch(err => {
         console.error('Failed to copy username:', err);
-        alert('Failed to copy username');
+        showToast('Failed to copy username', 'danger');
     });
 }
 
 window.copyPassword = function() {
     const password = document.getElementById('userPandasPassword').value;
     if (!password) {
-        alert('No password to copy');
+        showToast('No password to copy', 'warning');
         return;
     }
 
     navigator.clipboard.writeText(password).then(() => {
-        alert('Password copied to clipboard');
+        showToast('Password copied to clipboard', 'success');
     }).catch(err => {
         console.error('Failed to copy password:', err);
-        alert('Failed to copy password');
+        showToast('Failed to copy password', 'danger');
     });
 }
 
@@ -1614,11 +1614,11 @@ window.saveRoleChange = async function() {
         loadStats();
         loadSponsors();
 
-        alert('Role updated successfully');
+        showToast('Role updated successfully', 'success');
 
     } catch (error) {
         console.error('Error changing role:', error);
-        alert(error.message || 'Failed to change role');
+        showToast(error.message || 'Failed to change role', 'danger');
     }
 }
 
@@ -1650,11 +1650,11 @@ window.confirmDelete = async function() {
         loadUsers(currentPage);
         loadStats();
 
-        alert('User deleted successfully');
+        showToast('User deleted successfully', 'success');
 
     } catch (error) {
         console.error('Error deleting user:', error);
-        alert(error.message || 'Failed to delete user');
+        showToast(error.message || 'Failed to delete user', 'danger');
     }
 }
 
@@ -1720,11 +1720,11 @@ window.bulkAction = async function(action) {
         loadUsers(currentPage);
         loadStats();
 
-        alert(`Successfully ${actionText}d ${ids.length} user(s)`);
+        showToast(`Successfully ${actionText}d ${ids.length} user(s)`, 'success');
 
     } catch (error) {
         console.error('Error performing bulk action:', error);
-        alert('Failed to perform bulk action');
+        showToast('Failed to perform bulk action', 'danger');
     }
 }
 

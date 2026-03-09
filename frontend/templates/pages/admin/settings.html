@@ -234,12 +234,12 @@ async function loadUsageStats() {
 
 // Show success message
 function showSuccess(message) {
-    alert(message);
+    showToast(message, 'success');
 }
 
 // Show error message
 function showError(message) {
-    alert(message);
+    showToast(message, 'danger');
 }
 
 // Initialize on page load

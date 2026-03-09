@@ -448,7 +448,7 @@
 
     // Confirm action
     if (!currentEventData) {
-        alert('No event data available');
+        showToast('No event data available', 'warning');
         return;
     }
 
@@ -497,7 +497,7 @@
 
     } catch (error) {
         console.error('Error toggling event status:', error);
-        alert(error.message || 'Failed to toggle event status');
+        showToast(error.message || 'Failed to toggle event status', 'danger');
         toggleBtn.disabled = false;
         toggleBtn.innerHTML = originalText;
     }

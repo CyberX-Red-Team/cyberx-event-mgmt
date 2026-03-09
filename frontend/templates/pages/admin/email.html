@@ -1172,7 +1172,7 @@ async function editTemplate(id) {
         feather.replace();
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load template');
+        showToast('Failed to load template', 'danger');
     }
 }
 
@@ -1206,10 +1206,10 @@ async function saveTemplate() {
 
         bootstrap.Modal.getInstance(document.getElementById('templateModal')).hide();
         loadTemplates();
-        alert('Template saved successfully');
+        showToast('Template saved successfully', 'success');
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -1229,7 +1229,7 @@ async function deleteTemplate(id) {
         loadTemplates();
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -1248,10 +1248,10 @@ async function duplicateTemplate(id) {
         }
 
         loadTemplates();
-        alert('Template duplicated successfully');
+        showToast('Template duplicated successfully', 'success');
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -1277,7 +1277,7 @@ async function previewTemplate(id) {
         new bootstrap.Modal(document.getElementById('previewModal')).show();
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to preview template');
+        showToast('Failed to preview template', 'danger');
     }
 }
 
@@ -1381,10 +1381,10 @@ async function loadFilteredRecipients() {
         });
 
         updateSelectedRecipientsUI();
-        alert(`Loaded ${data.items.length} recipients`);
+        showToast(`Loaded ${data.items.length} recipients`, 'info');
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load recipients');
+        showToast('Failed to load recipients', 'danger');
     }
 }
 
@@ -1448,7 +1448,7 @@ function updateSelectedRecipientsUI() {
 function previewComposedEmail() {
     const templateId = document.getElementById('composeTemplate').value;
     if (!templateId) {
-        alert('Please select a template');
+        showToast('Please select a template', 'warning');
         return;
     }
     previewTemplate(parseInt(templateId));
@@ -1459,12 +1459,12 @@ async function sendComposedEmail() {
     const customSubject = document.getElementById('composeSubject').value.trim() || null;
 
     if (!templateId) {
-        alert('Please select a template');
+        showToast('Please select a template', 'warning');
         return;
     }
 
     if (selectedRecipients.size === 0) {
-        alert('Please select at least one recipient');
+        showToast('Please select at least one recipient', 'warning');
         return;
     }
 
@@ -1482,7 +1482,7 @@ async function sendComposedEmail() {
         });
 
         const data = await response.json();
-        alert(data.message);
+        showToast(data.message, data.success ? 'success' : 'danger');
 
         if (data.success) {
             clearSelectedRecipients();
@@ -1492,7 +1492,7 @@ async function sendComposedEmail() {
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to send emails');
+        showToast('Failed to send emails', 'danger');
     }
 }
 
@@ -1810,14 +1810,14 @@ async function sendTestEmail() {
     const subject = document.getElementById('testEmailSubject').value.trim() || null;
 
     if (!toEmail) {
-        alert('Please enter a recipient email address');
+        showToast('Please enter a recipient email address', 'warning');
         return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(toEmail)) {
-        alert('Please enter a valid email address');
+        showToast('Please enter a valid email address', 'warning');
         return;
     }
 
@@ -2423,14 +2423,14 @@ async function triggerManualBatch() {
         const data = await response.json();
 
         if (data.success) {
-            alert(`Batch processed: ${data.total_sent} sent, ${data.total_failed} failed`);
+            showToast(`Batch processed: ${data.total_sent} sent, ${data.total_failed} failed`, 'success');
             await loadQueueTab();
         } else {
-            alert('Failed to process batch: ' + data.message);
+            showToast('Failed to process batch: ' + data.message, 'danger');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to trigger batch processing');
+        showToast('Failed to trigger batch processing', 'danger');
     } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
@@ -2472,15 +2472,15 @@ async function bulkCancelEmails() {
         const data = await response.json();
 
         if (data.success) {
-            alert(data.message);
+            showToast(data.message, 'success');
             await loadEmailQueue();
             await loadQueueStats();
         } else {
-            alert('Failed to cancel emails: ' + data.message);
+            showToast('Failed to cancel emails: ' + data.message, 'danger');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to cancel emails');
+        showToast('Failed to cancel emails', 'danger');
     }
 }
 
@@ -2495,15 +2495,15 @@ async function cancelQueuedEmail(emailId) {
         const data = await response.json();
 
         if (data.success) {
-            alert('Email cancelled successfully');
+            showToast('Email cancelled successfully', 'success');
             await loadEmailQueue();
             await loadQueueStats();
         } else {
-            alert('Failed to cancel email: ' + data.message);
+            showToast('Failed to cancel email: ' + data.message, 'danger');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to cancel email');
+        showToast('Failed to cancel email', 'danger');
     }
 }
 

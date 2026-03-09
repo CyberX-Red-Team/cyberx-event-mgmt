@@ -336,7 +336,7 @@ async function editProduct(id) {
         document.getElementById('productDownloadFilename').value = p.download_filename || '';
         document.getElementById('productActive').checked = p.is_active;
         new bootstrap.Modal(document.getElementById('productModal')).show();
-    } catch (e) { alert('Failed to load product'); }
+    } catch (e) { showToast('Failed to load product', 'danger'); }
 }
 
 async function saveProduct() {
@@ -344,8 +344,8 @@ async function saveProduct() {
     const name = document.getElementById('productName').value.trim();
     const blob = document.getElementById('productBlob').value.trim();
 
-    if (!name) { alert('Name is required'); return; }
-    if (!id && !blob) { alert('License blob is required'); return; }
+    if (!name) { showToast('Name is required', 'warning'); return; }
+    if (!id && !blob) { showToast('License blob is required', 'warning'); return; }
 
     const body = { name };
     const desc = document.getElementById('productDescription').value.trim();
@@ -371,11 +371,11 @@ async function saveProduct() {
             showToast(`Product ${id ? 'updated' : 'created'} successfully`, 'success');
         } else {
             const err = await resp.json();
-            alert(err.detail || 'Failed to save product');
+            showToast(err.detail || 'Failed to save product', 'danger');
         }
     } catch (e) {
         console.error('Save product error:', e);
-        alert('Failed to save product: ' + e.message);
+        showToast('Failed to save product: ' + e.message, 'danger');
     }
 }
 

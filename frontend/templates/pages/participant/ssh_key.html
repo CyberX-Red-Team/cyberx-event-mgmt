@@ -166,7 +166,7 @@ async function loadSSHKey() {
 
 function downloadPrivateKey() {
     if (!privateKeyData) {
-        alert('No private key to download');
+        showToast('No private key to download', 'warning');
         return;
     }
 

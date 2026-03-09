@@ -694,13 +694,13 @@ async function deleteTemplate(templateId) {
 // Show success message
 function showSuccess(message) {
     // You can implement a toast notification here
-    alert(message);
+    showToast(message, 'success');
 }
 
 // Show error message
 function showError(message) {
     // You can implement a toast notification here
-    alert(message);
+    showToast(message, 'danger');
 }
 
 // Initialize on page load

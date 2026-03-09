@@ -438,7 +438,7 @@ async function editWorkflow(id) {
         feather.replace();
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load workflow');
+        showToast('Failed to load workflow', 'danger');
     }
 }
 
@@ -451,7 +451,7 @@ async function saveWorkflow() {
         try {
             customVars = JSON.parse(customVarsText);
         } catch (e) {
-            alert('Invalid JSON in Custom Variables');
+            showToast('Invalid JSON in Custom Variables', 'warning');
             return;
         }
     }
@@ -483,7 +483,7 @@ async function saveWorkflow() {
 
     const missingFields = requiredFields.filter(field => !data[field]);
     if (missingFields.length > 0) {
-        alert('Please fill in all required fields');
+        showToast('Please fill in all required fields', 'warning');
         return;
     }
 
@@ -503,10 +503,10 @@ async function saveWorkflow() {
 
         bootstrap.Modal.getInstance(document.getElementById('workflowModal')).hide();
         await loadWorkflows();
-        alert('Workflow saved successfully');
+        showToast('Workflow saved successfully', 'success');
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -525,7 +525,7 @@ async function toggleWorkflow(id, enabled) {
         await loadWorkflows();
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -543,10 +543,10 @@ async function deleteWorkflow(id) {
         }
 
         await loadWorkflows();
-        alert('Workflow deleted successfully');
+        showToast('Workflow deleted successfully', 'success');
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
