@@ -68,7 +68,7 @@ class ParticipantService:
         )
         return result.scalar_one_or_none()
 
-    _GROUPABLE_PARTICIPANT_COLUMNS = {"sponsor_id", "confirmed", "role", "country"}
+    _GROUPABLE_PARTICIPANT_COLUMNS = {"sponsor_id", "confirmed", "role_id", "country"}
 
     async def list_participants(
         self,

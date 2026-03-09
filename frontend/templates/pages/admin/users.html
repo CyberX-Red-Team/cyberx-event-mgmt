@@ -803,7 +803,7 @@ window.loadUsers = async function(page = 1) {
     const groupSortMap = {
         sponsor: ['sponsor_id', 'asc'],
         confirmed: ['confirmed', 'asc'],
-        role: ['role', 'asc'],
+        role: ['role_id', 'asc'],
         country: ['country', 'asc']
     };
     if (groupBy && groupSortMap[groupBy]) {
@@ -829,7 +829,7 @@ window.loadUsers = async function(page = 1) {
     if (country) params.append('country', country);
     if (sponsorId) params.append('sponsor_id', sponsorId);
     if (groupBy) {
-        const groupByColumn = { sponsor: 'sponsor_id', confirmed: 'confirmed', role: 'role', country: 'country' }[groupBy] || groupBy;
+        const groupByColumn = { sponsor: 'sponsor_id', confirmed: 'confirmed', role: 'role_id', country: 'country' }[groupBy] || groupBy;
         params.append('group_by', groupByColumn);
     }
 
@@ -1057,7 +1057,7 @@ function renderUsersTable() {
             let gk;
             if (groupBy === 'sponsor') gk = u.sponsor ? u.sponsor.id : 0;
             else if (groupBy === 'confirmed') gk = u.confirmed || 'UNKNOWN';
-            else if (groupBy === 'role') gk = u.role || 'unknown';
+            else if (groupBy === 'role') gk = u.role_id || 0;
             else if (groupBy === 'country') gk = u.country || '';
             groupCounts[gk] = (groupCounts[gk] || 0) + 1;
         });
@@ -1077,10 +1077,10 @@ function renderUsersTable() {
                 groupName = labels[groupKey] || groupKey;
                 groupIcon = groupKey === 'YES' ? 'check-circle' : groupKey === 'NO' ? 'x-circle' : 'clock';
             } else if (groupBy === 'role') {
-                groupKey = user.role || 'unknown';
-                const roleLabels = { admin: 'Admin', sponsor: 'Sponsor', participant: 'Participant' };
-                groupName = roleLabels[groupKey] || groupKey;
-                groupIcon = groupKey === 'admin' ? 'shield' : groupKey === 'sponsor' ? 'briefcase' : 'user';
+                groupKey = user.role_id || 0;
+                groupName = user.role_name || 'No Role';
+                const baseType = user.role || 'invitee';
+                groupIcon = baseType === 'admin' ? 'shield' : baseType === 'sponsor' ? 'briefcase' : 'user';
             } else if (groupBy === 'country') {
                 groupKey = user.country || '';
                 groupName = groupKey ? `${getCountryFlag(groupKey)} ${groupKey}` : 'No Country';
