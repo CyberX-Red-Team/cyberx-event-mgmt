@@ -132,7 +132,7 @@ async def admin_dashboard_page(
 
 @router.get("/admin/participants")
 async def admin_participants_page(
-    current_user: User = Depends(require_permission("participants.view"))
+    current_user: User = Depends(require_permission("participants.view_all"))
 ):
     """Redirect to unified invitees page."""
     return RedirectResponse(url="/admin/users", status_code=301)
@@ -140,7 +140,7 @@ async def admin_participants_page(
 
 @router.get("/admin/participants/add")
 async def admin_add_participant_page(
-    current_user: User = Depends(require_permission("participants.view"))
+    current_user: User = Depends(require_permission("participants.view_all"))
 ):
     """Redirect to unified invitees page."""
     return RedirectResponse(url="/admin/users", status_code=301)
@@ -149,7 +149,7 @@ async def admin_add_participant_page(
 @router.get("/admin/participants/{participant_id}")
 async def admin_edit_participant_page(
     participant_id: int,
-    current_user: User = Depends(require_permission("participants.view"))
+    current_user: User = Depends(require_permission("participants.view_all"))
 ):
     """Redirect to unified invitees page."""
     return RedirectResponse(url="/admin/users", status_code=301)
@@ -209,7 +209,7 @@ async def admin_email_page(
 @router.get("/admin/users", response_class=HTMLResponse)
 async def admin_users_page(
     request: Request,
-    current_user: User = Depends(require_permission("participants.view"))
+    current_user: User = Depends(require_permission("participants.view_all"))
 ):
     """Render user management page."""
     return templates.TemplateResponse(

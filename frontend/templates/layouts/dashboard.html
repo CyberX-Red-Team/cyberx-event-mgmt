@@ -93,9 +93,9 @@
                     {% endif %}
 
                     <!-- Participants -->
-                    {% if 'participants.view' in perms or 'actions.view' in perms %}
+                    {% if 'participants.view_all' in perms or 'actions.view' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Participants</div>
-                    {% if 'participants.view' in perms %}
+                    {% if 'participants.view_all' in perms %}
                     <a class="nav-link {% if active_page == 'participants' or active_page == 'users' %}active{% endif %}" href="/admin/users">
                         <i data-feather="users"></i>
                         <span>Invitees</span>
