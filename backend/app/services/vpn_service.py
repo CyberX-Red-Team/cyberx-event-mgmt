@@ -351,7 +351,10 @@ class VPNService:
         """
         result = await self.session.execute(
             select(VPNCredential)
-            .where(VPNCredential.assigned_to_instance_id == instance_id)
+            .where(
+                VPNCredential.assigned_to_instance_id == instance_id,
+                VPNCredential.is_available == True,
+            )
         )
         return result.scalar_one_or_none()
 
