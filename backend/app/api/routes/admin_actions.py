@@ -36,7 +36,7 @@ class BulkActionCreate(BaseModel):
 class ActionResponse(BaseModel):
     """Response for participant action."""
     id: int
-    user_id: int
+    user_id: Optional[int] = None
     user_email: str
     user_name: str
     event_id: int
