@@ -198,6 +198,17 @@ class EmailService:
         self.client = SendGridAPIClient(settings.SENDGRID_API_KEY)
         self.from_email = Email(settings.SENDGRID_FROM_EMAIL, settings.SENDGRID_FROM_NAME)
 
+    @staticmethod
+    def _get_role_info(user: User) -> Tuple[str, str]:
+        """Get base_type and role display name without triggering lazy loads."""
+        from sqlalchemy import inspect as sa_inspect
+        loaded = sa_inspect(user).attrs.role_obj.loaded_value
+        # loaded_value returns a sentinel symbol when not loaded
+        role_obj = None if type(loaded).__name__ == "symbol" else loaded
+        base_type = (role_obj.base_type if role_obj else user.role) or ""
+        display = role_obj.name if role_obj else base_type.capitalize()
+        return base_type, display
+
     # =========================================================================
     # Template Management Methods
     # =========================================================================
@@ -326,9 +337,8 @@ class EmailService:
         # Use confirmation_code if available (new system), otherwise fall back to invite_id (legacy)
         confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
 
-        # Role-specific display variables — prefer dynamic role_obj when available
-        base_type = (user.role_obj.base_type if user.role_obj else user.role) or ""
-        role_display_name = user.role_obj.name if user.role_obj else base_type.capitalize()
+        # Role-specific display variables — prefer dynamic role_obj when loaded
+        base_type, role_display_name = self._get_role_info(user)
         role_vars = {
             "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "a_or_an": "an"},
             "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "a_or_an": "a"},
@@ -416,9 +426,8 @@ class EmailService:
         # Build base template variables
         confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
 
-        # Role-specific display variables — prefer dynamic role_obj when available
-        base_type = (user.role_obj.base_type if user.role_obj else user.role) or ""
-        role_display_name = user.role_obj.name if user.role_obj else base_type.capitalize()
+        # Role-specific display variables — prefer dynamic role_obj when loaded
+        base_type, role_display_name = self._get_role_info(user)
         role_vars = {
             "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "a_or_an": "an"},
             "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "a_or_an": "a"},

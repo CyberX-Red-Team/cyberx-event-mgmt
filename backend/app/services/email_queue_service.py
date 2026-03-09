@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.email_queue import EmailQueue, EmailBatchLog, EmailQueueStatus
 from app.models.user import User
@@ -44,9 +45,9 @@ class EmailQueueService:
         Returns:
             Created EmailQueue entry
         """
-        # Get user info
+        # Get user info (eager-load role_obj for email template rendering)
         result = await self.session.execute(
-            select(User).where(User.id == user_id)
+            select(User).options(selectinload(User.role_obj)).where(User.id == user_id)
         )
         user = result.scalar_one_or_none()
 
@@ -227,9 +228,9 @@ class EmailQueueService:
 
             for email_queue in emails:
                 try:
-                    # Get fresh user data
+                    # Get fresh user data (eager-load role_obj for email template rendering)
                     result = await self.session.execute(
-                        select(User).where(User.id == email_queue.user_id)
+                        select(User).options(selectinload(User.role_obj)).where(User.id == email_queue.user_id)
                     )
                     user = result.scalar_one_or_none()
 
