@@ -523,6 +523,14 @@ class InstanceService:
         sort_col = getattr(Instance, sort_by)
         order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
 
+        # Build ordering: when grouping, prepend group column as primary sort
+        # so same-group rows are contiguous (prevents split groups in the frontend).
+        order_clauses = []
+        if group_by and group_by in self._GROUPABLE_INSTANCE_COLUMNS:
+            group_col = getattr(Instance, group_by)
+            order_clauses.append(group_col.asc().nullslast())
+        order_clauses.append(order)
+
         # Fetch with relationships (skip pagination when grouping)
         q = (
             select(Instance)
@@ -532,7 +540,7 @@ class InstanceService:
                 selectinload(Instance.instance_template),
             )
             .where(*conditions)
-            .order_by(order)
+            .order_by(*order_clauses)
         )
         if not (group_by and group_by in self._GROUPABLE_INSTANCE_COLUMNS):
             offset = (page - 1) * page_size

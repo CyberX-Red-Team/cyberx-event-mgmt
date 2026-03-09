@@ -178,6 +178,13 @@ class ParticipantService:
 
         # Apply sorting
         sort_column = getattr(User, sort_by, User.created_at)
+
+        # When grouping, prepend group column as primary sort so same-group
+        # rows are contiguous (prevents split groups in the frontend).
+        if group_by and group_by in self._GROUPABLE_PARTICIPANT_COLUMNS:
+            group_col = getattr(User, group_by)
+            query = query.order_by(group_col.asc().nullslast())
+
         if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
