@@ -828,6 +828,10 @@ window.loadUsers = async function(page = 1) {
     if (emailStatus) params.append('email_status', emailStatus);
     if (country) params.append('country', country);
     if (sponsorId) params.append('sponsor_id', sponsorId);
+    if (groupBy) {
+        const groupByColumn = { sponsor: 'sponsor_id', confirmed: 'confirmed', role: 'role', country: 'country' }[groupBy] || groupBy;
+        params.append('group_by', groupByColumn);
+    }
 
     try {
         const response = await csrfFetch(`/api/admin/participants?${params}`);
@@ -839,6 +843,10 @@ window.loadUsers = async function(page = 1) {
         renderUsersTable();
         renderPagination(data.total || 0);
         document.getElementById('userCountBadge').textContent = data.total || 0;
+
+        // Hide pagination when grouping (all rows returned)
+        const paginationRow = document.getElementById('paginationInfo').closest('.d-flex');
+        if (paginationRow) paginationRow.style.display = groupBy ? 'none' : '';
 
     } catch (error) {
         console.error('Error loading users:', error);
