@@ -836,8 +836,40 @@ function escapeHtml(text) {
 }
 
 function showToast(message, type = 'info') {
-    // Simple toast implementation - you can replace with your toast library
-    alert(message);
+    var iconMap = {
+        'success': '<i data-feather="check-circle" class="me-2 flex-shrink-0"></i>',
+        'danger': '<i data-feather="alert-circle" class="me-2 flex-shrink-0"></i>',
+        'warning': '<i data-feather="alert-triangle" class="me-2 flex-shrink-0"></i>',
+        'info': '<i data-feather="info" class="me-2 flex-shrink-0"></i>'
+    };
+    var icon = iconMap[type] || iconMap['info'];
+
+    var container = document.getElementById('toastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.className = 'position-fixed top-0 end-0 p-3';
+        container.style.zIndex = '9999';
+        document.body.appendChild(container);
+    }
+
+    var toastEl = document.createElement('div');
+    toastEl.className = 'toast align-items-center border-0 show text-bg-' + type;
+    toastEl.setAttribute('role', 'alert');
+    toastEl.setAttribute('data-bs-autohide', 'true');
+    toastEl.setAttribute('data-bs-delay', '5000');
+    toastEl.innerHTML =
+        '<div class="d-flex">' +
+            '<div class="toast-body d-flex align-items-center">' + icon + message + '</div>' +
+            '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>' +
+        '</div>';
+
+    container.appendChild(toastEl);
+    if (typeof feather !== 'undefined') feather.replace();
+
+    var bsToast = new bootstrap.Toast(toastEl);
+    bsToast.show();
+    toastEl.addEventListener('hidden.bs.toast', function() { toastEl.remove(); });
 }
 </script>
 {% endblock %}

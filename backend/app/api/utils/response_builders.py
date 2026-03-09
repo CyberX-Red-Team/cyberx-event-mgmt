@@ -49,6 +49,9 @@ async def build_auth_user_response(
         event_participation_status = participation.status
         event_participation_id = participation.id
 
+    # Resolve effective permissions from role + overrides
+    effective_permissions = sorted(user.get_effective_permissions())
+
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -66,7 +69,8 @@ async def build_auth_user_response(
         has_vpn=has_vpn,
         keycloak_synced=user.keycloak_synced,
         event_participation_status=event_participation_status,
-        event_participation_id=event_participation_id
+        event_participation_id=event_participation_id,
+        permissions=effective_permissions,
     )
 
 

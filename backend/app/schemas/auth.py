@@ -54,6 +54,9 @@ class UserResponse(BaseModel):
     # Keycloak sync status
     keycloak_synced: bool = False
 
+    # Effective permissions (resolved from role + overrides)
+    permissions: list[str] = []
+
     model_config = {
         "from_attributes": True
     }
