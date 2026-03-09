@@ -199,13 +199,19 @@ class EmailService:
         self.from_email = Email(settings.SENDGRID_FROM_EMAIL, settings.SENDGRID_FROM_NAME)
 
     @staticmethod
-    def _get_role_info(user: User) -> Tuple[str, str]:
+    def _get_role_info(user) -> Tuple[str, str]:
         """Get base_type and role display name without triggering lazy loads."""
-        from sqlalchemy import inspect as sa_inspect
-        loaded = sa_inspect(user).attrs.role_obj.loaded_value
-        # loaded_value returns a sentinel symbol when not loaded
-        role_obj = None if type(loaded).__name__ == "symbol" else loaded
-        base_type = (role_obj.base_type if role_obj else user.role) or ""
+        from app.models.role import Role
+        try:
+            from sqlalchemy import inspect as sa_inspect
+            loaded = sa_inspect(user).attrs.role_obj.loaded_value
+            role_obj = loaded if isinstance(loaded, Role) else None
+        except Exception:
+            # Fallback for non-ORM objects (e.g. SampleUser in preview_template)
+            role_obj = getattr(user, 'role_obj', None)
+            if role_obj is not None and not isinstance(role_obj, Role):
+                role_obj = None
+        base_type = (role_obj.base_type if role_obj else getattr(user, 'role', '')) or ""
         display = role_obj.name if role_obj else base_type.capitalize()
         return base_type, display
 
