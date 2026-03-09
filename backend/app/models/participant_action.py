@@ -64,6 +64,10 @@ class ParticipantAction(Base):
     notification_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
     email_template_id = Column(Integer, ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True)
 
+    # Denormalized user info for audit trail (preserved after user deletion)
+    user_email = Column(String(255), nullable=True)
+    user_name = Column(String(510), nullable=True)
+
     # Action-specific metadata (JSON for type-specific data)
     action_metadata = Column(Text, nullable=True)
 

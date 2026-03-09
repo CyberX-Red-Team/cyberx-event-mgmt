@@ -98,6 +98,8 @@ async def create_bulk_action(
     for user in target_users:
         action = ParticipantAction(
             user_id=user.id,
+            user_email=user.email,
+            user_name=f"{user.first_name} {user.last_name}",
             event_id=event.id,
             created_by_id=current_user.id,
             batch_id=batch_id,
@@ -243,6 +245,8 @@ async def assign_action_to_participants(
     for user in target_users:
         action = ParticipantAction(
             user_id=user.id,
+            user_email=user.email,
+            user_name=f"{user.first_name} {user.last_name}",
             event_id=reference_action.event_id,
             created_by_id=current_user.id,
             batch_id=data.batch_id,
@@ -399,6 +403,62 @@ async def revoke_actions(
     }
 
 
+class ActionRevokeParticipant(BaseModel):
+    """Request to revoke a single participant's action."""
+    action_id: int
+
+
+@router.post("/revoke-participant")
+async def revoke_participant_action(
+    data: ActionRevokeParticipant,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("actions.manage"))
+):
+    """
+    Revoke a single participant's pending action.
+
+    Only PENDING actions can be revoked. Already confirmed/declined actions are not changed.
+    """
+    result = await db.execute(
+        select(ParticipantAction).where(ParticipantAction.id == data.action_id)
+    )
+    action = result.scalar_one_or_none()
+
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+
+    if action.status != ActionStatus.PENDING.value:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot revoke action with status '{action.status}'. Only pending actions can be revoked."
+        )
+
+    action.status = ActionStatus.CANCELLED.value
+    action.responded_at = datetime.now(timezone.utc)
+    action.response_note = f"Revoked by admin {current_user.email}"
+
+    await db.commit()
+
+    # Audit log
+    audit_service = AuditService(db)
+    await audit_service.log(
+        user_id=current_user.id,
+        action="action_revoke_participant",
+        resource_type="participant_action",
+        details={
+            "message": f"Revoked action for {action.user_email or 'unknown user'}",
+            "action_id": action.id,
+            "batch_id": action.batch_id,
+        }
+    )
+
+    return {
+        "success": True,
+        "action_id": action.id,
+        "message": f"Revoked action for {action.user_name or action.user_email or 'user'}"
+    }
+
+
 @router.get("")
 async def list_actions(
     event_id: Optional[int] = None,
@@ -422,15 +482,15 @@ async def list_actions(
     result = await db.execute(query)
     actions = result.scalars().all()
 
-    # Build response with user info
+    # Build response with user info (prefer live user data, fall back to denormalized columns)
     response = []
     for action in actions:
         user = action.user
         response.append(ActionResponse(
             id=action.id,
-            user_id=user.id,
-            user_email=user.email,
-            user_name=f"{user.first_name} {user.last_name}",
+            user_id=user.id if user else action.user_id,
+            user_email=user.email if user else (action.user_email or "deleted user"),
+            user_name=f"{user.first_name} {user.last_name}" if user else (action.user_name or "Deleted User"),
             event_id=action.event_id,
             batch_id=action.batch_id,
             action_type=action.action_type,

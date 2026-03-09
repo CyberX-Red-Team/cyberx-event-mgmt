@@ -480,6 +480,12 @@ window.showResponseDetails = function(actionTitle, batchId) {
             ? `<div class="small text-muted">Responded: ${formatDateTime(action.responded_at)}</div>`
             : '<div class="small text-muted">Not yet responded</div>';
 
+        const revokeBtn = action.status === 'pending'
+            ? `<button class="btn btn-outline-danger btn-sm ms-2" onclick="revokeParticipantAction(${action.id}, '${escapeHtml(action.user_name).replace(/'/g, "\\'")}')">
+                <i data-feather="x" style="width:14px;height:14px"></i> Revoke
+               </button>`
+            : '';
+
         return `
             <div class="border-bottom pb-3 mb-3">
                 <div class="d-flex justify-content-between align-items-start">
@@ -487,8 +493,9 @@ window.showResponseDetails = function(actionTitle, batchId) {
                         <strong>${escapeHtml(action.user_name)}</strong>
                         <div class="small text-muted">${escapeHtml(action.user_email)}</div>
                     </div>
-                    <div>
+                    <div class="d-flex align-items-center">
                         ${statusBadge}
+                        ${revokeBtn}
                     </div>
                 </div>
                 ${respondedAt}
@@ -533,6 +540,40 @@ window.revokeActionGroup = async function(batchId, title, pendingCount) {
     } catch (error) {
         console.error('Failed to revoke actions:', error);
         showToast('Failed to revoke actions', 'danger');
+    }
+};
+
+// Revoke a single participant's action
+window.revokeParticipantAction = async function(actionId, userName) {
+    if (!confirm(`Revoke this action for ${userName}?`)) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch('/api/admin/actions/revoke-participant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action_id: actionId })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast(result.message, 'success');
+            await loadActionStatistics();
+            // Re-render the modal with updated data
+            if (currentModalBatchId) {
+                showResponseDetails(
+                    document.getElementById('modalActionTitle').textContent,
+                    currentModalBatchId
+                );
+            }
+        } else {
+            showToast(result.detail || 'Failed to revoke action', 'danger');
+        }
+    } catch (error) {
+        console.error('Failed to revoke participant action:', error);
+        showToast('Failed to revoke action', 'danger');
     }
 };
 
