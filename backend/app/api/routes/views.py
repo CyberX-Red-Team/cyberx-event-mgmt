@@ -11,7 +11,7 @@ from sqlalchemy import select
 logger = logging.getLogger(__name__)
 
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
-from app.dependencies import get_optional_user, get_current_active_user, get_current_admin_user, get_current_sponsor_user, get_db
+from app.dependencies import get_optional_user, get_current_active_user, get_current_admin_user, get_current_sponsor_user, get_db, require_permission
 from app.api.utils.dependencies import get_event_service
 from app.models.user import User
 from app.models.event import EventParticipation
@@ -116,7 +116,7 @@ async def home_page(
 @router.get("/admin/dashboard", response_class=HTMLResponse)
 async def admin_dashboard_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Render admin dashboard."""
     return templates.TemplateResponse(
@@ -132,7 +132,7 @@ async def admin_dashboard_page(
 
 @router.get("/admin/participants")
 async def admin_participants_page(
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("participants.view"))
 ):
     """Redirect to unified invitees page."""
     return RedirectResponse(url="/admin/users", status_code=301)
@@ -140,7 +140,7 @@ async def admin_participants_page(
 
 @router.get("/admin/participants/add")
 async def admin_add_participant_page(
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("participants.view"))
 ):
     """Redirect to unified invitees page."""
     return RedirectResponse(url="/admin/users", status_code=301)
@@ -149,7 +149,7 @@ async def admin_add_participant_page(
 @router.get("/admin/participants/{participant_id}")
 async def admin_edit_participant_page(
     participant_id: int,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("participants.view"))
 ):
     """Redirect to unified invitees page."""
     return RedirectResponse(url="/admin/users", status_code=301)
@@ -158,7 +158,7 @@ async def admin_edit_participant_page(
 @router.get("/admin/vpn", response_class=HTMLResponse)
 async def admin_vpn_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("vpn.manage_pool"))
 ):
     """Render VPN management page."""
     return templates.TemplateResponse(
@@ -175,7 +175,7 @@ async def admin_vpn_page(
 @router.get("/admin/cpe-certificates", response_class=HTMLResponse)
 async def admin_cpe_certificates_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("cpe.manage"))
 ):
     """Render CPE certificate management page."""
     return templates.TemplateResponse(
@@ -192,7 +192,7 @@ async def admin_cpe_certificates_page(
 @router.get("/admin/email", response_class=HTMLResponse)
 async def admin_email_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("email.view"))
 ):
     """Render email management page."""
     return templates.TemplateResponse(
@@ -209,13 +209,9 @@ async def admin_email_page(
 @router.get("/admin/users", response_class=HTMLResponse)
 async def admin_users_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("participants.view"))
 ):
-    """Render user management page (admin only)."""
-    # Double-check user is an admin
-    if current_user.role != "admin":
-        raise forbidden("Admin access required")
-
+    """Render user management page."""
     return templates.TemplateResponse(
         "pages/admin/users.html",
         {
@@ -230,9 +226,9 @@ async def admin_users_page(
 @router.get("/admin/audit", response_class=HTMLResponse)
 async def admin_audit_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("admin.view_audit_log"))
 ):
-    """Render audit log page (admin only)."""
+    """Render audit log page."""
     return templates.TemplateResponse(
         "pages/admin/audit.html",
         {
@@ -247,9 +243,9 @@ async def admin_audit_page(
 @router.get("/admin/workflows", response_class=HTMLResponse)
 async def admin_workflows_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("email.manage_workflows"))
 ):
-    """Render email workflows management page (admin only)."""
+    """Render email workflows management page."""
     return templates.TemplateResponse(
         "pages/admin/workflows.html",
         {
@@ -264,9 +260,9 @@ async def admin_workflows_page(
 @router.get("/admin/events", response_class=HTMLResponse)
 async def admin_events_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.view"))
 ):
-    """Render events management page (admin only)."""
+    """Render events management page."""
     return templates.TemplateResponse(
         "pages/admin/events.html",
         {
@@ -281,9 +277,9 @@ async def admin_events_page(
 @router.get("/admin/instances", response_class=HTMLResponse)
 async def admin_instances_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("instances.view_all"))
 ):
-    """Render instance management page (admin only)."""
+    """Render instance management page."""
     return templates.TemplateResponse(
         "pages/admin/instances.html",
         {
@@ -298,9 +294,9 @@ async def admin_instances_page(
 @router.get("/admin/instance-templates", response_class=HTMLResponse)
 async def admin_instance_templates_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("cloud.manage_templates"))
 ):
-    """Render instance templates management page (admin only)."""
+    """Render instance templates management page."""
     return templates.TemplateResponse(
         "pages/admin/instance_templates.html",
         {
@@ -315,9 +311,9 @@ async def admin_instance_templates_page(
 @router.get("/admin/roles", response_class=HTMLResponse)
 async def admin_roles_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("admin.manage_roles"))
 ):
-    """Render roles & permissions management page (admin only)."""
+    """Render roles & permissions management page."""
     return templates.TemplateResponse(
         "pages/admin/roles.html",
         {
@@ -332,9 +328,9 @@ async def admin_roles_page(
 @router.get("/admin/settings", response_class=HTMLResponse)
 async def admin_settings_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("admin.manage_settings"))
 ):
-    """Render system settings page (admin only)."""
+    """Render system settings page."""
     return templates.TemplateResponse(
         "pages/admin/settings.html",
         {
@@ -349,9 +345,9 @@ async def admin_settings_page(
 @router.get("/admin/cloud-init", response_class=HTMLResponse)
 async def admin_cloud_init_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("cloud.manage_images"))
 ):
-    """Render cloud-init template management page (admin only)."""
+    """Render cloud-init template management page."""
     return templates.TemplateResponse(
         "pages/admin/cloud_init.html",
         {
@@ -366,9 +362,9 @@ async def admin_cloud_init_page(
 @router.get("/admin/licenses", response_class=HTMLResponse)
 async def admin_licenses_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("licenses.view"))
 ):
-    """Render license products management page (admin only)."""
+    """Render license products management page."""
     return templates.TemplateResponse(
         "pages/admin/license_products.html",
         {
@@ -383,9 +379,9 @@ async def admin_licenses_page(
 @router.get("/admin/tls-certificates", response_class=HTMLResponse)
 async def admin_tls_certificates_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("tls.manage"))
 ):
-    """Render TLS certificate management page (admin only)."""
+    """Render TLS certificate management page."""
     return templates.TemplateResponse(
         "pages/admin/tls_certificates.html",
         {
@@ -400,9 +396,9 @@ async def admin_tls_certificates_page(
 @router.get("/admin/action-responses", response_class=HTMLResponse)
 async def admin_action_responses_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("actions.view"))
 ):
-    """Render action responses page (admin only)."""
+    """Render action responses page."""
     return templates.TemplateResponse(
         "pages/admin/action_responses.html",
         {
