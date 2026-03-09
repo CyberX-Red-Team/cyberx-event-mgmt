@@ -173,7 +173,7 @@ async def _get_owned_instance(
     instance = result.scalar_one_or_none()
     if not instance:
         raise not_found("Instance", instance_id)
-    if instance.assigned_to_user_id != user.id:
+    if instance.created_by_user_id != user.id:
         raise forbidden("Not your instance")
     return instance
 

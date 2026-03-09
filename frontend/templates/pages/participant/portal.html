@@ -1370,7 +1370,7 @@ async function loadMyInstances() {
                             ${i.visibility !== 'private' && i.created_by_username ? `<br><small>by ${i.created_by_username}</small>` : ''}
                         </td>
                         <td>
-                            ${i.has_agent && i.status === 'ACTIVE' && hasPermission('instances.manage_agent') ? `<button class="btn btn-sm btn-outline-warning me-1" onclick="cycleVPN(${i.id})" title="Cycle VPN"><i data-feather="repeat"></i></button>` : ''}
+                            ${canDelete && i.has_agent && i.status === 'ACTIVE' && hasPermission('instances.manage_agent') ? `<button class="btn btn-sm btn-outline-warning me-1" onclick="cycleVPN(${i.id})" title="Cycle VPN"><i data-feather="repeat"></i></button>` : ''}
                             ${i.notes ? `<button class="btn btn-sm btn-outline-info me-1" onclick="showNotes('${i.notes.replace(/'/g, "\\'")}')"><i data-feather="info"></i></button>` : ''}
                             ${canDelete ? `
                                 <button class="btn btn-sm btn-outline-primary me-1" onclick="showEditModal(${i.id}, '${i.name.replace(/'/g, "\\'")}', '${i.visibility}', '${(i.notes || '').replace(/'/g, "\\'")}')">
