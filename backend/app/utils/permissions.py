@@ -79,9 +79,10 @@ ROLE_PERMISSIONS: dict[str, Set[str]] = {
     "admin": ALL_PERMISSIONS.copy(),
 
     "sponsor": {
-        # Invitee self-service permissions (10)
+        # Invitee self-service permissions (11)
         "instances.view",
         "instances.provision",
+        "instances.delete",
         "instances.manage_agent",
         "vpn.view",
         "vpn.request",
@@ -99,6 +100,7 @@ ROLE_PERMISSIONS: dict[str, Set[str]] = {
     "invitee": {
         "instances.view",
         "instances.provision",
+        "instances.delete",
         "instances.manage_agent",
         "vpn.view",
         "vpn.request",
