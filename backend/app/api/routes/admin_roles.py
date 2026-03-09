@@ -35,6 +35,7 @@ PERMISSION_CATEGORIES = [
     ]),
     ("TLS Certificates", ["tls.request", "tls.download", "tls.manage"]),
     ("CPE Certificates", ["cpe.download", "cpe.manage"]),
+    ("Discord", ["discord.view", "discord.manage"]),
     ("Cloud Infrastructure", ["cloud.manage_providers", "cloud.manage_templates", "cloud.manage_images"]),
     ("Licenses", ["licenses.view", "licenses.manage"]),
     ("Participant Actions", ["actions.view", "actions.manage"]),
