@@ -68,6 +68,8 @@ class ParticipantService:
         )
         return result.scalar_one_or_none()
 
+    _GROUPABLE_PARTICIPANT_COLUMNS = {"sponsor_id", "confirmed"}
+
     async def list_participants(
         self,
         page: int = 1,
@@ -83,7 +85,8 @@ class ParticipantService:
         role: Optional[str] = None,
         role_id: Optional[int] = None,
         country: Optional[str] = None,
-        event_id: Optional[int] = None
+        event_id: Optional[int] = None,
+        group_by: Optional[str] = None,
     ) -> Tuple[List[User], int]:
         """
         List participants with filtering and pagination.
@@ -180,9 +183,10 @@ class ParticipantService:
         else:
             query = query.order_by(sort_column.asc())
 
-        # Apply pagination
-        offset = (page - 1) * page_size
-        query = query.offset(offset).limit(page_size)
+        # Apply pagination (skip when grouping to return all rows for accurate groups)
+        if not (group_by and group_by in self._GROUPABLE_PARTICIPANT_COLUMNS):
+            offset = (page - 1) * page_size
+            query = query.offset(offset).limit(page_size)
 
         # Execute query
         result = await self.session.execute(query)

@@ -471,6 +471,10 @@ class InstanceService:
         "event_id", "created_by_user_id", "created_at",
     }
 
+    _GROUPABLE_INSTANCE_COLUMNS = {
+        "status", "event_id", "visibility", "created_by_user_id",
+    }
+
     async def list_tracked_instances(
         self,
         page: int = 1,
@@ -483,6 +487,7 @@ class InstanceService:
         created_by_user_id: int | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        group_by: str | None = None,
     ) -> tuple[list[Instance], int]:
         """List tracked instances with filtering and pagination (all providers)."""
         from sqlalchemy.orm import selectinload
@@ -518,8 +523,7 @@ class InstanceService:
         sort_col = getattr(Instance, sort_by)
         order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
 
-        # Fetch with relationships
-        offset = (page - 1) * page_size
+        # Fetch with relationships (skip pagination when grouping)
         q = (
             select(Instance)
             .options(
@@ -529,9 +533,10 @@ class InstanceService:
             )
             .where(*conditions)
             .order_by(order)
-            .offset(offset)
-            .limit(page_size)
         )
+        if not (group_by and group_by in self._GROUPABLE_INSTANCE_COLUMNS):
+            offset = (page - 1) * page_size
+            q = q.offset(offset).limit(page_size)
         result = await self.session.execute(q)
         instances = list(result.scalars().all())
 

@@ -76,6 +76,7 @@ async def list_participants(
     sponsor_id: Optional[int] = Query(None, description="Filter by sponsor ID"),
     sort_by: str = Query("created_at", description="Sort field"),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    group_by: Optional[str] = Query(None, description="Group by column (disables pagination)"),
     current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
@@ -99,7 +100,8 @@ async def list_participants(
         role=role,
         role_id=role_id,
         country=country,
-        sponsor_id=sponsor_id
+        sponsor_id=sponsor_id,
+        group_by=group_by,
     )
 
     # Build responses with VPN info
@@ -107,6 +109,15 @@ async def list_participants(
     for p in participants:
         item = await build_participant_response(p, db)
         items.append(item)
+
+    if group_by:
+        return ParticipantListResponse(
+            items=items,
+            total=total,
+            page=1,
+            page_size=total or 1,
+            total_pages=1
+        )
 
     _, total_pages = calculate_pagination(total, page, page_size)
 

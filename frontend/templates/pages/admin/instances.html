@@ -481,6 +481,7 @@ async function loadInstances(page = 1) {
     url += `&sort_by=${sortBy}&sort_order=${sortOrder}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (status) url += `&status=${encodeURIComponent(status)}`;
+    if (groupBy) url += `&group_by=${encodeURIComponent(groupBy)}`;
 
     try {
         const resp = await csrfFetch(url);
@@ -492,6 +493,10 @@ async function loadInstances(page = 1) {
         renderPagination(data.page, data.total_pages);
         document.getElementById('showingCount').textContent = data.items.length;
         document.getElementById('totalCount').textContent = data.total;
+
+        // Hide pagination when grouping (all rows returned)
+        const paginationDiv = document.getElementById('pageSizeSelect').closest('.d-flex');
+        paginationDiv.style.display = groupBy ? 'none' : '';
     } catch (e) {
         console.error(e);
         document.getElementById('instanceBody').innerHTML =

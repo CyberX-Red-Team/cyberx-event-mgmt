@@ -410,6 +410,7 @@ async function loadVPNCredentials(page = 1) {
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (isAvailable) url += `&is_available=${isAvailable}`;
     if (assignmentType) url += `&assignment_type=${encodeURIComponent(assignmentType)}`;
+    if (groupBy) url += `&group_by=${encodeURIComponent(groupBy)}`;
 
     try {
         const response = await csrfFetch(url);
@@ -427,6 +428,10 @@ async function loadVPNCredentials(page = 1) {
         renderPagination(data.page, data.total_pages, data.total);
         document.getElementById('showingCount').textContent = data.items.length;
         document.getElementById('totalCount').textContent = data.total;
+
+        // Hide pagination when grouping (all rows returned)
+        const paginationDiv = document.getElementById('pageSizeSelect').closest('.d-flex');
+        paginationDiv.style.display = groupBy ? 'none' : '';
 
     } catch (error) {
         console.error('Error:', error);

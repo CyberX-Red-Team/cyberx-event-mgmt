@@ -42,6 +42,7 @@ async def list_instances(
     search: Optional[str] = Query(None),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc"),
+    group_by: Optional[str] = Query(None, description="Group by column (disables pagination)"),
     current_user: User = Depends(require_permission("instances.view_all")),
     service: InstanceService = Depends(get_instance_service),
 ):
@@ -54,9 +55,8 @@ async def list_instances(
         search=search,
         sort_by=sort_by,
         sort_order=sort_order,
+        group_by=group_by,
     )
-
-    total_pages = (total + page_size - 1) // page_size
 
     # Build response items with event_name and created_by_username
     items = []
@@ -69,6 +69,17 @@ async def list_instances(
         if instance.created_by:
             item_dict["created_by_username"] = instance.created_by.pandas_username or instance.created_by.email
         items.append(InstanceResponse(**item_dict))
+
+    if group_by:
+        return InstanceListResponse(
+            items=items,
+            total=total,
+            page=1,
+            page_size=total or 1,
+            total_pages=1,
+        )
+
+    total_pages = (total + page_size - 1) // page_size
 
     return InstanceListResponse(
         items=items,

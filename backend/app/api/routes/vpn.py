@@ -190,6 +190,7 @@ async def list_vpn_credentials(
     search: Optional[str] = Query(None, description="Search by IP or username"),
     sort_by: str = Query("id", description="Sort field"),
     sort_order: str = Query("asc", description="Sort order: asc or desc"),
+    group_by: Optional[str] = Query(None, description="Group by column (disables pagination)"),
     current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
@@ -202,13 +203,23 @@ async def list_vpn_credentials(
         assignment_type=assignment_type,
         search=search,
         sort_by=sort_by,
-        sort_order=sort_order
+        sort_order=sort_order,
+        group_by=group_by,
     )
 
     items = []
     for vpn in credentials:
         item = await build_vpn_response(vpn, db)
         items.append(item)
+
+    if group_by:
+        return VPNCredentialListResponse(
+            items=items,
+            total=total,
+            page=1,
+            page_size=total or 1,
+            total_pages=1
+        )
 
     total_pages = (total + page_size - 1) // page_size
 

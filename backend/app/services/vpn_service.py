@@ -58,6 +58,10 @@ class VPNService:
         "is_available", "assigned_at", "assigned_to_user_id", "created_at",
     }
 
+    _GROUPABLE_VPN_COLUMNS = {
+        "assignment_type", "endpoint", "is_available", "assigned_to_user_id",
+    }
+
     async def list_credentials(
         self,
         page: int = 1,
@@ -68,6 +72,7 @@ class VPNService:
         search: Optional[str] = None,
         sort_by: str = "id",
         sort_order: str = "asc",
+        group_by: Optional[str] = None,
     ) -> Tuple[List[VPNCredential], int]:
         """List VPN credentials with filtering and pagination."""
         query = select(VPNCredential)
@@ -106,8 +111,10 @@ class VPNService:
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
-        offset = (page - 1) * page_size
-        query = query.offset(offset).limit(page_size)
+        # Skip pagination when grouping (return all rows for accurate groups)
+        if not (group_by and group_by in self._GROUPABLE_VPN_COLUMNS):
+            offset = (page - 1) * page_size
+            query = query.offset(offset).limit(page_size)
 
         result = await self.session.execute(query)
         credentials = result.scalars().all()
