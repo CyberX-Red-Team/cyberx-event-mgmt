@@ -345,11 +345,7 @@ class EmailService:
 
         # Role-specific display variables — prefer dynamic role_obj when loaded
         base_type, role_display_name = self._get_role_info(user)
-        role_vars = {
-            "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "a_or_an": "an"},
-            "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "a_or_an": "a"},
-            "invitee": {"role_label": "INVITEE", "role_upper": "INVITEE", "a_or_an": "an"},
-        }.get(base_type, {"role_label": "", "role_upper": "", "a_or_an": "a"})
+        a_or_an = "an" if role_display_name[:1].lower() in "aeiou" else "a"
 
         vars = {
             "first_name": user.first_name or "",
@@ -358,7 +354,9 @@ class EmailService:
             "role": role_display_name,
             "role_display": role_display_name,
             "role_name": role_display_name,
-            **role_vars,
+            "role_label": role_display_name.upper(),
+            "role_upper": role_display_name.upper(),
+            "a_or_an": a_or_an,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
             "password": user.pandas_password or "",
@@ -379,8 +377,12 @@ class EmailService:
         }
 
         # Merge custom variables (these will override defaults if provided)
+        # Strip role-related keys so the dynamically computed values from
+        # _get_role_info() always win (callers may inject stale base-role values).
         if custom_vars:
-            vars.update(custom_vars)
+            _ROLE_KEYS = {"role", "role_display", "role_name", "role_label", "role_upper", "a_or_an"}
+            filtered = {k: v for k, v in custom_vars.items() if k not in _ROLE_KEYS}
+            vars.update(filtered)
 
         # Render template with safe formatting
         try:
@@ -434,11 +436,7 @@ class EmailService:
 
         # Role-specific display variables — prefer dynamic role_obj when loaded
         base_type, role_display_name = self._get_role_info(user)
-        role_vars = {
-            "admin": {"role_label": "ADMIN", "role_upper": "ADMINISTRATOR", "a_or_an": "an"},
-            "sponsor": {"role_label": "SPONSOR", "role_upper": "SPONSOR", "a_or_an": "a"},
-            "invitee": {"role_label": "INVITEE", "role_upper": "INVITEE", "a_or_an": "an"},
-        }.get(base_type, {"role_label": "", "role_upper": "", "a_or_an": "a"})
+        a_or_an = "an" if role_display_name[:1].lower() in "aeiou" else "a"
 
         dynamic_template_data = {
             "first_name": user.first_name or "",
@@ -448,7 +446,9 @@ class EmailService:
             "role": role_display_name,
             "role_display": role_display_name,
             "role_name": role_display_name,
-            **role_vars,
+            "role_label": role_display_name.upper(),
+            "role_upper": role_display_name.upper(),
+            "a_or_an": a_or_an,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
             "password": user.pandas_password or "",
@@ -461,12 +461,17 @@ class EmailService:
         }
 
         # Merge custom variables (override defaults with workflow/trigger vars)
+        # Strip role-related keys so the dynamically computed values from
+        # _get_role_info() always win (callers may inject stale base-role values).
         if custom_vars:
+            _ROLE_KEYS = {"role", "role_display", "role_name", "role_label", "role_upper", "a_or_an"}
+            filtered = {k: v for k, v in custom_vars.items() if k not in _ROLE_KEYS}
             logger.debug(
-                "Merging %d custom_vars into template data: %s",
-                len(custom_vars), list(custom_vars.keys())
+                "Merging %d custom_vars into template data: %s (stripped role keys: %s)",
+                len(filtered), list(filtered.keys()),
+                [k for k in custom_vars if k in _ROLE_KEYS]
             )
-            dynamic_template_data.update(custom_vars)
+            dynamic_template_data.update(filtered)
 
         # Log password presence for debugging (never log actual value)
         has_password = bool(dynamic_template_data.get("password"))
