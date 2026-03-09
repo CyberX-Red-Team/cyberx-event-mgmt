@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_current_active_user
+from app.dependencies import get_db, get_current_active_user, require_permission
 from app.models.user import User
 from app.models.cpe_certificate import CertificateStatus
 from app.services.cpe_certificate_service import CPECertificateService
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/cpe", tags=["CPE Certificates"])
 @router.get("/my-certificates")
 async def get_my_certificates(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("cpe.download")),
 ):
     """List current user's CPE certificates."""
     service = CPECertificateService(db)
@@ -46,7 +46,7 @@ async def download_certificate(
     certificate_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("cpe.download")),
 ):
     """Download a certificate PDF. Redirects to a signed R2 URL."""
     service = CPECertificateService(db)

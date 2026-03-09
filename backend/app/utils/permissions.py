@@ -2,7 +2,7 @@
 from typing import Set
 
 
-# All permission strings defined in the system (43 total)
+# All permission strings defined in the system (44 total)
 ALL_PERMISSIONS: Set[str] = {
     # Events (4)
     "events.view",
@@ -40,11 +40,14 @@ ALL_PERMISSIONS: Set[str] = {
     "email.manage_queue",
     "email.manage_workflows",
 
-    # Certificates (4)
-    "certs.request",
-    "certs.download",
-    "cpe.manage",
+    # TLS Certificates (3)
+    "tls.request",
+    "tls.download",
     "tls.manage",
+
+    # CPE Certificates (2)
+    "cpe.download",
+    "cpe.manage",
 
     # Cloud Infrastructure (3)
     "cloud.manage_providers",
@@ -76,15 +79,16 @@ ROLE_PERMISSIONS: dict[str, Set[str]] = {
     "admin": ALL_PERMISSIONS.copy(),
 
     "sponsor": {
-        # Invitee self-service permissions (8)
+        # Invitee self-service permissions (10)
         "instances.view",
         "instances.provision",
         "instances.manage_agent",
         "vpn.view",
         "vpn.request",
         "vpn.download",
-        "certs.request",
-        "certs.download",
+        "tls.request",
+        "tls.download",
+        "cpe.download",
         # Sponsor management permissions (4)
         "participants.view",
         "participants.create",
@@ -99,8 +103,9 @@ ROLE_PERMISSIONS: dict[str, Set[str]] = {
         "vpn.view",
         "vpn.request",
         "vpn.download",
-        "certs.request",
-        "certs.download",
+        "tls.request",
+        "tls.download",
+        "cpe.download",
     },
 }
 

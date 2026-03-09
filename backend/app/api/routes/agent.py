@@ -184,7 +184,7 @@ async def _get_owned_instance(
 async def create_instance_task(
     instance_id: int,
     body: CreateTaskRequest,
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("instances.manage_agent")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a task for an owned instance (e.g. cycle_vpn)."""

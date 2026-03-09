@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_db, get_current_active_user
+from app.dependencies import get_db, get_current_active_user, require_permission
 from app.api.exceptions import not_found, bad_request, forbidden, server_error
 from app.models.user import User
 from app.models.event import Event
@@ -49,7 +49,7 @@ async def get_template_service(db: AsyncSession = Depends(get_db)) -> InstanceTe
 
 @router.get("/available-templates", response_model=list[InstanceTemplateResponse])
 async def list_available_templates(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("instances.view")),
     db: AsyncSession = Depends(get_db),
     service: InstanceTemplateService = Depends(get_template_service),
 ):
@@ -99,7 +99,7 @@ async def list_available_templates(
 @router.post("/instances", response_model=InstanceResponse, status_code=201)
 async def provision_instance(
     data: InstanceFromTemplateRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("instances.provision")),
     db: AsyncSession = Depends(get_db),
     instance_service: InstanceService = Depends(get_instance_service),
     template_service: InstanceTemplateService = Depends(get_template_service),
@@ -153,7 +153,7 @@ async def list_my_instances(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("instances.view")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """List instances visible to the current participant.
@@ -226,7 +226,7 @@ async def list_my_instances(
 @router.delete("/instances/{instance_id}")
 async def delete_my_instance(
     instance_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Delete an instance.
@@ -260,7 +260,7 @@ async def update_my_instance(
     instance_id: int,
     visibility: Optional[str] = None,
     notes: Optional[str] = None,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("instances.view")),
     db: AsyncSession = Depends(get_db),
     service: InstanceService = Depends(get_instance_service),
 ):
@@ -298,7 +298,7 @@ async def update_my_instance(
 @router.post("/instances/{instance_id}/sync", response_model=InstanceResponse)
 async def sync_my_instance(
     instance_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("instances.sync_status")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Sync instance status from cloud provider.
@@ -328,7 +328,7 @@ async def sync_my_instance(
 
 @router.get("/provider-stats", response_model=ProviderStatsResponse)
 async def get_provider_stats(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("instances.view")),
     template_service: InstanceTemplateService = Depends(get_template_service),
 ):
     """Get provider instance limits and current usage.

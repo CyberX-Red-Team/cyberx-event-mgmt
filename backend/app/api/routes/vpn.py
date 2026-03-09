@@ -440,7 +440,7 @@ async def download_participant_vpn_configs(
 async def request_vpn_credentials(
     data: VPNRequestRequest,
     request: Request,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.request")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -539,7 +539,7 @@ async def request_vpn_credentials(
 
 @router.get("/my-credentials", response_model=VPNMyCredentialsResponse)
 async def get_my_vpn_credentials(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.view")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -559,7 +559,7 @@ async def get_my_vpn_credentials(
 
 @router.get("/my-config", response_model=VPNConfigResponse)
 async def get_my_vpn_config(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.download")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Get current user's first WireGuard configuration (for backwards compatibility)."""
@@ -576,7 +576,7 @@ async def get_my_vpn_config(
 @router.get("/my-config/download")
 async def download_my_vpn_config(
     vpn_id: Optional[int] = Query(None, description="Specific VPN ID to download"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.download")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -618,7 +618,7 @@ async def download_my_vpn_config(
 @router.get("/my-configs/download")
 async def download_all_my_vpn_configs(
     naming_pattern: str = Query("simnet_{ipv4_address}.conf", description="Filename pattern"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.download")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Download all WireGuard configs for current user as ZIP with SHA256 hash file."""
@@ -661,7 +661,7 @@ async def download_all_my_vpn_configs(
 
 @router.get("/my-request-batches", response_model=VPNRequestBatchesResponse)
 async def get_my_request_batches(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.view")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Get list of VPN request batches for current user."""
@@ -687,7 +687,7 @@ async def get_my_request_batches(
 async def download_batch_configs(
     batch_id: str,
     naming_pattern: str = Query("simnet_{ipv4_address}.conf", description="Filename pattern"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.download")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Download all VPN configs from a specific request batch as ZIP with SHA256 hash file."""
@@ -731,7 +731,7 @@ async def download_batch_configs(
 
 @router.get("/available-count")
 async def get_available_vpn_count(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.view")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Get count of available VPN credentials."""

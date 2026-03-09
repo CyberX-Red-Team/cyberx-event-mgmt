@@ -17,7 +17,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.event import Event
 from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, TLSCertificateStatus
-from app.dependencies import get_current_active_user
+from app.dependencies import get_current_active_user, require_permission
 from app.services.stepca_service import StepCAService
 from app.services.powerdns_service import PowerDNSService
 from app.utils.encryption import encrypt_field, decrypt_field
@@ -60,7 +60,7 @@ class CertificateResponse(BaseModel):
 @router.get("/ca-chains")
 async def list_available_ca_chains(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("tls.request")),
 ):
     """List available CA chains for the active event (only running ones)."""
     # Get active event
@@ -99,7 +99,7 @@ async def list_available_ca_chains(
 async def request_certificate(
     data: CertificateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("tls.request")),
 ):
     """Request a TLS certificate for a domain.
 
@@ -244,7 +244,7 @@ async def request_certificate(
 @router.get("/certificates")
 async def list_my_certificates(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("tls.download")),
 ):
     """List certificates issued to the current user."""
     result = await db.execute(
@@ -281,7 +281,7 @@ async def list_my_certificates(
 async def download_certificate(
     cert_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("tls.download")),
 ):
     """Download certificate bundle as a zip file.
 

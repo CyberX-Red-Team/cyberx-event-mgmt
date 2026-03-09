@@ -97,7 +97,7 @@ class TestGetEffectivePermissions:
             password_hash=hash_password("test123"),
             permission_overrides={
                 "add": ["events.view", "events.create"],
-                "remove": ["vpn.download", "certs.download"],
+                "remove": ["vpn.download", "tls.download"],
             },
         )
         db_session.add(user)
@@ -108,7 +108,7 @@ class TestGetEffectivePermissions:
         assert "events.view" in perms
         assert "events.create" in perms
         assert "vpn.download" not in perms
-        assert "certs.download" not in perms
+        assert "tls.download" not in perms
         assert "instances.view" in perms
 
     @pytest.mark.asyncio

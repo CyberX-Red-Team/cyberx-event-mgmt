@@ -44,7 +44,7 @@ class TestRequirePermission:
         """Invitee should have self-service permissions."""
         assert invitee_user.has_permission("instances.view")
         assert invitee_user.has_permission("vpn.view")
-        assert invitee_user.has_permission("certs.request")
+        assert invitee_user.has_permission("tls.request")
 
     @pytest.mark.asyncio
     async def test_sponsor_has_participant_management(self, sponsor_user):
