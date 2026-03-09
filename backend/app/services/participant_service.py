@@ -4,7 +4,7 @@ import string
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Tuple
-from sqlalchemy import select, func, or_, delete
+from sqlalchemy import select, func, or_, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -575,7 +575,18 @@ class ParticipantService:
             vpn.is_available = False  # Never recycle
             vpn.is_active = False      # Mark as inactive
 
-        # Step 3: Queue Keycloak user deletion
+        # Step 3: Cancel pending/processing emails in queue
+        from app.models.email_queue import EmailQueue, EmailQueueStatus
+        await self.session.execute(
+            update(EmailQueue)
+            .where(
+                EmailQueue.user_id == participant_id,
+                EmailQueue.status.in_([EmailQueueStatus.PENDING, EmailQueueStatus.PROCESSING])
+            )
+            .values(status=EmailQueueStatus.CANCELLED)
+        )
+
+        # Step 4: Queue Keycloak user deletion
         if participant.pandas_username:
             from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
             queue_entry = PasswordSyncQueue(
@@ -585,7 +596,7 @@ class ParticipantService:
             )
             self.session.add(queue_entry)
 
-        # Step 4: Delete the participant from database
+        # Step 5: Delete the participant from database
         await self.session.delete(participant)
         await self.session.commit()
 
