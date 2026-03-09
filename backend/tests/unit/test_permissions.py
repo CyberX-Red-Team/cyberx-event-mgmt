@@ -13,20 +13,20 @@ class TestPermissionConstants:
     """Test permission constant definitions."""
 
     def test_all_permissions_count(self):
-        """All 44 permission strings should be defined."""
-        assert len(ALL_PERMISSIONS) == 44
+        """All 46 permission strings should be defined."""
+        assert len(ALL_PERMISSIONS) == 46
 
     def test_admin_has_all_permissions(self):
         """Admin role should have all permissions."""
         assert ROLE_PERMISSIONS["admin"] == ALL_PERMISSIONS
 
     def test_sponsor_permission_count(self):
-        """Sponsor role should have 14 permissions."""
-        assert len(ROLE_PERMISSIONS["sponsor"]) == 14
+        """Sponsor role should have 15 permissions."""
+        assert len(ROLE_PERMISSIONS["sponsor"]) == 15
 
     def test_invitee_permission_count(self):
-        """Invitee role should have 10 permissions."""
-        assert len(ROLE_PERMISSIONS["invitee"]) == 10
+        """Invitee role should have 11 permissions."""
+        assert len(ROLE_PERMISSIONS["invitee"]) == 11
 
     def test_sponsor_is_superset_of_invitee(self):
         """Sponsor permissions should include all invitee permissions."""
@@ -53,6 +53,7 @@ class TestPermissionConstants:
         assert "tls.request" in invitee
         assert "tls.download" in invitee
         assert "cpe.download" in invitee
+        assert "discord.view" in invitee
 
     def test_all_permissions_are_strings(self):
         """All permissions should be non-empty strings."""

@@ -2436,7 +2436,7 @@ async def delete_workflow(
 async def regenerate_discord_invite(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("participants.edit"))
+    current_user: User = Depends(require_permission("discord.manage"))
 ):
     """Regenerate a Discord invite for a participant's current event."""
     from app.models.event import EventParticipation

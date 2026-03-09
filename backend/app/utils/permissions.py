@@ -2,7 +2,7 @@
 from typing import Set
 
 
-# All permission strings defined in the system (44 total)
+# All permission strings defined in the system (46 total)
 ALL_PERMISSIONS: Set[str] = {
     # Events (4)
     "events.view",
@@ -49,6 +49,10 @@ ALL_PERMISSIONS: Set[str] = {
     "cpe.download",
     "cpe.manage",
 
+    # Discord (2)
+    "discord.view",
+    "discord.manage",
+
     # Cloud Infrastructure (3)
     "cloud.manage_providers",
     "cloud.manage_templates",
@@ -79,7 +83,7 @@ ROLE_PERMISSIONS: dict[str, Set[str]] = {
     "admin": ALL_PERMISSIONS.copy(),
 
     "sponsor": {
-        # Invitee self-service permissions (11)
+        # Invitee self-service permissions (12)
         "instances.view",
         "instances.provision",
         "instances.delete",
@@ -90,6 +94,7 @@ ROLE_PERMISSIONS: dict[str, Set[str]] = {
         "tls.request",
         "tls.download",
         "cpe.download",
+        "discord.view",
         # Sponsor management permissions (4)
         "participants.view",
         "participants.create",
@@ -108,6 +113,7 @@ ROLE_PERMISSIONS: dict[str, Set[str]] = {
         "tls.request",
         "tls.download",
         "cpe.download",
+        "discord.view",
     },
 }
 

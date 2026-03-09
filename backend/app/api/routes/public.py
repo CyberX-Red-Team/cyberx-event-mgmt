@@ -295,8 +295,9 @@ async def confirm_participation(
             )
             db.add(queue_entry)
 
-    # Generate Discord invite if configured for this event
-    if event and event.discord_channel_id and participation:
+    # Generate Discord invite if configured and user has discord.view permission
+    user_perms = user.get_effective_permissions()
+    if event and event.discord_channel_id and participation and "discord.view" in user_perms:
         settings = get_settings()
         if settings.DISCORD_INVITE_ENABLED and settings.DISCORD_BOT_TOKEN:
             try:

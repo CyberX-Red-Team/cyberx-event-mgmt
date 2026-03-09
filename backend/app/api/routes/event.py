@@ -112,7 +112,8 @@ async def get_active_event(
     part = part_result.scalar_one_or_none()
 
     participation_data = None
-    if part and part.discord_invite_code:
+    user_perms = current_user.get_effective_permissions()
+    if part and part.discord_invite_code and "discord.view" in user_perms:
         discord_invite_link = None
         discord_joined = False
 
