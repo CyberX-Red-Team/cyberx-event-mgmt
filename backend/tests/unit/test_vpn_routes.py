@@ -59,6 +59,7 @@ class TestListVPNCredentials:
             search=None,
             sort_by="id",
             sort_order="asc",
+            group_by=None,
             current_user=mock_admin_user,
             service=mock_vpn_service,
             db=mock_db
@@ -81,6 +82,7 @@ class TestListVPNCredentials:
             search="10.0",
             sort_by="id",
             sort_order="asc",
+            group_by=None,
             current_user=mock_admin_user,
             service=mock_vpn_service,
             db=mock_db
@@ -93,7 +95,8 @@ class TestListVPNCredentials:
             assignment_type=None,
             search="10.0",
             sort_by="id",
-            sort_order="asc"
+            sort_order="asc",
+            group_by=None,
         )
 
 
