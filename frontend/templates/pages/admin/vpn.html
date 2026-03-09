@@ -861,7 +861,7 @@ async function assignVPN() {
 }
 
 // Bulk import functionality
-{% if 'vpn.manage_pool' in perms %}
+{% if current_user.has_permission('vpn.manage_pool') %}
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 
@@ -1126,7 +1126,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Load saved naming pattern from API
-    {% if 'vpn.manage_pool' in perms %}
+    {% if current_user.has_permission('vpn.manage_pool') %}
     loadNamingPattern();
 
     // Save naming pattern when it changes (debounced)

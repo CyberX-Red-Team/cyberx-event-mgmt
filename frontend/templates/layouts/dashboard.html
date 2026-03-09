@@ -220,7 +220,7 @@
     <!-- Content -->
     <div id="layoutSidenav_content" class="{% if not show_sidebar %}full-width{% endif %}">
         <main>
-            {% block content %}{% endblock %}
+            {% block content scoped %}{% endblock %}
         </main>
 
         <!-- Footer -->
