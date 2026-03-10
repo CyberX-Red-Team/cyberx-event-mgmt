@@ -47,6 +47,8 @@ class Instance(Base):
     # Optional associations
     event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True)
     assigned_to_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    assigned_to_email = Column(String(255), nullable=True)  # Snapshot: survives user deletion
+    assigned_to_name = Column(String(500), nullable=True)   # Snapshot: survives user deletion
 
     # Metadata
     error_message = Column(Text, nullable=True)

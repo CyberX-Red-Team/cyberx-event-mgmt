@@ -70,7 +70,7 @@ async def build_vpn_response(
     assigned_instance_created_by_email = None
     assigned_instance_created_by_name = None
 
-    # Fetch user info if assigned to user
+    # Fetch user info if assigned to user (fall back to snapshot fields for deleted users)
     if vpn.assigned_to_user_id:
         result = await db.execute(
             select(User).where(User.id == vpn.assigned_to_user_id)
@@ -79,6 +79,9 @@ async def build_vpn_response(
         if user:
             assigned_email = user.email
             assigned_name = f"{user.first_name} {user.last_name}"
+    if not assigned_email and vpn.assigned_to_email:
+        assigned_email = vpn.assigned_to_email
+        assigned_name = vpn.assigned_to_name
 
     # Fetch instance info if assigned to instance
     if vpn.assigned_to_instance_id:

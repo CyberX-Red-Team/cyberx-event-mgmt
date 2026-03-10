@@ -44,6 +44,8 @@ class VPNCredential(Base):
     assignment_type = Column(String(30), default="USER_REQUESTABLE", nullable=False)  # USER_REQUESTABLE, INSTANCE_AUTO_ASSIGN, RESERVED
     assigned_to_username = Column(String(255), nullable=True)
     assigned_to_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    assigned_to_email = Column(String(255), nullable=True)  # Snapshot: survives user deletion
+    assigned_to_name = Column(String(500), nullable=True)   # Snapshot: survives user deletion
     assigned_at = Column(TIMESTAMP(timezone=True), nullable=True)
     assigned_to_instance_id = Column(Integer, ForeignKey('instances.id', ondelete='SET NULL'), nullable=True)
     assigned_instance_at = Column(TIMESTAMP(timezone=True), nullable=True)

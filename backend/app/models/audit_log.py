@@ -101,6 +101,8 @@ class VPNRequest(Base):
 
     # User and VPN References
     user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    user_email = Column(String(255), nullable=True)   # Snapshot: survives user deletion
+    user_name = Column(String(500), nullable=True)     # Snapshot: survives user deletion
     vpn_credential_id = Column(Integer, ForeignKey('vpn_credentials.id', ondelete='SET NULL'), nullable=True)
 
     # Request Details

@@ -179,6 +179,13 @@ class VPNService:
         vpn.assigned_at = datetime.now(timezone.utc)
         vpn.is_available = False
 
+        # Snapshot user identity (survives user deletion)
+        user_result = await self.session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if user:
+            vpn.assigned_to_email = user.email
+            vpn.assigned_to_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
+
         await self.session.commit()
         await self.session.refresh(vpn)
 
@@ -236,10 +243,18 @@ class VPNService:
         assigned_vpns = []
         now = datetime.now(timezone.utc)
 
+        # Snapshot user identity (survives user deletion)
+        user_result = await self.session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        snapshot_email = user.email if user else None
+        snapshot_name = (f"{user.first_name or ''} {user.last_name or ''}".strip() or None) if user else None
+
         # Update all VPNs (rows are now locked until commit)
         for vpn in available_vpns:
             vpn.assigned_to_user_id = user_id
             vpn.assigned_to_username = username
+            vpn.assigned_to_email = snapshot_email
+            vpn.assigned_to_name = snapshot_name
             vpn.assigned_at = now
             vpn.request_batch_id = batch_id
             vpn.is_available = False

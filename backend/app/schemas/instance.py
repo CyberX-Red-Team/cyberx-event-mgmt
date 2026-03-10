@@ -74,6 +74,8 @@ class InstanceResponse(BaseModel):
     event_id: Optional[int] = None
     event_name: Optional[str] = None  # Computed: event year + name
     assigned_to_user_id: Optional[int] = None
+    assigned_to_email: Optional[str] = None
+    assigned_to_name: Optional[str] = None
     error_message: Optional[str] = None
     created_by_user_id: Optional[int] = None
     created_by_username: Optional[str] = None  # Computed: creator's username

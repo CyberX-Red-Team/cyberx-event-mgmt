@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.models.instance import Instance
+from app.models.user import User
 from app.models.vpn import VPNCredential
 from app.services.cloud_provider_factory import CloudProviderFactory
 
@@ -169,6 +170,18 @@ class InstanceService:
             )
             ip_address = provider_service.extract_ip_address(instance_data)
 
+        # Snapshot user identity (survives user deletion)
+        snapshot_email = None
+        snapshot_name = None
+        if assigned_to_user_id:
+            user_result = await self.session.execute(
+                select(User).where(User.id == assigned_to_user_id)
+            )
+            user = user_result.scalar_one_or_none()
+            if user:
+                snapshot_email = user.email
+                snapshot_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
+
         # Track in DB
         instance = Instance(
             name=name,
@@ -188,6 +201,8 @@ class InstanceService:
             license_product_id=license_product_id,
             event_id=event_id,
             assigned_to_user_id=assigned_to_user_id,
+            assigned_to_email=snapshot_email,
+            assigned_to_name=snapshot_name,
             created_by_user_id=created_by_user_id,
             error_message=None if instance_data else f"Failed to create on {provider}",
             # VPN fields
