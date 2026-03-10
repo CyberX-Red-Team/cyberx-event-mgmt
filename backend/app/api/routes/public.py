@@ -435,10 +435,12 @@ async def decline_participation(
         )
         sponsor = sponsor_result.scalar_one_or_none()
         if sponsor:
+            last = sponsor.last_name or ""
             sponsor_vars = {
                 "sponsor_first_name": sponsor.first_name or "",
-                "sponsor_last_name": sponsor.last_name or "",
-                "sponsor_name": f"{sponsor.first_name or ''} {sponsor.last_name or ''}".strip(),
+                "sponsor_last_name": last,
+                "sponsor_last_initial": f"{last[0]}." if last else "",
+                "sponsor_name": f"{sponsor.first_name or ''} {last}".strip(),
                 "sponsor_email": sponsor.email or "",
             }
 
