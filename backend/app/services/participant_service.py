@@ -597,9 +597,18 @@ class ParticipantService:
             .values(status=EmailQueueStatus.CANCELLED)
         )
 
-        # Step 4: Queue Keycloak user deletion
+        # Step 4: Clean up Keycloak sync queue and queue deletion
+        from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+        # Remove any pending (unsynced) sync entries — no point creating/updating
+        # a user in Keycloak if they're about to be deleted
+        await self.session.execute(
+            delete(PasswordSyncQueue).where(
+                PasswordSyncQueue.user_id == participant_id,
+                PasswordSyncQueue.synced == False
+            )
+        )
+        # Queue Keycloak user deletion (only if they have a Keycloak username)
         if participant.pandas_username:
-            from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
             queue_entry = PasswordSyncQueue(
                 user_id=participant.id,
                 username=participant.pandas_username,
