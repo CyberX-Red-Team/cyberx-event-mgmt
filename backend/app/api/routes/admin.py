@@ -2149,7 +2149,7 @@ async def get_trigger_events(
             "event": WorkflowTriggerEvent.BULK_INVITE,
             "display_name": "Bulk Invite",
             "description": "Template used for bulk invitation emails sent to participants",
-            "available_variables": ["first_name", "last_name", "email", "confirmation_url", "event_name", "event_date_range", "event_time", "event_location"]
+            "available_variables": ["first_name", "last_name", "email", "confirmation_url", "event_name", "event_date_range", "event_time", "event_location", "sponsor_first_name", "sponsor_last_name", "sponsor_name", "sponsor_email"]
         },
         {
             "event": WorkflowTriggerEvent.EVENT_REMINDER_1,

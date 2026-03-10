@@ -151,6 +151,26 @@ async def queue_invitation_email_for_user(
     # Build event variables
     event_vars = build_event_template_vars(event)
 
+    # Build sponsor variables (empty strings if no sponsor assigned)
+    sponsor_vars = {
+        "sponsor_first_name": "",
+        "sponsor_last_name": "",
+        "sponsor_name": "",
+        "sponsor_email": "",
+    }
+    if user.sponsor_id:
+        sponsor_result = await session.execute(
+            select(User).where(User.id == user.sponsor_id)
+        )
+        sponsor = sponsor_result.scalar_one_or_none()
+        if sponsor:
+            sponsor_vars = {
+                "sponsor_first_name": sponsor.first_name or "",
+                "sponsor_last_name": sponsor.last_name or "",
+                "sponsor_name": f"{sponsor.first_name or ''} {sponsor.last_name or ''}".strip(),
+                "sponsor_email": sponsor.email or "",
+            }
+
     # Resolve template name from bulk_invite workflow config (falls back to hardcoded default)
     from app.models.email_workflow import EmailWorkflow, WorkflowTriggerEvent
     workflow_result = await session.execute(
@@ -182,7 +202,8 @@ async def queue_invitation_email_for_user(
             "last_name": user.last_name,
             "email": user.email,
             "confirmation_url": confirmation_url,
-            **event_vars
+            **event_vars,
+            **sponsor_vars,
         }
     )
 

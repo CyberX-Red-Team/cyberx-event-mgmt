@@ -156,6 +156,7 @@ Single workflow row. Available variables:
 | `first_name`, `last_name`, `email` | Trigger-time (User model) |
 | `confirmation_url` | Trigger-time (generated token) |
 | `event_name`, `event_date_range`, `event_time`, `event_location` | Trigger-time (`build_event_template_vars()`) |
+| `sponsor_first_name`, `sponsor_last_name`, `sponsor_name`, `sponsor_email` | Trigger-time (sponsor User model, empty if no sponsor) |
 | `logo_url`, `org_address`, etc. | Workflow DB `custom_vars` |
 
 ### Invitation Reminders (3 stages)
