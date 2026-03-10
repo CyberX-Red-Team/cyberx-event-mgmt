@@ -944,23 +944,23 @@ class ParticipantService:
 
         participant.updated_at = datetime.now(timezone.utc)
 
+        # Look up current event (needed for EP reset and auto-invite)
+        event_service = EventService(self.session)
+        current_event = await event_service.get_current_event()
+
         # Optionally reset EventParticipation for current event
-        if reset_event_participation:
-            event_service = EventService(self.session)
-            current_event = await event_service.get_current_event()
+        if reset_event_participation and current_event:
+            # Delete EventParticipation record for current event
+            delete_stmt = delete(EventParticipation).where(
+                EventParticipation.user_id == participant_id,
+                EventParticipation.event_id == current_event.id
+            )
+            await self.session.execute(delete_stmt)
 
-            if current_event:
-                # Delete EventParticipation record for current event
-                delete_stmt = delete(EventParticipation).where(
-                    EventParticipation.user_id == participant_id,
-                    EventParticipation.event_id == current_event.id
-                )
-                await self.session.execute(delete_stmt)
-
-                logger.info(
-                    f"Reset workflow state for participant {participant_id}: "
-                    f"deleted EventParticipation for event {current_event.id}"
-                )
+            logger.info(
+                f"Reset workflow state for participant {participant_id}: "
+                f"deleted EventParticipation for event {current_event.id}"
+            )
 
         await self.session.commit()
         await self.session.refresh(participant)
@@ -970,6 +970,25 @@ class ParticipantService:
             f"(reset_event_participation={reset_event_participation}, "
             f"reset_credentials={reset_credentials}, role={participant.role})"
         )
+
+        # Auto-queue invitation if event is active and registration is open
+        if current_event and current_event.is_active and current_event.registration_open:
+            try:
+                from app.services.email_service import queue_invitation_email_for_user
+                await queue_invitation_email_for_user(
+                    user=participant,
+                    event=current_event,
+                    session=self.session,
+                    force=True
+                )
+                logger.info(
+                    f"Auto-queued invitation email for reset participant {participant_id} "
+                    f"(event: {current_event.name})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to auto-queue invitation for reset participant {participant_id}: {e}"
+                )
 
         return participant
 
