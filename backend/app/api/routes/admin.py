@@ -473,6 +473,21 @@ async def update_participant(
         update_data['role'] = target_role.base_type
         update_data['is_admin'] = target_role.base_type == 'admin'
 
+    # Block elevation to admin if user has event participation history
+    new_role = update_data.get('role')
+    if new_role == UserRole.ADMIN.value and participant.role != UserRole.ADMIN.value:
+        from app.models.event import EventParticipation
+        ep_count_result = await db.execute(
+            select(func.count(EventParticipation.id))
+            .where(EventParticipation.user_id == participant_id)
+        )
+        ep_count = ep_count_result.scalar() or 0
+        if ep_count > 0:
+            raise bad_request(
+                f"Cannot elevate {participant.email} to admin — they have participation "
+                f"history ({ep_count} event(s)). Create a separate admin account instead."
+            )
+
     participant = await service.update_participant(
         participant_id,
         **update_data
@@ -941,6 +956,20 @@ async def update_participant_role(
     if not old_participant:
         raise not_found("Participant")
     old_role = old_participant.role
+
+    # Block elevation to admin if user has event participation history
+    if data.role.value == UserRole.ADMIN.value and old_role != UserRole.ADMIN.value:
+        from app.models.event import EventParticipation
+        ep_count_result = await db.execute(
+            select(func.count(EventParticipation.id))
+            .where(EventParticipation.user_id == participant_id)
+        )
+        ep_count = ep_count_result.scalar() or 0
+        if ep_count > 0:
+            raise bad_request(
+                f"Cannot elevate {old_participant.email} to admin — they have participation "
+                f"history ({ep_count} event(s)). Create a separate admin account instead."
+            )
 
     participant = await service.update_role(participant_id, data.role.value)
     if not participant:
@@ -2685,6 +2714,20 @@ async def assign_participant_role(
     participant = await service.get_participant(participant_id)
     if not participant:
         raise not_found("Participant")
+
+    # Block elevation to admin if user has event participation history
+    if role.base_type == UserRole.ADMIN.value and participant.role != UserRole.ADMIN.value:
+        from app.models.event import EventParticipation
+        ep_count_result = await db.execute(
+            select(func.count(EventParticipation.id))
+            .where(EventParticipation.user_id == participant_id)
+        )
+        ep_count = ep_count_result.scalar() or 0
+        if ep_count > 0:
+            raise bad_request(
+                f"Cannot elevate {participant.email} to admin — they have participation "
+                f"history ({ep_count} event(s)). Create a separate admin account instead."
+            )
 
     old_role = participant.role
     old_role_id = participant.role_id
