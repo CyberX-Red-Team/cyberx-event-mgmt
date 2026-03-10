@@ -342,6 +342,18 @@ Used for generating Continuing Professional Education certificates as PDFs.
 
 ---
 
+## Instance Agent
+
+Controls the instance agent system for executing remote tasks on provisioned instances.
+
+| Variable | Required | Web | Worker | Default | Description |
+|----------|----------|-----|--------|---------|-------------|
+| `AGENT_TASK_TIMEOUT_MINUTES` | No | Yes | No | `10` | Maximum time an agent task can run before being marked as timed out. |
+| `AGENT_HEARTBEAT_STALE_MINUTES` | No | Yes | No | `2` | Minutes before an agent heartbeat is considered stale (agent offline). |
+| `AGENT_TRUST_PROXY_HEADERS` | No | Yes | No | `false` | Trust `X-Forwarded-For` header for agent IP detection. Set `true` on Render.com or behind a reverse proxy. |
+
+---
+
 ## Background Scheduler Control
 
 | Variable | Required | Web | Worker | Default | Description |
