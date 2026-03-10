@@ -340,8 +340,7 @@ class EmailService:
             Tuple of (subject, html_content, text_content)
         """
         # Build template variables
-        # Use confirmation_code if available (new system), otherwise fall back to invite_id (legacy)
-        confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
+        confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.id}"
 
         # Role-specific display variables — prefer dynamic role_obj when loaded
         base_type, role_display_name = self._get_role_info(user)
@@ -432,7 +431,7 @@ class EmailService:
             Mail object configured for SendGrid dynamic template
         """
         # Build base template variables
-        confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
+        confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.id}"
 
         # Role-specific display variables — prefer dynamic role_obj when loaded
         base_type, role_display_name = self._get_role_info(user)
@@ -516,7 +515,6 @@ class EmailService:
             pandas_username = "jdoe"
             pandas_password = "sample_password"
             password_phonetic = "sample-PAPA-ALPHA-sierra-sierra"
-            invite_id = "abc123"
             id = 1
             confirmation_code = "sample_confirmation_code_123"
 
@@ -1045,8 +1043,6 @@ From: CyberX Red Team"""
             user.last_invite_sent = now
         elif template_name == "survey":
             user.survey_email_sent = now
-        elif template_name == "orientation":
-            user.orientation_invite_email_sent = now
 
         await self.session.commit()
 

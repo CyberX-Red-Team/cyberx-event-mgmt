@@ -28,9 +28,6 @@ class User(Base):
     # Primary Key
     id = Column(Integer, primary_key=True, index=True)
 
-    # Migration tracking
-    sharepoint_id = Column(String(50), unique=True, nullable=True)
-
     # Basic Information
     email = Column(String(255), nullable=False, index=True)  # Original email for sending
     email_normalized = Column(String(255), unique=True, nullable=False, index=True)  # Normalized for lookups
@@ -72,8 +69,6 @@ class User(Base):
     decline_reason = Column(String(500), nullable=True)  # Optional reason for declining participation
     email_status = Column(String(50), default='GOOD', nullable=False)  # GOOD/BOUNCED/SPAM_REPORTED/UNSUBSCRIBED
     email_status_timestamp = Column(BigInteger, nullable=True)
-    future_participation = Column(String(20), default='UNKNOWN')
-    remove_permanently = Column(String(20), default='UNKNOWN')
 
     # Confirmation & Terms
     confirmation_code = Column(String(100), unique=True, nullable=True, index=True)
@@ -98,11 +93,8 @@ class User(Base):
     # Discord Integration
     discord_username = Column(String(255), nullable=True)
     snowflake_id = Column(String(100), nullable=True)
-    discord_invite_code = Column(String(50), nullable=True)
-    discord_invite_sent = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # Communication Tracking
-    invite_id = Column(String(50), nullable=True)
     invite_sent = Column(TIMESTAMP(timezone=True), nullable=True)
     invite_reminder_sent = Column(TIMESTAMP(timezone=True), nullable=True)
     last_invite_sent = Column(TIMESTAMP(timezone=True), nullable=True)
@@ -112,19 +104,12 @@ class User(Base):
     reminder_2_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
     reminder_3_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
     password_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
-    check_microsoft_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
     survey_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
-    survey_response_timestamp = Column(TIMESTAMP(timezone=True), nullable=True)
-    orientation_invite_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
-    in_person_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # In-Person Attendance
-    slated_in_person = Column(Boolean, default=False)
     confirmed_in_person = Column(Boolean, default=False)
 
     # System Fields
-    azure_object_id = Column(String(100), nullable=True)
-    pandas_groups = Column(String(500), nullable=True)
     is_admin = Column(Boolean, default=False)  # Legacy - use role instead
     is_active = Column(Boolean, default=True)
 

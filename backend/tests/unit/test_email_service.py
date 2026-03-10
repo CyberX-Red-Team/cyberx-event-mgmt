@@ -1103,33 +1103,6 @@ class TestEmailServiceEventLogging:
         await db_session.refresh(user)
         assert user.survey_email_sent is not None
 
-    async def test_update_user_email_status_orientation(self, db_session: AsyncSession):
-        """Test updating user status for orientation email."""
-        from app.models.user import User, UserRole
-
-        service = EmailService(db_session)
-
-        # Create user
-        user = User(
-            email="test@example.com",
-            first_name="Test",
-            last_name="User",
-            country="USA",
-            role=UserRole.INVITEE.value
-        )
-        db_session.add(user)
-        await db_session.commit()
-        await db_session.refresh(user)
-
-        assert user.orientation_invite_email_sent is None
-
-        # Update status for orientation
-        await service._update_user_email_status(user, "orientation")
-
-        # Verify timestamp updated
-        await db_session.refresh(user)
-        assert user.orientation_invite_email_sent is not None
-
     async def test_process_webhook_event_delivered(self, db_session: AsyncSession):
         """Test processing a delivered event transitions UNKNOWN → GOOD."""
         from app.models.user import User, UserRole

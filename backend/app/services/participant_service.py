@@ -929,11 +929,7 @@ class ParticipantService:
         participant.last_invite_sent = None
 
         # Reset other workflow emails
-        participant.check_microsoft_email_sent = None
         participant.survey_email_sent = None
-        participant.survey_response_timestamp = None
-        participant.orientation_invite_email_sent = None
-        participant.in_person_email_sent = None
 
         # Clear credentials for invitees only — sponsors/admins keep theirs across events
         if reset_credentials and participant.role == UserRole.INVITEE.value:

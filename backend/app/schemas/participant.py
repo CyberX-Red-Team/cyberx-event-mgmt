@@ -76,8 +76,6 @@ class ParticipantUpdate(BaseModel):
     # confirmed: REMOVED - use /confirm/accept or /confirm/decline endpoints instead
     # pandas_username: REMOVED - auto-generated only, not manually editable
     email_status: Optional[str] = None
-    future_participation: Optional[str] = None
-    remove_permanently: Optional[str] = None
     pandas_password: Optional[str] = None
     discord_username: Optional[str] = None
     snowflake_id: Optional[str] = None
