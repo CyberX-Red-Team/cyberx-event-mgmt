@@ -716,6 +716,19 @@
                                 </tbody>
                             </table>
                         </div>
+                        <div id="pendingPagination" class="d-none">
+                            <nav class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted" id="pendingPageInfo"></small>
+                                <ul class="pagination pagination-sm mb-0">
+                                    <li class="page-item" id="pendingPrevPage">
+                                        <a class="page-link" href="#" onclick="changePendingPage(-1); return false;">&laquo; Prev</a>
+                                    </li>
+                                    <li class="page-item" id="pendingNextPage">
+                                        <a class="page-link" href="#" onclick="changePendingPage(1); return false;">Next &raquo;</a>
+                                    </li>
+                                </ul>
+                            </nav>
+                        </div>
                     </div>
 
                     <!-- Recent Non-Pending Emails Section -->
@@ -749,6 +762,19 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                        <div id="recentPagination" class="d-none">
+                            <nav class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted" id="recentPageInfo"></small>
+                                <ul class="pagination pagination-sm mb-0">
+                                    <li class="page-item" id="recentPrevPage">
+                                        <a class="page-link" href="#" onclick="changeRecentPage(-1); return false;">&laquo; Prev</a>
+                                    </li>
+                                    <li class="page-item" id="recentNextPage">
+                                        <a class="page-link" href="#" onclick="changeRecentPage(1); return false;">Next &raquo;</a>
+                                    </li>
+                                </ul>
+                            </nav>
                         </div>
                     </div>
                 </div>
@@ -2222,6 +2248,42 @@ async function loadQueueStats() {
     }
 }
 
+// Pagination state
+let pendingPage = 1;
+let pendingTotalPages = 1;
+let recentPage = 1;
+let recentTotalPages = 1;
+const QUEUE_PAGE_SIZE = 50;
+
+function changePendingPage(delta) {
+    pendingPage = Math.max(1, Math.min(pendingPage + delta, pendingTotalPages));
+    loadEmailQueue();
+}
+
+function changeRecentPage(delta) {
+    recentPage = Math.max(1, Math.min(recentPage + delta, recentTotalPages));
+    loadEmailQueue();
+}
+
+function updatePaginationControls(prefix, page, totalPages, total, pageSize) {
+    const paginationEl = document.getElementById(`${prefix}Pagination`);
+    const pageInfoEl = document.getElementById(`${prefix}PageInfo`);
+    const prevEl = document.getElementById(`${prefix}PrevPage`);
+    const nextEl = document.getElementById(`${prefix}NextPage`);
+
+    if (total <= pageSize) {
+        paginationEl.classList.add('d-none');
+        return;
+    }
+
+    paginationEl.classList.remove('d-none');
+    const start = (page - 1) * pageSize + 1;
+    const end = Math.min(page * pageSize, total);
+    pageInfoEl.textContent = `Showing ${start}-${end} of ${total}`;
+    prevEl.classList.toggle('disabled', page <= 1);
+    nextEl.classList.toggle('disabled', page >= totalPages);
+}
+
 async function loadEmailQueue() {
     // Show loading spinners
     document.getElementById('pendingQueueBody').innerHTML =
@@ -2238,20 +2300,26 @@ async function loadEmailQueue() {
     });
 
     try {
-        // Load pending emails
-        const pendingResponse = await csrfFetch('/api/admin/email-queue?page_size=100&status=pending');
+        // Load pending emails with pagination
+        const pendingResponse = await csrfFetch(`/api/admin/email-queue?page=${pendingPage}&page_size=${QUEUE_PAGE_SIZE}&status=pending`);
         if (!pendingResponse.ok) throw new Error('Failed to load pending queue');
         const pendingData = await pendingResponse.json();
+        pendingTotalPages = pendingData.total_pages || 1;
 
-        // Load recent non-pending emails (within past hour)
+        // Load recent non-pending emails with pagination
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-        const recentResponse = await csrfFetch(`/api/admin/email-queue?page_size=100&exclude_status=pending&since=${oneHourAgo}`);
+        const recentResponse = await csrfFetch(`/api/admin/email-queue?page=${recentPage}&page_size=${QUEUE_PAGE_SIZE}&exclude_status=pending&since=${oneHourAgo}`);
         if (!recentResponse.ok) throw new Error('Failed to load recent queue');
         const recentData = await recentResponse.json();
+        recentTotalPages = recentData.total_pages || 1;
 
         // Render both sections
-        renderPendingQueueTable(pendingData.items);
-        renderRecentQueueTable(recentData.items);
+        renderPendingQueueTable(pendingData.items, pendingData.total);
+        renderRecentQueueTable(recentData.items, recentData.total);
+
+        // Update pagination controls
+        updatePaginationControls('pending', pendingPage, pendingTotalPages, pendingData.total, QUEUE_PAGE_SIZE);
+        updatePaginationControls('recent', recentPage, recentTotalPages, recentData.total, QUEUE_PAGE_SIZE);
     } catch (error) {
         console.error('Error loading queue:', error);
         document.getElementById('pendingQueueBody').innerHTML =
@@ -2269,9 +2337,10 @@ async function loadEmailQueue() {
     }
 }
 
-function renderPendingQueueTable(items) {
+function renderPendingQueueTable(items, total) {
     const tbody = document.getElementById('pendingQueueBody');
-    document.getElementById('pendingCount').textContent = `(${items.length} emails)`;
+    const count = total !== undefined ? total : items.length;
+    document.getElementById('pendingCount').textContent = `(${count} email${count !== 1 ? 's' : ''})`;
 
     // Reset select-all checkbox and bulk cancel button
     const selectAll = document.getElementById('selectAllPending');
@@ -2315,9 +2384,10 @@ function renderPendingQueueTable(items) {
     feather.replace();
 }
 
-function renderRecentQueueTable(items) {
+function renderRecentQueueTable(items, total) {
     const tbody = document.getElementById('recentQueueBody');
-    document.getElementById('recentCount').textContent = `(${items.length} emails)`;
+    const count = total !== undefined ? total : items.length;
+    document.getElementById('recentCount').textContent = `(${count} email${count !== 1 ? 's' : ''})`;
 
     if (items.length === 0) {
         tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">No recent activity</td></tr>';
