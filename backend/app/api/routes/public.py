@@ -387,13 +387,30 @@ async def decline_participation(
     user.confirmed_at = now
     user.decline_reason = reason if reason else None
 
+    # Update EventParticipation record
+    event_service = EventService(db)
+    event = await event_service.get_current_event()
+
+    if event:
+        from app.models.event import EventParticipation, ParticipationStatus
+        ep_result = await db.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == user.id,
+                EventParticipation.event_id == event.id
+            )
+        )
+        participation = ep_result.scalar_one_or_none()
+        if participation:
+            participation.status = ParticipationStatus.DECLINED.value
+            participation.declined_at = now
+            participation.responded_at = now
+            participation.declined_reason = reason if reason else None
+
     await db.commit()
     await db.refresh(user)
 
     # Audit log
     audit_service = AuditService(db)
-    event_service = EventService(db)
-    event = await event_service.get_current_event()
 
     await audit_service.log(
         user_id=user.id,
@@ -407,6 +424,32 @@ async def decline_participation(
         },
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
+    )
+
+    # Trigger decline notification workflow (if configured)
+    workflow_service = WorkflowService(db)
+    sponsor_vars = {}
+    if user.sponsor_id:
+        sponsor_result = await db.execute(
+            select(User).where(User.id == user.sponsor_id)
+        )
+        sponsor = sponsor_result.scalar_one_or_none()
+        if sponsor:
+            sponsor_vars = {
+                "sponsor_first_name": sponsor.first_name or "",
+                "sponsor_last_name": sponsor.last_name or "",
+                "sponsor_name": f"{sponsor.first_name or ''} {sponsor.last_name or ''}".strip(),
+                "sponsor_email": sponsor.email or "",
+            }
+
+    await workflow_service.trigger_workflow(
+        trigger_event=WorkflowTriggerEvent.USER_DECLINED,
+        user_id=user.id,
+        custom_vars={
+            "event_name": event.name if event else "CyberX Event",
+            "decline_reason": reason if reason else "No reason provided",
+            **sponsor_vars,
+        }
     )
 
     return {

@@ -48,9 +48,9 @@
                     <label class="form-label small">Confirmed</label>
                     <select class="form-select" id="confirmedFilter">
                         <option value="">All</option>
-                        <option value="YES">Yes</option>
-                        <option value="NO">No</option>
-                        <option value="UNKNOWN">Unknown</option>
+                        <option value="YES">Confirmed</option>
+                        <option value="NO">Declined</option>
+                        <option value="UNKNOWN">Pending</option>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -357,9 +357,9 @@ function renderParticipants(participants) {
             <td>
                 ${(() => {
                     const status = p.event_participation_status || p.confirmed;
-                    if (status === 'YES' || status === 'confirmed') return '<span class="badge bg-success">Yes</span>';
-                    if (status === 'NO' || status === 'declined') return '<span class="badge bg-danger">No</span>';
-                    return '<span class="badge bg-secondary">Unknown</span>';
+                    if (status === 'YES' || status === 'confirmed') return '<span class="badge bg-success">Confirmed</span>';
+                    if (status === 'NO' || status === 'declined') return '<span class="badge bg-danger">Declined</span>';
+                    return '<span class="badge bg-secondary">Pending</span>';
                 })()}
             </td>
             <td>

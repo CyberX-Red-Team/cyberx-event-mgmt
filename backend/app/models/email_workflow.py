@@ -68,6 +68,7 @@ class WorkflowTriggerEvent:
     # User Events
     USER_CREATED = "user_created"
     USER_CONFIRMED = "user_confirmed"
+    USER_DECLINED = "user_declined"
     USER_ACTIVATED = "user_activated"
     USER_DEACTIVATED = "user_deactivated"
     ADMIN_CREATED = "admin_created"

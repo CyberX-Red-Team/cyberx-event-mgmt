@@ -2146,6 +2146,12 @@ async def get_trigger_events(
             "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location"]
         },
         {
+            "event": WorkflowTriggerEvent.USER_DECLINED,
+            "display_name": "Participation Declined",
+            "description": "Triggered when a user declines their invitation. Can notify admins or sponsors.",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "decline_reason", "sponsor_first_name", "sponsor_last_name", "sponsor_name", "sponsor_email"]
+        },
+        {
             "event": WorkflowTriggerEvent.BULK_INVITE,
             "display_name": "Bulk Invite",
             "description": "Template used for bulk invitation emails sent to participants",
