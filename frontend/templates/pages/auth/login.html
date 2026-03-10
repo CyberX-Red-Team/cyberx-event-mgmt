@@ -6,21 +6,22 @@
 <div class="container">
     <div class="row justify-content-center">
         <div class="col-lg-5">
-            <div class="card shadow-lg border-0 rounded-lg mt-5">
+            <div class="card cyber-card border-0 mt-5">
                 <div class="card-body">
-                    <div class="text-center pt-4 pb-3">
-                        <img src="/static/img/cyberx-star-logo.svg" alt="CyberX" style="width: 48px; height: 48px;" class="mb-3">
-                        <h3 class="fw-light">CyberX Login</h3>
+                    <div class="text-center pt-4 pb-2">
+                        <img src="/static/img/cyberx-star-logo.svg" alt="CyberX" style="width: 56px; height: 56px;" class="mb-3 cyber-logo">
+                        <h3 class="cyber-title">CyberX</h3>
+                        <div class="cyber-subtitle mt-1">Access Portal</div>
                     </div>
 
                     {% if error %}
-                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
                         {{ error }}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                     {% endif %}
 
-                    <form id="loginForm" method="POST" action="/login">
+                    <form id="loginForm" method="POST" action="/login" class="mt-4">
                         <div class="mb-3">
                             <label class="small mb-1" for="username">Email or Username</label>
                             <input class="form-control" id="username" name="username" type="text"
@@ -33,7 +34,7 @@
                         </div>
                         <div class="d-flex align-items-center justify-content-between mt-4 mb-0">
                             <a class="small" href="/forgot-password">Forgot Password?</a>
-                            <button type="submit" class="btn btn-primary">Login</button>
+                            <button type="submit" class="btn btn-cyber">Login</button>
                         </div>
                     </form>
                 </div>
@@ -84,7 +85,14 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
         }
     } catch (error) {
         console.error('Login error:', error);
-        alert('An error occurred. Please try again.');
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+        alertDiv.innerHTML = `
+            An error occurred. Please try again.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        const cardBody = document.querySelector('.card-body');
+        cardBody.insertBefore(alertDiv, cardBody.firstChild);
     }
 });
 </script>
