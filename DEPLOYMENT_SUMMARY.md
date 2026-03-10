@@ -235,8 +235,12 @@ Syncs participant credentials to Keycloak for SSO access to exercise infrastruct
 3. **Assign realm management roles to the client:**
    - Clients → your client → Service Account Roles tab
    - Click "Assign role" → filter by "realm-management"
-   - Assign: **`manage-users`** (allows create/update/delete users)
-   - This gives the app permission to manage Keycloak users programmatically
+   - Assign all of the following:
+     - **`manage-users`** — create, update, delete users; set passwords; manage group memberships
+     - **`view-users`** — search/find users by username (required for user lookup before create/update)
+     - **`query-groups`** — search groups by name (required for auto-assigning users to groups)
+     - **`manage-realm`** — required by the p2-inc webhook plugin to list/create webhooks
+   - This gives the app permission to manage Keycloak users and configure webhooks programmatically
 
 4. **Copy the client secret:**
    - Clients → your client → Credentials tab
