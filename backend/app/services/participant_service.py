@@ -992,6 +992,126 @@ class ParticipantService:
 
         return participant
 
+    async def bulk_reset_workflow_state(
+        self,
+        reset_event_participation: bool = True,
+        reset_credentials: bool = False,
+        roles: Optional[List[str]] = None,
+        user_ids: Optional[List[int]] = None
+    ) -> dict:
+        """
+        Reset workflow state for multiple participants at once.
+
+        Used for preparing users for a new event year. Resets the same fields
+        as reset_workflow_state() but in bulk.
+
+        Args:
+            reset_event_participation: If True, deletes EventParticipation for current event
+            reset_credentials: If True, clears password fields for invitees only
+            roles: Role filter (default: ['invitee', 'sponsor']). Admins are never included.
+            user_ids: Optional list of specific user IDs to reset. If None, resets all
+                matching users.
+
+        Returns:
+            Dict with affected_count, breakdown by role, and parameters used
+        """
+        from app.services.event_service import EventService
+
+        if roles is None:
+            roles = [UserRole.INVITEE.value, UserRole.SPONSOR.value]
+
+        # Never allow admin reset via bulk
+        roles = [r for r in roles if r != UserRole.ADMIN.value]
+
+        # Query eligible users
+        query = (
+            select(User)
+            .where(User.role.in_(roles))
+            .where(User.is_active == True)
+        )
+        if user_ids:
+            query = query.where(User.id.in_(user_ids))
+
+        result = await self.session.execute(query)
+        users = result.scalars().all()
+
+        if not users:
+            return {
+                "affected_count": 0,
+                "breakdown": {},
+                "reset_event_participation": reset_event_participation,
+                "reset_credentials": reset_credentials
+            }
+
+        # Reset each user's workflow fields and generate new confirmation codes
+        now = datetime.now(timezone.utc)
+        breakdown = {}
+        affected_ids = []
+
+        for user in users:
+            user.confirmation_code = secrets.token_urlsafe(32)
+            user.confirmation_sent_at = None
+            user.confirmed = 'UNKNOWN'
+            user.confirmed_at = None
+            user.decline_reason = None
+
+            user.terms_accepted = False
+            user.terms_accepted_at = None
+            user.terms_version = None
+
+            user.reminder_1_sent_at = None
+            user.reminder_2_sent_at = None
+            user.reminder_3_sent_at = None
+
+            user.password_email_sent = None
+            user.invite_sent = None
+            user.invite_reminder_sent = None
+            user.last_invite_sent = None
+            user.survey_email_sent = None
+
+            if reset_credentials and user.role == UserRole.INVITEE.value:
+                user.pandas_password = None
+                user.password_hash = None
+                user.password_phonetic = None
+
+            user.updated_at = now
+
+            breakdown[user.role] = breakdown.get(user.role, 0) + 1
+            affected_ids.append(user.id)
+
+        # Bulk delete EventParticipation records for current event
+        if reset_event_participation:
+            event_service = EventService(self.session)
+            current_event = await event_service.get_current_event()
+
+            if current_event and affected_ids:
+                delete_stmt = delete(EventParticipation).where(
+                    EventParticipation.user_id.in_(affected_ids),
+                    EventParticipation.event_id == current_event.id
+                )
+                await self.session.execute(delete_stmt)
+
+                logger.info(
+                    f"Bulk reset: deleted EventParticipation records for "
+                    f"{len(affected_ids)} users (event {current_event.id})"
+                )
+
+        await self.session.commit()
+
+        logger.info(
+            f"Bulk workflow reset complete: {len(affected_ids)} users reset "
+            f"(breakdown: {breakdown}, reset_ep={reset_event_participation}, "
+            f"reset_creds={reset_credentials})"
+        )
+
+        return {
+            "affected_count": len(affected_ids),
+            "affected_ids": affected_ids,
+            "breakdown": breakdown,
+            "reset_event_participation": reset_event_participation,
+            "reset_credentials": reset_credentials
+        }
+
     async def list_sponsors(self) -> List[User]:
         """Get all users who can be sponsors (admins and sponsors)."""
         result = await self.session.execute(

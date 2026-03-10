@@ -832,6 +832,72 @@ async def reset_participant_workflow(
     }
 
 
+@router.post("/participants/bulk-reset-workflow")
+async def bulk_reset_participant_workflows(
+    reset_event_participation: bool = Query(True, description="Delete EventParticipation for current event"),
+    reset_credentials: bool = Query(False, description="Clear invitee credentials (sponsors/admins unaffected)"),
+    roles: str = Query("invitee,sponsor", description="Comma-separated roles to reset"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs (omit for all matching users)"),
+    request: Request = None,
+    current_user: User = Depends(require_permission("admin.manage_users")),
+    service: ParticipantService = Depends(get_participant_service),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Bulk reset workflow state for multiple participants.
+
+    Resets confirmation status, terms, reminders, and email timestamps for all
+    active users matching the role filter. Used to prepare users for a new event year.
+
+    Admins are never affected by bulk reset.
+    """
+    role_list = [r.strip() for r in roles.split(",") if r.strip()]
+    id_list = None
+    if user_ids:
+        try:
+            id_list = [int(id.strip()) for id in user_ids.split(",") if id.strip()]
+        except ValueError:
+            raise bad_request("Invalid user_ids format — must be comma-separated integers")
+
+    result = await service.bulk_reset_workflow_state(
+        reset_event_participation=reset_event_participation,
+        reset_credentials=reset_credentials,
+        roles=role_list,
+        user_ids=id_list
+    )
+
+    # Audit log
+    from app.api.utils.request import extract_client_metadata
+    audit_service = AuditService(db)
+    ip_address, user_agent = extract_client_metadata(request)
+
+    await audit_service.log(
+        action="BULK_RESET_WORKFLOW",
+        user_id=current_user.id,
+        resource_type="USER",
+        details={
+            "affected_count": result["affected_count"],
+            "breakdown": result["breakdown"],
+            "reset_event_participation": reset_event_participation,
+            "reset_credentials": reset_credentials,
+            "roles": role_list,
+            "user_ids": id_list
+        },
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    breakdown_str = ", ".join(f"{count} {role}s" for role, count in result["breakdown"].items())
+    return {
+        "success": True,
+        "message": f"Workflow state reset for {result['affected_count']} users ({breakdown_str})",
+        "affected_count": result["affected_count"],
+        "breakdown": result["breakdown"],
+        "reset_event_participation": reset_event_participation,
+        "reset_credentials": reset_credentials
+    }
+
+
 # ============== Admin-only Role and Sponsor Management ==============
 
 @router.get("/sponsors", response_model=List[ParticipantResponse])
@@ -1181,8 +1247,16 @@ async def list_email_queue(
     if since:
         try:
             since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
-            query = query.where(EmailQueue.created_at >= since_dt)
-            count_query = count_query.where(EmailQueue.created_at >= since_dt)
+            # Check any relevant timestamp (created, sent, or processed)
+            # This ensures "recent activity" shows emails processed recently,
+            # not just emails created recently
+            since_filter = or_(
+                EmailQueue.created_at >= since_dt,
+                EmailQueue.sent_at >= since_dt,
+                EmailQueue.processed_at >= since_dt
+            )
+            query = query.where(since_filter)
+            count_query = count_query.where(since_filter)
         except ValueError:
             pass  # Ignore invalid datetime
 
@@ -1938,7 +2012,23 @@ async def update_event(
             user_agent=user_agent
         )
 
-    return {"success": True, "message": "Event updated successfully"}
+    # Activation sanity check: warn about unreset users
+    response = {"success": True, "message": "Event updated successfully"}
+    if became_active:
+        stale_count_result = await db.execute(
+            select(func.count(User.id))
+            .where(User.role.in_([UserRole.INVITEE.value, UserRole.SPONSOR.value]))
+            .where(User.is_active == True)
+            .where(User.confirmation_sent_at.isnot(None))
+        )
+        stale_count = stale_count_result.scalar() or 0
+        if stale_count > 0:
+            response["warning"] = (
+                f"{stale_count} users still have workflow state from a previous event. "
+                f"Consider running a bulk workflow reset before opening registration."
+            )
+
+    return response
 
 
 @router.post("/events/{event_id}/activate")
@@ -1977,7 +2067,22 @@ async def activate_event(
         user_agent=user_agent
     )
 
-    return {"success": True, "message": f"Event {event.year} activated"}
+    # Activation sanity check: warn about unreset users
+    response = {"success": True, "message": f"Event {event.year} activated"}
+    stale_count_result = await db.execute(
+        select(func.count(User.id))
+        .where(User.role.in_([UserRole.INVITEE.value, UserRole.SPONSOR.value]))
+        .where(User.is_active == True)
+        .where(User.confirmation_sent_at.isnot(None))
+    )
+    stale_count = stale_count_result.scalar() or 0
+    if stale_count > 0:
+        response["warning"] = (
+            f"{stale_count} users still have workflow state from a previous event. "
+            f"Consider running a bulk workflow reset before opening registration."
+        )
+
+    return response
 
 
 @router.post("/events/{event_id}/archive")

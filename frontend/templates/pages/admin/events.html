@@ -292,6 +292,10 @@
                             `<button class="btn btn-outline-success" onclick="toggleEventActive(${event.id}, ${event.is_active}, '${event.name}')">Activate</button>`
                         }
                         <button class="btn btn-outline-primary" onclick="editEvent(${event.id})">Edit</button>
+                        ${event.is_active ?
+                            `<button class="btn btn-outline-info" onclick="bulkResetForNewEvent()" title="Reset all invitees and sponsors for a new event cycle"><i data-feather="refresh-cw" class="me-1"></i>Reset Users</button>` :
+                            ''
+                        }
                         ${!event.is_active ?
                             `<button class="btn btn-outline-danger" onclick="archiveEvent(${event.id}, ${event.year})">Archive</button>` :
                             ''
@@ -478,8 +482,15 @@
                 throw new Error(error.detail || `Failed to ${action} event`);
             }
 
+            const data = await response.json();
+
             await loadEvents();
             showToast(`Event ${action}d successfully`, 'success');
+
+            // Show activation warning about unreset users
+            if (data.warning) {
+                setTimeout(() => showToast(data.warning, 'warning'), 500);
+            }
 
             // Reload dashboard event status if exists
             if (typeof loadEventStatus === 'function') {
@@ -638,6 +649,52 @@
         }, 100);
 
         showToast('SSH keys downloaded', 'success');
+    };
+
+    // Bulk reset all users for new event cycle
+    window.bulkResetForNewEvent = async function() {
+        if (!confirm(
+            'Reset workflow state for ALL invitees and sponsors?\n\n' +
+            'This will:\n' +
+            '• Reset confirmation status to UNKNOWN\n' +
+            '• Clear all reminder and email timestamps\n' +
+            '• Clear terms acceptance\n' +
+            '• Delete EventParticipation for the current event\n' +
+            '• Generate new confirmation codes\n\n' +
+            'Use this to prepare users for a new event cycle.'
+        )) {
+            return;
+        }
+
+        const resetCreds = confirm(
+            'Also clear invitee credentials?\n\n' +
+            '• YES = Invitees get fresh passwords on next confirmation (new event cycle)\n' +
+            '• NO = Keep existing passwords (re-testing flows)\n\n' +
+            'Note: Sponsor/admin credentials are never affected.'
+        );
+
+        try {
+            const params = new URLSearchParams({
+                reset_event_participation: true,
+                reset_credentials: resetCreds
+            });
+
+            const response = await csrfFetch(`/api/admin/participants/bulk-reset-workflow?${params}`, {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to bulk reset workflows');
+            }
+
+            const data = await response.json();
+            showToast(data.message || `Reset ${data.affected_count} users`, 'success');
+
+        } catch (error) {
+            console.error('Error in bulk reset:', error);
+            showToast(error.message || 'Bulk reset failed', 'danger');
+        }
     };
 
     // Load events on page load

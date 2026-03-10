@@ -1902,52 +1902,30 @@ window.bulkResetWorkflow = async function() {
     );
 
     try {
-        let successCount = 0;
-        let failCount = 0;
-        let credsCleared = 0;
-        const failedEmails = [];
-
+        const userIds = Array.from(selectedUsers).join(',');
         const params = new URLSearchParams({
             reset_event_participation: true,
-            reset_credentials: resetCreds
+            reset_credentials: resetCreds,
+            user_ids: userIds
         });
 
-        for (const userId of selectedUsers) {
-            try {
-                const response = await csrfFetch(`/api/admin/participants/${userId}/reset-workflow?${params}`, {
-                    method: 'POST'
-                });
+        const response = await csrfFetch(`/api/admin/participants/bulk-reset-workflow?${params}`, {
+            method: 'POST'
+        });
 
-                if (response.ok) {
-                    successCount++;
-                    const data = await response.json();
-                    if (data.credentials_cleared) credsCleared++;
-                } else {
-                    failCount++;
-                    const data = await response.json();
-                    failedEmails.push(data.detail || `ID ${userId}`);
-                }
-            } catch (error) {
-                failCount++;
-                failedEmails.push(`ID ${userId}: ${error.message}`);
-            }
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to bulk reset workflows');
         }
 
-        let message = `Successfully reset ${successCount} user(s)`;
-        if (credsCleared > 0) {
-            message += ` (${credsCleared} invitee credentials cleared)`;
-        }
-        if (failCount > 0) {
-            message += `\n\nFailed: ${failCount}\n${failedEmails.join('\n')}`;
-        }
-
-        showToast(message, failCount > 0 ? 'warning' : 'success');
+        const data = await response.json();
+        showToast(data.message || `Reset ${data.affected_count} users`, 'success');
         loadUsers(currentPage);
         selectedUsers.clear();
         updateBulkActionsButton();
     } catch (error) {
         console.error('Error:', error);
-        showToast('Bulk reset operation failed', 'danger');
+        showToast(error.message || 'Bulk reset operation failed', 'danger');
     }
 };
 
