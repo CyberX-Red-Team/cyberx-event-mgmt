@@ -57,14 +57,14 @@ async def update_theme_preference(
         Updated theme preference
     """
     try:
-        # Update theme preference
-        current_user.theme_preference = request.theme
+        # Merge user into this session (may have been loaded in a different session)
+        user = await db.merge(current_user)
+        user.theme_preference = request.theme
         await db.commit()
-        await db.refresh(current_user)
 
         logger.info(f"User {current_user.email} updated theme preference to {request.theme}")
 
-        return ThemePreferenceResponse(theme=current_user.theme_preference)
+        return ThemePreferenceResponse(theme=user.theme_preference)
 
     except Exception as e:
         await db.rollback()
