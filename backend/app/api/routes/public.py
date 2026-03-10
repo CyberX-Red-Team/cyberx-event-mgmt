@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from app.models.user import User
 from app.services.audit_service import AuditService
 from app.services.workflow_service import WorkflowService
@@ -199,7 +200,9 @@ async def confirm_participation(
         raise bad_request("Confirmation code and terms required")
 
     result = await db.execute(
-        select(User).where(User.confirmation_code == code)
+        select(User)
+        .options(selectinload(User.role_obj))
+        .where(User.confirmation_code == code)
     )
     user = result.scalar_one_or_none()
 
