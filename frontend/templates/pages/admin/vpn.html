@@ -480,7 +480,7 @@ function renderVPNCredentials(credentials) {
             else if (groupBy === 'endpoint') gk = v.endpoint || 'Unknown';
             else if (groupBy === 'is_available') gk = v.is_available ? 'available' : 'assigned';
             else if (groupBy === 'assigned_to_user_id') {
-                if (v.assigned_to_name) gk = v.assigned_to_user_id;
+                if (v.assigned_to_name) gk = v.assigned_to_user_id || ('name_' + v.assigned_to_name);
                 else if (v.assigned_instance_name) gk = 'instance_' + v.assigned_to_instance_id;
                 else gk = 0;
             }
@@ -507,7 +507,7 @@ function renderVPNCredentials(credentials) {
                 groupIcon = v.is_available ? 'check-circle' : 'user-check';
             } else if (groupBy === 'assigned_to_user_id') {
                 if (v.assigned_to_name) {
-                    groupValue = v.assigned_to_user_id;
+                    groupValue = v.assigned_to_user_id || ('name_' + v.assigned_to_name);
                     groupLabel = v.assigned_to_name;
                     groupIcon = 'user';
                 } else if (v.assigned_instance_name) {

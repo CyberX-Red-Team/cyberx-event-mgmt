@@ -112,15 +112,22 @@ class VPNService:
         # rows are contiguous; sort_column is a tiebreaker within groups.
         if group_by and group_by in self._GROUPABLE_VPN_COLUMNS:
             if group_by == "assigned_to_user_id":
-                # Special handling: group users, then instances, then unassigned
+                # Special handling: group users, then instances, then unassigned.
+                # Include snapshot fields (assigned_to_name) so rows where the
+                # user FK was SET NULL on deletion still group with users
+                # (matches frontend grouping which checks assigned_to_name).
                 from sqlalchemy import case, literal
                 group_order = case(
-                    (VPNCredential.assigned_to_user_id.isnot(None), literal(1)),
+                    (or_(
+                        VPNCredential.assigned_to_user_id.isnot(None),
+                        VPNCredential.assigned_to_name.isnot(None),
+                    ), literal(1)),
                     (VPNCredential.assigned_to_instance_id.isnot(None), literal(2)),
                     else_=literal(3),
                 )
                 query = query.order_by(
                     group_order,
+                    VPNCredential.assigned_to_name.asc().nullslast(),
                     VPNCredential.assigned_to_user_id.asc().nullslast(),
                     VPNCredential.assigned_to_instance_id.asc().nullslast(),
                     sort_column.asc(),
