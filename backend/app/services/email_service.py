@@ -1,6 +1,7 @@
 """Email service for SendGrid integration."""
 import json
 import logging
+import string
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Tuple, Dict, Any
 from sqlalchemy import select, func, and_, or_, desc, cast, Date, text
@@ -16,6 +17,19 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+class SafeFormatter(string.Formatter):
+    """String formatter that blocks attribute/index access (e.g. {foo.__class__})."""
+
+    def get_field(self, field_name, args, kwargs):
+        # Only allow simple field names — no dots or brackets
+        if not field_name.isidentifier():
+            raise KeyError(field_name)
+        return super().get_field(field_name, args, kwargs)
+
+
+_safe_fmt = SafeFormatter()
 
 
 def build_event_template_vars(event) -> Dict[str, str]:
@@ -409,9 +423,9 @@ class EmailService:
 
         # Render template with safe formatting
         try:
-            subject = template.subject.format(**vars)
-            html_content = template.html_content.format(**vars)
-            text_content = template.text_content.format(**vars) if template.text_content else ""
+            subject = _safe_fmt.format(template.subject, **vars)
+            html_content = _safe_fmt.format(template.html_content, **vars)
+            text_content = _safe_fmt.format(template.text_content, **vars) if template.text_content else ""
         except KeyError as e:
             # If a variable is missing, log the error and available variables
             missing_var = str(e).strip("'\"")
