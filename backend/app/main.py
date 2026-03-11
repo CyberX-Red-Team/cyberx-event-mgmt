@@ -16,7 +16,7 @@ from app.api.routes import settings as settings_routes
 from app.api.routes import admin_actions, participant_actions, admin_keycloak, admin_cpe, participant_cpe
 from app.api.routes import admin_tls, participant_tls, admin_roles
 from app.api.routes.agent import agent_router, participant_router as agent_participant_router, admin_router as agent_admin_router
-from app.tasks import start_scheduler, stop_scheduler, list_jobs
+from app.tasks import start_scheduler, stop_scheduler
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
 import base64
@@ -270,35 +270,6 @@ app.include_router(views.router)
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
-
-
-# Scheduler status endpoint (admin only)
-@app.get("/api/admin/scheduler/jobs")
-async def get_scheduled_jobs():
-    """Get list of scheduled background jobs."""
-    return {"jobs": list_jobs()}
-
-
-# Instance sync scheduler status endpoint (admin only)
-@app.get("/api/admin/scheduler/instance-sync-status")
-async def get_instance_sync_status():
-    """Get instance sync scheduler status and statistics."""
-    from app.services.instance_sync_scheduler import get_scheduler as get_instance_scheduler
-    instance_scheduler = get_instance_scheduler()
-
-    return {
-        "scheduler_initialized": instance_scheduler.scheduler is not None,
-        "scheduler_running": instance_scheduler.scheduler.running if instance_scheduler.scheduler else False,
-        "stats": instance_scheduler.get_stats(),
-        "jobs": [
-            {
-                "id": job.id,
-                "name": job.name,
-                "next_run": str(job.next_run_time) if job.next_run_time else None
-            }
-            for job in (instance_scheduler.scheduler.get_jobs() if instance_scheduler.scheduler else [])
-        ]
-    }
 
 
 # Global exception handler

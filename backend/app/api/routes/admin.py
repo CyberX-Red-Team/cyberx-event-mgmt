@@ -1554,6 +1554,29 @@ async def get_scheduler_status(
     }
 
 
+@router.get("/scheduler/instance-sync-status")
+async def get_instance_sync_status(
+    current_user: User = Depends(require_permission("scheduler.view")),
+):
+    """Get instance sync scheduler status and statistics."""
+    from app.services.instance_sync_scheduler import get_scheduler as get_instance_scheduler
+    instance_scheduler = get_instance_scheduler()
+
+    return {
+        "scheduler_initialized": instance_scheduler.scheduler is not None,
+        "scheduler_running": instance_scheduler.scheduler.running if instance_scheduler.scheduler else False,
+        "stats": instance_scheduler.get_stats(),
+        "jobs": [
+            {
+                "id": job.id,
+                "name": job.name,
+                "next_run": str(job.next_run_time) if job.next_run_time else None
+            }
+            for job in (instance_scheduler.scheduler.get_jobs() if instance_scheduler.scheduler else [])
+        ]
+    }
+
+
 # ============== Reminder Testing ==============
 
 @router.post("/reminders/trigger")

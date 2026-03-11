@@ -176,8 +176,12 @@ class ParticipantService:
         total_result = await self.session.execute(count_query)
         total = total_result.scalar()
 
-        # Apply sorting
-        sort_column = getattr(User, sort_by, User.created_at)
+        # Apply sorting (whitelist to prevent attribute enumeration)
+        ALLOWED_SORT_COLUMNS = {
+            "created_at", "email", "first_name", "last_name",
+            "company", "country", "is_active",
+        }
+        sort_column = getattr(User, sort_by, User.created_at) if sort_by in ALLOWED_SORT_COLUMNS else User.created_at
 
         # When grouping, prepend group column as primary sort so same-group
         # rows are contiguous (prevents split groups in the frontend).
