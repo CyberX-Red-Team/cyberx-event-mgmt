@@ -108,8 +108,8 @@ class VPNService:
             sort_by = "id"
         sort_column = getattr(VPNCredential, sort_by, VPNCredential.id)
 
-        # When grouping, prepend group column as primary sort so same-group
-        # rows are contiguous (prevents split groups in the frontend).
+        # When grouping, use group column as primary sort so same-group
+        # rows are contiguous; sort_column is a tiebreaker within groups.
         if group_by and group_by in self._GROUPABLE_VPN_COLUMNS:
             if group_by == "assigned_to_user_id":
                 # Special handling: group users, then instances, then unassigned
@@ -123,12 +123,12 @@ class VPNService:
                     group_order,
                     VPNCredential.assigned_to_user_id.asc().nullslast(),
                     VPNCredential.assigned_to_instance_id.asc().nullslast(),
+                    sort_column.asc(),
                 )
             else:
                 group_col = getattr(VPNCredential, group_by)
-                query = query.order_by(group_col.asc())
-
-        if sort_order == "desc":
+                query = query.order_by(group_col.asc().nullslast(), sort_column.asc())
+        elif sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
