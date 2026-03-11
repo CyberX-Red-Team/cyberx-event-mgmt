@@ -1,17 +1,17 @@
-# Render.com Blueprint for CyberX Event Management System - STAGING
+# Render.com Blueprint for CyberX Event Management System - PRODUCTION
 # Deploys: FastAPI app + Background Worker
 # Uses Supabase for PostgreSQL (configured via environment variables)
 # Estimated cost: ~$14/month (2x $7 services)
 # Trigger: DATABASE_URL will be injected via GitHub Actions
 
 services:
-  # FastAPI Web Application - STAGING
+  # FastAPI Web Application - PRODUCTION
   - type: web
-    name: cyberx-event-mgmt-staging
+    name: cyberx-event-mgmt-production
     runtime: python
     region: virginia  # US East
     plan: starter  # $7/month - 512MB RAM (sufficient for 100 users)
-    branch: staging  # Staging service watches staging branch
+    branch: main  # Production deploys from main branch
     autoDeploy: false  # Disable auto deploy - only deploy via GitHub Actions
     buildCommand: |
       cd backend
@@ -25,7 +25,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.12.8
       - key: ENVIRONMENT
-        value: staging
+        value: production
       - key: DEBUG
         value: "false"
       # Database - Supabase connection string (set manually in Render dashboard)
@@ -46,7 +46,7 @@ services:
       - key: SENDGRID_FROM_NAME
         value: CyberX Red Team
       - key: SENDGRID_SANDBOX_MODE
-        value: "true"  # STAGING: Don't send real emails
+        value: "false"  # PRODUCTION: Send real emails
       # VPN configuration
       - key: VPN_SERVER_PUBLIC_KEY
         sync: false
@@ -56,11 +56,11 @@ services:
         value: 10.20.200.1
       - key: VPN_ALLOWED_IPS
         value: 10.0.0.0/8,fd00:a::/32
-      # Application configuration - STAGING URLs
+      # Application configuration - PRODUCTION URLs
       - key: FRONTEND_URL
-        value: https://staging.events.cyberxredteam.org
+        value: https://events.cyberxredteam.org
       - key: ALLOWED_HOSTS
-        value: staging.events.cyberxredteam.org
+        value: events.cyberxredteam.org
       - key: SESSION_EXPIRY_HOURS
         value: 24
       - key: BULK_EMAIL_INTERVAL_MINUTES
