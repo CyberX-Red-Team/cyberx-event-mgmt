@@ -1364,7 +1364,7 @@ async function loadMyInstances() {
                     <tr>
                         <td>
                             <strong>${i.name}</strong>
-                            ${i.notes ? `<br><small class="text-muted" title="${i.notes}"><i data-feather="info" class="me-1"></i>Has notes</small>` : ''}
+                            ${i.notes ? `<br><small class="text-muted" title="${escapeAttr(i.notes)}"><i data-feather="info" class="me-1"></i>Has notes</small>` : ''}
                         </td>
                         <td>${providerIcon(i.provider)} ${i.instance_template_name || '-'}</td>
                         <td><span class="badge bg-${statusBadge}">${i.status}</span></td>
@@ -1377,9 +1377,9 @@ async function loadMyInstances() {
                         </td>
                         <td>
                             ${canDelete && i.has_agent && i.status === 'ACTIVE' && hasPermission('instances.manage_agent') ? `<button class="btn btn-sm btn-outline-warning me-1" onclick="cycleVPN(${i.id})" title="Cycle VPN"><i data-feather="repeat"></i></button>` : ''}
-                            ${i.notes ? `<button class="btn btn-sm btn-outline-info me-1" onclick="showNotes('${i.notes.replace(/'/g, "\\'")}')"><i data-feather="info"></i></button>` : ''}
+                            ${i.notes ? `<button class="btn btn-sm btn-outline-info me-1" data-notes="${escapeAttr(i.notes)}" onclick="showNotes(this.dataset.notes)"><i data-feather="info"></i></button>` : ''}
                             ${canDelete ? `
-                                <button class="btn btn-sm btn-outline-primary me-1" onclick="showEditModal(${i.id}, '${i.name.replace(/'/g, "\\'")}', '${i.visibility}', '${(i.notes || '').replace(/'/g, "\\'")}')">
+                                <button class="btn btn-sm btn-outline-primary me-1" data-id="${i.id}" data-name="${escapeAttr(i.name)}" data-visibility="${i.visibility}" data-notes="${escapeAttr(i.notes || '')}" onclick="showEditModal(this)">
                                     <i data-feather="edit-2"></i>
                                 </button>
                             ` : ''}
@@ -1541,15 +1541,19 @@ async function cycleVPN(instanceId) {
     }, { title: 'Cycle VPN', confirmText: 'Cycle VPN', confirmClass: 'btn-warning' });
 }
 
+function escapeAttr(str) {
+    return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function showNotes(notes) {
     showToast(notes, 'info');
 }
 
-function showEditModal(instanceId, instanceName, visibility, notes) {
-    document.getElementById('editInstanceId').value = instanceId;
-    document.getElementById('editInstanceName').value = instanceName;
-    document.getElementById('editInstanceVisibility').value = visibility;
-    document.getElementById('editInstanceNotes').value = notes;
+function showEditModal(btn) {
+    document.getElementById('editInstanceId').value = btn.dataset.id;
+    document.getElementById('editInstanceName').value = btn.dataset.name;
+    document.getElementById('editInstanceVisibility').value = btn.dataset.visibility;
+    document.getElementById('editInstanceNotes').value = btn.dataset.notes;
 
     const modal = new bootstrap.Modal(document.getElementById('editInstanceModal'));
     modal.show();
