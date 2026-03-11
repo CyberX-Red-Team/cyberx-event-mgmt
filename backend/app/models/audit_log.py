@@ -16,6 +16,8 @@ class AuditLog(Base):
 
     # User Reference
     user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    user_email = Column(String(255), nullable=True)   # Snapshot: survives user deletion
+    user_name = Column(String(500), nullable=True)     # Snapshot: survives user deletion
 
     # Action Details
     action = Column(String(100), nullable=False)  # LOGIN, LOGOUT, VPN_REQUEST, PASSWORD_RESET, etc.

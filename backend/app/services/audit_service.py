@@ -1,7 +1,9 @@
 """Audit logging service for tracking user and admin actions."""
 from typing import Optional, Dict, Any
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit_log import AuditLog
+from app.models.user import User
 
 
 class AuditService:
@@ -36,8 +38,22 @@ class AuditService:
         Returns:
             Created AuditLog entry
         """
+        # Snapshot user identity so it survives user deletion
+        user_email = None
+        user_name = None
+        if user_id:
+            result = await self.session.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            if user:
+                user_email = user.email
+                user_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
+
         audit_log = AuditLog(
             user_id=user_id,
+            user_email=user_email,
+            user_name=user_name,
             action=action,
             resource_type=resource_type,
             resource_id=resource_id,

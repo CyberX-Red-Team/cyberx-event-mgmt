@@ -1109,10 +1109,10 @@ async def list_audit_logs(
     # Build responses with user info
     items = []
     for log in audit_logs:
-        # Get user info if user_id exists
-        user_email = None
-        user_name = None
-        if log.user_id:
+        # Prefer snapshot fields; fall back to live user lookup for older logs
+        user_email = log.user_email
+        user_name = log.user_name
+        if not user_email and log.user_id:
             user_result = await db.execute(
                 select(User).where(User.id == log.user_id)
             )
