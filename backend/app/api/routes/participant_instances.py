@@ -3,7 +3,7 @@ import logging
 from typing import Optional, List
 from pydantic import BaseModel
 
-from fastapi import APIRouter, Depends, Form, Query
+from fastapi import APIRouter, Depends, Form, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
@@ -100,6 +100,7 @@ async def list_available_templates(
 @router.post("/instances", response_model=InstanceResponse, status_code=201)
 async def provision_instance(
     data: InstanceFromTemplateRequest,
+    request: Request,
     current_user: User = Depends(require_permission("instances.provision")),
     db: AsyncSession = Depends(get_db),
     instance_service: InstanceService = Depends(get_instance_service),
@@ -156,6 +157,7 @@ async def provision_instance(
             "template_id": data.template_id,
             "source": "participant_self_service",
         },
+        ip_address=request.client.host if request.client else None,
     )
 
     return InstanceResponse.model_validate(instance)
@@ -239,6 +241,7 @@ async def list_my_instances(
 @router.delete("/instances/{instance_id}")
 async def delete_my_instance(
     instance_id: int,
+    request: Request,
     current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
 ):
@@ -277,6 +280,7 @@ async def delete_my_instance(
             "provider": instance_provider,
             "source": "participant_self_service",
         },
+        ip_address=request.client.host if request.client else None,
     )
 
     return {"success": True, "message": "Instance deleted"}
@@ -285,6 +289,7 @@ async def delete_my_instance(
 @router.patch("/instances/{instance_id}", response_model=InstanceResponse)
 async def update_my_instance(
     instance_id: int,
+    request: Request,
     visibility: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
     current_user: User = Depends(require_permission("instances.view")),
@@ -328,6 +333,7 @@ async def update_my_instance(
             user_id=current_user.id,
             instance_id=instance_id,
             changes={**changes, "source": "participant_self_service"},
+            ip_address=request.client.host if request.client else None,
         )
 
     return InstanceResponse.model_validate(instance)

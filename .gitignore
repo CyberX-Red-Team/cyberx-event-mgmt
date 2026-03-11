@@ -109,3 +109,6 @@ scripts/render-env-answers.sh
 **/render-env-answers.sh
 
 plans/
+
+# Import scripts with PII
+backend/scripts/import_csv_api.py

@@ -2,7 +2,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission
@@ -94,6 +94,7 @@ async def list_instances(
 @router.post("", response_model=InstanceResponse, status_code=201)
 async def create_instance(
     data: InstanceCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.provision")),
     service: InstanceService = Depends(get_instance_service),
@@ -134,6 +135,7 @@ async def create_instance(
             "event_id": data.event_id,
             "assigned_to_user_id": data.assigned_to_user_id,
         },
+        ip_address=request.client.host if request.client else None,
     )
 
     return InstanceResponse.model_validate(instance)
@@ -142,6 +144,7 @@ async def create_instance(
 @router.post("/bulk", response_model=BulkOperationResponse, status_code=201)
 async def bulk_create_instances(
     data: InstanceBulkCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.provision")),
     service: OpenStackService = Depends(get_openstack_service),
@@ -174,6 +177,7 @@ async def bulk_create_instances(
             "provider": "openstack",
             "event_id": data.event_id,
         },
+        ip_address=request.client.host if request.client else None,
     )
 
     return BulkOperationResponse(success_count=success_count, errors=errors)
@@ -291,6 +295,7 @@ async def get_instance(
 async def update_instance(
     instance_id: int,
     data: dict,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.view_all")),
 ):
@@ -325,6 +330,7 @@ async def update_instance(
             user_id=current_user.id,
             instance_id=instance_id,
             changes=changes,
+            ip_address=request.client.host if request.client else None,
         )
 
     return InstanceResponse.model_validate(instance)
@@ -333,6 +339,7 @@ async def update_instance(
 @router.delete("/{instance_id}")
 async def delete_instance(
     instance_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
@@ -357,6 +364,7 @@ async def delete_instance(
             "status": instance.status,
             "assigned_to_email": instance.assigned_to_email,
         },
+        ip_address=request.client.host if request.client else None,
     )
 
     return {"success": True, "message": "Instance deleted"}
@@ -378,6 +386,7 @@ async def sync_instance(
 @router.post("/bulk-delete", response_model=BulkOperationResponse)
 async def bulk_delete_instances(
     data: BulkDeleteRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
@@ -393,6 +402,7 @@ async def bulk_delete_instances(
             "count": len(data.instance_ids),
             "success_count": success_count,
         },
+        ip_address=request.client.host if request.client else None,
     )
 
     return BulkOperationResponse(success_count=success_count, errors=errors)
