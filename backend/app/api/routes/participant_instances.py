@@ -3,7 +3,7 @@ import logging
 from typing import Optional, List
 from pydantic import BaseModel
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Form, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
@@ -285,8 +285,8 @@ async def delete_my_instance(
 @router.patch("/instances/{instance_id}", response_model=InstanceResponse)
 async def update_my_instance(
     instance_id: int,
-    visibility: Optional[str] = None,
-    notes: Optional[str] = None,
+    visibility: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
     current_user: User = Depends(require_permission("instances.view")),
     db: AsyncSession = Depends(get_db),
     service: InstanceService = Depends(get_instance_service),
