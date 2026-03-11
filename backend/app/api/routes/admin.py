@@ -1832,10 +1832,17 @@ async def create_event(
 
     service = EventService(db)
 
-    # Check if event for this year already exists
-    existing = await service.get_event_by_year(data.get("year"))
+    # Check if a non-archived event for this year already exists
+    existing = await service.get_active_event_by_year(data.get("year"))
     if existing:
-        raise bad_request(f"Event for year {data.get('year')} already exists")
+        raise bad_request(f"A non-archived event for year {data.get('year')} already exists")
+
+    # Auto-generate slug from name if not provided
+    from app.models.event import generate_slug
+    slug = data.get("slug") or generate_slug(data["name"])
+    existing_slug = await service.get_event_by_slug(slug)
+    if existing_slug:
+        raise bad_request(f"An event with slug '{slug}' already exists. Please choose a different name or provide a custom slug.")
 
     # Parse dates if provided
     start_date = None
@@ -1849,6 +1856,7 @@ async def create_event(
     event = await service.create_event(
         year=data["year"],
         name=data["name"],
+        slug=slug,
         start_date=start_date,
         end_date=end_date,
         event_time=data.get("event_time"),
