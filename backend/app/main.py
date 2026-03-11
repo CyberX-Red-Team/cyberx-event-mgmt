@@ -130,7 +130,7 @@ async def lifespan(app: FastAPI):
                         email=settings.ADMIN_EMAIL,
                         first_name=settings.ADMIN_FIRST_NAME,
                         last_name=settings.ADMIN_LAST_NAME,
-                        country="USA",
+                        country="United States",
                         role=UserRole.ADMIN.value,
                         role_id=admin_role.id if admin_role else None,
                         confirmed="YES",
