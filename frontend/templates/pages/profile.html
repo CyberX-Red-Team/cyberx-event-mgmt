@@ -48,7 +48,7 @@
                         <div>
                             {% if current_user.is_admin %}
                                 <span class="badge bg-danger">Administrator</span>
-                            {% elif current_user.is_sponsor %}
+                            {% elif current_user.is_sponsor_role %}
                                 <span class="badge bg-warning">Sponsor</span>
                             {% else %}
                                 <span class="badge bg-secondary">Participant</span>

@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.email_queue import EmailQueue, EmailBatchLog, EmailQueueStatus
 from app.models.user import User
@@ -44,9 +45,9 @@ class EmailQueueService:
         Returns:
             Created EmailQueue entry
         """
-        # Get user info
+        # Get user info (eager-load role_obj for email template rendering)
         result = await self.session.execute(
-            select(User).where(User.id == user_id)
+            select(User).options(selectinload(User.role_obj)).where(User.id == user_id)
         )
         user = result.scalar_one_or_none()
 
@@ -227,9 +228,9 @@ class EmailQueueService:
 
             for email_queue in emails:
                 try:
-                    # Get fresh user data
+                    # Get fresh user data (eager-load role_obj for email template rendering)
                     result = await self.session.execute(
-                        select(User).where(User.id == email_queue.user_id)
+                        select(User).options(selectinload(User.role_obj)).where(User.id == email_queue.user_id)
                     )
                     user = result.scalar_one_or_none()
 
@@ -240,10 +241,19 @@ class EmailQueueService:
                         continue
 
                     # Send email
+                    queue_vars = email_queue.custom_vars or {}
+                    logger.info(
+                        "Processing queue %s: template='%s', user=%s, "
+                        "custom_vars_keys=%s, password_present=%s",
+                        email_queue.id, email_queue.template_name,
+                        user.id,
+                        list(queue_vars.keys()) if queue_vars else "none",
+                        "password" in queue_vars,
+                    )
                     success, message, message_id = await email_service.send_email(
                         user=user,
                         template_name=email_queue.template_name,
-                        custom_vars=email_queue.custom_vars or {}
+                        custom_vars=queue_vars,
                     )
 
                     if success:
@@ -327,6 +337,32 @@ class EmailQueueService:
         await self.session.commit()
 
         return True
+
+    async def bulk_cancel_emails(self, email_ids: List[int]) -> tuple[int, List[int]]:
+        """Cancel multiple pending emails. Returns (affected_count, failed_ids)."""
+        if not email_ids:
+            return 0, []
+
+        result = await self.session.execute(
+            select(EmailQueue).where(EmailQueue.id.in_(email_ids))
+        )
+        emails = result.scalars().all()
+
+        now = datetime.now(timezone.utc)
+        cancelled_ids = set()
+
+        for email in emails:
+            if email.status == EmailQueueStatus.PENDING:
+                email.status = EmailQueueStatus.CANCELLED
+                email.processed_at = now
+                cancelled_ids.add(email.id)
+
+        failed_ids = [eid for eid in email_ids if eid not in cancelled_ids]
+
+        if cancelled_ids:
+            await self.session.commit()
+
+        return len(cancelled_ids), failed_ids
 
     async def get_queue_stats(self) -> Dict[str, int]:
         """Get email queue statistics."""

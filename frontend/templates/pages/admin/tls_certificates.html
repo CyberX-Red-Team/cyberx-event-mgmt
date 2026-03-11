@@ -1,0 +1,981 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}TLS Certificates{% endblock %}
+
+{% block extra_css %}
+<style>
+    .tab-content {
+        padding-top: 1.5rem;
+    }
+    .status-running { color: var(--bs-success, #198754); font-weight: 600; }
+    .status-stopped { color: var(--text-secondary, #6c757d); }
+    .status-starting { color: var(--bs-primary, #0d6efd); }
+    .status-error { color: var(--bs-danger, #dc3545); font-weight: 600; }
+    .cert-status-issued { color: var(--bs-success, #198754); }
+    .cert-status-revoked { color: var(--bs-danger, #dc3545); }
+    .cert-status-expired { color: var(--bs-warning, #fd7e14); }
+    .file-drop-zone {
+        border: 2px dashed var(--border-color, #dee2e6);
+        border-radius: 0.5rem;
+        padding: 1rem;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.2s, background 0.2s;
+        background: var(--input-bg, #fff);
+        color: var(--text-primary, #212529);
+    }
+    .file-drop-zone:hover,
+    .file-drop-zone.dragover {
+        border-color: var(--bs-primary, #0d6efd);
+        background: var(--hover-bg, rgba(0, 0, 0, 0.05));
+    }
+    .file-drop-zone.has-file {
+        border-color: var(--bs-success, #198754);
+        border-style: solid;
+    }
+    .file-drop-zone .file-name {
+        font-size: 0.85rem;
+        color: var(--bs-success, #198754);
+        font-weight: 500;
+    }
+    .file-drop-zone .text-muted {
+        color: var(--text-secondary, #6c757d) !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-fluid px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="shield"></i></div>
+                        TLS Certificate Services
+                    </h1>
+                    <div class="page-header-subtitle">Manage CA chains, step-ca instances, and issued TLS certificates</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-fluid px-4 mt-n10">
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-primary text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">CA Chains</div>
+                            <div class="text-lg fw-bold" id="statChains">-</div>
+                        </div>
+                        <i data-feather="layers" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Running Instances</div>
+                            <div class="text-lg fw-bold" id="statRunning">-</div>
+                        </div>
+                        <i data-feather="activity" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-info text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Certificates Issued</div>
+                            <div class="text-lg fw-bold" id="statCerts">-</div>
+                        </div>
+                        <i data-feather="file-text" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-warning text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Active Certs</div>
+                            <div class="text-lg fw-bold" id="statActive">-</div>
+                        </div>
+                        <i data-feather="check-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs" role="tablist">
+        <li class="nav-item">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#chainsTab" type="button">
+                <i data-feather="layers" class="me-1"></i> CA Chains
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#certsTab" type="button">
+                <i data-feather="file-text" class="me-1"></i> Issued Certificates
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- CA Chains Tab -->
+        <div class="tab-pane fade show active" id="chainsTab">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div><i data-feather="layers" class="me-2"></i>CA Chains</div>
+                    <button class="btn btn-sm btn-primary" onclick="openCreateChainModal()">
+                        <i data-feather="plus" class="me-1"></i> Create CA Chain
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="chainsLoading" class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm me-2"></div> Loading CA chains...
+                    </div>
+                    <div class="table-responsive" id="chainsTableWrapper" style="display: none;">
+                        <table class="table table-hover table-sm" id="chainsTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                    <th class="text-center">Status</th>
+                                    <th class="text-center">Certs</th>
+                                    <th>Duration</th>
+                                    <th class="text-center">Wildcard</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="chainsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Certificates Tab -->
+        <div class="tab-pane fade" id="certsTab">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div><i data-feather="file-text" class="me-2"></i>Issued TLS Certificates</div>
+                    <div class="d-flex gap-2">
+                        <select class="form-select form-select-sm" id="certChainFilter" onchange="loadCertificates()" style="width: auto;">
+                            <option value="">All CA Chains</option>
+                        </select>
+                        <select class="form-select form-select-sm" id="certStatusFilter" onchange="loadCertificates()" style="width: auto;">
+                            <option value="">All Status</option>
+                            <option value="issued">Issued</option>
+                            <option value="revoked">Revoked</option>
+                            <option value="expired">Expired</option>
+                        </select>
+                        <button class="btn btn-sm btn-primary" onclick="openRequestCertModal()">
+                            <i data-feather="plus" class="me-1"></i> Request Certificate
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="certsLoading" class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm me-2"></div> Loading certificates...
+                    </div>
+                    <div class="table-responsive" id="certsTableWrapper" style="display: none;">
+                        <table class="table table-hover table-sm" id="certsTable">
+                            <thead>
+                                <tr>
+                                    <th>Domain (CN)</th>
+                                    <th>Serial</th>
+                                    <th>SANs</th>
+                                    <th>User</th>
+                                    <th>CA Chain</th>
+                                    <th class="text-center">Status</th>
+                                    <th>Issued</th>
+                                    <th>Expires</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="certsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create CA Chain Modal -->
+<div class="modal fade" id="createChainModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i data-feather="plus-circle" class="me-2"></i>Create CA Chain</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="chainName" placeholder="e.g. Red Team CA">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Event <span class="text-danger">*</span></label>
+                        <select class="form-select" id="chainEventId"></select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Description</label>
+                        <input type="text" class="form-control" id="chainDescription" placeholder="Optional description">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Default Duration</label>
+                        <input type="text" class="form-control" id="chainDuration" value="2160h" placeholder="e.g. 2160h (90 days)">
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="chainAllowWildcard" checked>
+                            <label class="form-check-label" for="chainAllowWildcard">Allow wildcard certificates</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <hr>
+                        <h6 class="mb-3">CA Files (PEM format)</h6>
+                        <p class="text-muted small mb-3">Upload the CA certificate that will sign end-entity certs, its private key, and the trust chain above it.</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Signing Certificate <span class="text-danger">*</span></label>
+                        <div class="file-drop-zone" id="dropSigningCert" onclick="document.getElementById('fileSigningCert').click()">
+                            <i data-feather="upload" class="mb-1"></i>
+                            <div class="small text-muted">The CA cert that will sign certs (.pem)</div>
+                            <div class="file-name" id="nameSigningCert"></div>
+                        </div>
+                        <input type="file" class="d-none" id="fileSigningCert" accept=".pem,.crt,.cer" onchange="onFileSelect(this, 'SigningCert')">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Signing Private Key <span class="text-danger">*</span></label>
+                        <div class="file-drop-zone" id="dropSigningKey" onclick="document.getElementById('fileSigningKey').click()">
+                            <i data-feather="upload" class="mb-1"></i>
+                            <div class="small text-muted">Private key for the signing cert (.pem)</div>
+                            <div class="file-name" id="nameSigningKey"></div>
+                        </div>
+                        <input type="file" class="d-none" id="fileSigningKey" accept=".pem,.key" onchange="onFileSelect(this, 'SigningKey')">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">CA Chain <span class="text-danger">*</span></label>
+                        <div class="file-drop-zone" id="dropCAChain" onclick="document.getElementById('fileCAChain').click()">
+                            <i data-feather="upload" class="mb-1"></i>
+                            <div class="small text-muted">Chain of trust above signing cert, up to root (concatenated PEM)</div>
+                            <div class="file-name" id="nameCAChain"></div>
+                        </div>
+                        <input type="file" class="d-none" id="fileCAChain" accept=".pem,.crt,.cer" onchange="onFileSelect(this, 'CAChain')">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createCAChain()" id="btnCreateChain">
+                    <i data-feather="plus" class="me-1"></i> Create CA Chain
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Revoke Certificate Modal -->
+<div class="modal fade" id="revokeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Revoke TLS Certificate</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Revoking certificate for <strong id="revokeCertDomain"></strong>.</p>
+                <div class="mb-3">
+                    <label class="form-label">Reason for revocation</label>
+                    <textarea class="form-control" id="revokeReason" rows="3" placeholder="Enter reason..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="confirmRevoke()">
+                    <i data-feather="x-circle" class="me-1"></i> Revoke
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Request Certificate Modal (Admin) -->
+<div class="modal fade" id="requestCertModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i data-feather="file-plus" class="me-2"></i>Request TLS Certificate</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning small mb-3">
+                    <i data-feather="alert-triangle" class="me-1" style="width:16px;height:16px;"></i>
+                    <strong>Admin mode:</strong> PowerDNS zone validation is not enforced. Certificates will be issued for any domain, but a warning will be logged if the domain has no matching zone.
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">CA Chain <span class="text-danger">*</span></label>
+                        <select class="form-select" id="reqCertChainId">
+                            <option value="">Select CA chain...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Event</label>
+                        <select class="form-select" id="reqCertEventId"></select>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Common Name (CN) <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="reqCertCN" placeholder="e.g. web.example.com">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="reqCertWildcard">
+                            <label class="form-check-label" for="reqCertWildcard">Wildcard (*.domain)</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Subject Alternative Names (SANs)</label>
+                        <div class="input-group mb-2">
+                            <input type="text" class="form-control" id="reqCertSANInput" placeholder="e.g. api.example.com" onkeydown="if(event.key==='Enter'){event.preventDefault();addReqSAN();}">
+                            <button class="btn btn-outline-secondary" type="button" onclick="addReqSAN()">Add</button>
+                        </div>
+                        <div id="reqCertSANList" class="d-flex flex-wrap gap-1"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitAdminCertRequest()" id="btnRequestCert">
+                    <i data-feather="shield" class="me-1"></i> Issue Certificate
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+// =============================================================================
+// State
+// =============================================================================
+var chainsData = [];
+var certsData = [];
+var createChainModal = null;
+var revokeModal = null;
+var requestCertModal = null;
+var revokeCertId = null;
+var selectedFiles = {};
+var reqSANs = [];
+
+// =============================================================================
+// Initialization
+// =============================================================================
+document.addEventListener('DOMContentLoaded', function() {
+    createChainModal = new bootstrap.Modal(document.getElementById('createChainModal'));
+    revokeModal = new bootstrap.Modal(document.getElementById('revokeModal'));
+    requestCertModal = new bootstrap.Modal(document.getElementById('requestCertModal'));
+    setupDropZones();
+    loadChains();
+    loadCertificates();
+    loadEventsForModal();
+});
+
+// =============================================================================
+// CA Chains
+// =============================================================================
+async function loadChains() {
+    var loading = document.getElementById('chainsLoading');
+    var wrapper = document.getElementById('chainsTableWrapper');
+    loading.style.display = 'block';
+    wrapper.style.display = 'none';
+
+    try {
+        var response = await csrfFetch('/api/admin/tls/ca-chains');
+        if (!response.ok) {
+            loading.innerHTML = '<span class="text-danger">Failed to load CA chains</span>';
+            return;
+        }
+        chainsData = await response.json();
+        renderChainsTable();
+        updateChainFilter();
+        updateStats();
+    } catch (error) {
+        console.error('Failed to load CA chains:', error);
+        loading.innerHTML = '<span class="text-danger">Failed to load CA chains</span>';
+    }
+}
+
+function renderChainsTable() {
+    var loading = document.getElementById('chainsLoading');
+    var wrapper = document.getElementById('chainsTableWrapper');
+    var tbody = document.getElementById('chainsBody');
+    tbody.innerHTML = '';
+
+    if (chainsData.length === 0) {
+        loading.innerHTML = '<span class="text-muted">No CA chains created yet. Click "Create CA Chain" to get started.</span>';
+        loading.style.display = 'block';
+        wrapper.style.display = 'none';
+        return;
+    }
+
+    for (var i = 0; i < chainsData.length; i++) {
+        var c = chainsData[i];
+        var row = document.createElement('tr');
+
+        var statusClass = 'status-' + c.step_ca_status;
+        var statusLabel = c.step_ca_status.charAt(0).toUpperCase() + c.step_ca_status.slice(1);
+        var createdDate = c.created_at ? formatDateTime(c.created_at, { hideSeconds: true }) : '-';
+
+        var actions = '';
+        if (!c.render_service_id) {
+            // Not initialized yet
+            actions += '<button class="btn btn-sm btn-outline-primary me-1" onclick="initializeChain(' + c.id + ')" title="Initialize step-ca service"><i data-feather="play-circle"></i> Initialize</button>';
+        } else if (c.step_ca_status === 'stopped') {
+            actions += '<button class="btn btn-sm btn-outline-success me-1" onclick="startChain(' + c.id + ')" title="Start step-ca"><i data-feather="play"></i></button>';
+        } else if (c.step_ca_status === 'running') {
+            actions += '<button class="btn btn-sm btn-outline-warning me-1" onclick="stopChain(' + c.id + ')" title="Stop step-ca"><i data-feather="pause"></i></button>';
+        } else if (c.step_ca_status === 'starting') {
+            actions += '<button class="btn btn-sm btn-outline-info me-1" disabled><div class="spinner-border spinner-border-sm"></div></button>';
+        }
+        if (c.render_service_id) {
+            actions += '<button class="btn btn-sm btn-outline-secondary me-1" onclick="refreshChainStatus(' + c.id + ')" title="Refresh status"><i data-feather="refresh-cw"></i></button>';
+        }
+        if (c.certificate_count === 0) {
+            actions += '<button class="btn btn-sm btn-outline-danger" onclick="deleteChain(' + c.id + ', \'' + escapeHtml(c.name) + '\')" title="Delete"><i data-feather="trash-2"></i></button>';
+        }
+
+        row.innerHTML =
+            '<td><strong>' + escapeHtml(c.name) + '</strong></td>' +
+            '<td class="text-muted small">' + escapeHtml(c.description || '') + '</td>' +
+            '<td class="text-center"><span class="' + statusClass + '">' + statusLabel + '</span></td>' +
+            '<td class="text-center">' + c.certificate_count + '</td>' +
+            '<td>' + escapeHtml(c.default_duration) + '</td>' +
+            '<td class="text-center">' + (c.allow_wildcard ? '<i data-feather="check" class="text-success"></i>' : '<i data-feather="x" class="text-muted"></i>') + '</td>' +
+            '<td>' + createdDate + '</td>' +
+            '<td class="text-nowrap">' + actions + '</td>';
+
+        tbody.appendChild(row);
+    }
+
+    loading.style.display = 'none';
+    wrapper.style.display = 'block';
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+function updateChainFilter() {
+    var filter = document.getElementById('certChainFilter');
+    // Keep first option
+    while (filter.options.length > 1) filter.remove(1);
+    for (var i = 0; i < chainsData.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = chainsData[i].id;
+        opt.textContent = chainsData[i].name;
+        filter.appendChild(opt);
+    }
+}
+
+// =============================================================================
+// Chain Actions
+// =============================================================================
+async function initializeChain(chainId) {
+    if (!confirm('Initialize step-ca service for this CA chain? This will create a new Render private service ($7/mo).')) return;
+
+    showToast('Initializing step-ca service... This may take a few minutes.', 'info');
+
+    try {
+        var response = await csrfFetch('/api/admin/tls/ca-chains/' + chainId + '/initialize', {
+            method: 'POST'
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast(data.message || 'step-ca initialized', 'success');
+            loadChains();
+        } else {
+            showToast(data.detail || 'Failed to initialize', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+async function startChain(chainId) {
+    try {
+        var response = await csrfFetch('/api/admin/tls/ca-chains/' + chainId + '/start', {
+            method: 'POST'
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast(data.message || 'step-ca started', 'success');
+            loadChains();
+        } else {
+            showToast(data.detail || 'Failed to start', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+async function stopChain(chainId) {
+    if (!confirm('Stop this step-ca instance? Participants will not be able to request certificates until it is restarted.')) return;
+
+    try {
+        var response = await csrfFetch('/api/admin/tls/ca-chains/' + chainId + '/stop', {
+            method: 'POST'
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast(data.message || 'step-ca stopped', 'success');
+            loadChains();
+        } else {
+            showToast(data.detail || 'Failed to stop', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+async function refreshChainStatus(chainId) {
+    try {
+        var response = await csrfFetch('/api/admin/tls/ca-chains/' + chainId + '/status');
+        if (response.ok) {
+            loadChains();
+        }
+    } catch (error) {
+        console.error('Failed to refresh status:', error);
+    }
+}
+
+async function deleteChain(chainId, chainName) {
+    if (!confirm('Delete CA chain "' + chainName + '"? This will also delete the Render service if one exists. This cannot be undone.')) return;
+
+    try {
+        var response = await csrfFetch('/api/admin/tls/ca-chains/' + chainId, {
+            method: 'DELETE'
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast(data.message || 'CA chain deleted', 'success');
+            loadChains();
+        } else {
+            showToast(data.detail || 'Failed to delete', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+// =============================================================================
+// Create CA Chain
+// =============================================================================
+async function loadEventsForModal() {
+    try {
+        var response = await csrfFetch('/api/admin/events');
+        if (!response.ok) return;
+        var data = await response.json();
+        var events = data.events || data;
+        var selector = document.getElementById('chainEventId');
+        selector.innerHTML = '<option value="">Select event...</option>';
+        for (var i = 0; i < events.length; i++) {
+            var evt = events[i];
+            if (evt.is_archived) continue;
+            var opt = document.createElement('option');
+            opt.value = evt.id;
+            opt.textContent = evt.name + ' (' + (evt.year || '') + ')';
+            if (evt.is_active) opt.selected = true;
+            selector.appendChild(opt);
+        }
+    } catch (error) {
+        console.error('Failed to load events:', error);
+    }
+}
+
+function openCreateChainModal() {
+    // Reset form
+    document.getElementById('chainName').value = '';
+    document.getElementById('chainDescription').value = '';
+    document.getElementById('chainDuration').value = '2160h';
+    document.getElementById('chainAllowWildcard').checked = true;
+    selectedFiles = {};
+    var fileNames = ['SigningCert', 'SigningKey', 'CAChain'];
+    for (var i = 0; i < fileNames.length; i++) {
+        document.getElementById('name' + fileNames[i]).textContent = '';
+        document.getElementById('drop' + fileNames[i]).classList.remove('has-file');
+        document.getElementById('file' + fileNames[i]).value = '';
+    }
+    createChainModal.show();
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+function setupDropZones() {
+    var zones = ['SigningCert', 'SigningKey', 'CAChain'];
+    for (var i = 0; i < zones.length; i++) {
+        (function(zone) {
+            var el = document.getElementById('drop' + zone);
+            el.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                el.classList.add('dragover');
+            });
+            el.addEventListener('dragleave', function() {
+                el.classList.remove('dragover');
+            });
+            el.addEventListener('drop', function(e) {
+                e.preventDefault();
+                el.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) {
+                    selectedFiles[zone] = e.dataTransfer.files[0];
+                    document.getElementById('name' + zone).textContent = e.dataTransfer.files[0].name;
+                    el.classList.add('has-file');
+                }
+            });
+        })(zones[i]);
+    }
+}
+
+function onFileSelect(input, zone) {
+    if (input.files.length > 0) {
+        selectedFiles[zone] = input.files[0];
+        document.getElementById('name' + zone).textContent = input.files[0].name;
+        document.getElementById('drop' + zone).classList.add('has-file');
+    }
+}
+
+async function createCAChain() {
+    var name = document.getElementById('chainName').value.trim();
+    var eventId = document.getElementById('chainEventId').value;
+    var description = document.getElementById('chainDescription').value.trim();
+    var duration = document.getElementById('chainDuration').value.trim();
+    var allowWildcard = document.getElementById('chainAllowWildcard').checked;
+
+    if (!name) { showToast('Name is required', 'warning'); return; }
+    if (!eventId) { showToast('Event is required', 'warning'); return; }
+    if (!selectedFiles.SigningCert || !selectedFiles.SigningKey || !selectedFiles.CAChain) {
+        showToast('All 3 CA files are required (signing cert, signing key, CA chain)', 'warning');
+        return;
+    }
+
+    var btn = document.getElementById('btnCreateChain');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner-border spinner-border-sm me-1"></div> Creating...';
+
+    try {
+        var formData = new FormData();
+        formData.append('name', name);
+        formData.append('event_id', eventId);
+        formData.append('description', description);
+        formData.append('default_duration', duration || '2160h');
+        formData.append('allow_wildcard', allowWildcard);
+        formData.append('signing_cert', selectedFiles.SigningCert);
+        formData.append('signing_key', selectedFiles.SigningKey);
+        formData.append('ca_chain_file', selectedFiles.CAChain);
+
+        var response = await csrfFetch('/api/admin/tls/ca-chains', {
+            method: 'POST',
+            body: formData
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast(data.message || 'CA chain created', 'success');
+            createChainModal.hide();
+            loadChains();
+        } else {
+            showToast(data.detail || 'Failed to create CA chain', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-feather="plus" class="me-1"></i> Create CA Chain';
+        if (typeof feather !== 'undefined') feather.replace();
+    }
+}
+
+// =============================================================================
+// Certificates
+// =============================================================================
+async function loadCertificates() {
+    var loading = document.getElementById('certsLoading');
+    var wrapper = document.getElementById('certsTableWrapper');
+    loading.style.display = 'block';
+    wrapper.style.display = 'none';
+
+    var chainFilter = document.getElementById('certChainFilter').value;
+    var statusFilter = document.getElementById('certStatusFilter').value;
+    var url = '/api/admin/tls/certificates';
+    var params = [];
+    if (chainFilter) params.push('ca_chain_id=' + chainFilter);
+    if (statusFilter) params.push('status=' + statusFilter);
+    if (params.length) url += '?' + params.join('&');
+
+    try {
+        var response = await csrfFetch(url);
+        if (!response.ok) {
+            loading.innerHTML = '<span class="text-danger">Failed to load certificates</span>';
+            return;
+        }
+        certsData = await response.json();
+        renderCertsTable();
+        updateStats();
+    } catch (error) {
+        console.error('Failed to load certificates:', error);
+        loading.innerHTML = '<span class="text-danger">Failed to load certificates</span>';
+    }
+}
+
+function renderCertsTable() {
+    var loading = document.getElementById('certsLoading');
+    var wrapper = document.getElementById('certsTableWrapper');
+    var tbody = document.getElementById('certsBody');
+    tbody.innerHTML = '';
+
+    if (certsData.length === 0) {
+        loading.innerHTML = '<span class="text-muted">No certificates found</span>';
+        loading.style.display = 'block';
+        wrapper.style.display = 'none';
+        return;
+    }
+
+    for (var i = 0; i < certsData.length; i++) {
+        var cert = certsData[i];
+        var row = document.createElement('tr');
+
+        var statusClass = 'cert-status-' + cert.status;
+        var statusLabel = cert.status.charAt(0).toUpperCase() + cert.status.slice(1);
+        var issuedDate = cert.issued_at ? formatDateTime(cert.issued_at, { hideSeconds: true }) : '-';
+        var expiresDate = cert.expires_at ? formatDateTime(cert.expires_at, { hideSeconds: true }) : '-';
+        var sans = (cert.sans && cert.sans.length > 0) ? cert.sans.join(', ') : '-';
+
+        var cn = cert.common_name;
+        if (cert.is_wildcard) cn = '<span class="badge bg-secondary me-1">*</span>' + escapeHtml(cert.common_name);
+        else cn = escapeHtml(cert.common_name);
+
+        var actions = '';
+        if (cert.status === 'issued') {
+            actions = '<button class="btn btn-sm btn-outline-danger" onclick="openRevokeModal(' + cert.id + ', \'' + escapeHtml(cert.common_name) + '\')" title="Revoke"><i data-feather="x-circle"></i></button>';
+        } else if (cert.status === 'revoked') {
+            actions = '<span class="small text-muted">' + escapeHtml(cert.revocation_reason || 'Revoked') + '</span>';
+        }
+
+        var serial = cert.serial_number || '-';
+        // Truncate long serials for display, show full on hover
+        var serialDisplay = serial.length > 16
+            ? '<span title="' + escapeHtml(serial) + '">' + escapeHtml(serial.substring(0, 16)) + '&hellip;</span>'
+            : escapeHtml(serial);
+
+        row.innerHTML =
+            '<td><code>' + cn + '</code></td>' +
+            '<td class="small"><code>' + serialDisplay + '</code></td>' +
+            '<td class="small text-muted">' + escapeHtml(sans) + '</td>' +
+            '<td>' + escapeHtml(cert.user_name || cert.user_email) + '</td>' +
+            '<td>' + escapeHtml(cert.ca_chain_name) + '</td>' +
+            '<td class="text-center"><span class="' + statusClass + '">' + statusLabel + '</span></td>' +
+            '<td>' + issuedDate + '</td>' +
+            '<td>' + expiresDate + '</td>' +
+            '<td>' + actions + '</td>';
+
+        tbody.appendChild(row);
+    }
+
+    loading.style.display = 'none';
+    wrapper.style.display = 'block';
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+// =============================================================================
+// Revoke
+// =============================================================================
+function openRevokeModal(certId, domain) {
+    revokeCertId = certId;
+    document.getElementById('revokeCertDomain').textContent = domain;
+    document.getElementById('revokeReason').value = '';
+    revokeModal.show();
+}
+
+async function confirmRevoke() {
+    var reason = document.getElementById('revokeReason').value.trim();
+    if (!reason) {
+        showToast('Please enter a reason for revocation', 'warning');
+        return;
+    }
+
+    try {
+        var response = await csrfFetch('/api/admin/tls/certificates/' + revokeCertId + '/revoke', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: reason })
+        });
+        var data = await response.json();
+        if (response.ok) {
+            showToast(data.message || 'Certificate revoked', 'success');
+            revokeModal.hide();
+            loadCertificates();
+        } else {
+            showToast(data.detail || 'Failed to revoke', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    }
+}
+
+// =============================================================================
+// Stats
+// =============================================================================
+function updateStats() {
+    var totalChains = chainsData.length;
+    var running = 0;
+    for (var i = 0; i < chainsData.length; i++) {
+        if (chainsData[i].step_ca_status === 'running') running++;
+    }
+
+    var totalCerts = certsData.length;
+    var activeCerts = 0;
+    for (var j = 0; j < certsData.length; j++) {
+        if (certsData[j].status === 'issued') activeCerts++;
+    }
+
+    document.getElementById('statChains').textContent = totalChains;
+    document.getElementById('statRunning').textContent = running;
+    document.getElementById('statCerts').textContent = totalCerts;
+    document.getElementById('statActive').textContent = activeCerts;
+}
+
+// =============================================================================
+// Admin Certificate Request
+// =============================================================================
+function openRequestCertModal() {
+    // Populate CA chain dropdown (only running chains)
+    var sel = document.getElementById('reqCertChainId');
+    sel.innerHTML = '<option value="">Select CA chain...</option>';
+    for (var i = 0; i < chainsData.length; i++) {
+        if (chainsData[i].step_ca_status === 'running') {
+            var opt = document.createElement('option');
+            opt.value = chainsData[i].id;
+            opt.textContent = chainsData[i].name;
+            sel.appendChild(opt);
+        }
+    }
+
+    // Populate event dropdown (reuse events from chain modal)
+    var eventSel = document.getElementById('reqCertEventId');
+    var chainEventSel = document.getElementById('chainEventId');
+    eventSel.innerHTML = chainEventSel.innerHTML;
+
+    // Reset form
+    document.getElementById('reqCertCN').value = '';
+    document.getElementById('reqCertWildcard').checked = false;
+    document.getElementById('reqCertSANInput').value = '';
+    reqSANs = [];
+    renderReqSANs();
+
+    requestCertModal.show();
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+function addReqSAN() {
+    var input = document.getElementById('reqCertSANInput');
+    var val = input.value.trim().toLowerCase();
+    if (!val) return;
+    if (reqSANs.indexOf(val) === -1) {
+        reqSANs.push(val);
+        renderReqSANs();
+    }
+    input.value = '';
+    input.focus();
+}
+
+function removeReqSAN(idx) {
+    reqSANs.splice(idx, 1);
+    renderReqSANs();
+}
+
+function renderReqSANs() {
+    var container = document.getElementById('reqCertSANList');
+    container.innerHTML = '';
+    for (var i = 0; i < reqSANs.length; i++) {
+        var chip = document.createElement('span');
+        chip.className = 'badge bg-secondary d-inline-flex align-items-center gap-1';
+        chip.innerHTML = escapeHtml(reqSANs[i]) +
+            ' <a href="#" class="text-white text-decoration-none" onclick="removeReqSAN(' + i + ');return false;">&times;</a>';
+        container.appendChild(chip);
+    }
+}
+
+async function submitAdminCertRequest() {
+    var chainId = document.getElementById('reqCertChainId').value;
+    var eventId = document.getElementById('reqCertEventId').value;
+    var cn = document.getElementById('reqCertCN').value.trim();
+    var isWildcard = document.getElementById('reqCertWildcard').checked;
+
+    if (!chainId) { showToast('CA chain is required', 'warning'); return; }
+    if (!cn) { showToast('Common Name is required', 'warning'); return; }
+
+    var btn = document.getElementById('btnRequestCert');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner-border spinner-border-sm me-1"></div> Issuing...';
+
+    try {
+        var payload = {
+            ca_chain_id: parseInt(chainId),
+            common_name: cn,
+            sans: reqSANs,
+            is_wildcard: isWildcard
+        };
+        if (eventId) payload.event_id = parseInt(eventId);
+
+        var response = await csrfFetch('/api/admin/tls/certificates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        var data = await response.json();
+        if (response.ok) {
+            // Show warnings if any
+            if (data.dns_warnings && data.dns_warnings.length > 0) {
+                showToast(data.message, 'warning');
+            } else {
+                showToast(data.message || 'Certificate issued', 'success');
+            }
+            requestCertModal.hide();
+            loadCertificates();
+        } else {
+            showToast(data.detail || 'Failed to issue certificate', 'danger');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-feather="shield" class="me-1"></i> Issue Certificate';
+        if (typeof feather !== 'undefined') feather.replace();
+    }
+}
+
+// =============================================================================
+// Utilities
+// =============================================================================
+function escapeHtml(text) {
+    if (!text) return '';
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

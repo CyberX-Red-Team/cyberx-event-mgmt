@@ -1,6 +1,7 @@
 """Email service for SendGrid integration."""
 import json
 import logging
+import string
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Tuple, Dict, Any
 from sqlalchemy import select, func, and_, or_, desc, cast, Date, text
@@ -16,6 +17,19 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+class SafeFormatter(string.Formatter):
+    """String formatter that blocks attribute/index access (e.g. {foo.__class__})."""
+
+    def get_field(self, field_name, args, kwargs):
+        # Only allow simple field names — no dots or brackets
+        if not field_name.isidentifier():
+            raise KeyError(field_name)
+        return super().get_field(field_name, args, kwargs)
+
+
+_safe_fmt = SafeFormatter()
 
 
 def build_event_template_vars(event) -> Dict[str, str]:
@@ -96,25 +110,117 @@ async def queue_invitation_email_for_user(
         )
     )
 
+    # Create or update EventParticipation record
+    # This ensures invitees have formal participation tracking for access control
+    from app.models.event import EventParticipation, ParticipationStatus
+
+    result = await session.execute(
+        select(EventParticipation).where(
+            EventParticipation.user_id == user.id,
+            EventParticipation.event_id == event.id
+        )
+    )
+    participation = result.scalar_one_or_none()
+
+    if not participation:
+        # Create new EventParticipation record with "invited" status
+        participation = EventParticipation(
+            user_id=user.id,
+            event_id=event.id,
+            status=ParticipationStatus.INVITED.value,
+            invited_at=datetime.now(timezone.utc),
+            invited_by_user_id=None  # Automated invitation (no specific admin)
+        )
+        session.add(participation)
+        logger.info(
+            f"Created EventParticipation record for user {user.id} ({user.email}) "
+            f"in event {event.id} ({event.name})"
+        )
+    else:
+        # Update existing record's invited_at timestamp (for resends)
+        participation.invited_at = datetime.now(timezone.utc)
+        logger.debug(
+            f"Updated EventParticipation invited_at for user {user.id} ({user.email}) "
+            f"in event {event.id} ({event.name})"
+        )
+
     # Build confirmation URL
     confirmation_url = f"{settings.FRONTEND_URL}/confirm?code={confirmation_code}"
 
+    # Log confirmation URL to console in staging environment
+    # (useful when email sandbox mode is enabled)
+    if settings.ENVIRONMENT == "staging":
+        logger.info(
+            f"\n{'='*80}\n"
+            f"📧 STAGING INVITATION EMAIL\n"
+            f"{'='*80}\n"
+            f"To: {user.email} (ID: {user.id})\n"
+            f"Name: {user.first_name} {user.last_name}\n"
+            f"Event: {event.name} (ID: {event.id})\n"
+            f"\n🔗 CONFIRMATION LINK:\n"
+            f"{confirmation_url}\n"
+            f"{'='*80}\n"
+        )
+
     # Build event variables
     event_vars = build_event_template_vars(event)
+
+    # Build sponsor variables (empty strings if no sponsor assigned)
+    sponsor_vars = {
+        "sponsor_first_name": "",
+        "sponsor_last_name": "",
+        "sponsor_last_initial": "",
+        "sponsor_name": "",
+        "sponsor_email": "",
+    }
+    if user.sponsor_id:
+        sponsor_result = await session.execute(
+            select(User).where(User.id == user.sponsor_id)
+        )
+        sponsor = sponsor_result.scalar_one_or_none()
+        if sponsor:
+            last = sponsor.last_name or ""
+            sponsor_vars = {
+                "sponsor_first_name": sponsor.first_name or "",
+                "sponsor_last_name": last,
+                "sponsor_last_initial": f"{last[0]}." if last else "",
+                "sponsor_name": f"{sponsor.first_name or ''} {last}".strip(),
+                "sponsor_email": sponsor.email or "",
+            }
+
+    # Resolve template name from bulk_invite workflow config (falls back to hardcoded default)
+    from app.models.email_workflow import EmailWorkflow, WorkflowTriggerEvent
+    workflow_result = await session.execute(
+        select(EmailWorkflow)
+        .where(EmailWorkflow.trigger_event == WorkflowTriggerEvent.BULK_INVITE)
+        .where(EmailWorkflow.is_enabled == True)
+        .limit(1)
+    )
+    workflow = workflow_result.scalar_one_or_none()
+    template_name = workflow.template_name if workflow else "sg_test_hacker_theme"
+    workflow_vars = workflow.custom_vars if workflow and workflow.custom_vars else {}
+
+    # Inject sender overrides if configured on the workflow
+    if workflow and workflow.from_email:
+        workflow_vars["__from_email"] = workflow.from_email
+    if workflow and workflow.from_name:
+        workflow_vars["__from_name"] = workflow.from_name
 
     # Queue the invitation email
     email_service = EmailQueueService(session)
     queue_entry = await email_service.enqueue_email(
         user_id=user.id,
-        template_name="sg_test_hacker_theme",
+        template_name=template_name,
         priority=3,  # High priority for invitations
         force=force,
         custom_vars={
+            **workflow_vars,
             "first_name": user.first_name,
             "last_name": user.last_name,
             "email": user.email,
             "confirmation_url": confirmation_url,
-            **event_vars
+            **event_vars,
+            **sponsor_vars,
         }
     )
 
@@ -129,6 +235,23 @@ class EmailService:
         self.session = session
         self.client = SendGridAPIClient(settings.SENDGRID_API_KEY)
         self.from_email = Email(settings.SENDGRID_FROM_EMAIL, settings.SENDGRID_FROM_NAME)
+
+    @staticmethod
+    def _get_role_info(user) -> Tuple[str, str]:
+        """Get base_type and role display name without triggering lazy loads."""
+        from app.models.role import Role
+        try:
+            from sqlalchemy import inspect as sa_inspect
+            loaded = sa_inspect(user).attrs.role_obj.loaded_value
+            role_obj = loaded if isinstance(loaded, Role) else None
+        except Exception:
+            # Fallback for non-ORM objects (e.g. SampleUser in preview_template)
+            role_obj = getattr(user, 'role_obj', None)
+            if role_obj is not None and not isinstance(role_obj, Role):
+                role_obj = None
+        base_type = (role_obj.base_type if role_obj else getattr(user, 'role', '')) or ""
+        display = role_obj.name if role_obj else base_type.capitalize()
+        return base_type, display
 
     # =========================================================================
     # Template Management Methods
@@ -255,20 +378,32 @@ class EmailService:
             Tuple of (subject, html_content, text_content)
         """
         # Build template variables
-        # Use confirmation_code if available (new system), otherwise fall back to invite_id (legacy)
-        confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
+        confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.id}"
+
+        # Role-specific display variables — prefer dynamic role_obj when loaded
+        base_type, role_display_name = self._get_role_info(user)
+        a_or_an = "an" if role_display_name[:1].lower() in "aeiou" else "a"
 
         vars = {
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "email": user.email or "",
+            "role": role_display_name,
+            "role_display": role_display_name,
+            "role_name": role_display_name,
+            "role_label": role_display_name.upper(),
+            "role_upper": role_display_name.upper(),
+            "a_or_an": a_or_an,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
-            "event_name": "2025",  # TODO: Make configurable from active event
-            "confirm_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",  # Legacy variable name
-            "confirmation_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",  # New variable name
+            "password": user.pandas_password or "",
+            "password_phonetic": user.password_phonetic or "",
+            "event_name": "2025",
+            "confirm_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
+            "confirmation_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
             "login_url": f"{settings.FRONTEND_URL}/login",
             "survey_url": f"{settings.FRONTEND_URL}/survey",
+            "support_email": settings.SENDGRID_FROM_EMAIL or "",
             "orientation_date": "TBD",
             "orientation_time": "TBD",
             "orientation_location": "TBD",
@@ -279,14 +414,18 @@ class EmailService:
         }
 
         # Merge custom variables (these will override defaults if provided)
+        # Strip role-related keys so the dynamically computed values from
+        # _get_role_info() always win (callers may inject stale base-role values).
         if custom_vars:
-            vars.update(custom_vars)
+            _ROLE_KEYS = {"role", "role_display", "role_name", "role_label", "role_upper", "a_or_an"}
+            filtered = {k: v for k, v in custom_vars.items() if k not in _ROLE_KEYS}
+            vars.update(filtered)
 
         # Render template with safe formatting
         try:
-            subject = template.subject.format(**vars)
-            html_content = template.html_content.format(**vars)
-            text_content = template.text_content.format(**vars) if template.text_content else ""
+            subject = _safe_fmt.format(template.subject, **vars)
+            html_content = _safe_fmt.format(template.html_content, **vars)
+            text_content = _safe_fmt.format(template.text_content, **vars) if template.text_content else ""
         except KeyError as e:
             # If a variable is missing, log the error and available variables
             missing_var = str(e).strip("'\"")
@@ -309,7 +448,8 @@ class EmailService:
         user: User,
         recipient_email: str,
         recipient_name: str,
-        custom_vars: Optional[Dict[str, Any]] = None
+        custom_vars: Optional[Dict[str, Any]] = None,
+        from_email_override: Optional[Email] = None
     ) -> Mail:
         """
         Create a SendGrid Mail object using dynamic templates.
@@ -323,44 +463,73 @@ class EmailService:
             recipient_email: Recipient email address
             recipient_name: Recipient name
             custom_vars: Custom template variables to pass to SendGrid
+            from_email_override: Optional sender address override
 
         Returns:
             Mail object configured for SendGrid dynamic template
         """
         # Build base template variables
-        confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.invite_id or user.id}"
+        confirmation_param = f"code={user.confirmation_code}" if user.confirmation_code else f"{user.id}"
+
+        # Role-specific display variables — prefer dynamic role_obj when loaded
+        base_type, role_display_name = self._get_role_info(user)
+        a_or_an = "an" if role_display_name[:1].lower() in "aeiou" else "a"
 
         dynamic_template_data = {
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "email": user.email or "",
+            "username": user.pandas_username or "",
+            "role": role_display_name,
+            "role_display": role_display_name,
+            "role_name": role_display_name,
+            "role_label": role_display_name.upper(),
+            "role_upper": role_display_name.upper(),
+            "a_or_an": a_or_an,
             "pandas_username": user.pandas_username or "",
             "pandas_password": user.pandas_password or "",
+            "password": user.pandas_password or "",
+            "password_phonetic": user.password_phonetic or "",
             "confirm_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
             "confirmation_url": f"{settings.FRONTEND_URL}/confirm?{confirmation_param}",
             "login_url": f"{settings.FRONTEND_URL}/login",
             "survey_url": f"{settings.FRONTEND_URL}/survey",
+            "support_email": settings.SENDGRID_FROM_EMAIL or "",
         }
 
-        # Merge custom variables
+        # Merge custom variables (override defaults with workflow/trigger vars)
+        # Strip role-related keys so the dynamically computed values from
+        # _get_role_info() always win (callers may inject stale base-role values).
         if custom_vars:
-            dynamic_template_data.update(custom_vars)
+            _ROLE_KEYS = {"role", "role_display", "role_name", "role_label", "role_upper", "a_or_an"}
+            filtered = {k: v for k, v in custom_vars.items() if k not in _ROLE_KEYS}
+            logger.debug(
+                "Merging %d custom_vars into template data: %s (stripped role keys: %s)",
+                len(filtered), list(filtered.keys()),
+                [k for k in custom_vars if k in _ROLE_KEYS]
+            )
+            dynamic_template_data.update(filtered)
+
+        # Log password presence for debugging (never log actual value)
+        has_password = bool(dynamic_template_data.get("password"))
+        logger.info(
+            "SendGrid dynamic template: id=%s, vars=%s, "
+            "password_present=%s, custom_vars_provided=%s",
+            template.sendgrid_template_id,
+            list(dynamic_template_data.keys()),
+            has_password,
+            bool(custom_vars),
+        )
 
         # Create message with dynamic template
         message = Mail(
-            from_email=self.from_email,
+            from_email=from_email_override or self.from_email,
             to_emails=To(recipient_email, recipient_name)
         )
 
         # Set the dynamic template ID and data
         message.template_id = template.sendgrid_template_id
         message.dynamic_template_data = dynamic_template_data
-
-        logger.info(
-            f"Created SendGrid dynamic template message: "
-            f"template_id={template.sendgrid_template_id}, "
-            f"variables={list(dynamic_template_data.keys())}"
-        )
 
         return message
 
@@ -379,9 +548,11 @@ class EmailService:
             first_name = "John"
             last_name = "Doe"
             email = "john.doe@example.com"
+            role = "invitee"
+            role_obj = None
             pandas_username = "jdoe"
             pandas_password = "sample_password"
-            invite_id = "abc123"
+            password_phonetic = "sample-PAPA-ALPHA-sierra-sierra"
             id = 1
             confirmation_code = "sample_confirmation_code_123"
 
@@ -475,6 +646,35 @@ class EmailService:
             Tuple of (success, message, message_id)
         """
         try:
+            # Extract sender overrides from custom_vars (reserved keys)
+            # These are injected by workflow_service / queue helpers and should
+            # NOT be passed to the template engine.
+            send_vars = dict(custom_vars) if custom_vars else {}
+
+            logger.info(
+                "Email send for user %s, template '%s': "
+                "custom_vars_keys=%s, password_in_vars=%s",
+                user.id, template.name,
+                list(send_vars.keys()) if send_vars else "none",
+                "password" in send_vars,
+            )
+
+            override_from_email = send_vars.pop("__from_email", None)
+            override_from_name = send_vars.pop("__from_name", None)
+            custom_vars = send_vars if send_vars else None
+
+            # Resolve sender address (workflow override → env default)
+            from_email = self.from_email
+            if override_from_email or override_from_name:
+                from_email = Email(
+                    override_from_email or settings.SENDGRID_FROM_EMAIL,
+                    override_from_name or settings.SENDGRID_FROM_NAME
+                )
+                logger.info(
+                    f"Using sender override: {override_from_email or settings.SENDGRID_FROM_EMAIL} "
+                    f"<{override_from_name or settings.SENDGRID_FROM_NAME}>"
+                )
+
             # Determine recipient email (with test override support)
             recipient_email = user.email
             recipient_name = f"{user.first_name} {user.last_name}"
@@ -494,7 +694,8 @@ class EmailService:
                     user=user,
                     recipient_email=recipient_email,
                     recipient_name=recipient_name,
-                    custom_vars=custom_vars
+                    custom_vars=custom_vars,
+                    from_email_override=from_email
                 )
                 subject = f"[Dynamic Template: {template.name}]"  # For logging only
             else:
@@ -514,7 +715,7 @@ class EmailService:
 
                 # Create message
                 message = Mail(
-                    from_email=self.from_email,
+                    from_email=from_email,
                     to_emails=To(recipient_email, recipient_name),
                     subject=subject,
                     html_content=Content("text/html", html_content),
@@ -880,14 +1081,33 @@ From: CyberX Red Team"""
             user.last_invite_sent = now
         elif template_name == "survey":
             user.survey_email_sent = now
-        elif template_name == "orientation":
-            user.orientation_invite_email_sent = now
 
         await self.session.commit()
+
+    # Map SendGrid event types → User.email_status values
+    _EMAIL_STATUS_MAP = {
+        "bounce": "BOUNCED",
+        "dropped": "BOUNCED",
+        "spamreport": "SPAM_REPORTED",
+        "unsubscribe": "UNSUBSCRIBED",
+        "group_unsubscribe": "UNSUBSCRIBED",
+        "delivered": "GOOD",
+        "group_resubscribe": "GOOD",
+    }
 
     async def process_webhook_event(self, event_data: Dict[str, Any]) -> bool:
         """
         Process a SendGrid webhook event.
+
+        Handles: processed, deferred, delivered, open, click, bounce,
+        dropped, spamreport, unsubscribe, group_unsubscribe, group_resubscribe.
+
+        Updates User.email_status to the appropriate granular value
+        (GOOD / BOUNCED / SPAM_REPORTED / UNSUBSCRIBED) and records every
+        event in the email_events table for auditing.
+
+        Uses event timestamps to prevent stale out-of-order events from
+        overriding more recent status changes.
 
         Returns:
             True if processed successfully
@@ -896,36 +1116,71 @@ From: CyberX Red Team"""
             email = event_data.get("email")
             event_type = event_data.get("event")
             sg_message_id = event_data.get("sg_message_id")
+            sg_event_id = event_data.get("sg_event_id")
             reason = event_data.get("reason")
-            timestamp = event_data.get("timestamp")
+            event_timestamp = event_data.get("timestamp")
 
             if not email or not event_type:
                 return False
 
-            # Log the event
+            # Look up user by normalized email (handles case / Gmail alias differences)
+            from app.api.utils.validation import normalize_email
+            normalized = normalize_email(email)
+            result = await self.session.execute(
+                select(User).where(User.email_normalized == normalized)
+            )
+            user = result.scalar_one_or_none()
+
+            # Record the event (pass dict directly — column is JSON type)
             event = EmailEvent(
+                user_id=user.id if user else None,
                 email_to=email,
                 event_type=event_type,
+                sendgrid_event_id=sg_event_id,
                 sendgrid_message_id=sg_message_id,
-                payload=json.dumps(event_data)
+                payload=event_data
             )
             self.session.add(event)
 
-            # Update user email status if bounce or complaint
-            if event_type in ("bounce", "dropped", "spamreport"):
-                result = await self.session.execute(
-                    select(User).where(User.email == email)
-                )
-                user = result.scalar_one_or_none()
-                if user:
-                    user.email_status = "BAD"
-                    user.email_status_timestamp = int(datetime.now(timezone.utc).timestamp())
+            # Update user email_status based on event type
+            if user:
+                new_status = self._EMAIL_STATUS_MAP.get(event_type)
+                if new_status:
+                    event_ts = event_timestamp or int(
+                        datetime.now(timezone.utc).timestamp()
+                    )
+                    current_ts = user.email_status_timestamp or 0
+
+                    # Only apply if this event is newer than the last status change
+                    if event_ts >= current_ts:
+                        old_status = user.email_status
+                        user.email_status = new_status
+                        user.email_status_timestamp = event_ts
+
+                        if new_status == "GOOD":
+                            logger.info(
+                                f"Email status for user {user.id} ({email}) "
+                                f"changed {old_status} → GOOD via {event_type}"
+                            )
+                        else:
+                            logger.warning(
+                                f"Email status for user {user.id} ({email}) "
+                                f"changed {old_status} → {new_status} due to "
+                                f"{event_type}{f': {reason}' if reason else ''}"
+                            )
+                    else:
+                        logger.debug(
+                            f"Skipping stale {event_type} event for user "
+                            f"{user.id} ({email}): event_ts={event_ts} < "
+                            f"current_ts={current_ts}"
+                        )
 
             await self.session.commit()
             return True
 
         except Exception as e:
-            print(f"Error processing webhook: {e}")
+            logger.error(f"Error processing webhook event: {e}", exc_info=True)
+            await self.session.rollback()
             return False
 
     async def get_email_stats(self) -> Dict[str, int]:
@@ -1343,6 +1598,7 @@ From: CyberX Red Team"""
             subject=detail.get("subject", ""),
             html_content=html_content,
             text_content=detail.get("plain_content"),
+            sendgrid_template_id=sendgrid_template_id,
             available_variables=available_variables,
             is_system=False,
             created_by_id=created_by_id

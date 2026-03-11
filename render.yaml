@@ -19,7 +19,7 @@ services:
     startCommand: |
       cd backend
       alembic upgrade head
-      uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -47,6 +47,9 @@ services:
         value: CyberX Red Team
       - key: SENDGRID_SANDBOX_MODE
         value: "false"  # PRODUCTION: Send real emails
+      # SendGrid webhook verification
+      - key: SENDGRID_WEBHOOK_VERIFICATION_KEY
+        sync: false
       # VPN configuration
       - key: VPN_SERVER_PUBLIC_KEY
         sync: false
@@ -78,13 +81,37 @@ services:
         value: 3
       - key: REMINDER_CHECK_INTERVAL_HOURS
         value: 24
-      # PowerDNS configuration (optional - set if using PowerDNS)
+      # Keycloak SSO integration
+      - key: KEYCLOAK_URL
+        sync: false
+      - key: KEYCLOAK_REALM
+        value: cyberx
+      - key: KEYCLOAK_ADMIN_CLIENT_ID
+        value: admin-cli
+      - key: KEYCLOAK_ADMIN_CLIENT_SECRET
+        sync: false
+      - key: KEYCLOAK_USER_GROUPS
+        sync: false
+      - key: KEYCLOAK_WEBHOOK_SECRET
+        sync: false
+      - key: PASSWORD_SYNC_ENABLED
+        value: "false"
+      # Discord integration
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_INVITE_ENABLED
+        value: "false"
+      # PowerDNS configuration
       - key: POWERDNS_API_URL
-        value: ""
+        sync: false
       - key: POWERDNS_USERNAME
-        value: ""
+        sync: false
       - key: POWERDNS_PASSWORD
-        value: ""
+        sync: false
+      - key: POWERDNS_API_KEY
+        sync: false
+      - key: POWERDNS_ACCOUNT_NAME
+        value: cyberx
       # Default Admin User (optional - bootstraps admin on startup)
       - key: ADMIN_EMAIL
         sync: false  # Set manually in Render dashboard
@@ -94,3 +121,53 @@ services:
         sync: false  # Set manually in Render dashboard
       - key: ADMIN_LAST_NAME
         sync: false  # Set manually in Render dashboard
+      # Cloudflare R2 storage (for CPE certs, TLS certs, downloads)
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_CUSTOM_DOMAIN
+        sync: false
+      # CPE Certificate configuration
+      - key: CPE_TEMPLATE_R2_KEY
+        sync: false
+      - key: CPE_SIGNATURE_1_R2_KEY
+        sync: false
+      - key: CPE_SIGNATURE_2_R2_KEY
+        sync: false
+      - key: CPE_SIGNER_1_NAME
+        sync: false
+      - key: CPE_SIGNER_2_NAME
+        sync: false
+      - key: GOTENBERG_URL
+        value: http://cyberx-gotenberg:3000
+      # Render API (for sidecar lifecycle management)
+      - key: RENDER_API_KEY
+        sync: false
+      - key: RENDER_OWNER_ID
+        sync: false
+      - key: GOTENBERG_RENDER_SERVICE_ID
+        sync: false
+      - key: RENDER_REPO_URL
+        sync: false
+      # step-ca Configuration (for TLS certificate issuance)
+      - key: STEPCA_PROVISIONER_PASSWORD
+        sync: false
+      - key: STEPCA_DEFAULT_DURATION
+        value: "2160h"
+      # Agent configuration
+      - key: AGENT_TRUST_PROXY_HEADERS
+        value: "true"
+
+  # Gotenberg - DOCX to PDF conversion for CPE certificates
+  - type: pserv
+    name: cyberx-gotenberg
+    runtime: docker
+    region: virginia
+    plan: standard
+    dockerfilePath: ./Dockerfile.gotenberg
+    envVars: []

@@ -1,0 +1,677 @@
+"""Unified instance management service supporting multiple cloud providers."""
+import logging
+import secrets
+import hashlib
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+from sqlalchemy import select, func, and_, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.config import get_settings
+from app.models.instance import Instance
+from app.models.user import User
+from app.models.vpn import VPNCredential
+from app.services.cloud_provider_factory import CloudProviderFactory
+
+logger = logging.getLogger(__name__)
+
+
+class InstanceService:
+    """Provider-agnostic instance management service."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.settings = get_settings()
+
+    async def create_and_track_instance(
+        self,
+        name: str,
+        provider: str = "openstack",
+        size: str | None = None,
+        image: str | None = None,
+        region: str | None = None,
+        network: str | None = None,
+        key_name: str | None = None,
+        template_id: int | None = None,
+        license_product_id: int | None = None,
+        event_id: int | None = None,
+        assigned_to_user_id: int | None = None,
+        created_by_user_id: int | None = None,
+        user_data: str | None = None,
+        ssh_public_key: str | None = None,
+    ) -> Instance:
+        """Create instance on any cloud provider and track in DB.
+
+        This method handles:
+        - Provider selection via factory
+        - Cloud-init template rendering
+        - VPN assignment (if event has vpn_available=True)
+        - License token generation
+        - SSH key injection
+        - Instance creation on provider
+        - Database tracking
+
+        Args:
+            name: Instance name
+            provider: Cloud provider ('openstack' or 'digitalocean')
+            size: Instance size/flavor
+            image: Image ID or slug
+            region: Region (for DigitalOcean)
+            network: Network ID (for OpenStack)
+            key_name: SSH key name or ID
+            template_id: Cloud-init template ID
+            license_product_id: License product ID
+            event_id: Event ID
+            assigned_to_user_id: User ID to assign instance to
+            created_by_user_id: User ID who created instance
+            user_data: Raw cloud-init user data (overrides template)
+            ssh_public_key: Individual SSH public key
+
+        Returns:
+            Created Instance object
+
+        Raises:
+            ValueError: If provider is unknown or required fields missing
+        """
+        # Get provider service
+        provider_service = CloudProviderFactory.get_provider(provider, self.session)
+
+        # Apply provider-specific defaults
+        if provider == "openstack":
+            size = size or self.settings.OS_DEFAULT_FLAVOR_ID
+            image = image or self.settings.OS_DEFAULT_IMAGE_ID
+            network = network or self.settings.OS_DEFAULT_NETWORK_ID
+            key_name = key_name or self.settings.OS_DEFAULT_KEY_NAME or None
+
+            if not all([size, image, network]):
+                raise ValueError(
+                    "OpenStack requires size, image, and network"
+                )
+
+        elif provider == "digitalocean":
+            size = size or self.settings.DO_DEFAULT_SIZE
+            image = image or self.settings.DO_DEFAULT_IMAGE
+            region = region or self.settings.DO_DEFAULT_REGION
+
+            if not all([size, image, region]):
+                raise ValueError(
+                    "DigitalOcean requires size, image, and region"
+                )
+
+        # Render cloud-init template if provided
+        if template_id and not user_data:
+            user_data = await self._render_cloud_init_template(
+                template_id=template_id,
+                name=name,
+                license_product_id=license_product_id,
+                event_id=event_id,
+                ssh_public_key=ssh_public_key,
+            )
+
+        # VPN assignment (event-based)
+        vpn_token_hash = None
+        vpn_token_expires_at = None
+        vpn_ip = None
+        assigned_vpn_id = None
+
+        if event_id:
+            vpn_data = await self._assign_vpn_if_enabled(
+                event_id=event_id,
+                name=name,
+                template_id=template_id,
+                user_data=user_data,
+            )
+
+            if vpn_data:
+                vpn_token_hash = vpn_data["token_hash"]
+                vpn_token_expires_at = vpn_data["expires_at"]
+                vpn_ip = vpn_data["ip"]
+                assigned_vpn_id = vpn_data["vpn_id"]
+                user_data = vpn_data["user_data"]  # Re-rendered with VPN vars
+
+        # Generate agent token and inject into cloud-init
+        raw_agent_token = secrets.token_urlsafe(48)
+        agent_token_hash = hashlib.sha256(
+            raw_agent_token.encode()
+        ).hexdigest()
+
+        if user_data:
+            agent_endpoint = (
+                f"{self.settings.FRONTEND_URL}/api/agent"
+            )
+            user_data = user_data.replace(
+                "{{agent_token}}", raw_agent_token
+            )
+            user_data = user_data.replace(
+                "{{agent_api_endpoint}}", agent_endpoint
+            )
+
+        # Create on provider
+        instance_data = await provider_service.create_instance(
+            name=name,
+            size=size,
+            image=image,
+            region=region,
+            network=network,
+            key_name=key_name,
+            user_data=user_data,
+        )
+
+        # Extract IP address and status
+        ip_address = None
+        status = "ERROR"
+        provider_instance_id = None
+
+        if instance_data:
+            provider_instance_id = str(instance_data["id"])
+            status = provider_service.normalize_status(
+                instance_data.get("status", "")
+            )
+            ip_address = provider_service.extract_ip_address(instance_data)
+
+        # Snapshot user identity (survives user deletion)
+        snapshot_email = None
+        snapshot_name = None
+        if assigned_to_user_id:
+            user_result = await self.session.execute(
+                select(User).where(User.id == assigned_to_user_id)
+            )
+            user = user_result.scalar_one_or_none()
+            if user:
+                snapshot_email = user.email
+                snapshot_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
+
+        # Track in DB
+        instance = Instance(
+            name=name,
+            provider=provider,
+            provider_instance_id=provider_instance_id,
+            status=status,
+            ip_address=ip_address,
+            # Provider-specific fields
+            flavor_id=size if provider == "openstack" else None,
+            network_id=network if provider == "openstack" else None,
+            provider_size_slug=size if provider == "digitalocean" else None,
+            provider_region=region if provider == "digitalocean" else None,
+            # Common fields
+            image_id=image,
+            key_name=key_name,
+            cloud_init_template_id=template_id,
+            license_product_id=license_product_id,
+            event_id=event_id,
+            assigned_to_user_id=assigned_to_user_id,
+            assigned_to_email=snapshot_email,
+            assigned_to_name=snapshot_name,
+            created_by_user_id=created_by_user_id,
+            error_message=None if instance_data else f"Failed to create on {provider}",
+            # VPN fields
+            vpn_ip=vpn_ip,
+            vpn_config_token=vpn_token_hash,
+            vpn_config_token_expires_at=vpn_token_expires_at,
+            # Agent fields
+            agent_token_hash=agent_token_hash,
+        )
+        self.session.add(instance)
+        await self.session.commit()
+        await self.session.refresh(instance)
+
+        # Update VPN assignment with actual instance_id
+        if assigned_vpn_id:
+            await self._update_vpn_instance_assignment(assigned_vpn_id, instance.id)
+
+        logger.info(
+            "Created instance %s on %s (provider_id=%s, db_id=%d)",
+            name,
+            provider,
+            provider_instance_id,
+            instance.id
+        )
+
+        return instance
+
+    async def _render_cloud_init_template(
+        self,
+        template_id: int,
+        name: str,
+        license_product_id: int | None,
+        event_id: int | None,
+        ssh_public_key: str | None,
+    ) -> str:
+        """Render cloud-init template with variables.
+
+        Extracts logic from OpenStackService for reuse across providers.
+        """
+        from app.services.cloud_init_service import CloudInitService
+        from app.services.license_service import LicenseService
+        from app.models.event import Event
+
+        cloud_init_svc = CloudInitService(self.session)
+        template = await cloud_init_svc.get_template(template_id)
+
+        if not template:
+            logger.warning("Template %d not found", template_id)
+            return ""
+
+        # Prepare template variables
+        variables = {
+            "hostname": name,
+            "instance_name": name,
+        }
+
+        # Add license variables (if license product is specified)
+        if license_product_id:
+            license_svc = LicenseService(self.session)
+            license_token = await license_svc.generate_token(
+                product_id=license_product_id,
+                instance_id=None  # Will be linked after instance creation
+            )
+
+            variables["license_server"] = f"{self.settings.FRONTEND_URL}/api/license"
+            variables["license_token"] = license_token
+            logger.info(
+                "Generated license token for product %d for instance %s",
+                license_product_id,
+                name
+            )
+
+        if self.settings.DOWNLOAD_BASE_URL:
+            variables["download_base_url"] = self.settings.DOWNLOAD_BASE_URL
+
+        # Add VPN variables (if configured)
+        if self.settings.VPN_SERVER_PUBLIC_KEY:
+            variables["vpn_server_public_key"] = self.settings.VPN_SERVER_PUBLIC_KEY
+        if self.settings.VPN_SERVER_ENDPOINT:
+            variables["vpn_server_endpoint"] = self.settings.VPN_SERVER_ENDPOINT
+        if self.settings.VPN_DNS_SERVERS:
+            variables["vpn_dns_servers"] = self.settings.VPN_DNS_SERVERS
+        if self.settings.VPN_ALLOWED_IPS:
+            variables["vpn_allowed_ips"] = self.settings.VPN_ALLOWED_IPS
+
+        # Collect all available SSH keys (both individual and event keys)
+        ssh_keys = []
+
+        if ssh_public_key:
+            ssh_keys.append(ssh_public_key)
+            logger.info("Using individual SSH key for instance %s", name)
+
+        if event_id:
+            result = await self.session.execute(
+                select(Event).where(Event.id == event_id)
+            )
+            event = result.scalar_one_or_none()
+            if event:
+                if event.is_active and event.ssh_public_key:
+                    if event.ssh_public_key not in ssh_keys:
+                        ssh_keys.append(event.ssh_public_key)
+                        logger.info("Added event %d SSH key to instance %s", event_id, name)
+
+        # Format SSH keys for cloud-init template
+        if ssh_keys:
+            if len(ssh_keys) == 1:
+                variables["ssh_public_key"] = ssh_keys[0]
+            else:
+                # Multiple keys: first replaces placeholder, rest as list items
+                variables["ssh_public_key"] = ssh_keys[0] + "\n  - " + "\n  - ".join(ssh_keys[1:])
+            logger.info(
+                "Added %d SSH key(s) to cloud-init template for instance %s",
+                len(ssh_keys),
+                name
+            )
+
+        # Render template
+        user_data = cloud_init_svc.render_template(template.content, variables)
+        logger.info("Rendered cloud-init template %d for instance %s", template_id, name)
+
+        return user_data
+
+    async def _assign_vpn_if_enabled(
+        self,
+        event_id: int,
+        name: str,
+        template_id: int | None,
+        user_data: str | None,
+    ) -> Optional[dict]:
+        """Assign VPN to instance if event has VPN enabled.
+
+        Returns dict with VPN data or None if VPN not assigned.
+        """
+        from app.models.event import Event
+        from app.services.vpn_service import VPNService
+        from app.services.cloud_init_service import CloudInitService
+
+        # Fetch event to check vpn_available flag
+        event_result = await self.session.execute(
+            select(Event).where(Event.id == event_id)
+        )
+        event = event_result.scalar_one_or_none()
+
+        if not event or not event.vpn_available:
+            return None
+
+        logger.info("Event %d has VPN enabled, assigning VPN to instance %s", event_id, name)
+
+        vpn_svc = VPNService(self.session)
+
+        # Temporarily assign VPN with placeholder instance_id
+        success, message, vpn = await vpn_svc.assign_vpn_to_instance(instance_id=0)
+
+        if not success or not vpn:
+            logger.warning("Failed to assign VPN to instance %s: %s", name, message)
+            return None
+
+        # Generate single-use token for cloud-init
+        raw_token = secrets.token_urlsafe(48)
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)  # Extended for package installation time
+
+        logger.info(
+            "Generated VPN token for instance %s, VPN ID: %d, IP: %s",
+            name,
+            vpn.id,
+            vpn.ipv4_address
+        )
+
+        # Add VPN variables to already-rendered template by doing a second pass
+        # We already have user_data with all variables rendered, just add VPN ones
+        if user_data:
+            # Ensure all strings are properly encoded as ASCII-safe strings
+            vpn_token = str(raw_token).encode('ascii', errors='ignore').decode('ascii')
+            vpn_endpoint = f"{self.settings.FRONTEND_URL}/api/cloud-init/vpn-config"
+
+            # Simply replace VPN placeholders in the already-rendered template
+            user_data = user_data.replace("{{vpn_config_token}}", vpn_token)
+            user_data = user_data.replace("{{vpn_config_endpoint}}", vpn_endpoint)
+            logger.info("Added VPN variables to cloud-init template for instance %s", name)
+
+        return {
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "ip": vpn.ipv4_address,
+            "vpn_id": vpn.id,
+            "user_data": user_data,
+        }
+
+    async def _update_vpn_instance_assignment(
+        self,
+        vpn_id: int,
+        instance_id: int
+    ) -> None:
+        """Update VPN record with actual instance_id after instance creation."""
+        vpn_result = await self.session.execute(
+            select(VPNCredential).where(VPNCredential.id == vpn_id)
+        )
+        vpn = vpn_result.scalar_one_or_none()
+        if vpn:
+            vpn.assigned_to_instance_id = instance_id
+            vpn.assigned_instance_at = datetime.now(timezone.utc)
+            await self.session.commit()
+            logger.info("Updated VPN %d with instance ID %d", vpn_id, instance_id)
+
+    async def create_from_template(
+        self,
+        template_id: int,
+        name: str,
+        assigned_to_user_id: int,
+        created_by_user_id: int,
+        visibility: str = "private",
+        notes: Optional[str] = None,
+        ssh_public_key: Optional[str] = None,
+    ) -> Instance:
+        """Create instance from a template.
+
+        Args:
+            template_id: Instance template ID
+            name: Instance name
+            assigned_to_user_id: User to assign instance to
+            created_by_user_id: User creating the instance
+            visibility: Instance visibility (private, public)
+            notes: Optional notes
+            ssh_public_key: Optional individual SSH key
+
+        Returns:
+            Created Instance object
+
+        Raises:
+            ValueError: If template not found or cannot provision
+        """
+        from app.models.instance_template import InstanceTemplate
+
+        # Fetch template
+        result = await self.session.execute(
+            select(InstanceTemplate).where(InstanceTemplate.id == template_id)
+        )
+        template = result.scalar_one_or_none()
+
+        if not template:
+            raise ValueError(f"Template {template_id} not found")
+
+        # Validate visibility
+        if visibility not in ["private", "public"]:
+            raise ValueError("Invalid visibility. Must be private or public")
+
+        # Create instance using template configuration
+        instance = await self.create_and_track_instance(
+            name=name,
+            provider=template.provider,
+            size=template.flavor_id or template.provider_size_slug,
+            image=template.image_id,
+            region=template.provider_region,
+            network=template.network_id,
+            template_id=template.cloud_init_template_id,
+            license_product_id=template.license_product_id,
+            event_id=template.event_id,
+            assigned_to_user_id=assigned_to_user_id,
+            created_by_user_id=created_by_user_id,
+            ssh_public_key=ssh_public_key,
+        )
+
+        # Update instance with template reference and participant fields
+        instance.instance_template_id = template_id
+        instance.visibility = visibility
+        instance.notes = notes
+
+        await self.session.commit()
+        await self.session.refresh(instance)
+
+        logger.info(
+            "Created instance %s from template %d (visibility=%s)",
+            name, template_id, visibility
+        )
+
+        return instance
+
+    _SORTABLE_INSTANCE_COLUMNS = {
+        "id", "name", "status", "ip_address", "vpn_ip", "visibility",
+        "event_id", "created_by_user_id", "created_at",
+    }
+
+    _GROUPABLE_INSTANCE_COLUMNS = {
+        "status", "event_id", "visibility", "created_by_user_id",
+    }
+
+    async def list_tracked_instances(
+        self,
+        page: int = 1,
+        page_size: int = 50,
+        event_id: int | None = None,
+        status: str | None = None,
+        search: str | None = None,
+        assigned_to_user_id: int | None = None,
+        visibility: str | None = None,
+        created_by_user_id: int | None = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        group_by: str | None = None,
+    ) -> tuple[list[Instance], int]:
+        """List tracked instances with filtering and pagination (all providers)."""
+        from sqlalchemy.orm import selectinload
+
+        conditions = [Instance.deleted_at.is_(None)]
+
+        if event_id is not None:
+            conditions.append(Instance.event_id == event_id)
+        if status:
+            conditions.append(Instance.status == status)
+        if assigned_to_user_id is not None:
+            conditions.append(Instance.assigned_to_user_id == assigned_to_user_id)
+        if visibility:
+            conditions.append(Instance.visibility == visibility)
+        if created_by_user_id is not None:
+            conditions.append(Instance.created_by_user_id == created_by_user_id)
+        if search:
+            conditions.append(
+                or_(
+                    Instance.name.ilike(f"%{search}%"),
+                    Instance.ip_address.ilike(f"%{search}%"),
+                    Instance.provider_instance_id.ilike(f"%{search}%"),
+                )
+            )
+
+        # Count
+        count_q = select(func.count(Instance.id)).where(*conditions)
+        total = (await self.session.execute(count_q)).scalar() or 0
+
+        # Dynamic sort
+        if sort_by not in self._SORTABLE_INSTANCE_COLUMNS:
+            sort_by = "created_at"
+        sort_col = getattr(Instance, sort_by)
+        order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+
+        # Build ordering: when grouping, prepend group column as primary sort
+        # so same-group rows are contiguous (prevents split groups in the frontend).
+        order_clauses = []
+        if group_by and group_by in self._GROUPABLE_INSTANCE_COLUMNS:
+            group_col = getattr(Instance, group_by)
+            order_clauses.append(group_col.asc().nullslast())
+        order_clauses.append(order)
+
+        # Fetch with relationships (skip pagination when grouping)
+        q = (
+            select(Instance)
+            .options(
+                selectinload(Instance.event),
+                selectinload(Instance.created_by),
+                selectinload(Instance.instance_template),
+            )
+            .where(*conditions)
+            .order_by(*order_clauses)
+        )
+        if not (group_by and group_by in self._GROUPABLE_INSTANCE_COLUMNS):
+            offset = (page - 1) * page_size
+            q = q.offset(offset).limit(page_size)
+        result = await self.session.execute(q)
+        instances = list(result.scalars().all())
+
+        return instances, total
+
+    async def get_tracked_instance(self, instance_id: int) -> Optional[Instance]:
+        """Get a single tracked instance by ID."""
+        result = await self.session.execute(
+            select(Instance).where(Instance.id == instance_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def sync_instance_status(self, instance_id: int) -> Optional[Instance]:
+        """Refresh an instance's status from its cloud provider."""
+        instance = await self.get_tracked_instance(instance_id)
+        if not instance or not instance.provider_instance_id:
+            return instance
+
+        try:
+            # Get appropriate provider service
+            provider_service = CloudProviderFactory.get_provider(
+                instance.provider, self.session
+            )
+
+            # Get status from provider
+            provider_data = await provider_service.get_instance_status(
+                instance.provider_instance_id
+            )
+
+            if provider_data:
+                # Update status
+                new_status = provider_service.normalize_status(
+                    provider_data.get("status", "")
+                )
+                instance.status = new_status
+
+                # Update IP if available
+                ip_address = provider_service.extract_ip_address(provider_data)
+                if ip_address:
+                    instance.ip_address = ip_address
+
+                # Mark sync timestamp
+                instance.last_synced_at = func.now()
+
+                await self.session.commit()
+                await self.session.refresh(instance)
+
+                logger.info(
+                    "Synced instance %d (%s) from %s - status: %s",
+                    instance.id, instance.name, instance.provider, new_status
+                )
+
+        except Exception as e:
+            logger.error(
+                "Failed to sync instance %d (%s, provider=%s): %s",
+                instance.id, instance.name, instance.provider, e
+            )
+
+        return instance
+
+    async def delete_and_track_instance(self, instance_id: int) -> bool:
+        """Delete an instance from its cloud provider and soft-delete the DB record.
+
+        Works with any cloud provider (OpenStack, DigitalOcean, etc.).
+        """
+        instance = await self.get_tracked_instance(instance_id)
+        if not instance:
+            return False
+
+        # Delete from cloud provider if it has a provider instance ID
+        if instance.provider_instance_id:
+            try:
+                # Get appropriate provider service
+                provider_service = CloudProviderFactory.get_provider(
+                    instance.provider, self.session
+                )
+
+                # Delete from provider
+                await provider_service.delete_instance(instance.provider_instance_id)
+                logger.info(
+                    "Deleted instance %s (id=%d) from %s provider",
+                    instance.name, instance.id, instance.provider
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to delete instance %d from %s: %s",
+                    instance.id, instance.provider, e
+                )
+                # Continue with soft-delete anyway
+
+        # Soft-delete in database
+        instance.status = "DELETED"
+        instance.deleted_at = datetime.now(timezone.utc)
+        await self.session.commit()
+
+        logger.info("Instance soft-deleted in DB: %s (id=%d)", instance.name, instance.id)
+        return True
+
+    async def bulk_delete_instances(self, instance_ids: list[int]) -> tuple[int, list[str]]:
+        """Bulk-delete instances from their cloud providers. Returns (success_count, error_messages)."""
+        successes = 0
+        errors = []
+
+        for instance_id in instance_ids:
+            try:
+                ok = await self.delete_and_track_instance(instance_id)
+                if ok:
+                    successes += 1
+                else:
+                    errors.append(f"Instance {instance_id}: not found")
+            except Exception as e:
+                errors.append(f"Instance {instance_id}: {e}")
+                logger.error("Failed to delete instance %d: %s", instance_id, e)
+
+        return successes, errors

@@ -10,9 +10,8 @@ from app.api.exceptions import not_found, forbidden, bad_request, conflict, unau
 
 from app.dependencies import (
     get_db,
-    get_current_admin_user,
-    get_current_sponsor_user,
     get_current_active_user,
+    require_permission,
     permissions
 )
 from app.api.utils.request import extract_client_metadata
@@ -42,6 +41,8 @@ from app.schemas.participant import (
     SponsorAssignRequest,
     MySponsoredParticipantsResponse,
 )
+from app.schemas.role import RoleAssignRequest, PermissionOverrideUpdate
+from app.models.role import Role
 from app.schemas.vpn import VPNStats
 from app.schemas.dashboard import DashboardStats, DashboardResponse
 from app.schemas.audit import (
@@ -52,7 +53,7 @@ from app.schemas.audit import (
 from app.models.audit_log import AuditLog
 from app.models.email_queue import EmailQueue, EmailBatchLog, EmailQueueStatus
 from app.services.email_queue_service import EmailQueueService
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from app.services.vpn_service import VPNService
 
 
@@ -69,12 +70,14 @@ async def list_participants(
     has_vpn: Optional[bool] = Query(None, description="Filter by VPN status"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     email_status: Optional[str] = Query(None, description="Filter by email status"),
-    role: Optional[str] = Query(None, description="Filter by role"),
+    role: Optional[str] = Query(None, description="Filter by base role type"),
+    role_id: Optional[int] = Query(None, description="Filter by specific role ID"),
     country: Optional[str] = Query(None, description="Filter by country"),
     sponsor_id: Optional[int] = Query(None, description="Filter by sponsor ID"),
     sort_by: str = Query("created_at", description="Sort field"),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
-    current_user: User = Depends(get_current_sponsor_user),
+    group_by: Optional[str] = Query(None, description="Group by column (disables pagination)"),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -95,8 +98,10 @@ async def list_participants(
         sort_by=sort_by,
         sort_order=sort_order,
         role=role,
+        role_id=role_id,
         country=country,
-        sponsor_id=sponsor_id
+        sponsor_id=sponsor_id,
+        group_by=group_by,
     )
 
     # Build responses with VPN info
@@ -104,6 +109,15 @@ async def list_participants(
     for p in participants:
         item = await build_participant_response(p, db)
         items.append(item)
+
+    if group_by:
+        return ParticipantListResponse(
+            items=items,
+            total=total,
+            page=1,
+            page_size=total or 1,
+            total_pages=1
+        )
 
     _, total_pages = calculate_pagination(total, page, page_size)
 
@@ -118,7 +132,7 @@ async def list_participants(
 
 @router.get("/participants/stats", response_model=ParticipantStats)
 async def get_participant_stats(
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -132,7 +146,7 @@ async def get_participant_stats(
 
 @router.get("/dashboard", response_model=DashboardResponse)
 async def get_dashboard(
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     participant_service: ParticipantService = Depends(get_participant_service),
     vpn_service: VPNService = Depends(get_vpn_service)
 ):
@@ -157,7 +171,7 @@ async def get_dashboard(
 @router.get("/participants/{participant_id}", response_model=ParticipantResponse)
 async def get_participant(
     participant_id: int,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -176,7 +190,7 @@ async def get_participant(
 async def create_participant(
     data: ParticipantCreate,
     request: Request,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.create")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -189,20 +203,53 @@ async def create_participant(
     # Check if email already exists
     existing = await service.get_participant_by_email(data.email)
     if existing:
-        raise bad_request("A participant with this email already exists")
+        sponsor_info = "no sponsor"
+        if existing.sponsor_id:
+            sponsor = await service.get_participant(existing.sponsor_id)
+            if sponsor:
+                sponsor_info = f"{sponsor.first_name} {sponsor.last_name} ({sponsor.email})"
+            else:
+                sponsor_info = f"sponsor ID {existing.sponsor_id}"
+
+        raise conflict(
+            f"User with email '{data.email}' already exists. "
+            f"Name: {existing.first_name} {existing.last_name}, "
+            f"Role: {existing.role}, "
+            f"Sponsor: {sponsor_info}"
+        )
 
     # Determine sponsor_id
     sponsor_id = data.sponsor_id
+
+    # Resolve role from role_id or legacy role enum
+    target_role = None
+    if data.role_id:
+        role_result = await db.execute(select(Role).where(Role.id == data.role_id))
+        target_role = role_result.scalar_one_or_none()
+        if not target_role:
+            raise bad_request(f"Role with ID {data.role_id} not found")
+        role_value = target_role.base_type
+    else:
+        role_value = data.role.value if data.role else UserRole.INVITEE.value
+        # Default to matching system role so role_id is always populated
+        role_result = await db.execute(
+            select(Role).where(Role.slug == role_value, Role.is_system == True)
+        )
+        target_role = role_result.scalar_one_or_none()
+
     if not current_user.is_admin_role:
         # Sponsors can only create participants they sponsor
         sponsor_id = current_user.id
-        # Sponsors cannot create admin or sponsor role users
-        if data.role in (UserRoleEnum.ADMIN, UserRoleEnum.SPONSOR):
+        # Sponsors can only create invitee-type roles
+        if role_value != "invitee":
             raise forbidden("Only administrators can create admin or sponsor users")
+        # If sponsor has allowed_role_ids, enforce restriction
+        if target_role and current_user.role_obj and current_user.role_obj.allowed_role_ids:
+            if target_role.id not in current_user.role_obj.allowed_role_ids:
+                raise forbidden(f"You are not allowed to create participants with the '{target_role.name}' role")
 
-    # Convert role enum to string value
-    role_value = data.role.value if data.role else UserRole.INVITEE.value
-
+    # Pass role_id at creation time (avoids detached instance issues from post-commit updates)
+    target_role_id = target_role.id if target_role else None
     participant = await service.create_participant(
         email=data.email,
         first_name=data.first_name,
@@ -215,8 +262,12 @@ async def create_participant(
         sponsor_email=data.sponsor_email,
         sponsor_id=sponsor_id,
         role=role_value,
+        role_id=target_role_id,
         is_admin=data.is_admin
     )
+
+    # Re-fetch with relationships
+    participant = await service.get_participant(participant.id)
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
@@ -236,6 +287,84 @@ async def create_participant(
     # Reload participant with relationships for response
     participant = await service.get_participant(participant.id)
 
+    # Trigger workflow for admin/sponsor creation (send welcome email with portal password)
+    # Both admins and sponsors need immediate portal access to manage participants.
+    # IMPORTANT: Use the password already generated by create_participant() rather than
+    # generating a second one. A separate temp_password override via ORM attribute
+    # assignment does not persist reliably due to expire_on_commit=False causing
+    # identity map staleness after create_participant()'s multiple commits.
+    if participant.role in [UserRole.ADMIN.value, UserRole.SPONSOR.value]:
+        from app.services.workflow_service import WorkflowService
+        from app.models.email_workflow import WorkflowTriggerEvent
+        from app.config import get_settings
+
+        settings = get_settings()
+        workflow_service = WorkflowService(db)
+
+        # Determine trigger event based on role
+        trigger_event = (
+            WorkflowTriggerEvent.ADMIN_CREATED
+            if participant.role == UserRole.ADMIN.value
+            else WorkflowTriggerEvent.SPONSOR_CREATED
+        )
+
+        # Use the password and hash already set by create_participant().
+        # This guarantees the emailed password matches the stored hash.
+        portal_password = participant.pandas_password
+        portal_phonetic = participant.password_phonetic
+
+        if not portal_password:
+            logger.error(
+                "No password available for %s %s (%s) — skipping welcome email",
+                participant.role, participant.id, participant.email
+            )
+        else:
+            # Role-specific template variables
+            role_template_vars = {
+                UserRole.ADMIN.value: {
+                    "role": "Admin",
+                    "role_label": "ADMIN",
+                    "role_upper": "ADMINISTRATOR",
+                    "role_display": "Administrator",
+                    "a_or_an": "an",
+                },
+                UserRole.SPONSOR.value: {
+                    "role": "Sponsor",
+                    "role_label": "SPONSOR",
+                    "role_upper": "SPONSOR",
+                    "role_display": "Sponsor",
+                    "a_or_an": "a",
+                },
+            }
+
+            email_custom_vars = {
+                "first_name": participant.first_name,
+                "last_name": participant.last_name,
+                **role_template_vars[participant.role],
+                "email": participant.email,
+                "password": portal_password,
+                "password_phonetic": portal_phonetic or "",
+                "login_url": f"{settings.FRONTEND_URL}/login",
+                "support_email": settings.SENDGRID_FROM_EMAIL,
+            }
+
+            logger.info(
+                "Triggering %s workflow for %s %s with vars: %s",
+                trigger_event, participant.role, participant.id,
+                list(email_custom_vars.keys())
+            )
+
+            queued = await workflow_service.trigger_workflow(
+                trigger_event=trigger_event,
+                user_id=participant.id,
+                custom_vars=email_custom_vars,
+            )
+
+            logger.info(
+                "Workflow %s for %s %s: %d email(s) queued",
+                trigger_event, participant.role, participant.id, queued
+            )
+
     # Check if there's an active event and queue invitation email
     from app.services.event_service import EventService
     event_service = EventService(db)
@@ -243,13 +372,22 @@ async def create_participant(
 
     # Determine if invitation should be sent based on event settings
     should_send_invitation = False
-    if active_event and participant.confirmed == 'UNKNOWN' and participant.role in ['invitee', 'sponsor']:
-        # TEST MODE ALWAYS RESTRICTS: Only send to sponsors if test mode is enabled
-        if active_event.test_mode:
-            should_send_invitation = (participant.role == 'sponsor')
-        else:
-            # Normal mode: Send if registration is open
-            should_send_invitation = active_event.registration_open
+    if active_event and participant.role in ['invitee', 'sponsor']:
+        # Check EventParticipation status for current event
+        from app.models.event import ParticipationStatus
+        participation = await participant.get_current_event_participation(db)
+
+        # Send only if not yet confirmed/declined (invited, no_response, or no record yet)
+        if not participation or participation.status in [
+            ParticipationStatus.INVITED.value,
+            ParticipationStatus.NO_RESPONSE.value
+        ]:
+            # TEST MODE ALWAYS RESTRICTS: Only send to sponsors if test mode is enabled
+            if active_event.test_mode:
+                should_send_invitation = (participant.role == 'sponsor')
+            else:
+                # Normal mode: Send if registration is open
+                should_send_invitation = active_event.registration_open
 
     if should_send_invitation:
         # Queue invitation email using helper function
@@ -274,15 +412,17 @@ async def update_participant(
     participant_id: int,
     data: ParticipantUpdate,
     request: Request,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.edit")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Update a participant.
 
-    - Admins can update any participant (including username)
-    - Sponsors can update participants they sponsor (except role, sponsor_id, and username)
+    - Admins can update any participant
+    - Sponsors can update participants they sponsor (except role and sponsor_id)
+
+    NOTE: Username (pandas_username) is auto-generated and cannot be manually edited.
     """
     # Get the participant first to check permissions
     participant = await service.get_participant(participant_id)
@@ -292,25 +432,61 @@ async def update_participant(
     # Check permission to edit this participant
     permissions.can_edit_participant(current_user, participant)
 
-    # Sponsors cannot change role, sponsor_id, or username
+    # Sponsors cannot change role or sponsor_id
     if not current_user.is_admin_role:
         if data.role is not None:
             raise forbidden("Only administrators can change user roles")
         if data.sponsor_id is not None:
             raise forbidden("Only administrators can change sponsor assignments")
-        if data.pandas_username is not None:
-            raise forbidden("Only administrators can change usernames")
 
     # Check if email is being changed to one that already exists
     if data.email:
         existing = await service.get_participant_by_email(data.email)
         if existing and existing.id != participant_id:
-            raise bad_request("A participant with this email already exists")
+            sponsor_info = "no sponsor"
+            if existing.sponsor_id:
+                sponsor = await service.get_participant(existing.sponsor_id)
+                if sponsor:
+                    sponsor_info = f"{sponsor.first_name} {sponsor.last_name} ({sponsor.email})"
+                else:
+                    sponsor_info = f"sponsor ID {existing.sponsor_id}"
+
+            raise conflict(
+                f"User with email '{data.email}' already exists. "
+                f"Name: {existing.first_name} {existing.last_name}, "
+                f"Role: {existing.role}, "
+                f"Sponsor: {sponsor_info}"
+            )
 
     # Convert role enum to string value if provided
     update_data = data.model_dump(exclude_unset=True)
     if 'role' in update_data and update_data['role'] is not None:
         update_data['role'] = update_data['role'].value
+
+    # If role_id is provided, resolve role and sync base type fields
+    if 'role_id' in update_data and update_data['role_id'] is not None:
+        role_result = await db.execute(select(Role).where(Role.id == update_data['role_id']))
+        target_role = role_result.scalar_one_or_none()
+        if not target_role:
+            raise bad_request(f"Role with ID {update_data['role_id']} not found")
+        # Sync legacy fields from role
+        update_data['role'] = target_role.base_type
+        update_data['is_admin'] = target_role.base_type == 'admin'
+
+    # Block elevation to admin if user has event participation history
+    new_role = update_data.get('role')
+    if new_role == UserRole.ADMIN.value and participant.role != UserRole.ADMIN.value:
+        from app.models.event import EventParticipation
+        ep_count_result = await db.execute(
+            select(func.count(EventParticipation.id))
+            .where(EventParticipation.user_id == participant_id)
+        )
+        ep_count = ep_count_result.scalar() or 0
+        if ep_count > 0:
+            raise bad_request(
+                f"Cannot elevate {participant.email} to admin — they have participation "
+                f"history ({ep_count} event(s)). Create a separate admin account instead."
+            )
 
     participant = await service.update_participant(
         participant_id,
@@ -335,7 +511,7 @@ async def update_participant(
 async def delete_participant(
     participant_id: int,
     request: Request,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.remove")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -382,7 +558,7 @@ async def delete_participant(
 async def bulk_action(
     data: BulkActionRequest,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("participants.edit")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -439,17 +615,25 @@ async def bulk_action(
 async def reset_participant_password(
     participant_id: int,
     request: Request,
-    send_email: bool = Query(True, description="Send password email to participant"),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("admin.manage_users")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Reset a participant's password.
+    Send a password reset link to a participant.
+
+    Generates a reset token and triggers the PASSWORD_RESET workflow,
+    which emails the participant a secure link to choose their own password.
 
     - Admins can reset any participant's password
     - Sponsors can only reset passwords for participants they sponsor
     """
+    import secrets
+    from datetime import timedelta
+    from app.services.workflow_service import WorkflowService
+    from app.models.email_workflow import WorkflowTriggerEvent
+    from app.config import get_settings
+
     # Get the participant first to check permissions
     participant = await service.get_participant(participant_id)
     if not participant:
@@ -458,10 +642,31 @@ async def reset_participant_password(
     # Check permission to edit this participant
     permissions.can_edit_participant(current_user, participant)
 
-    success, new_password = await service.reset_password(participant_id)
+    # Generate reset token (same flow as self-service)
+    reset_token = secrets.token_urlsafe(32)
+    reset_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
 
-    if not success:
-        raise not_found("Participant")
+    participant.password_reset_token = reset_token
+    participant.password_reset_expires = reset_expires
+    await db.commit()
+
+    # Trigger PASSWORD_RESET workflow (sends reset link email)
+    settings = get_settings()
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+
+    workflow_service = WorkflowService(db)
+    await workflow_service.trigger_workflow(
+        trigger_event=WorkflowTriggerEvent.PASSWORD_RESET,
+        user_id=participant.id,
+        custom_vars={
+            "reset_url": reset_url,
+            "reset_token": reset_token,
+            "first_name": participant.first_name,
+            "last_name": participant.last_name,
+            "email": participant.email,
+            "expiry_time": "15 minutes",
+        }
+    )
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
@@ -473,12 +678,9 @@ async def reset_participant_password(
         user_agent=user_agent
     )
 
-    # TODO: Send email if send_email is True
-
     return PasswordResetResponse(
         success=True,
-        message="Password reset successfully" + (" (email sent)" if send_email else ""),
-        new_password=new_password if not send_email else None
+        message=f"Password reset link sent to {participant.email}"
     )
 
 
@@ -486,7 +688,7 @@ async def reset_participant_password(
 async def resend_participant_invitation(
     participant_id: int,
     request: Request,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.invite")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -510,8 +712,11 @@ async def resend_participant_invitation(
     if participant.role not in ['invitee', 'sponsor']:
         raise bad_request(f"Cannot resend invitation to {participant.role} role. Only invitees and sponsors can receive invitations.")
 
-    if participant.confirmed == 'YES':
-        raise bad_request("Participant has already confirmed. Cannot resend invitation to confirmed users.")
+    # Check EventParticipation status for current event
+    from app.models.event import ParticipationStatus
+    participation = await participant.get_current_event_participation(db)
+    if participation and participation.status == ParticipationStatus.CONFIRMED.value:
+        raise bad_request("Participant has already confirmed for current event. Cannot resend invitation to confirmed users.")
 
     if not participant.is_active:
         raise bad_request("Cannot resend invitation to inactive participant.")
@@ -548,9 +753,11 @@ async def resend_participant_invitation(
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
     audit_service = AuditService(db)
-    await audit_service.log_action(
-        action="resend_invitation",
+    await audit_service.log(
+        action="RESEND_INVITATION",
         user_id=current_user.id,
+        resource_type="USER",
+        resource_id=participant_id,
         details={
             "target_user_id": participant_id,
             "target_email": participant.email,
@@ -569,11 +776,148 @@ async def resend_participant_invitation(
     }
 
 
+@router.post("/participants/{participant_id}/reset-workflow")
+async def reset_participant_workflow(
+    participant_id: int,
+    reset_event_participation: bool = True,
+    reset_credentials: bool = False,
+    request: Request = None,
+    current_user: User = Depends(require_permission("admin.manage_users")),
+    service: ParticipantService = Depends(get_participant_service),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reset workflow state for a participant.
+
+    This endpoint resets all workflow-related fields including:
+    - Confirmation code and timestamps
+    - Confirmed status (back to UNKNOWN)
+    - Terms acceptance
+    - All reminder timestamps
+    - Password email timestamp
+    - EventParticipation record for current event (optional)
+    - Credentials for invitees only (optional) — sponsors/admins keep theirs across events
+
+    Useful for:
+    - Testing invitation flows
+    - Re-inviting users for new event years
+    - Recovering from workflow errors
+
+    Requires admin role.
+    """
+    # Get the participant first
+    participant = await service.get_participant(participant_id)
+    if not participant:
+        raise not_found("Participant")
+
+    # Reset workflow state
+    participant = await service.reset_workflow_state(
+        participant_id=participant_id,
+        reset_event_participation=reset_event_participation,
+        reset_credentials=reset_credentials
+    )
+
+    # Audit log
+    from app.api.utils.request import extract_client_metadata
+    audit_service = AuditService(db)
+    ip_address, user_agent = extract_client_metadata(request)
+
+    await audit_service.log(
+        action="RESET_WORKFLOW",
+        user_id=current_user.id,
+        resource_type="USER",
+        resource_id=participant_id,
+        details={
+            "target_user_id": participant_id,
+            "target_email": participant.email,
+            "reset_event_participation": reset_event_participation,
+            "reset_credentials": reset_credentials
+        },
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    return {
+        "success": True,
+        "message": f"Workflow state reset for {participant.email}",
+        "new_confirmation_code": participant.confirmation_code,
+        "reset_event_participation": reset_event_participation,
+        "reset_credentials": reset_credentials,
+        "credentials_cleared": reset_credentials and participant.role == "invitee"
+    }
+
+
+@router.post("/participants/bulk-reset-workflow")
+async def bulk_reset_participant_workflows(
+    reset_event_participation: bool = Query(True, description="Delete EventParticipation for current event"),
+    reset_credentials: bool = Query(False, description="Clear invitee credentials (sponsors/admins unaffected)"),
+    roles: str = Query("invitee,sponsor", description="Comma-separated roles to reset"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs (omit for all matching users)"),
+    request: Request = None,
+    current_user: User = Depends(require_permission("admin.manage_users")),
+    service: ParticipantService = Depends(get_participant_service),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Bulk reset workflow state for multiple participants.
+
+    Resets confirmation status, terms, reminders, and email timestamps for all
+    active users matching the role filter. Used to prepare users for a new event year.
+
+    Admins are never affected by bulk reset.
+    """
+    role_list = [r.strip() for r in roles.split(",") if r.strip()]
+    id_list = None
+    if user_ids:
+        try:
+            id_list = [int(id.strip()) for id in user_ids.split(",") if id.strip()]
+        except ValueError:
+            raise bad_request("Invalid user_ids format — must be comma-separated integers")
+
+    result = await service.bulk_reset_workflow_state(
+        reset_event_participation=reset_event_participation,
+        reset_credentials=reset_credentials,
+        roles=role_list,
+        user_ids=id_list
+    )
+
+    # Audit log
+    from app.api.utils.request import extract_client_metadata
+    audit_service = AuditService(db)
+    ip_address, user_agent = extract_client_metadata(request)
+
+    await audit_service.log(
+        action="BULK_RESET_WORKFLOW",
+        user_id=current_user.id,
+        resource_type="USER",
+        details={
+            "affected_count": result["affected_count"],
+            "breakdown": result["breakdown"],
+            "reset_event_participation": reset_event_participation,
+            "reset_credentials": reset_credentials,
+            "roles": role_list,
+            "user_ids": id_list
+        },
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    breakdown_str = ", ".join(f"{count} {role}s" for role, count in result["breakdown"].items())
+    return {
+        "success": True,
+        "message": f"Workflow state reset for {result['affected_count']} users ({breakdown_str})",
+        "affected_count": result["affected_count"],
+        "breakdown": result["breakdown"],
+        "reset_event_participation": reset_event_participation,
+        "reset_credentials": reset_credentials
+    }
+
+
 # ============== Admin-only Role and Sponsor Management ==============
 
 @router.get("/sponsors", response_model=List[ParticipantResponse])
 async def list_sponsors(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("participants.view_all")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -595,7 +939,7 @@ async def update_participant_role(
     participant_id: int,
     data: RoleUpdateRequest,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("participants.edit")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -612,6 +956,20 @@ async def update_participant_role(
     if not old_participant:
         raise not_found("Participant")
     old_role = old_participant.role
+
+    # Block elevation to admin if user has event participation history
+    if data.role.value == UserRole.ADMIN.value and old_role != UserRole.ADMIN.value:
+        from app.models.event import EventParticipation
+        ep_count_result = await db.execute(
+            select(func.count(EventParticipation.id))
+            .where(EventParticipation.user_id == participant_id)
+        )
+        ep_count = ep_count_result.scalar() or 0
+        if ep_count > 0:
+            raise bad_request(
+                f"Cannot elevate {old_participant.email} to admin — they have participation "
+                f"history ({ep_count} event(s)). Create a separate admin account instead."
+            )
 
     participant = await service.update_role(participant_id, data.role.value)
     if not participant:
@@ -636,7 +994,7 @@ async def update_participant_role(
 async def assign_participant_sponsor(
     participant_id: int,
     data: SponsorAssignRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("participants.edit")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -666,7 +1024,7 @@ async def assign_participant_sponsor(
 async def get_my_sponsored_participants(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(get_current_active_user),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -703,7 +1061,7 @@ async def list_audit_logs(
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
     start_date: Optional[datetime] = Query(None, description="Start date filter"),
     end_date: Optional[datetime] = Query(None, description="End date filter"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("admin.view_audit_log")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -751,10 +1109,10 @@ async def list_audit_logs(
     # Build responses with user info
     items = []
     for log in audit_logs:
-        # Get user info if user_id exists
-        user_email = None
-        user_name = None
-        if log.user_id:
+        # Prefer snapshot fields; fall back to live user lookup for older logs
+        user_email = log.user_email
+        user_name = log.user_name
+        if not user_email and log.user_id:
             user_result = await db.execute(
                 select(User).where(User.id == log.user_id)
             )
@@ -791,7 +1149,7 @@ async def list_audit_logs(
 
 @router.get("/audit-logs/stats", response_model=AuditLogStats)
 async def get_audit_log_stats(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("admin.view_audit_log")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -888,7 +1246,7 @@ async def list_email_queue(
     exclude_status: Optional[str] = Query(None, description="Exclude specific status"),
     since: Optional[str] = Query(None, description="Filter by created/updated since (ISO datetime)"),
     template_name: Optional[str] = Query(None, description="Filter by template"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -918,8 +1276,16 @@ async def list_email_queue(
     if since:
         try:
             since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
-            query = query.where(EmailQueue.created_at >= since_dt)
-            count_query = count_query.where(EmailQueue.created_at >= since_dt)
+            # Check any relevant timestamp (created, sent, or processed)
+            # This ensures "recent activity" shows emails processed recently,
+            # not just emails created recently
+            since_filter = or_(
+                EmailQueue.created_at >= since_dt,
+                EmailQueue.sent_at >= since_dt,
+                EmailQueue.processed_at >= since_dt
+            )
+            query = query.where(since_filter)
+            count_query = count_query.where(since_filter)
         except ValueError:
             pass  # Ignore invalid datetime
 
@@ -972,7 +1338,7 @@ async def list_email_queue(
 
 @router.get("/email-queue/stats")
 async def get_email_queue_stats(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -989,7 +1355,7 @@ async def get_email_queue_stats(
 @router.post("/email-queue/process-batch")
 async def process_email_batch_manually(
     batch_size: int = Query(50, ge=1, le=100, description="Batch size"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1016,7 +1382,7 @@ async def process_email_batch_manually(
 @router.delete("/email-queue/{email_id}")
 async def cancel_queued_email(
     email_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1033,11 +1399,43 @@ async def cancel_queued_email(
     return {"success": True, "message": "Email cancelled successfully"}
 
 
+@router.post("/email-queue/bulk-cancel")
+async def bulk_cancel_queued_emails(
+    data: dict,
+    current_user: User = Depends(require_permission("email.manage_queue")),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Bulk cancel pending emails in the queue.
+
+    Requires admin role.
+    """
+    email_ids = data.get("email_ids", [])
+    if not email_ids:
+        return {"success": False, "message": "No email IDs provided", "affected_count": 0, "failed_ids": []}
+
+    queue_service = EmailQueueService(db)
+    affected_count, failed_ids = await queue_service.bulk_cancel_emails(email_ids)
+
+    audit_service = AuditService(db)
+    await audit_service.log(
+        action="BULK_CANCEL_QUEUED_EMAILS",
+        user_id=current_user.id,
+        details={"requested": len(email_ids), "cancelled": affected_count, "failed_ids": failed_ids},
+    )
+
+    message = f"Cancelled {affected_count} of {len(email_ids)} emails"
+    if failed_ids:
+        message += f" ({len(failed_ids)} were not pending)"
+
+    return {"success": True, "message": message, "affected_count": affected_count, "failed_ids": failed_ids}
+
+
 @router.get("/email-batch-logs")
 async def list_email_batch_logs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_queue")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1090,7 +1488,7 @@ async def list_email_batch_logs(
 
 @router.get("/scheduler/jobs")
 async def list_scheduler_jobs(
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("scheduler.view"))
 ):
     """
     List all scheduled jobs with their next run times.
@@ -1109,7 +1507,7 @@ async def list_scheduler_jobs(
 
 @router.get("/scheduler/status")
 async def get_scheduler_status(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("scheduler.view")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1156,6 +1554,174 @@ async def get_scheduler_status(
     }
 
 
+@router.get("/scheduler/instance-sync-status")
+async def get_instance_sync_status(
+    current_user: User = Depends(require_permission("scheduler.view")),
+):
+    """Get instance sync scheduler status and statistics."""
+    from app.services.instance_sync_scheduler import get_scheduler as get_instance_scheduler
+    instance_scheduler = get_instance_scheduler()
+
+    return {
+        "scheduler_initialized": instance_scheduler.scheduler is not None,
+        "scheduler_running": instance_scheduler.scheduler.running if instance_scheduler.scheduler else False,
+        "stats": instance_scheduler.get_stats(),
+        "jobs": [
+            {
+                "id": job.id,
+                "name": job.name,
+                "next_run": str(job.next_run_time) if job.next_run_time else None
+            }
+            for job in (instance_scheduler.scheduler.get_jobs() if instance_scheduler.scheduler else [])
+        ]
+    }
+
+
+# ============== Reminder Testing ==============
+
+@router.post("/reminders/trigger")
+async def trigger_reminders(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("participants.invite")),
+    stage: Optional[int] = Query(None, description="Reminder stage (1, 2, or 3). Omit for all stages."),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to target. Omit for all eligible."),
+    force: bool = Query(False, description="Re-send even if reminder was already sent for this stage."),
+    dry_run: bool = Query(False, description="Preview eligible users without actually queuing emails."),
+    skip_checks: bool = Query(False, description="Skip confirmation_sent_at and participation status checks (testing only)."),
+):
+    """
+    Manually trigger reminder processing, bypassing all date/time checks.
+
+    Useful for testing reminder workflows without waiting for the configured
+    timeframes (days-after-invite, min-days-before-event, etc.).
+
+    The only checks that remain (unless skip_checks=true):
+    - User must have confirmation_sent_at set (was actually invited)
+    - User's participation status must be INVITED or NO_RESPONSE
+    - User must be active
+    - Unless force=true, skips users who already received this reminder stage
+
+    Requires admin role.
+    """
+    from app.models.event import Event, EventParticipation, ParticipationStatus
+    from app.tasks.invitation_reminders import queue_reminders
+    from sqlalchemy import and_
+    from datetime import datetime, timezone
+
+    # Validate stage
+    if stage is not None and stage not in (1, 2, 3):
+        raise bad_request("Stage must be 1, 2, or 3")
+
+    # Get active event
+    event_result = await db.execute(
+        select(Event).where(Event.is_active == True).order_by(Event.year.desc())
+    )
+    event = event_result.scalar_one_or_none()
+    if not event:
+        raise not_found("No active event found")
+
+    now = datetime.now(timezone.utc)
+    if event.start_date:
+        import datetime as dt_mod
+        if isinstance(event.start_date, datetime):
+            event_start_utc = event.start_date if event.start_date.tzinfo else event.start_date.replace(tzinfo=timezone.utc)
+        elif isinstance(event.start_date, dt_mod.date):
+            event_start_utc = datetime.combine(event.start_date, datetime.min.time(), tzinfo=timezone.utc)
+        else:
+            event_start_utc = now
+    else:
+        event_start_utc = now
+    days_until_event = (event_start_utc - now).days
+
+    stages_to_run = [stage] if stage else [1, 2, 3]
+    target_user_ids = [int(uid.strip()) for uid in user_ids.split(",") if uid.strip()] if user_ids else None
+
+    results = {}
+
+    for s in stages_to_run:
+        # Build query
+        conditions = [
+            EventParticipation.event_id == event.id,
+            User.is_active == True,
+        ]
+
+        # Unless skip_checks, require invitation status and confirmation_sent_at
+        if not skip_checks:
+            conditions.extend([
+                EventParticipation.status.in_([
+                    ParticipationStatus.INVITED.value,
+                    ParticipationStatus.NO_RESPONSE.value,
+                ]),
+                User.confirmation_sent_at.isnot(None),
+            ])
+
+        # Unless force, skip users who already got this stage
+        if not force:
+            if s == 1:
+                conditions.append(User.reminder_1_sent_at.is_(None))
+            elif s == 2:
+                conditions.append(User.reminder_2_sent_at.is_(None))
+            elif s == 3:
+                conditions.append(User.reminder_3_sent_at.is_(None))
+
+        # Filter to specific users if requested
+        if target_user_ids:
+            conditions.append(User.id.in_(target_user_ids))
+
+        result = await db.execute(
+            select(User)
+            .join(EventParticipation, and_(
+                EventParticipation.user_id == User.id,
+                EventParticipation.event_id == event.id,
+            ))
+            .where(and_(*conditions))
+        )
+        users = result.scalars().all()
+
+        # Test mode filtering
+        if event.test_mode:
+            users = [u for u in users if u.is_sponsor_role]
+
+        stage_key = f"stage_{s}"
+        template_map = {1: "invite_reminder_1", 2: "invite_reminder_2", 3: "invite_reminder_final"}
+
+        if dry_run:
+            results[stage_key] = {
+                "eligible_count": len(users),
+                "users": [{"id": u.id, "email": u.email, "name": f"{u.first_name} {u.last_name}"} for u in users],
+                "would_send": len(users) > 0,
+            }
+        else:
+            if users:
+                await queue_reminders(
+                    session=db,
+                    users=users,
+                    event=event,
+                    stage=s,
+                    template_name=template_map[s],
+                    days_until_event=max(days_until_event, 0),
+                )
+            results[stage_key] = {
+                "queued": len(users),
+                "users": [{"id": u.id, "email": u.email} for u in users],
+            }
+
+    logger.info(
+        f"Manual reminder trigger by {current_user.email}: "
+        f"stages={stages_to_run}, force={force}, dry_run={dry_run}, skip_checks={skip_checks}, results={results}"
+    )
+
+    return {
+        "event": event.name,
+        "test_mode": event.test_mode,
+        "days_until_event": days_until_event,
+        "dry_run": dry_run,
+        "force": force,
+        "results": results,
+    }
+
+
 # =============================================================================
 # Event Lifecycle Management Endpoints
 # =============================================================================
@@ -1163,7 +1729,7 @@ async def get_scheduler_status(
 @router.get("/event/current")
 async def get_current_event(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.view"))
 ):
     """Get current event configuration."""
     from app.services.event_service import EventService
@@ -1180,7 +1746,7 @@ async def get_current_event(
 @router.post("/event/toggle-active")
 async def toggle_event_active(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.edit"))
 ):
     """Toggle event active status - ADMIN ONLY."""
     from app.services.event_service import EventService
@@ -1225,6 +1791,9 @@ def _build_event_dict(event):
         "terms_content": event.terms_content,
         "max_participants": event.max_participants,
         "confirmation_expires_days": event.confirmation_expires_days,
+        "ssh_public_key": event.ssh_public_key,
+        "ssh_private_key": event.ssh_private_key,
+        "discord_channel_id": event.discord_channel_id,
         "created_at": event.created_at.isoformat() if event.created_at else None,
         "updated_at": event.updated_at.isoformat() if event.updated_at else None
     }
@@ -1233,7 +1802,7 @@ def _build_event_dict(event):
 @router.get("/events")
 async def list_events(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.view")),
     include_archived: bool = Query(False, description="Include archived events")
 ):
     """List all events."""
@@ -1252,7 +1821,7 @@ async def create_event(
     data: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.create"))
 ):
     """Create a new event."""
     from app.services.event_service import EventService
@@ -1317,7 +1886,7 @@ async def create_event(
 async def get_event(
     event_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.view"))
 ):
     """Get event details."""
     from app.services.event_service import EventService
@@ -1337,7 +1906,7 @@ async def update_event(
     data: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.edit"))
 ):
     """Update event details."""
     from app.services.event_service import EventService
@@ -1356,6 +1925,17 @@ async def update_event(
     changes = {}
     update_data = {}
 
+    # Helper to make values JSON-serializable
+    def make_json_serializable(value):
+        """Convert Python objects to JSON-serializable format."""
+        if value is None:
+            return None
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        if isinstance(value, (str, int, float, bool)):
+            return value
+        return str(value)
+
     # Helper to track and stage field updates
     def track_field(field_name, new_value, parse_fn=None):
         old_value = getattr(event, field_name)
@@ -1365,14 +1945,15 @@ async def update_event(
             old_str = str(old_value) if old_value is not None else None
             new_str = str(parsed_value) if parsed_value is not None else None
             if field_name == "terms_content":
-                changes[field_name] = {"old": "...", "new": "...", "old_value": old_value, "new_value": parsed_value}
+                changes[field_name] = {"old": "...", "new": "...", "old_value": "...", "new_value": "..."}
             else:
                 # Store both string (for audit) and actual value (for trigger checks)
+                # Ensure values are JSON-serializable
                 changes[field_name] = {
                     "old": old_str,
                     "new": new_str,
-                    "old_value": old_value,
-                    "new_value": parsed_value
+                    "old_value": make_json_serializable(old_value),
+                    "new_value": make_json_serializable(parsed_value)
                 }
             update_data[field_name] = parsed_value
 
@@ -1405,6 +1986,12 @@ async def update_event(
         track_field("max_participants", data["max_participants"])
     if "confirmation_expires_days" in data:
         track_field("confirmation_expires_days", data["confirmation_expires_days"])
+    if "ssh_public_key" in data:
+        track_field("ssh_public_key", data["ssh_public_key"])
+    if "ssh_private_key" in data:
+        track_field("ssh_private_key", data["ssh_private_key"])
+    if "discord_channel_id" in data:
+        track_field("discord_channel_id", data["discord_channel_id"])
 
     # Handle is_active separately (requires deactivating other events)
     if "is_active" in data and data["is_active"] != event.is_active:
@@ -1414,8 +2001,8 @@ async def update_event(
         changes["is_active"] = {
             "old": str(old_is_active),
             "new": str(new_is_active),
-            "old_value": old_is_active,
-            "new_value": new_is_active
+            "old_value": make_json_serializable(old_is_active),
+            "new_value": make_json_serializable(new_is_active)
         }
         if data["is_active"]:
             await service.deactivate_other_events(except_event_id=event_id)
@@ -1477,7 +2064,23 @@ async def update_event(
             user_agent=user_agent
         )
 
-    return {"success": True, "message": "Event updated successfully"}
+    # Activation sanity check: warn about unreset users
+    response = {"success": True, "message": "Event updated successfully"}
+    if became_active:
+        stale_count_result = await db.execute(
+            select(func.count(User.id))
+            .where(User.role.in_([UserRole.INVITEE.value, UserRole.SPONSOR.value]))
+            .where(User.is_active == True)
+            .where(User.confirmation_sent_at.isnot(None))
+        )
+        stale_count = stale_count_result.scalar() or 0
+        if stale_count > 0:
+            response["warning"] = (
+                f"{stale_count} users still have workflow state from a previous event. "
+                f"Consider running a bulk workflow reset before opening registration."
+            )
+
+    return response
 
 
 @router.post("/events/{event_id}/activate")
@@ -1485,7 +2088,7 @@ async def activate_event(
     event_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.edit"))
 ):
     """Set an event as the active event (deactivates all others)."""
     from app.services.event_service import EventService
@@ -1516,7 +2119,22 @@ async def activate_event(
         user_agent=user_agent
     )
 
-    return {"success": True, "message": f"Event {event.year} activated"}
+    # Activation sanity check: warn about unreset users
+    response = {"success": True, "message": f"Event {event.year} activated"}
+    stale_count_result = await db.execute(
+        select(func.count(User.id))
+        .where(User.role.in_([UserRole.INVITEE.value, UserRole.SPONSOR.value]))
+        .where(User.is_active == True)
+        .where(User.confirmation_sent_at.isnot(None))
+    )
+    stale_count = stale_count_result.scalar() or 0
+    if stale_count > 0:
+        response["warning"] = (
+            f"{stale_count} users still have workflow state from a previous event. "
+            f"Consider running a bulk workflow reset before opening registration."
+        )
+
+    return response
 
 
 @router.post("/events/{event_id}/archive")
@@ -1524,7 +2142,7 @@ async def archive_event(
     event_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("events.edit"))
 ):
     """Archive an event."""
     from app.services.event_service import EventService
@@ -1566,7 +2184,7 @@ async def list_workflows(
     trigger_event: Optional[str] = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1619,17 +2237,30 @@ async def list_workflows(
 
 @router.get("/email-workflows/trigger-events")
 async def get_trigger_events(
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("email.manage_workflows"))
 ):
     """Get available trigger events and their metadata."""
     from app.models.email_workflow import WorkflowTriggerEvent
 
     events = [
+        # User Events
         {
             "event": WorkflowTriggerEvent.USER_CREATED,
             "display_name": "User Created",
-            "description": "Triggered when a new user is created",
+            "description": "Triggered when a new participant user is created",
             "available_variables": ["first_name", "last_name", "email", "login_url"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ADMIN_CREATED,
+            "display_name": "Admin Created",
+            "description": "Triggered when a new admin account is created",
+            "available_variables": ["first_name", "last_name", "email", "password", "login_url", "role", "role_label", "role_upper", "role_display", "a_or_an"]
+        },
+        {
+            "event": WorkflowTriggerEvent.SPONSOR_CREATED,
+            "display_name": "Sponsor Created",
+            "description": "Triggered when a new sponsor account is created",
+            "available_variables": ["first_name", "last_name", "email", "password", "login_url", "role", "role_label", "role_upper", "role_display", "a_or_an"]
         },
         {
             "event": WorkflowTriggerEvent.USER_CONFIRMED,
@@ -1638,28 +2269,128 @@ async def get_trigger_events(
             "available_variables": ["first_name", "last_name", "email", "login_url", "event_name"]
         },
         {
+            "event": WorkflowTriggerEvent.USER_ACTIVATED,
+            "display_name": "User Activated",
+            "description": "Triggered when a user account is activated",
+            "available_variables": ["first_name", "last_name", "email", "login_url"]
+        },
+        {
+            "event": WorkflowTriggerEvent.USER_DEACTIVATED,
+            "display_name": "User Deactivated",
+            "description": "Triggered when a user account is deactivated",
+            "available_variables": ["first_name", "last_name", "email"]
+        },
+
+        # Credential Events
+        {
+            "event": WorkflowTriggerEvent.PASSWORD_RESET,
+            "display_name": "Password Reset",
+            "description": "Triggered when a password reset is requested",
+            "available_variables": ["first_name", "last_name", "email", "reset_url", "reset_code"]
+        },
+        {
             "event": WorkflowTriggerEvent.VPN_ASSIGNED,
             "display_name": "VPN Assigned",
             "description": "Triggered when VPN credentials are assigned",
             "available_variables": ["first_name", "last_name", "email", "pandas_username", "pandas_password"]
         },
+
+        # Event Participation
         {
-            "event": WorkflowTriggerEvent.EVENT_REMINDER,
-            "display_name": "Event Reminder",
-            "description": "Triggered to send event reminders",
-            "available_variables": ["first_name", "last_name", "email", "event_name", "event_year"]
+            "event": WorkflowTriggerEvent.PARTICIPATION_CONFIRMED,
+            "display_name": "Participation Confirmed",
+            "description": "Triggered when a user confirms they will attend the event",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location"]
         },
+        {
+            "event": WorkflowTriggerEvent.USER_DECLINED,
+            "display_name": "Participation Declined",
+            "description": "Triggered when a user declines their invitation. Can notify admins or sponsors.",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "decline_reason", "sponsor_first_name", "sponsor_last_name", "sponsor_name", "sponsor_email"]
+        },
+        {
+            "event": WorkflowTriggerEvent.BULK_INVITE,
+            "display_name": "Bulk Invite",
+            "description": "Template used for bulk invitation emails sent to participants",
+            "available_variables": ["first_name", "last_name", "email", "confirmation_url", "event_name", "event_date_range", "event_time", "event_location", "sponsor_first_name", "sponsor_last_name", "sponsor_name", "sponsor_email"]
+        },
+        {
+            "event": WorkflowTriggerEvent.EVENT_REMINDER_1,
+            "display_name": "Invitation Reminder — Stage 1",
+            "description": "First follow-up sent ~7 days after initial invitation",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location", "event_start_date", "days_until_event", "confirmation_url", "reminder_stage"]
+        },
+        {
+            "event": WorkflowTriggerEvent.EVENT_REMINDER_2,
+            "display_name": "Invitation Reminder — Stage 2",
+            "description": "Second follow-up sent ~14 days after initial invitation",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location", "event_start_date", "days_until_event", "confirmation_url", "reminder_stage"]
+        },
+        {
+            "event": WorkflowTriggerEvent.EVENT_REMINDER_FINAL,
+            "display_name": "Invitation Reminder — Final",
+            "description": "Last-chance reminder sent ~3 days before event starts",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location", "event_start_date", "days_until_event", "confirmation_url", "reminder_stage", "is_final_reminder"]
+        },
+        {
+            "event": WorkflowTriggerEvent.EVENT_STARTED,
+            "display_name": "Event Started",
+            "description": "Triggered when the event officially begins",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "event_date_range", "event_time", "event_location", "login_url"]
+        },
+        {
+            "event": WorkflowTriggerEvent.EVENT_ENDED,
+            "display_name": "Event Ended",
+            "description": "Triggered when the event concludes",
+            "available_variables": ["first_name", "last_name", "email", "event_name", "survey_url"]
+        },
+
+        # Feedback
         {
             "event": WorkflowTriggerEvent.SURVEY_REQUEST,
             "display_name": "Survey Request",
             "description": "Triggered after event completion for feedback",
             "available_variables": ["first_name", "last_name", "email", "survey_url"]
         },
+
+        # Admin Actions
         {
-            "event": WorkflowTriggerEvent.PASSWORD_RESET,
-            "display_name": "Password Reset",
-            "description": "Triggered when password is reset",
-            "available_variables": ["first_name", "last_name", "email", "reset_url"]
+            "event": WorkflowTriggerEvent.CUSTOM_EMAIL,
+            "display_name": "Custom Email",
+            "description": "Used for ad-hoc custom emails sent by admins",
+            "available_variables": ["first_name", "last_name", "email"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED,
+            "display_name": "Action Assigned (Generic)",
+            "description": "Fallback trigger for custom or unknown action types",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
+        },
+
+        # Per-Action-Type Triggers
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED_IN_PERSON_ATTENDANCE,
+            "display_name": "Action: In-Person Attendance",
+            "description": "Triggered when an in-person attendance confirmation is assigned",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED_SURVEY_COMPLETION,
+            "display_name": "Action: Survey Completion",
+            "description": "Triggered when a survey completion action is assigned",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED_ORIENTATION_RSVP,
+            "display_name": "Action: Orientation RSVP",
+            "description": "Triggered when an orientation RSVP action is assigned",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
+        },
+        {
+            "event": WorkflowTriggerEvent.ACTION_ASSIGNED_DOCUMENT_REVIEW,
+            "display_name": "Action: Document Review",
+            "description": "Triggered when a document review action is assigned",
+            "available_variables": ["first_name", "last_name", "email", "action_title", "action_description", "action_url", "deadline", "event_name"]
         }
     ]
 
@@ -1669,7 +2400,7 @@ async def get_trigger_events(
 @router.get("/email-workflows/{workflow_id}")
 async def get_workflow(
     workflow_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """Get a single workflow by ID."""
@@ -1690,7 +2421,7 @@ async def get_workflow(
 @router.post("/email-workflows")
 async def create_workflow(
     workflow_data: dict,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new email workflow."""
@@ -1717,7 +2448,10 @@ async def create_workflow(
         priority=workflow_create.priority,
         custom_vars=workflow_create.custom_vars or {},
         delay_minutes=workflow_create.delay_minutes,
+        send_immediately=workflow_create.send_immediately,
         is_enabled=workflow_create.is_enabled,
+        from_email=workflow_create.from_email,
+        from_name=workflow_create.from_name,
         created_by_id=current_user.id
     )
 
@@ -1747,7 +2481,7 @@ async def create_workflow(
 async def update_workflow(
     workflow_id: int,
     workflow_data: dict,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """Update an existing workflow."""
@@ -1791,9 +2525,18 @@ async def update_workflow(
     if workflow_update.delay_minutes is not None:
         changes["delay_minutes"] = {"old": workflow.delay_minutes, "new": workflow_update.delay_minutes}
         workflow.delay_minutes = workflow_update.delay_minutes
+    if workflow_update.send_immediately is not None:
+        changes["send_immediately"] = {"old": workflow.send_immediately, "new": workflow_update.send_immediately}
+        workflow.send_immediately = workflow_update.send_immediately
     if workflow_update.is_enabled is not None:
         changes["is_enabled"] = {"old": workflow.is_enabled, "new": workflow_update.is_enabled}
         workflow.is_enabled = workflow_update.is_enabled
+    if workflow_update.from_email is not None:
+        changes["from_email"] = {"old": workflow.from_email, "new": workflow_update.from_email}
+        workflow.from_email = workflow_update.from_email or None  # empty string → NULL
+    if workflow_update.from_name is not None:
+        changes["from_name"] = {"old": workflow.from_name, "new": workflow_update.from_name}
+        workflow.from_name = workflow_update.from_name or None  # empty string → NULL
 
     await db.commit()
     await db.refresh(workflow)
@@ -1813,7 +2556,7 @@ async def update_workflow(
 @router.delete("/email-workflows/{workflow_id}")
 async def delete_workflow(
     workflow_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("email.manage_workflows")),
     db: AsyncSession = Depends(get_db)
 ):
     """Delete a workflow (system workflows cannot be deleted)."""
@@ -1848,3 +2591,189 @@ async def delete_workflow(
     await db.commit()
 
     return {"success": True, "message": "Workflow deleted successfully"}
+
+
+# ---- Discord Invite Management ----
+
+@router.post("/participants/{user_id}/regenerate-discord-invite")
+async def regenerate_discord_invite(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("discord.manage"))
+):
+    """Regenerate a Discord invite for a participant's current event."""
+    from app.models.event import EventParticipation
+    from app.services.event_service import EventService
+    from app.services.discord_invite_service import DiscordInviteService
+    from app.config import get_settings
+    from datetime import datetime, timezone
+
+    settings = get_settings()
+    if not settings.DISCORD_INVITE_ENABLED or not settings.DISCORD_BOT_TOKEN:
+        raise bad_request("Discord invite generation is not enabled")
+
+    # Get participant
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise not_found("User")
+
+    # Get active event
+    event_service = EventService(db)
+    event = await event_service.get_active_event()
+    if not event:
+        raise bad_request("No active event")
+
+    if not event.discord_channel_id:
+        raise bad_request("No Discord channel configured for this event")
+
+    # Get participation
+    part_result = await db.execute(
+        select(EventParticipation).where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.event_id == event.id
+        )
+    )
+    participation = part_result.scalar_one_or_none()
+    if not participation:
+        raise not_found("No participation found for this user and event")
+
+    # Generate new invite
+    discord_service = DiscordInviteService()
+    invite_code = await discord_service.generate_invite(event.discord_channel_id)
+
+    if not invite_code:
+        raise server_error("Failed to generate Discord invite — Discord API may be unavailable")
+
+    participation.discord_invite_code = invite_code
+    participation.discord_invite_generated_at = datetime.now(timezone.utc)
+    participation.discord_invite_used_at = None  # Reset used status
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Discord invite regenerated for {user.email}",
+        "invite_link": f"https://discord.gg/{invite_code}"
+    }
+
+
+# ============== Permission Overrides ==============
+
+@router.put("/participants/{participant_id}/permission-overrides")
+async def update_permission_overrides(
+    participant_id: int,
+    data: PermissionOverrideUpdate,
+    request: Request,
+    current_user: User = Depends(require_permission("admin.manage_roles")),
+    service: ParticipantService = Depends(get_participant_service),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update a participant's permission overrides.
+
+    Requires admin.manage_roles permission.
+    """
+    participant = await service.get_participant(participant_id)
+    if not participant:
+        raise not_found("Participant")
+
+    old_overrides = participant.permission_overrides or {}
+    new_overrides = {}
+    if data.add:
+        new_overrides["add"] = data.add
+    if data.remove:
+        new_overrides["remove"] = data.remove
+
+    participant.permission_overrides = new_overrides
+    await db.commit()
+    await db.refresh(participant)
+
+    # Audit log
+    ip_address, user_agent = extract_client_metadata(request)
+    audit_service = AuditService(db)
+    await audit_service.log_user_update(
+        user_id=current_user.id,
+        updated_user_id=participant_id,
+        changes={
+            "permission_overrides": {
+                "old": old_overrides,
+                "new": new_overrides,
+            }
+        },
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    return await build_participant_response(participant, db)
+
+
+# ============== Role Assignment by ID ==============
+
+@router.put("/participants/{participant_id}/assign-role")
+async def assign_participant_role(
+    participant_id: int,
+    data: RoleAssignRequest,
+    request: Request,
+    current_user: User = Depends(require_permission("admin.manage_roles")),
+    service: ParticipantService = Depends(get_participant_service),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Assign a role to a participant by role_id.
+
+    Sets user.role_id and syncs user.role to the role's base_type.
+    Clears any permission overrides.
+    """
+    # Look up the target role
+    role_result = await db.execute(select(Role).where(Role.id == data.role_id))
+    role = role_result.scalar_one_or_none()
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Role not found",
+        )
+
+    participant = await service.get_participant(participant_id)
+    if not participant:
+        raise not_found("Participant")
+
+    # Block elevation to admin if user has event participation history
+    if role.base_type == UserRole.ADMIN.value and participant.role != UserRole.ADMIN.value:
+        from app.models.event import EventParticipation
+        ep_count_result = await db.execute(
+            select(func.count(EventParticipation.id))
+            .where(EventParticipation.user_id == participant_id)
+        )
+        ep_count = ep_count_result.scalar() or 0
+        if ep_count > 0:
+            raise bad_request(
+                f"Cannot elevate {participant.email} to admin — they have participation "
+                f"history ({ep_count} event(s)). Create a separate admin account instead."
+            )
+
+    old_role = participant.role
+    old_role_id = participant.role_id
+
+    # Update role fields
+    participant.role_id = role.id
+    participant.role = role.base_type  # Keep legacy column in sync
+    participant.is_admin = role.base_type == "admin"
+    participant.permission_overrides = {}  # Reset overrides on role change
+
+    await db.commit()
+    await db.refresh(participant)
+
+    # Audit log
+    ip_address, user_agent = extract_client_metadata(request)
+    audit_service = AuditService(db)
+    await audit_service.log_role_change(
+        user_id=current_user.id,
+        target_user_id=participant_id,
+        old_role=old_role,
+        new_role=f"{role.name} ({role.base_type})",
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    return await build_participant_response(participant, db)

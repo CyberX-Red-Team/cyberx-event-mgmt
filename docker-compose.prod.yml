@@ -163,6 +163,43 @@ services:
     networks:
       - cyberx-network
 
+  # Gotenberg - DOCX to PDF conversion for CPE certificates
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: cyberx_gotenberg
+    restart: unless-stopped
+    networks:
+      - cyberx-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # step-ca - TLS certificate signing (local dev, one instance per CA chain)
+  # Duplicate and rename for additional CA chains as needed
+  stepca:
+    build:
+      context: .
+      dockerfile: Dockerfile.stepca
+    container_name: cyberx_stepca
+    restart: unless-stopped
+    environment:
+      STEPCA_ROOT_CERT_B64: ${STEPCA_ROOT_CERT_B64:-}
+      STEPCA_SIGNING_CERT_B64: ${STEPCA_SIGNING_CERT_B64:-}
+      STEPCA_SIGNING_KEY_B64: ${STEPCA_SIGNING_KEY_B64:-}
+      STEPCA_PROVISIONER_PASSWORD: ${STEPCA_PROVISIONER_PASSWORD:-changeme}
+      STEPCA_PROVISIONER_NAME: ${STEPCA_PROVISIONER_NAME:-cyberx}
+    volumes:
+      - stepca_data:/home/step
+    networks:
+      - cyberx-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Database backup service
   backup:
     image: postgres:15-alpine
@@ -257,4 +294,6 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  stepca_data:
     driver: local

@@ -8,9 +8,8 @@ from sqlalchemy import select, func
 
 from app.dependencies import (
     get_db,
-    get_current_admin_user,
     get_current_active_user,
-    get_current_sponsor_user,
+    require_permission,
     permissions
 )
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error, rate_limited
@@ -24,6 +23,7 @@ from app.models.vpn import VPNCredential
 from app.models.event import Event
 from app.models.app_setting import AppSetting
 from app.models.audit_log import AuditLog
+from app.models.instance import Instance
 from app.services.vpn_service import VPNService
 from app.services.participant_service import ParticipantService
 from app.schemas.vpn import (
@@ -42,6 +42,11 @@ from app.schemas.vpn import (
     VPNBulkDeleteRequest,
     VPNBulkDeleteResponse,
     VPNRequestBatchesResponse,
+    VPNUpdateAssignmentTypeRequest,
+    VPNUpdateAssignmentTypeResponse,
+    VPNBulkUpdateAssignmentTypeRequest,
+    VPNBulkUpdateAssignmentTypeResponse,
+    VPNInstancePoolStats,
 )
 from app.config import get_settings
 
@@ -57,10 +62,15 @@ async def build_vpn_response(
     vpn: VPNCredential,
     db: AsyncSession
 ) -> VPNCredentialResponse:
-    """Build VPN credential response with user info."""
+    """Build VPN credential response with user and instance info."""
     assigned_email = None
     assigned_name = None
+    assigned_instance_id = None
+    assigned_instance_name = None
+    assigned_instance_created_by_email = None
+    assigned_instance_created_by_name = None
 
+    # Fetch user info if assigned to user (fall back to snapshot fields for deleted users)
     if vpn.assigned_to_user_id:
         result = await db.execute(
             select(User).where(User.id == vpn.assigned_to_user_id)
@@ -69,12 +79,36 @@ async def build_vpn_response(
         if user:
             assigned_email = user.email
             assigned_name = f"{user.first_name} {user.last_name}"
+    if not assigned_email and vpn.assigned_to_email:
+        assigned_email = vpn.assigned_to_email
+        assigned_name = vpn.assigned_to_name
+
+    # Fetch instance info if assigned to instance
+    if vpn.assigned_to_instance_id:
+        result = await db.execute(
+            select(Instance).where(Instance.id == vpn.assigned_to_instance_id)
+        )
+        instance = result.scalar_one_or_none()
+        if instance:
+            assigned_instance_id = instance.id
+            assigned_instance_name = instance.name
+
+            # Fetch the user who created the instance
+            if instance.created_by_user_id:
+                user_result = await db.execute(
+                    select(User).where(User.id == instance.created_by_user_id)
+                )
+                creator = user_result.scalar_one_or_none()
+                if creator:
+                    assigned_instance_created_by_email = creator.email
+                    assigned_instance_created_by_name = f"{creator.first_name} {creator.last_name}"
 
     return VPNCredentialResponse(
         id=vpn.id,
         interface_ip=vpn.interface_ip,
         ipv4_address=vpn.ipv4_address,
         endpoint=vpn.endpoint,
+        assignment_type=vpn.assignment_type,
         file_hash=vpn.file_hash,
         request_batch_id=vpn.request_batch_id,
         is_available=vpn.is_available,
@@ -82,7 +116,12 @@ async def build_vpn_response(
         assigned_at=vpn.assigned_at,
         created_at=vpn.created_at,
         assigned_to_email=assigned_email,
-        assigned_to_name=assigned_name
+        assigned_to_name=assigned_name,
+        assigned_to_instance_id=assigned_instance_id,
+        assigned_instance_at=vpn.assigned_instance_at,
+        assigned_instance_name=assigned_instance_name,
+        assigned_instance_created_by_email=assigned_instance_created_by_email,
+        assigned_instance_created_by_name=assigned_instance_created_by_name
     )
 
 
@@ -150,8 +189,12 @@ async def list_vpn_credentials(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
     is_available: Optional[bool] = Query(None, description="Filter by availability"),
+    assignment_type: Optional[str] = Query(None, description="Filter by assignment type"),
     search: Optional[str] = Query(None, description="Search by IP or username"),
-    current_user: User = Depends(get_current_sponsor_user),
+    sort_by: str = Query("id", description="Sort field"),
+    sort_order: str = Query("asc", description="Sort order: asc or desc"),
+    group_by: Optional[str] = Query(None, description="Group by column (disables pagination)"),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -160,13 +203,26 @@ async def list_vpn_credentials(
         page=page,
         page_size=page_size,
         is_available=is_available,
-        search=search
+        assignment_type=assignment_type,
+        search=search,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        group_by=group_by,
     )
 
     items = []
     for vpn in credentials:
         item = await build_vpn_response(vpn, db)
         items.append(item)
+
+    if group_by:
+        return VPNCredentialListResponse(
+            items=items,
+            total=total,
+            page=1,
+            page_size=total or 1,
+            total_pages=1
+        )
 
     total_pages = (total + page_size - 1) // page_size
 
@@ -181,7 +237,7 @@ async def list_vpn_credentials(
 
 @router.get("/stats", response_model=VPNStats)
 async def get_vpn_stats(
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Get VPN statistics (admin/sponsor only)."""
@@ -192,7 +248,7 @@ async def get_vpn_stats(
 @router.post("/assign", response_model=VPNAssignResponse)
 async def assign_vpn(
     data: VPNAssignRequest,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     vpn_service: VPNService = Depends(get_vpn_service),
     participant_service: ParticipantService = Depends(get_participant_service)
 ):
@@ -223,7 +279,7 @@ async def assign_vpn(
 @router.post("/bulk-assign", response_model=VPNBulkAssignResponse)
 async def bulk_assign_vpn(
     data: VPNBulkAssignRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     vpn_service: VPNService = Depends(get_vpn_service),
     participant_service: ParticipantService = Depends(get_participant_service)
 ):
@@ -264,7 +320,8 @@ async def bulk_assign_vpn(
 async def import_vpn_configs(
     file: UploadFile = File(..., description="ZIP file containing WireGuard .conf files"),
     endpoint: Optional[str] = Query(None, description="Optional VPN server endpoint override (ip:port)"),
-    current_user: User = Depends(get_current_admin_user),
+    assignment_type: str = Query("USER_REQUESTABLE", description="Assignment type: USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED"),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """
@@ -272,7 +329,17 @@ async def import_vpn_configs(
 
     The ZIP file should contain WireGuard .conf files with [Interface], [Peer], and Endpoint sections.
     The endpoint will be parsed from each config file unless an override is provided.
+
+    Assignment types:
+    - USER_REQUESTABLE: VPNs available for participant self-service requests (default)
+    - INSTANCE_AUTO_ASSIGN: VPNs automatically assigned to instances in events with vpn_available=true
+    - RESERVED: VPNs held in reserve, not available for auto-assignment
     """
+    # Validate assignment_type
+    valid_types = ["USER_REQUESTABLE", "INSTANCE_AUTO_ASSIGN", "RESERVED"]
+    if assignment_type not in valid_types:
+        raise bad_request(f"Invalid assignment_type. Must be one of: {', '.join(valid_types)}")
+
     if not file.filename.endswith('.zip'):
         raise bad_request("File must be a ZIP archive")
 
@@ -283,7 +350,7 @@ async def import_vpn_configs(
     if len(content) > 50 * 1024 * 1024:
         raise bad_request("File too large (max 50MB)")
 
-    imported, skipped, errors = await service.import_from_zip(content, endpoint)
+    imported, skipped, errors = await service.import_from_zip(content, endpoint, assignment_type)
 
     return VPNImportResponse(
         success=imported > 0,
@@ -297,7 +364,7 @@ async def import_vpn_configs(
 @router.get("/credentials/{vpn_id}", response_model=VPNCredentialResponse)
 async def get_vpn_credential(
     vpn_id: int,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -312,7 +379,7 @@ async def get_vpn_credential(
 @router.get("/participant/{participant_id}/credentials")
 async def get_participant_vpn_credentials(
     participant_id: int,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     vpn_service: VPNService = Depends(get_vpn_service),
     participant_service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
@@ -342,7 +409,7 @@ async def get_participant_vpn_credentials(
 async def download_participant_vpn_configs(
     participant_id: int,
     naming_pattern: str = Query("simnet_{ipv4_address}.conf", description="Filename pattern"),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     vpn_service: VPNService = Depends(get_vpn_service),
     participant_service: ParticipantService = Depends(get_participant_service)
 ):
@@ -365,7 +432,7 @@ async def download_participant_vpn_configs(
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for i, vpn in enumerate(credentials, 1):
-            config = vpn_service.generate_wireguard_config(vpn)
+            config = await vpn_service.generate_wireguard_config(vpn)
             filename = vpn_service.format_filename(naming_pattern, vpn, participant, i)
             zf.writestr(filename, config)
 
@@ -387,7 +454,7 @@ async def download_participant_vpn_configs(
 async def request_vpn_credentials(
     data: VPNRequestRequest,
     request: Request,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.request")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -410,7 +477,7 @@ async def request_vpn_credentials(
 
     # Check VPN availability
     # Sponsors can request VPN in test mode, everyone else needs vpn_available
-    is_sponsor = current_user.role == 'sponsor' or current_user.is_sponsor
+    is_sponsor = current_user.role == 'sponsor' or current_user.is_sponsor_role
     vpn_allowed = active_event.vpn_available or (active_event.test_mode and is_sponsor)
 
     if not vpn_allowed:
@@ -486,7 +553,7 @@ async def request_vpn_credentials(
 
 @router.get("/my-credentials", response_model=VPNMyCredentialsResponse)
 async def get_my_vpn_credentials(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.view")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -506,7 +573,7 @@ async def get_my_vpn_credentials(
 
 @router.get("/my-config", response_model=VPNConfigResponse)
 async def get_my_vpn_config(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.download")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Get current user's first WireGuard configuration (for backwards compatibility)."""
@@ -514,7 +581,7 @@ async def get_my_vpn_config(
     if not vpn:
         raise not_found("You do not have any VPN credentials")
 
-    config = service.generate_wireguard_config(vpn)
+    config = await service.generate_wireguard_config(vpn)
     filename = service.get_config_filename(current_user, vpn)
 
     return VPNConfigResponse(config=config, filename=filename)
@@ -523,8 +590,9 @@ async def get_my_vpn_config(
 @router.get("/my-config/download")
 async def download_my_vpn_config(
     vpn_id: Optional[int] = Query(None, description="Specific VPN ID to download"),
-    current_user: User = Depends(get_current_active_user),
-    service: VPNService = Depends(get_vpn_service)
+    current_user: User = Depends(require_permission("vpn.download")),
+    service: VPNService = Depends(get_vpn_service),
+    db: AsyncSession = Depends(get_db)
 ):
     """Download a specific WireGuard configuration file or the first one if no ID specified."""
     if vpn_id:
@@ -541,8 +609,16 @@ async def download_my_vpn_config(
         if not vpn:
             raise not_found("You do not have any VPN credentials")
 
-    config = service.generate_wireguard_config(vpn)
-    filename = service.get_config_filename(current_user, vpn)
+    # Get naming pattern from settings
+    from app.models.app_setting import AppSetting
+    result = await db.execute(
+        select(AppSetting).where(AppSetting.key == 'vpn_naming_pattern')
+    )
+    setting = result.scalar_one_or_none()
+    pattern = setting.value if setting else "simnet_{ipv4_address}.conf"
+
+    config = await service.generate_wireguard_config(vpn)
+    filename = service.format_filename(pattern, vpn, current_user)
 
     return PlainTextResponse(
         content=config,
@@ -556,7 +632,7 @@ async def download_my_vpn_config(
 @router.get("/my-configs/download")
 async def download_all_my_vpn_configs(
     naming_pattern: str = Query("simnet_{ipv4_address}.conf", description="Filename pattern"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.download")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Download all WireGuard configs for current user as ZIP with SHA256 hash file."""
@@ -573,7 +649,7 @@ async def download_all_my_vpn_configs(
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for i, vpn in enumerate(credentials, 1):
-            config = service.generate_wireguard_config(vpn)
+            config = await service.generate_wireguard_config(vpn)
             filename = service.format_filename(naming_pattern, vpn, current_user, i)
             zf.writestr(filename, config)
 
@@ -599,7 +675,7 @@ async def download_all_my_vpn_configs(
 
 @router.get("/my-request-batches", response_model=VPNRequestBatchesResponse)
 async def get_my_request_batches(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.view")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Get list of VPN request batches for current user."""
@@ -625,7 +701,7 @@ async def get_my_request_batches(
 async def download_batch_configs(
     batch_id: str,
     naming_pattern: str = Query("simnet_{ipv4_address}.conf", description="Filename pattern"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.download")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Download all VPN configs from a specific request batch as ZIP with SHA256 hash file."""
@@ -642,7 +718,7 @@ async def download_batch_configs(
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for i, vpn in enumerate(credentials, 1):
-            config = service.generate_wireguard_config(vpn)
+            config = await service.generate_wireguard_config(vpn)
             filename = service.format_filename(naming_pattern, vpn, current_user, i)
             zf.writestr(filename, config)
 
@@ -669,7 +745,7 @@ async def download_batch_configs(
 
 @router.get("/available-count")
 async def get_available_vpn_count(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permission("vpn.view")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Get count of available VPN credentials."""
@@ -680,7 +756,7 @@ async def get_available_vpn_count(
 @router.post("/bulk-delete", response_model=VPNBulkDeleteResponse)
 async def bulk_delete_vpn_credentials(
     request: VPNBulkDeleteRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """
@@ -709,7 +785,7 @@ async def bulk_delete_vpn_credentials(
 
 @router.post("/delete-all", response_model=VPNBulkDeleteResponse)
 async def delete_all_vpn_credentials(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """
@@ -752,7 +828,7 @@ async def get_vpn_naming_pattern(
 @router.post("/naming-pattern")
 async def set_vpn_naming_pattern(
     pattern: str = Query(..., description="Naming pattern for VPN config files"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -776,3 +852,84 @@ async def set_vpn_naming_pattern(
     await db.commit()
 
     return {"success": True, "pattern": pattern}
+
+
+# ─── VPN Assignment Type Management ─────────────────────────────────────────
+
+
+@router.patch("/credentials/{vpn_id}/assignment-type", response_model=VPNUpdateAssignmentTypeResponse)
+async def update_vpn_assignment_type(
+    vpn_id: int,
+    data: VPNUpdateAssignmentTypeRequest,
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    service: VPNService = Depends(get_vpn_service)
+):
+    """
+    Update VPN credential assignment type (admin only).
+
+    Can only change assignment type if VPN is not currently assigned to a user or instance.
+
+    Assignment types:
+    - USER_REQUESTABLE: Available for participant self-service requests
+    - INSTANCE_AUTO_ASSIGN: Automatically assigned to instances in events with vpn_available=true
+    - RESERVED: Held in reserve, not available for auto-assignment
+    """
+    success, message = await service.update_assignment_type(vpn_id, data.assignment_type)
+
+    if not success:
+        if "not found" in message.lower():
+            raise not_found("VPN credential", vpn_id)
+        raise bad_request(message)
+
+    return VPNUpdateAssignmentTypeResponse(
+        success=True,
+        message=message,
+        vpn_id=vpn_id,
+        new_assignment_type=data.assignment_type
+    )
+
+
+@router.post("/bulk-update-assignment-type", response_model=VPNBulkUpdateAssignmentTypeResponse)
+async def bulk_update_vpn_assignment_type(
+    data: VPNBulkUpdateAssignmentTypeRequest,
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    service: VPNService = Depends(get_vpn_service)
+):
+    """
+    Bulk update VPN credential assignment types (admin only).
+
+    Updates multiple VPN credentials to the same assignment type.
+    Skips VPNs that are currently assigned to users or instances.
+    """
+    success_count, skipped_count, errors = await service.bulk_update_assignment_type(
+        data.vpn_ids,
+        data.assignment_type
+    )
+
+    return VPNBulkUpdateAssignmentTypeResponse(
+        success=success_count > 0,
+        message=f"Updated {success_count} VPN(s), skipped {skipped_count}",
+        success_count=success_count,
+        skipped_count=skipped_count,
+        errors=errors[:10]  # Limit error messages
+    )
+
+
+@router.get("/stats/instance-pool", response_model=VPNInstancePoolStats)
+async def get_instance_pool_stats(
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    service: VPNService = Depends(get_vpn_service)
+):
+    """
+    Get statistics for INSTANCE_AUTO_ASSIGN VPN pool (admin only).
+
+    Returns counts of total, available, and assigned INSTANCE_AUTO_ASSIGN VPNs.
+    Useful for monitoring VPN pool capacity before creating events.
+    """
+    stats = await service.get_instance_pool_stats()
+
+    return VPNInstancePoolStats(
+        total=stats["total"],
+        available=stats["available"],
+        assigned=stats["assigned"]
+    )

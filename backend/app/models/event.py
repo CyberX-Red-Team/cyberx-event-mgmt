@@ -85,6 +85,13 @@ class Event(Base):
     max_participants = Column(Integer, nullable=True)
     confirmation_expires_days = Column(Integer, default=30)
 
+    # SSH Keys (for participant instance access)
+    ssh_public_key = Column(Text, nullable=True)
+    ssh_private_key = Column(Text, nullable=True)
+
+    # Discord integration
+    discord_channel_id = Column(String(100), nullable=True)  # Discord channel for invite generation
+
     # Timestamps
     created_at = Column(
         TIMESTAMP(timezone=True),
@@ -165,6 +172,11 @@ class EventParticipation(Base):
     # Notes
     notes = Column(Text, nullable=True)
     declined_reason = Column(Text, nullable=True)
+
+    # Discord invite
+    discord_invite_code = Column(String(50), nullable=True)
+    discord_invite_generated_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    discord_invite_used_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # Timestamps
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

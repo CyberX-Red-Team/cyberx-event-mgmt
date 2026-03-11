@@ -4,18 +4,17 @@ import string
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Tuple
-from sqlalchemy import select, func, or_, delete
+from sqlalchemy import select, func, or_, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.user import User, UserRole
 from app.models.vpn import VPNCredential
 from app.models.session import Session
-from app.models.email_queue import EmailQueue
 from app.models.event import EventParticipation
-from app.models.audit_log import VPNRequest
 from app.utils.security import hash_password
 from app.services.email_queue_service import EmailQueueService
+from app.api.utils.validation import normalize_email
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +61,14 @@ class ParticipantService:
         return result.scalar_one_or_none()
 
     async def get_participant_by_email(self, email: str) -> Optional[User]:
-        """Get a participant by email."""
+        """Get a participant by email (case-insensitive, Gmail alias aware)."""
+        normalized_email = normalize_email(email)
         result = await self.session.execute(
-            select(User).where(User.email == email)
+            select(User).where(User.email_normalized == normalized_email)
         )
         return result.scalar_one_or_none()
+
+    _GROUPABLE_PARTICIPANT_COLUMNS = {"sponsor_id", "confirmed", "role_id", "country"}
 
     async def list_participants(
         self,
@@ -81,14 +83,19 @@ class ParticipantService:
         sort_order: str = "desc",
         sponsor_id: Optional[int] = None,
         role: Optional[str] = None,
-        country: Optional[str] = None
+        role_id: Optional[int] = None,
+        country: Optional[str] = None,
+        event_id: Optional[int] = None,
+        group_by: Optional[str] = None,
     ) -> Tuple[List[User], int]:
         """
         List participants with filtering and pagination.
 
         Args:
             sponsor_id: If provided, only return participants sponsored by this user
-            role: If provided, filter by role (admin, sponsor, participant)
+            role: If provided, filter by base role type (admin, sponsor, invitee)
+            role_id: If provided, filter by specific role ID
+            event_id: If provided with confirmed filter, uses event-specific EventParticipation status
 
         Returns:
             Tuple of (list of users, total count)
@@ -105,8 +112,11 @@ class ParticipantService:
             query = query.where(User.sponsor_id == sponsor_id)
             count_query = count_query.where(User.sponsor_id == sponsor_id)
 
-        # Filter by role if provided
-        if role:
+        # Filter by role: role_id takes precedence over base type
+        if role_id:
+            query = query.where(User.role_id == role_id)
+            count_query = count_query.where(User.role_id == role_id)
+        elif role:
             query = query.where(User.role == role)
             count_query = count_query.where(User.role == role)
 
@@ -123,8 +133,32 @@ class ParticipantService:
             count_query = count_query.where(search_filter)
 
         if confirmed:
-            query = query.where(User.confirmed == confirmed)
-            count_query = count_query.where(User.confirmed == confirmed)
+            if event_id:
+                # Event-specific filtering via EventParticipation
+                from app.models.event import ParticipationStatus
+                from sqlalchemy import and_
+
+                # Map legacy confirmed values to EventParticipation status values
+                status_map = {
+                    'YES': [ParticipationStatus.CONFIRMED.value],
+                    'NO': [ParticipationStatus.DECLINED.value],
+                    'UNKNOWN': [ParticipationStatus.INVITED.value, ParticipationStatus.NO_RESPONSE.value]
+                }
+
+                if confirmed in status_map:
+                    status_values = status_map[confirmed]
+                    query = query.join(EventParticipation, and_(
+                        EventParticipation.user_id == User.id,
+                        EventParticipation.event_id == event_id
+                    )).where(EventParticipation.status.in_(status_values))
+                    count_query = count_query.join(EventParticipation, and_(
+                        EventParticipation.user_id == User.id,
+                        EventParticipation.event_id == event_id
+                    )).where(EventParticipation.status.in_(status_values))
+            else:
+                # Legacy global filtering (backward compatible)
+                query = query.where(User.confirmed == confirmed)
+                count_query = count_query.where(User.confirmed == confirmed)
 
         if is_active is not None:
             query = query.where(User.is_active == is_active)
@@ -142,16 +176,28 @@ class ParticipantService:
         total_result = await self.session.execute(count_query)
         total = total_result.scalar()
 
-        # Apply sorting
-        sort_column = getattr(User, sort_by, User.created_at)
+        # Apply sorting (whitelist to prevent attribute enumeration)
+        ALLOWED_SORT_COLUMNS = {
+            "created_at", "email", "first_name", "last_name",
+            "company", "country", "is_active",
+        }
+        sort_column = getattr(User, sort_by, User.created_at) if sort_by in ALLOWED_SORT_COLUMNS else User.created_at
+
+        # When grouping, prepend group column as primary sort so same-group
+        # rows are contiguous (prevents split groups in the frontend).
+        if group_by and group_by in self._GROUPABLE_PARTICIPANT_COLUMNS:
+            group_col = getattr(User, group_by)
+            query = query.order_by(group_col.asc().nullslast())
+
         if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
 
-        # Apply pagination
-        offset = (page - 1) * page_size
-        query = query.offset(offset).limit(page_size)
+        # Apply pagination (skip when grouping to return all rows for accurate groups)
+        if not (group_by and group_by in self._GROUPABLE_PARTICIPANT_COLUMNS):
+            offset = (page - 1) * page_size
+            query = query.offset(offset).limit(page_size)
 
         # Execute query
         result = await self.session.execute(query)
@@ -184,9 +230,14 @@ class ParticipantService:
         sponsor_email: Optional[str] = None,
         sponsor_id: Optional[int] = None,
         role: str = UserRole.INVITEE.value,
+        role_id: Optional[int] = None,
         is_admin: bool = False
     ) -> User:
         """Create a new participant."""
+        # Store original email for sending, calculate normalized for lookups
+        email_original = email.strip()  # Remove leading/trailing whitespace only
+        email_normalized = normalize_email(email)
+
         # IMPORTANT: Only generate credentials if explicitly provided OR if user is already confirmed
         # For new invitees with UNKNOWN status, credentials are generated AFTER they accept terms (USER_CONFIRMED workflow)
         # Sponsors and admins always get immediate credentials
@@ -205,8 +256,16 @@ class ParticipantService:
             # Generate password if not provided
             if not pandas_password:
                 pandas_password = self._generate_password()
+                logger.info(
+                    f"Generated credentials during user creation for {email} (role: {role}, "
+                    f"confirmed: {confirmed})"
+                )
         else:
             # New invitees: credentials will be generated after confirmation
+            logger.info(
+                f"Deferring credential generation for {email} (role: {role}, confirmed: {confirmed}) "
+                f"until after confirmation"
+            )
             pandas_username = None
             pandas_password = None
 
@@ -218,7 +277,8 @@ class ParticipantService:
         from app.api.routes.public import generate_phonetic_password
 
         participant = User(
-            email=email,
+            email=email_original,
+            email_normalized=email_normalized,
             first_name=first_name,
             last_name=last_name,
             country=country,
@@ -232,6 +292,7 @@ class ParticipantService:
             sponsor_email=sponsor_email,
             sponsor_id=sponsor_id,
             role=role,
+            role_id=role_id,
             is_admin=is_admin or role == UserRole.ADMIN.value,
             is_active=True
         )
@@ -239,6 +300,14 @@ class ParticipantService:
         self.session.add(participant)
         await self.session.commit()
         await self.session.refresh(participant)
+
+        # Log final credential state after creation
+        logger.info(
+            f"Created user {participant.id} ({participant.email}, role: {participant.role}). "
+            f"Credentials state: username={participant.pandas_username is not None}, "
+            f"password={participant.pandas_password is not None}, "
+            f"encrypted_password={participant._pandas_password_encrypted is not None}"
+        )
 
         # Check if should send invitation based on role and event status
         is_event_participant = role in [UserRole.INVITEE.value, UserRole.SPONSOR.value]
@@ -263,28 +332,19 @@ class ParticipantService:
                     should_send_invitation = event.registration_open
 
             if should_send_invitation:
-                # Generate confirmation code
-                participant.confirmation_code = secrets.token_urlsafe(32)
-                participant.confirmation_sent_at = datetime.now(timezone.utc)
-                await self.session.commit()
-
-                # Only trigger user_created workflow for users with credentials (sponsors/admins)
-                # Invitees without credentials are handled by the automated invitation_emails task
                 has_credentials = participant.pandas_username is not None and participant.pandas_password is not None
 
-                if has_credentials:
-                    # Trigger workflow for sponsors/admins who have immediate credentials
+                if confirmed == 'YES' and has_credentials:
+                    # Already confirmed (legacy import or manual creation with confirmed=YES)
+                    # Send credentials immediately — no need to wait for confirmation
                     try:
                         workflow_service = WorkflowService(self.session)
                         await workflow_service.trigger_workflow(
                             trigger_event="user_created",
                             user_id=participant.id,
                             custom_vars={
-                                "confirmation_code": participant.confirmation_code,
-                                "confirmation_url": "https://portal.cyberxredteam.org/confirm",
                                 "event_name": event.name,
                                 "event_year": str(event.year),
-                                "terms_version": event.terms_version,
                                 "role": role,
                                 "pandas_username": participant.pandas_username,
                                 "pandas_password": participant.pandas_password,
@@ -292,11 +352,26 @@ class ParticipantService:
                                 "login_url": "https://portal.cyberxredteam.org/login"
                             }
                         )
-                        logger.info(f"Triggered user_created workflow for {role} {participant.id} with credentials")
+                        logger.info(f"Triggered user_created workflow for pre-confirmed {role} {participant.id}")
                     except Exception as e:
                         logger.error(f"Failed to trigger workflow for {role} {participant.id}: {str(e)}")
+                elif has_credentials:
+                    # Not yet confirmed — defer credentials until confirmation.
+                    # Generate confirmation code so invitation email can be sent.
+                    participant.confirmation_code = secrets.token_urlsafe(32)
+                    participant.confirmation_sent_at = datetime.now(timezone.utc)
+                    await self.session.commit()
+                    logger.info(
+                        f"{role} {participant.id} created with credentials — "
+                        f"waiting for confirmation before sending password email "
+                        f"(will trigger via user_confirmed workflow)"
+                    )
                 else:
-                    logger.info(f"Skipped user_created workflow for {role} {participant.id} (no credentials yet - will be handled by invitation task)")
+                    # No credentials yet (invitees) — handled by invitation task
+                    participant.confirmation_code = secrets.token_urlsafe(32)
+                    participant.confirmation_sent_at = datetime.now(timezone.utc)
+                    await self.session.commit()
+                    logger.info(f"Skipped credentials for {role} {participant.id} (no credentials yet - will be handled by invitation task)")
             else:
                 # Log why invitation was not sent
                 from app.services.audit_service import AuditService
@@ -316,30 +391,44 @@ class ParticipantService:
                     # Blocked by registration closed or event inactive
                     logger.info(f"{role} created but invitation NOT sent (event inactive or registration closed)")
 
-                # For sponsors created outside normal workflow, send credentials email immediately
-                if role == UserRole.SPONSOR.value and self._can_send_email(participant.email_status):
-                    try:
-                        queue_service = EmailQueueService(self.session)
-                        await queue_service.enqueue_email(
-                            user_id=participant.id,
-                            template_name="password",
-                            priority=3,
-                            custom_vars={
-                                "first_name": participant.first_name,
-                                "last_name": participant.last_name,
-                                "email": participant.email,
-                                "pandas_username": participant.pandas_username,
-                                "pandas_password": participant.pandas_password,
-                                "password_phonetic": participant.password_phonetic,
-                                "login_url": "https://portal.cyberxredteam.org/login"
-                            }
-                        )
+                # If already confirmed, send credentials even though invitation was blocked
+                # For invitees: Only send if event is active (no passwords before campaign starts)
+                # For sponsors/admins: Always send (they need portal access)
+                if confirmed == 'YES' and self._can_send_email(participant.email_status):
+                    should_send_now = (role != UserRole.INVITEE.value) or (event and event.is_active)
+                    has_credentials = participant.pandas_username is not None and participant.pandas_password is not None
+
+                    if should_send_now and has_credentials:
+                        try:
+                            queue_service = EmailQueueService(self.session)
+                            await queue_service.enqueue_email(
+                                user_id=participant.id,
+                                template_name="password",
+                                priority=3,
+                                custom_vars={
+                                    "first_name": participant.first_name,
+                                    "last_name": participant.last_name,
+                                    "email": participant.email,
+                                    "pandas_username": participant.pandas_username,
+                                    "pandas_password": participant.pandas_password,
+                                    "password_phonetic": participant.password_phonetic,
+                                    "login_url": "https://portal.cyberxredteam.org/login"
+                                }
+                            )
+                            logger.info(f"Queued password email for pre-confirmed {role} {participant.id}")
+                        except Exception as e:
+                            logger.error(f"Failed to queue email for {role} {participant.id}: {str(e)}")
+                    elif not should_send_now:
                         logger.info(
-                            f"Queued credentials email for sponsor {participant.id} ({participant.email}) "
-                            f"with username={participant.pandas_username}, password={participant.pandas_password}"
+                            f"Skipping password email for confirmed invitee {participant.id} "
+                            f"- no active event (passwords sent when event activates)"
                         )
-                    except Exception as e:
-                        logger.error(f"Failed to queue credentials email for sponsor {participant.id}: {str(e)}")
+                else:
+                    # Not confirmed — credentials deferred until confirmation
+                    logger.info(
+                        f"{role} {participant.id} created but invitation blocked — "
+                        f"credentials will be sent after confirmation"
+                    )
 
         # If user is already confirmed (legacy import or manual creation), queue password email
         # For invitees: Only send if there's an active event (no passwords before campaign starts)
@@ -402,7 +491,25 @@ class ParticipantService:
         old_confirmed = participant.confirmed
         was_confirmed = old_confirmed == 'YES'
 
-        # Update fields (allow None values for nullable fields like sponsor_id)
+        # SECURITY: Remove pandas_username from updates if somehow present
+        # Usernames are auto-generated and should never be manually editable
+        if 'pandas_username' in kwargs:
+            logger.warning(f"Attempted to manually update pandas_username for user {participant_id} - ignoring")
+            kwargs = {k: v for k, v in kwargs.items() if k != 'pandas_username'}
+
+        # Special handling for password updates
+        # IMPORTANT: When pandas_password is updated, also update password_hash
+        if 'pandas_password' in kwargs and kwargs['pandas_password'] is not None:
+            new_password = kwargs['pandas_password']
+            participant.pandas_password = new_password
+            participant.password_hash = hash_password(new_password)
+            # Generate phonetic password for the new password
+            from app.api.routes.public import generate_phonetic_password
+            participant.password_phonetic = generate_phonetic_password(new_password)
+            # Remove from kwargs so we don't set it again in the loop below
+            kwargs = {k: v for k, v in kwargs.items() if k != 'pandas_password'}
+
+        # Update remaining fields (allow None values for nullable fields like sponsor_id)
         for key, value in kwargs.items():
             if hasattr(participant, key):
                 setattr(participant, key, value)
@@ -454,28 +561,21 @@ class ParticipantService:
         if not participant:
             return False
 
-        # Step 1: Delete all related records with CASCADE + NOT NULL constraints
-        # These must be deleted explicitly before the user, otherwise SQLAlchemy
-        # tries to set user_id to NULL which violates NOT NULL constraints
+        # Step 1: Delete transient records that should not survive user deletion.
+        # Sessions and event participations have CASCADE + NOT NULL on user_id,
+        # so they must be removed explicitly (SQLAlchemy ORM tries SET NULL before
+        # DB CASCADE fires). Other records (participant_actions, tls_certificates,
+        # cpe_certificates, password_sync_queue, email_queue, vpn_requests) use
+        # SET NULL and are preserved for audit trail.
 
         # Delete sessions
         await self.session.execute(
             delete(Session).where(Session.user_id == participant_id)
         )
 
-        # Delete email queue entries
-        await self.session.execute(
-            delete(EmailQueue).where(EmailQueue.user_id == participant_id)
-        )
-
         # Delete event participations
         await self.session.execute(
             delete(EventParticipation).where(EventParticipation.user_id == participant_id)
-        )
-
-        # Delete VPN requests
-        await self.session.execute(
-            delete(VPNRequest).where(VPNRequest.user_id == participant_id)
         )
 
         # Step 2: Mark VPN credentials as permanently unavailable (security: don't recycle downloaded configs)
@@ -490,16 +590,37 @@ class ParticipantService:
             vpn.is_available = False  # Never recycle
             vpn.is_active = False      # Mark as inactive
 
-        # Step 3: Delete user from Keycloak (if implemented)
-        # TODO: When Keycloak integration is implemented, add deletion here:
-        # if participant.pandas_username:
-        #     keycloak_service = KeycloakService()
-        #     try:
-        #         await keycloak_service.delete_user(participant.pandas_username)
-        #     except Exception as e:
-        #         logger.warning(f"Failed to delete user from Keycloak: {e}")
+        # Step 3: Cancel pending/processing emails in queue
+        from app.models.email_queue import EmailQueue, EmailQueueStatus
+        await self.session.execute(
+            update(EmailQueue)
+            .where(
+                EmailQueue.user_id == participant_id,
+                EmailQueue.status.in_([EmailQueueStatus.PENDING, EmailQueueStatus.PROCESSING])
+            )
+            .values(status=EmailQueueStatus.CANCELLED)
+        )
 
-        # Step 4: Delete the participant from database
+        # Step 4: Clean up Keycloak sync queue and queue deletion
+        from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+        # Remove any pending (unsynced) sync entries — no point creating/updating
+        # a user in Keycloak if they're about to be deleted
+        await self.session.execute(
+            delete(PasswordSyncQueue).where(
+                PasswordSyncQueue.user_id == participant_id,
+                PasswordSyncQueue.synced == False
+            )
+        )
+        # Queue Keycloak user deletion (only if they have a Keycloak username)
+        if participant.pandas_username:
+            queue_entry = PasswordSyncQueue(
+                user_id=participant.id,
+                username=participant.pandas_username,
+                operation=SyncOperation.DELETE_USER.value
+            )
+            self.session.add(queue_entry)
+
+        # Step 5: Delete the participant from database
         await self.session.delete(participant)
         await self.session.commit()
 
@@ -523,9 +644,25 @@ class ParticipantService:
         if not new_password:
             new_password = self._generate_password()
 
+        from app.api.routes.public import generate_phonetic_password
+
         participant.pandas_password = new_password
         participant.password_hash = hash_password(new_password)
+        participant.password_phonetic = generate_phonetic_password(new_password)
+        participant.keycloak_synced = False
         participant.updated_at = datetime.now(timezone.utc)
+
+        # Queue password sync to Keycloak
+        if participant.pandas_username:
+            from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+            from app.utils.encryption import encrypt_field
+            queue_entry = PasswordSyncQueue(
+                user_id=participant.id,
+                username=participant.pandas_username,
+                encrypted_password=encrypt_field(new_password),
+                operation=SyncOperation.UPDATE_PASSWORD.value
+            )
+            self.session.add(queue_entry)
 
         await self.session.commit()
 
@@ -582,12 +719,35 @@ class ParticipantService:
         total_result = await self.session.execute(total_query)
         total = total_result.scalar()
 
-        # Confirmed count
-        confirmed_query = select(func.count(User.id)).where(User.confirmed == "YES")
-        if base_filter:
-            confirmed_query = confirmed_query.where(*base_filter)
-        confirmed_result = await self.session.execute(confirmed_query)
-        confirmed = confirmed_result.scalar()
+        # Confirmed count - use EventParticipation for current event
+        from app.services.event_service import EventService
+        from app.models.event import ParticipationStatus
+        from sqlalchemy import and_
+
+        event_service = EventService(self.session)
+        current_event = await event_service.get_current_event()
+
+        if current_event:
+            # Event-specific confirmed count
+            confirmed_query = (
+                select(func.count(User.id))
+                .join(EventParticipation, and_(
+                    EventParticipation.user_id == User.id,
+                    EventParticipation.event_id == current_event.id
+                ))
+                .where(EventParticipation.status == ParticipationStatus.CONFIRMED.value)
+            )
+            if base_filter:
+                confirmed_query = confirmed_query.where(*base_filter)
+            confirmed_result = await self.session.execute(confirmed_query)
+            confirmed = confirmed_result.scalar()
+        else:
+            # Fallback to legacy field if no active event
+            confirmed_query = select(func.count(User.id)).where(User.confirmed == "YES")
+            if base_filter:
+                confirmed_query = confirmed_query.where(*base_filter)
+            confirmed_result = await self.session.execute(confirmed_query)
+            confirmed = confirmed_result.scalar()
 
         # Active count
         active_query = select(func.count(User.id)).where(User.is_active == True)
@@ -717,6 +877,254 @@ class ParticipantService:
 
         return participant
 
+    async def reset_workflow_state(
+        self,
+        participant_id: int,
+        reset_event_participation: bool = True,
+        reset_credentials: bool = False
+    ) -> Optional[User]:
+        """
+        Reset workflow-related fields for a participant.
+
+        Useful for:
+        - Testing invitation flows
+        - Re-inviting users for new event years
+        - Recovering from workflow errors
+
+        Resets:
+        - Confirmation code and timestamps
+        - Confirmed status (back to UNKNOWN)
+        - Terms acceptance
+        - All reminder timestamps
+        - Password email timestamp
+        - Optionally: EventParticipation for current event
+        - Optionally: Credentials for invitees only (sponsors/admins keep theirs across events)
+
+        Args:
+            participant_id: ID of participant to reset
+            reset_event_participation: If True, deletes EventParticipation for current event
+            reset_credentials: If True, clears password fields for invitees so fresh
+                credentials are generated on next confirmation. Sponsors/admins are
+                unaffected — they keep credentials across events.
+
+        Returns:
+            Updated participant or None if not found
+        """
+        from app.services.event_service import EventService
+
+        participant = await self.get_participant(participant_id)
+        if not participant:
+            return None
+
+        # Generate new confirmation code
+        participant.confirmation_code = secrets.token_urlsafe(32)
+
+        # Reset confirmation fields
+        participant.confirmation_sent_at = None
+        participant.confirmed = 'UNKNOWN'
+        participant.confirmed_at = None
+        participant.decline_reason = None
+
+        # Reset terms acceptance
+        participant.terms_accepted = False
+        participant.terms_accepted_at = None
+        participant.terms_version = None
+
+        # Reset reminder timestamps
+        participant.reminder_1_sent_at = None
+        participant.reminder_2_sent_at = None
+        participant.reminder_3_sent_at = None
+
+        # Reset email workflow timestamps
+        participant.password_email_sent = None
+        participant.invite_sent = None
+        participant.invite_reminder_sent = None
+        participant.last_invite_sent = None
+
+        # Reset other workflow emails
+        participant.survey_email_sent = None
+
+        # Clear credentials for invitees only — sponsors/admins keep theirs across events
+        if reset_credentials and participant.role == UserRole.INVITEE.value:
+            participant.pandas_password = None
+            participant.password_hash = None
+            participant.password_phonetic = None
+            # Keep pandas_username — returning participants keep their username
+            logger.info(
+                f"Cleared credentials for invitee {participant_id} "
+                f"(fresh credentials will be generated on next confirmation)"
+            )
+
+        participant.updated_at = datetime.now(timezone.utc)
+
+        # Look up current event (needed for EP reset and auto-invite)
+        event_service = EventService(self.session)
+        current_event = await event_service.get_current_event()
+
+        # Optionally reset EventParticipation for current event
+        if reset_event_participation and current_event:
+            # Delete EventParticipation record for current event
+            delete_stmt = delete(EventParticipation).where(
+                EventParticipation.user_id == participant_id,
+                EventParticipation.event_id == current_event.id
+            )
+            await self.session.execute(delete_stmt)
+
+            logger.info(
+                f"Reset workflow state for participant {participant_id}: "
+                f"deleted EventParticipation for event {current_event.id}"
+            )
+
+        await self.session.commit()
+        await self.session.refresh(participant)
+
+        logger.info(
+            f"Reset workflow state for participant {participant_id} "
+            f"(reset_event_participation={reset_event_participation}, "
+            f"reset_credentials={reset_credentials}, role={participant.role})"
+        )
+
+        # Auto-queue invitation if event is active and registration is open
+        if current_event and current_event.is_active and current_event.registration_open:
+            try:
+                from app.services.email_service import queue_invitation_email_for_user
+                await queue_invitation_email_for_user(
+                    user=participant,
+                    event=current_event,
+                    session=self.session,
+                    force=True
+                )
+                logger.info(
+                    f"Auto-queued invitation email for reset participant {participant_id} "
+                    f"(event: {current_event.name})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to auto-queue invitation for reset participant {participant_id}: {e}"
+                )
+
+        return participant
+
+    async def bulk_reset_workflow_state(
+        self,
+        reset_event_participation: bool = True,
+        reset_credentials: bool = False,
+        roles: Optional[List[str]] = None,
+        user_ids: Optional[List[int]] = None
+    ) -> dict:
+        """
+        Reset workflow state for multiple participants at once.
+
+        Used for preparing users for a new event year. Resets the same fields
+        as reset_workflow_state() but in bulk.
+
+        Args:
+            reset_event_participation: If True, deletes EventParticipation for current event
+            reset_credentials: If True, clears password fields for invitees only
+            roles: Role filter (default: ['invitee', 'sponsor']). Admins are never included.
+            user_ids: Optional list of specific user IDs to reset. If None, resets all
+                matching users.
+
+        Returns:
+            Dict with affected_count, breakdown by role, and parameters used
+        """
+        from app.services.event_service import EventService
+
+        if roles is None:
+            roles = [UserRole.INVITEE.value, UserRole.SPONSOR.value]
+
+        # Never allow admin reset via bulk
+        roles = [r for r in roles if r != UserRole.ADMIN.value]
+
+        # Query eligible users
+        query = (
+            select(User)
+            .where(User.role.in_(roles))
+            .where(User.is_active == True)
+        )
+        if user_ids:
+            query = query.where(User.id.in_(user_ids))
+
+        result = await self.session.execute(query)
+        users = result.scalars().all()
+
+        if not users:
+            return {
+                "affected_count": 0,
+                "breakdown": {},
+                "reset_event_participation": reset_event_participation,
+                "reset_credentials": reset_credentials
+            }
+
+        # Reset each user's workflow fields and generate new confirmation codes
+        now = datetime.now(timezone.utc)
+        breakdown = {}
+        affected_ids = []
+
+        for user in users:
+            user.confirmation_code = secrets.token_urlsafe(32)
+            user.confirmation_sent_at = None
+            user.confirmed = 'UNKNOWN'
+            user.confirmed_at = None
+            user.decline_reason = None
+
+            user.terms_accepted = False
+            user.terms_accepted_at = None
+            user.terms_version = None
+
+            user.reminder_1_sent_at = None
+            user.reminder_2_sent_at = None
+            user.reminder_3_sent_at = None
+
+            user.password_email_sent = None
+            user.invite_sent = None
+            user.invite_reminder_sent = None
+            user.last_invite_sent = None
+            user.survey_email_sent = None
+
+            if reset_credentials and user.role == UserRole.INVITEE.value:
+                user.pandas_password = None
+                user.password_hash = None
+                user.password_phonetic = None
+
+            user.updated_at = now
+
+            breakdown[user.role] = breakdown.get(user.role, 0) + 1
+            affected_ids.append(user.id)
+
+        # Bulk delete EventParticipation records for current event
+        if reset_event_participation:
+            event_service = EventService(self.session)
+            current_event = await event_service.get_current_event()
+
+            if current_event and affected_ids:
+                delete_stmt = delete(EventParticipation).where(
+                    EventParticipation.user_id.in_(affected_ids),
+                    EventParticipation.event_id == current_event.id
+                )
+                await self.session.execute(delete_stmt)
+
+                logger.info(
+                    f"Bulk reset: deleted EventParticipation records for "
+                    f"{len(affected_ids)} users (event {current_event.id})"
+                )
+
+        await self.session.commit()
+
+        logger.info(
+            f"Bulk workflow reset complete: {len(affected_ids)} users reset "
+            f"(breakdown: {breakdown}, reset_ep={reset_event_participation}, "
+            f"reset_creds={reset_credentials})"
+        )
+
+        return {
+            "affected_count": len(affected_ids),
+            "affected_ids": affected_ids,
+            "breakdown": breakdown,
+            "reset_event_participation": reset_event_participation,
+            "reset_credentials": reset_credentials
+        }
+
     async def list_sponsors(self) -> List[User]:
         """Get all users who can be sponsors (admins and sponsors)."""
         result = await self.session.execute(
@@ -737,12 +1145,8 @@ class ParticipantService:
         Format: first_initial + lastname (e.g., jsmith for John Smith)
         If conflict exists, appends numbers (jsmith1, jsmith2, etc.)
         """
-        # Get first initial and combine with last name
-        first_initial = first_name[0].lower() if first_name else ""
-        base = f"{first_initial}{last_name.lower()}"
-        # Remove special characters (keep only alphanumeric)
-        base = "".join(c for c in base if c.isalnum())
-        base = base[:50]  # Max 50 chars
+        from app.utils.name_utils import sanitize_username
+        base = sanitize_username(first_name, last_name)
 
         # Check for conflicts and add number suffix if needed
         username = base
@@ -774,6 +1178,26 @@ class ParticipantService:
                 return f"{base[:44]}{timestamp}"
 
     def _generate_password(self, length: int = 12) -> str:
-        """Generate a secure random password."""
-        alphabet = string.ascii_letters + string.digits
-        return "".join(secrets.choice(alphabet) for _ in range(length))
+        """Generate a secure random password.
+
+        Uses a safe special character set that avoids mis-interpretation by:
+        - HTML/email clients: no &, <, >, ", '
+        - Handlebars templates: no { }
+        - Shells: no !, $, `, \\, |, ;
+        """
+        # Safe special chars: @#%^*
+        safe_specials = "@#%^*"
+        all_chars = string.ascii_letters + string.digits + safe_specials
+
+        # Ensure at least one of each character type
+        chars = [
+            secrets.choice(string.ascii_uppercase),
+            secrets.choice(string.ascii_lowercase),
+            secrets.choice(string.digits),
+            secrets.choice(safe_specials),
+        ]
+        chars.extend(secrets.choice(all_chars) for _ in range(length - 4))
+
+        # Shuffle to avoid predictable first-4 pattern
+        secrets.SystemRandom().shuffle(chars)
+        return "".join(chars)

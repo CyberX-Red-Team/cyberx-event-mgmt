@@ -1,0 +1,982 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Instance Management{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-fluid px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="server"></i></div>
+                        Instance Management
+                    </h1>
+                    <div class="page-header-subtitle">Provision and manage cloud instances</div>
+                </div>
+                <div class="col-auto mt-4">
+                    <button class="btn btn-light btn-sm me-2" onclick="showCreateModal()">
+                        <i data-feather="plus" class="me-1"></i> Create Instance
+                    </button>
+                    <button class="btn btn-light btn-sm" onclick="showBulkCreateModal()">
+                        <i data-feather="layers" class="me-1"></i> Bulk Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-fluid px-4 mt-n10">
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-primary text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Total Instances</div>
+                            <div class="text-lg fw-bold" id="statTotal">-</div>
+                        </div>
+                        <i data-feather="server" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Active</div>
+                            <div class="text-lg fw-bold" id="statActive">-</div>
+                        </div>
+                        <i data-feather="check-circle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-warning text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Building</div>
+                            <div class="text-lg fw-bold" id="statBuilding">-</div>
+                        </div>
+                        <i data-feather="loader" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-danger text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Error</div>
+                            <div class="text-lg fw-bold" id="statError">-</div>
+                        </div>
+                        <i data-feather="alert-triangle" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i data-feather="filter" class="me-2"></i> Filters
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label small">Search</label>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Name, IP, Provider ID...">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Status</label>
+                    <select class="form-select" id="statusFilter">
+                        <option value="">All</option>
+                        <option value="ACTIVE">Active</option>
+                        <option value="BUILDING">Building</option>
+                        <option value="ERROR">Error</option>
+                        <option value="SHUTOFF">Shutoff</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Group By</label>
+                    <select class="form-select" id="instanceGroupByFilter" onchange="handleInstanceGroupByChange()">
+                        <option value="">None</option>
+                        <option value="status">Status</option>
+                        <option value="event_id">Event</option>
+                        <option value="visibility">Visibility</option>
+                        <option value="created_by_user_id">Created By</option>
+                    </select>
+                </div>
+                <div class="col-md-5 d-flex align-items-end">
+                    <button class="btn btn-primary me-2" onclick="applyFilters()">
+                        <i data-feather="search" class="me-1"></i> Search
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="clearFilters()">
+                        <i data-feather="x" class="me-1"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instances Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div><i data-feather="list" class="me-2"></i> Instances</div>
+            <div>
+                <button class="btn btn-sm btn-danger" id="deleteSelectedBtn" onclick="deleteSelectedInstances()" style="display: none;">
+                    <i data-feather="trash-2" class="me-1"></i> Delete Selected (<span id="selectedCount">0</span>)
+                </button>
+                <span class="small text-muted ms-3">
+                    Showing <span id="showingCount">0</span> of <span id="totalCount">0</span>
+                </span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="instancesTable">
+                    <thead>
+                        <tr>
+                            <th width="30"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleSelectAll()"></th>
+                            <th data-sort-key="name">Name</th>
+                            <th data-sort-key="status">Status</th>
+                            <th data-sort-key="ip_address">IP Address</th>
+                            <th data-sort-key="vpn_ip">VPN IP</th>
+                            <th>Agent</th>
+                            <th data-sort-key="visibility">Visibility</th>
+                            <th data-sort-key="event_id">Event</th>
+                            <th>Created By</th>
+                            <th data-sort-key="created_at">Created</th>
+                            <th width="120">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="instanceBody">
+                        <tr><td colspan="11" class="text-center py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading instances...
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <!-- Pagination -->
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <select class="form-select form-select-sm" style="width: auto;" id="pageSizeSelect" onchange="loadInstances(1)">
+                    <option value="25">25 per page</option>
+                    <option value="50" selected>50 per page</option>
+                    <option value="100">100 per page</option>
+                </select>
+                <nav><ul class="pagination pagination-sm mb-0" id="pagination"></ul></nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Instance Modal -->
+<div class="modal fade" id="createModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create Instance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="createName" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Cloud Provider <span class="text-danger">*</span></label>
+                    <select class="form-select" id="createProvider" onchange="handleProviderChange('create')">
+                        <option value="openstack">OpenStack</option>
+                        <option value="digitalocean">DigitalOcean</option>
+                    </select>
+                </div>
+
+                <!-- OpenStack-specific fields -->
+                <div id="createOpenstackFields">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Flavor</label>
+                            <select class="form-select" id="createFlavor"><option value="">Default</option></select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Network</label>
+                            <select class="form-select" id="createNetwork"><option value="">Default</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DigitalOcean-specific fields -->
+                <div id="createDigitaloceanFields" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Size</label>
+                            <select class="form-select" id="createDoSize"><option value="">Default</option></select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Region</label>
+                            <select class="form-select" id="createDoRegion"><option value="">Default</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Common fields -->
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Image</label>
+                        <select class="form-select" id="createImage"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Cloud-Init Template</label>
+                        <select class="form-select" id="createTemplate"><option value="">None</option></select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Event</label>
+                        <select class="form-select" id="createEvent"><option value="">None</option></select>
+                        <div class="form-text">Auto-uses event's SSH key if configured</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">License Product</label>
+                        <select class="form-select" id="createLicenseProduct"><option value="">None</option></select>
+                        <div class="form-text">Product to generate license token for</div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Key Name</label>
+                        <input type="text" class="form-control" id="createKeyName" placeholder="Optional SSH key name">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">SSH Public Key</label>
+                    <textarea class="form-control" id="createSshKey" rows="3" placeholder="Optional: Paste SSH public key (e.g., ssh-rsa AAAA...)"></textarea>
+                    <div class="form-text">
+                        <i data-feather="info" class="me-1"></i>
+                        If left empty and an event is selected, the event's SSH key will be used automatically
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createInstance()">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Create Modal -->
+<div class="modal fade" id="bulkCreateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bulk Create Instances</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8 mb-3">
+                        <label class="form-label">Name Prefix <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="bulkPrefix" placeholder="e.g. participant-vm">
+                        <div class="form-text">Instances will be named prefix-001, prefix-002, etc.</div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Count <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="bulkCount" value="5" min="1" max="50">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Cloud Provider <span class="text-danger">*</span></label>
+                    <select class="form-select" id="bulkProvider" onchange="handleProviderChange('bulk')">
+                        <option value="openstack">OpenStack</option>
+                        <option value="digitalocean">DigitalOcean</option>
+                    </select>
+                </div>
+
+                <!-- OpenStack-specific fields -->
+                <div id="bulkOpenstackFields">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Flavor</label>
+                            <select class="form-select" id="bulkFlavor"><option value="">Default</option></select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Network</label>
+                            <select class="form-select" id="bulkNetwork"><option value="">Default</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DigitalOcean-specific fields -->
+                <div id="bulkDigitaloceanFields" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Size</label>
+                            <select class="form-select" id="bulkDoSize"><option value="">Default</option></select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Region</label>
+                            <select class="form-select" id="bulkDoRegion"><option value="">Default</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Common fields -->
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Image</label>
+                        <select class="form-select" id="bulkImage"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Cloud-Init Template</label>
+                        <select class="form-select" id="bulkTemplate"><option value="">None</option></select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Event</label>
+                        <select class="form-select" id="bulkEvent"><option value="">None</option></select>
+                        <div class="form-text">Auto-uses event's SSH key if configured</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">License Product</label>
+                        <select class="form-select" id="bulkLicenseProduct"><option value="">None</option></select>
+                        <div class="form-text">Generate license token for all instances</div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">SSH Public Key</label>
+                    <textarea class="form-control" id="bulkSshKey" rows="3" placeholder="Optional: Paste SSH public key (e.g., ssh-rsa AAAA...)"></textarea>
+                    <div class="form-text">
+                        <i data-feather="info" class="me-1"></i>
+                        If left empty and an event is selected, the event's SSH key will be used for all instances
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createInstance()">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Create Modal -->
+<div class="modal fade" id="bulkCreateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bulk Create Instances</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8 mb-3">
+                        <label class="form-label">Name Prefix <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="bulkPrefix" placeholder="e.g. participant-vm">
+                        <div class="form-text">Instances will be named prefix-001, prefix-002, etc.</div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Count <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="bulkCount" value="5" min="1" max="50">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Flavor</label>
+                        <select class="form-select" id="bulkFlavor"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Image</label>
+                        <select class="form-select" id="bulkImage"><option value="">Default</option></select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Network</label>
+                        <select class="form-select" id="bulkNetwork"><option value="">Default</option></select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Cloud-Init Template</label>
+                        <select class="form-select" id="bulkTemplate"><option value="">None</option></select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">SSH Public Key</label>
+                    <textarea class="form-control" id="bulkSshKey" rows="3" placeholder="Optional: Paste SSH public key (e.g., ssh-rsa AAAA...)"></textarea>
+                    <div class="form-text">
+                        <i data-feather="info" class="me-1"></i>
+                        If left empty and an event is selected, the event's SSH key will be used for all instances
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="bulkCreate()">Create Instances</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Notes Modal -->
+<div class="modal fade" id="editNotesModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i data-feather="edit-3" class="me-2"></i>Instance Notes</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editNotesInstanceId">
+                <textarea class="form-control" id="editNotesText" rows="4" placeholder="Add notes about this instance..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="saveInstanceNotes()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+let currentPage = 1;
+let instanceSorter;
+
+// ── Stats ──
+async function loadStats() {
+    try {
+        const resp = await csrfFetch('/api/instances/stats');
+        if (resp.ok) {
+            const d = await resp.json();
+            document.getElementById('statTotal').textContent = d.total;
+            document.getElementById('statActive').textContent = d.active;
+            document.getElementById('statBuilding').textContent = d.building;
+            document.getElementById('statError').textContent = d.error;
+        }
+    } catch (e) { console.error('Failed to load stats:', e); }
+}
+
+function handleInstanceGroupByChange() {
+    const groupBy = document.getElementById('instanceGroupByFilter').value;
+    if (groupBy) {
+        instanceSorter.setSort(groupBy, 'asc');
+        instanceSorter.setDisabled(true);
+    } else {
+        instanceSorter.setDisabled(false);
+        instanceSorter.setSort('created_at', 'desc');
+    }
+    loadInstances(1);
+}
+
+// ── Load Instances ──
+async function loadInstances(page = 1) {
+    currentPage = page;
+    const pageSize = document.getElementById('pageSizeSelect').value;
+    const search = document.getElementById('searchInput').value;
+    const status = document.getElementById('statusFilter').value;
+    const groupBy = document.getElementById('instanceGroupByFilter').value;
+
+    let sortBy, sortOrder;
+    if (groupBy) {
+        sortBy = groupBy;
+        sortOrder = 'asc';
+    } else {
+        ({ sortBy, sortOrder } = instanceSorter.getSort());
+    }
+
+    let url = `/api/instances?page=${page}&page_size=${pageSize}`;
+    url += `&sort_by=${sortBy}&sort_order=${sortOrder}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (status) url += `&status=${encodeURIComponent(status)}`;
+    if (groupBy) url += `&group_by=${encodeURIComponent(groupBy)}`;
+
+    try {
+        const resp = await csrfFetch(url);
+        if (resp.status === 401) { window.location.href = '/login'; return; }
+        if (!resp.ok) throw new Error('Failed to load');
+
+        const data = await resp.json();
+        renderInstances(data.items);
+        renderPagination(data.page, data.total_pages);
+        document.getElementById('showingCount').textContent = data.items.length;
+        document.getElementById('totalCount').textContent = data.total;
+
+        // Hide pagination when grouping (all rows returned)
+        const paginationDiv = document.getElementById('pageSizeSelect').closest('.d-flex');
+        paginationDiv.style.display = groupBy ? 'none' : '';
+    } catch (e) {
+        console.error(e);
+        document.getElementById('instanceBody').innerHTML =
+            '<tr><td colspan="11" class="text-center text-danger py-4">Failed to load instances.</td></tr>';
+    }
+}
+
+function statusBadge(status) {
+    const map = {
+        ACTIVE: 'success', BUILDING: 'warning', ERROR: 'danger',
+        SHUTOFF: 'secondary', DELETED: 'dark'
+    };
+    return `<span class="badge bg-${map[status] || 'info'}">${status}</span>`;
+}
+
+function providerIcon(provider) {
+    if (provider === 'digitalocean') {
+        return `<i class="fab fa-digital-ocean" style="color: #0080FF; font-size: 16px; width: 20px; display: inline-block;" title="DigitalOcean"></i>`;
+    } else if (provider === 'openstack') {
+        return `<i class="fas fa-cloud" style="color: #DA1A32; font-size: 16px; width: 20px; display: inline-block;" title="OpenStack"></i>`;
+    }
+    return '';
+}
+
+function agentStatusBadge(lastHeartbeat) {
+    if (!lastHeartbeat) return '<span class="badge bg-secondary">Waiting</span>';
+    const ago = (Date.now() - new Date(lastHeartbeat).getTime()) / 1000;
+    if (ago < 120) return `<span class="badge bg-success" title="Last seen ${Math.round(ago)}s ago">Online</span>`;
+    if (ago < 300) return `<span class="badge bg-warning" title="Last seen ${Math.round(ago / 60)}m ago">Stale</span>`;
+    return `<span class="badge bg-danger" title="Last seen ${Math.round(ago / 60)}m ago">Offline</span>`;
+}
+
+function renderInstances(items) {
+    const tbody = document.getElementById('instanceBody');
+    if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted">No instances found.</td></tr>';
+        return;
+    }
+
+    const groupBy = document.getElementById('instanceGroupByFilter').value;
+    let lastGroupValue = null;
+    const rows = [];
+
+    // Pre-compute group counts
+    const groupCounts = {};
+    if (groupBy) {
+        items.forEach(item => {
+            let gk;
+            if (groupBy === 'status') gk = item.status;
+            else if (groupBy === 'event_id') gk = item.event_id || 0;
+            else if (groupBy === 'visibility') gk = item.visibility || 'private';
+            else if (groupBy === 'created_by_user_id') gk = item.created_by_user_id || 0;
+            groupCounts[gk] = (groupCounts[gk] || 0) + 1;
+        });
+    }
+
+    items.forEach(i => {
+        if (groupBy) {
+            let groupValue, groupLabel, groupIcon;
+            if (groupBy === 'status') {
+                groupValue = i.status;
+                groupLabel = statusBadge(i.status);
+                groupIcon = 'activity';
+            } else if (groupBy === 'event_id') {
+                groupValue = i.event_id || 0;
+                groupLabel = i.event_name || 'No Event';
+                groupIcon = 'calendar';
+            } else if (groupBy === 'visibility') {
+                groupValue = i.visibility || 'private';
+                groupLabel = groupValue === 'public' ? 'Public' : 'Private';
+                groupIcon = groupValue === 'public' ? 'globe' : 'lock';
+            } else if (groupBy === 'created_by_user_id') {
+                groupValue = i.created_by_user_id || 0;
+                groupLabel = i.created_by_username || 'Unknown';
+                groupIcon = 'user';
+            }
+            if (groupValue !== lastGroupValue) {
+                rows.push(`<tr class="table-secondary"><td colspan="11" class="fw-bold py-2"><i data-feather="${groupIcon}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel} <span class="badge bg-secondary ms-2">${groupCounts[groupValue]}</span></td></tr>`);
+                lastGroupValue = groupValue;
+            }
+        }
+
+        rows.push(`
+        <tr>
+            <td><input type="checkbox" class="form-check-input inst-cb" value="${i.id}" onchange="updateSelectionCount()"></td>
+            <td style="padding: 0.5rem 0.75rem;">
+                <div class="d-flex align-items-center gap-2">
+                    ${providerIcon(i.provider)}
+                    <div style="line-height: 1.3;">
+                        <div><strong>${i.name}</strong>${i.notes ? ' <i data-feather="file-text" class="text-muted" style="width:12px;height:12px;" title="' + (i.notes || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').substring(0, 100) + '"></i>' : ''}</div>
+                        <div><small class="text-muted" style="font-size: 0.75rem;">${i.provider_instance_id || '-'}</small></div>
+                    </div>
+                </div>
+            </td>
+            <td>${statusBadge(i.status)}</td>
+            <td><code>${i.ip_address || '-'}</code></td>
+            <td>${i.vpn_ip ? `<code class="text-success">${i.vpn_ip}</code>` : '<span class="text-muted">-</span>'}</td>
+            <td>${i.has_agent ? agentStatusBadge(i.agent_last_heartbeat) : '<span class="text-muted">-</span>'}</td>
+            <td>
+                <span class="badge ${i.visibility === 'public' ? 'bg-success' : 'bg-secondary'}" style="cursor:pointer;" onclick="toggleVisibility(${i.id}, '${i.visibility}')" title="Click to toggle">
+                    ${i.visibility === 'public' ? '<i data-feather="globe" class="feather-sm me-1"></i>Public' : '<i data-feather="lock" class="feather-sm me-1"></i>Private'}
+                </span>
+            </td>
+            <td>${i.event_name || '<span class="text-muted">-</span>'}</td>
+            <td>${i.created_by_username || '<span class="text-muted">-</span>'}</td>
+            <td>${formatDateTime(i.created_at)}</td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    ${i.has_agent && i.status === 'ACTIVE' ? `<button class="btn btn-outline-warning" onclick="cycleVPN(${i.id})" title="Cycle VPN"><i data-feather="repeat"></i></button>` : ''}
+                    <button class="btn btn-outline-secondary" data-instance-id="${i.id}" data-notes="${(i.notes || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onclick="showEditNotesModal(this)" title="${i.notes ? 'Edit Notes' : 'Add Notes'}"><i data-feather="${i.notes ? 'file-text' : 'edit-3'}"></i></button>
+                    <button class="btn btn-outline-primary" onclick="syncInstance(${i.id})" title="Sync Status"><i data-feather="refresh-cw"></i></button>
+                    <button class="btn btn-outline-danger" onclick="deleteInstance(${i.id}, '${i.name}')" title="Delete"><i data-feather="trash-2"></i></button>
+                </div>
+            </td>
+        </tr>
+        `);
+    });
+
+    tbody.innerHTML = rows.join('');
+    feather.replace();
+    makeGroupsCollapsible('instanceBody');
+    updateSelectionCount();
+}
+
+// ── Pagination ──
+function renderPagination(current, totalPages) {
+    const el = document.getElementById('pagination');
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    let html = `<li class="page-item ${current === 1 ? 'disabled' : ''}"><a class="page-link" href="#" onclick="loadInstances(${current - 1}); return false;">&laquo;</a></li>`;
+    const start = Math.max(1, current - 2), end = Math.min(totalPages, start + 4);
+    for (let i = start; i <= end; i++) {
+        html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" onclick="loadInstances(${i}); return false;">${i}</a></li>`;
+    }
+    html += `<li class="page-item ${current === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" onclick="loadInstances(${current + 1}); return false;">&raquo;</a></li>`;
+    el.innerHTML = html;
+}
+
+// ── Filters ──
+function applyFilters() { loadInstances(1); }
+function clearFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('statusFilter').value = '';
+    document.getElementById('instanceGroupByFilter').value = '';
+    instanceSorter.setDisabled(false);
+    instanceSorter.setSort('created_at', 'desc');
+    loadInstances(1);
+}
+
+// ── Selection ──
+function toggleSelectAll() {
+    const checked = document.getElementById('selectAll').checked;
+    document.querySelectorAll('.inst-cb').forEach(cb => cb.checked = checked);
+    updateSelectionCount();
+}
+function updateSelectionCount() {
+    const count = document.querySelectorAll('.inst-cb:checked').length;
+    const btn = document.getElementById('deleteSelectedBtn');
+    document.getElementById('selectedCount').textContent = count;
+    btn.style.display = count > 0 ? 'inline-block' : 'none';
+}
+
+// ── Create ──
+let resourcesLoaded = {openstack: false, digitalocean: false};
+
+async function loadResources(provider = 'openstack') {
+    if (resourcesLoaded[provider]) return;
+
+    const populateSelect = (ids, items, labelFn, valueFn = item => item.id) => {
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            // Clear existing options except the default one
+            while (el.options.length > 1) el.remove(1);
+            items.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = valueFn(item);
+                opt.textContent = labelFn(item);
+                el.appendChild(opt);
+            });
+        });
+    };
+
+    try {
+        if (provider === 'openstack') {
+            const [flavors, images, networks, templates, products, events] = await Promise.all([
+                csrfFetch('/api/instances/resources/flavors').then(r => r.json()),
+                csrfFetch('/api/instances/resources/images').then(r => r.json()),
+                csrfFetch('/api/instances/resources/networks').then(r => r.json()),
+                csrfFetch('/api/cloud-init/templates?page_size=100').then(r => r.json()),
+                csrfFetch('/api/license/products?page_size=100').then(r => r.json()),
+                csrfFetch('/api/admin/events').then(r => r.json()),
+            ]);
+
+            populateSelect(['createFlavor', 'bulkFlavor'], flavors.flavors || [], f => `${f.name} (${f.vcpus}vCPU, ${f.ram}MB)`);
+            populateSelect(['createImage', 'bulkImage'], images.images || [], i => i.name);
+            populateSelect(['createNetwork', 'bulkNetwork'], networks.networks || [], n => n.name);
+            populateSelect(['createTemplate', 'bulkTemplate'], templates.items || [], t => t.name);
+            populateSelect(['createLicenseProduct', 'bulkLicenseProduct'], products.items || [], p => p.name);
+            populateSelect(['createEvent', 'bulkEvent'], events.events || [], e => `${e.year} - ${e.name}${e.is_active ? ' ⭐' : ''}`);
+        } else if (provider === 'digitalocean') {
+            const [sizes, images, regions, templates, products, events] = await Promise.all([
+                csrfFetch('/api/instances/resources/digitalocean/sizes').then(r => r.json()),
+                csrfFetch('/api/instances/resources/digitalocean/images').then(r => r.json()),
+                csrfFetch('/api/instances/resources/digitalocean/regions').then(r => r.json()),
+                csrfFetch('/api/cloud-init/templates?page_size=100').then(r => r.json()),
+                csrfFetch('/api/license/products?page_size=100').then(r => r.json()),
+                csrfFetch('/api/admin/events').then(r => r.json()),
+            ]);
+
+            populateSelect(['createDoSize', 'bulkDoSize'], sizes.sizes || [],
+                s => `${s.slug} (${s.vcpus}vCPU, ${s.memory}MB, $${s.price_monthly}/mo)`,
+                s => s.slug);
+            populateSelect(['createDoImage', 'bulkDoImage'], images.images || [],
+                i => `${i.distribution} ${i.name}`,
+                i => i.slug || i.id);
+            populateSelect(['createDoRegion', 'bulkDoRegion'], regions.regions || [],
+                r => `${r.name} (${r.slug})`,
+                r => r.slug);
+            populateSelect(['createTemplate', 'bulkTemplate'], templates.items || [], t => t.name);
+            populateSelect(['createLicenseProduct', 'bulkLicenseProduct'], products.items || [], p => p.name);
+            populateSelect(['createEvent', 'bulkEvent'], events.events || [], e => `${e.year} - ${e.name}${e.is_active ? ' ⭐' : ''}`);
+        }
+
+        resourcesLoaded[provider] = true;
+    } catch (e) {
+        console.error(`Failed to load ${provider} resources:`, e);
+    }
+}
+
+function handleProviderChange(modalType) {
+    const provider = document.getElementById(`${modalType}Provider`).value;
+    const osFields = document.getElementById(`${modalType}OpenstackFields`);
+    const doFields = document.getElementById(`${modalType}DigitaloceanFields`);
+
+    if (provider === 'openstack') {
+        osFields.style.display = 'block';
+        doFields.style.display = 'none';
+        loadResources('openstack');
+    } else if (provider === 'digitalocean') {
+        osFields.style.display = 'none';
+        doFields.style.display = 'block';
+        loadResources('digitalocean');
+    }
+}
+
+function showCreateModal() {
+    loadResources();
+    document.getElementById('createName').value = '';
+    document.getElementById('createKeyName').value = '';
+    document.getElementById('createSshKey').value = '';
+    new bootstrap.Modal(document.getElementById('createModal')).show();
+}
+
+function showBulkCreateModal() {
+    loadResources();
+    document.getElementById('bulkPrefix').value = '';
+    document.getElementById('bulkCount').value = 5;
+    document.getElementById('bulkSshKey').value = '';
+    new bootstrap.Modal(document.getElementById('bulkCreateModal')).show();
+}
+
+async function createInstance() {
+    const name = document.getElementById('createName').value.trim();
+    if (!name) { showToast('Name is required', 'warning'); return; }
+
+    const provider = document.getElementById('createProvider').value;
+    const body = { name, provider };
+
+    // Provider-specific fields
+    if (provider === 'openstack') {
+        const flavor = document.getElementById('createFlavor').value;
+        const network = document.getElementById('createNetwork').value;
+        if (flavor) body.flavor_id = flavor;
+        if (network) body.network_id = network;
+    } else if (provider === 'digitalocean') {
+        const size = document.getElementById('createDoSize').value;
+        const region = document.getElementById('createDoRegion').value;
+        if (size) body.size_slug = size;
+        if (region) body.region = region;
+    }
+
+    // Common fields
+    const image = document.getElementById('createImage').value;
+    const template = document.getElementById('createTemplate').value;
+    const event = document.getElementById('createEvent').value;
+    const licenseProduct = document.getElementById('createLicenseProduct').value;
+    const keyName = document.getElementById('createKeyName').value.trim();
+    const sshKey = document.getElementById('createSshKey').value.trim();
+    if (image) body.image_id = image;
+    if (template) body.cloud_init_template_id = parseInt(template);
+    if (event) body.event_id = parseInt(event);
+    if (licenseProduct) body.license_product_id = parseInt(licenseProduct);
+    if (keyName) body.key_name = keyName;
+    if (sshKey) body.ssh_public_key = sshKey;
+
+    try {
+        const resp = await csrfFetch('/api/instances', { method: 'POST', body });
+        if (resp.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('createModal')).hide();
+            loadInstances(1);
+            loadStats();
+            showToast('Instance created successfully', 'success');
+        } else {
+            const err = await resp.json();
+            showToast(err.detail || 'Failed to create instance', 'danger');
+        }
+    } catch (e) { showToast('Failed to create instance', 'danger'); }
+}
+
+async function bulkCreate() {
+    const prefix = document.getElementById('bulkPrefix').value.trim();
+    const count = parseInt(document.getElementById('bulkCount').value);
+    if (!prefix) { showToast('Name prefix is required', 'warning'); return; }
+
+    const provider = document.getElementById('bulkProvider').value;
+    const body = { name_prefix: prefix, count, provider };
+
+    // Provider-specific fields
+    if (provider === 'openstack') {
+        const flavor = document.getElementById('bulkFlavor').value;
+        const network = document.getElementById('bulkNetwork').value;
+        if (flavor) body.flavor_id = flavor;
+        if (network) body.network_id = network;
+    } else if (provider === 'digitalocean') {
+        const size = document.getElementById('bulkDoSize').value;
+        const region = document.getElementById('bulkDoRegion').value;
+        if (size) body.size_slug = size;
+        if (region) body.region = region;
+    }
+
+    // Common fields
+    const image = document.getElementById('bulkImage').value;
+    const template = document.getElementById('bulkTemplate').value;
+    const event = document.getElementById('bulkEvent').value;
+    const licenseProduct = document.getElementById('bulkLicenseProduct').value;
+    const sshKey = document.getElementById('bulkSshKey').value.trim();
+    if (image) body.image_id = image;
+    if (template) body.cloud_init_template_id = parseInt(template);
+    if (event) body.event_id = parseInt(event);
+    if (licenseProduct) body.license_product_id = parseInt(licenseProduct);
+    if (sshKey) body.ssh_public_key = sshKey;
+
+    try {
+        const resp = await csrfFetch('/api/instances/bulk', { method: 'POST', body });
+        const data = await resp.json();
+        bootstrap.Modal.getInstance(document.getElementById('bulkCreateModal')).hide();
+        loadInstances(1);
+        loadStats();
+        showToast(`Created ${data.success_count} instance(s)${data.errors.length ? `, ${data.errors.length} failed` : ''}`, data.errors.length ? 'warning' : 'success');
+    } catch (e) { showToast('Bulk create failed', 'danger'); }
+}
+
+// ── Actions ──
+async function syncInstance(id) {
+    try {
+        const resp = await csrfFetch(`/api/instances/${id}/sync`, { method: 'POST' });
+        if (resp.ok) {
+            loadInstances(currentPage);
+            loadStats();
+            showToast('Instance synced', 'success');
+        }
+    } catch (e) { showToast('Sync failed', 'danger'); }
+}
+
+async function cycleVPN(id) {
+    if (!confirm('Cycle VPN for this instance? The VPN connection will briefly drop.')) return;
+    try {
+        const resp = await csrfFetch(`/api/admin/instances/${id}/tasks`, { method: 'POST', body: { task_type: 'cycle_vpn' } });
+        if (resp.ok) {
+            showToast('VPN cycle task created — agent will process shortly', 'success');
+        } else {
+            const error = await resp.json();
+            showToast(error.detail || 'Failed to create task', 'danger');
+        }
+    } catch (e) { showToast('Failed to create VPN cycle task', 'danger'); }
+}
+
+async function deleteInstance(id, name) {
+    if (!confirm(`Delete instance "${name}"? This will terminate it on the cloud provider.`)) return;
+    try {
+        const resp = await csrfFetch(`/api/instances/${id}`, { method: 'DELETE' });
+        if (resp.ok) {
+            loadInstances(currentPage);
+            loadStats();
+            showToast('Instance deleted', 'success');
+        }
+    } catch (e) { showToast('Delete failed', 'danger'); }
+}
+
+async function deleteSelectedInstances() {
+    const ids = Array.from(document.querySelectorAll('.inst-cb:checked')).map(cb => parseInt(cb.value));
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} instance(s)? This will terminate them on their cloud providers.`)) return;
+
+    try {
+        const resp = await csrfFetch('/api/instances/bulk-delete', { method: 'POST', body: { instance_ids: ids } });
+        const data = await resp.json();
+        loadInstances(currentPage);
+        loadStats();
+        showToast(`Deleted ${data.success_count} instance(s)`, data.errors.length ? 'warning' : 'success');
+    } catch (e) { showToast('Bulk delete failed', 'danger'); }
+}
+
+// ── Notes Edit ──
+function showEditNotesModal(btn) {
+    const id = btn.dataset.instanceId;
+    const notes = btn.dataset.notes || '';
+    document.getElementById('editNotesInstanceId').value = id;
+    document.getElementById('editNotesText').value = notes;
+    new bootstrap.Modal(document.getElementById('editNotesModal')).show();
+}
+
+async function saveInstanceNotes() {
+    const id = document.getElementById('editNotesInstanceId').value;
+    const notes = document.getElementById('editNotesText').value;
+    try {
+        const resp = await csrfFetch(`/api/instances/${id}`, {
+            method: 'PATCH',
+            body: { notes: notes }
+        });
+        if (resp.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('editNotesModal')).hide();
+            loadInstances(currentPage);
+            showToast('Notes saved', 'success');
+        } else {
+            const err = await resp.json();
+            showToast(err.detail || 'Failed to save notes', 'danger');
+        }
+    } catch (e) { showToast('Failed to save notes', 'danger'); }
+}
+
+// ── Visibility Toggle ──
+async function toggleVisibility(id, current) {
+    const newVisibility = current === 'public' ? 'private' : 'public';
+    try {
+        const resp = await csrfFetch(`/api/instances/${id}`, {
+            method: 'PATCH',
+            body: { visibility: newVisibility }
+        });
+        if (resp.ok) {
+            loadInstances(currentPage);
+            showToast(`Visibility set to ${newVisibility}`, 'success');
+        } else {
+            const err = await resp.json();
+            showToast(err.detail || 'Failed to update visibility', 'danger');
+        }
+    } catch (e) { showToast('Failed to update visibility', 'danger'); }
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+    instanceSorter = new SortableTable({
+        tableId: 'instancesTable',
+        defaultSort: { column: 'created_at', order: 'desc' },
+        onSort: () => loadInstances(1)
+    });
+
+    loadStats();
+    loadInstances(1);
+    document.getElementById('searchInput').addEventListener('keypress', e => { if (e.key === 'Enter') applyFilters(); });
+});
+</script>
+{% endblock %}

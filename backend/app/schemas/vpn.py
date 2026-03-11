@@ -17,6 +17,7 @@ class VPNCredentialResponse(BaseModel):
     interface_ip: str
     ipv4_address: Optional[str]
     endpoint: str
+    assignment_type: str = "USER_REQUESTABLE"
     file_hash: Optional[str] = None
     request_batch_id: Optional[str] = None
     is_available: bool
@@ -24,9 +25,16 @@ class VPNCredentialResponse(BaseModel):
     assigned_at: Optional[datetime]
     created_at: datetime
 
-    # Assigned user info (if assigned)
+    # Assigned user info (if assigned to user)
     assigned_to_email: Optional[str] = None
     assigned_to_name: Optional[str] = None
+
+    # Assigned instance info (if assigned to instance)
+    assigned_to_instance_id: Optional[int] = None
+    assigned_instance_at: Optional[datetime] = None
+    assigned_instance_name: Optional[str] = None
+    assigned_instance_created_by_email: Optional[str] = None
+    assigned_instance_created_by_name: Optional[str] = None
 
     model_config = {
         "from_attributes": True
@@ -152,3 +160,43 @@ class VPNRequestBatchesResponse(BaseModel):
 
     batches: List[VPNRequestBatch]
     total_batches: int
+
+
+class VPNUpdateAssignmentTypeRequest(BaseModel):
+    """Request to update VPN assignment type."""
+
+    assignment_type: str = Field(..., description="USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED")
+
+
+class VPNUpdateAssignmentTypeResponse(BaseModel):
+    """Response for VPN assignment type update."""
+
+    success: bool
+    message: str
+    vpn_id: int
+    new_assignment_type: str
+
+
+class VPNBulkUpdateAssignmentTypeRequest(BaseModel):
+    """Request to bulk update VPN assignment types."""
+
+    vpn_ids: List[int] = Field(..., description="List of VPN credential IDs")
+    assignment_type: str = Field(..., description="USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED")
+
+
+class VPNBulkUpdateAssignmentTypeResponse(BaseModel):
+    """Response for bulk VPN assignment type update."""
+
+    success: bool
+    message: str
+    success_count: int
+    skipped_count: int
+    errors: List[str] = []
+
+
+class VPNInstancePoolStats(BaseModel):
+    """Statistics for INSTANCE_AUTO_ASSIGN VPN pool."""
+
+    total: int = Field(..., description="Total INSTANCE_AUTO_ASSIGN VPNs")
+    available: int = Field(..., description="Available INSTANCE_AUTO_ASSIGN VPNs")
+    assigned: int = Field(..., description="Assigned INSTANCE_AUTO_ASSIGN VPNs")

@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.models.user import User
 from app.models.session import Session
 from app.utils.security import verify_password, generate_session_token
+from app.api.utils.validation import normalize_email
 
 
 class AuthService:
@@ -39,10 +40,15 @@ class AuthService:
         Returns:
             User object if authentication successful, None otherwise
         """
-        # Try to find user by email or pandas_username
+        # Normalize username in case it's an email (case-insensitive email login)
+        normalized_username = normalize_email(username)
+
+        # Try to find user by email_normalized or pandas_username (as-is)
         result = await self.session.execute(
-            select(User).where(
-                (User.email == username) | (User.pandas_username == username)
+            select(User)
+            .options(selectinload(User.role_obj))
+            .where(
+                (User.email_normalized == normalized_username) | (User.pandas_username == username)
             )
         )
         user = result.scalar_one_or_none()
@@ -142,7 +148,7 @@ class AuthService:
         # Get user with sponsor relationship loaded
         result = await self.session.execute(
             select(User)
-            .options(selectinload(User.sponsor))
+            .options(selectinload(User.sponsor), selectinload(User.role_obj))
             .where(User.id == session.user_id)
         )
         user = result.scalar_one_or_none()

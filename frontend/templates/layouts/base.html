@@ -98,6 +98,49 @@
             padding-top: 56px;
         }
 
+        /* Extra top padding when email-live banner is visible */
+        .nav-fixed.has-email-banner {
+            padding-top: 90px;
+        }
+
+        /* Email live banner (staging warning) */
+        .email-live-banner {
+            position: fixed;
+            top: 56px;
+            left: 0;
+            right: 0;
+            z-index: 1035;
+            background: #dc3545;
+            color: #fff;
+            font-size: 0.8rem;
+            padding: 6px 16px;
+            text-align: center;
+        }
+        .email-live-banner .banner-inner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .email-live-banner .pulse-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #fff;
+            animation: pulse-blink 1.5s ease-in-out infinite;
+        }
+        .email-live-banner .separator {
+            display: inline-block;
+            width: 1px;
+            height: 14px;
+            background: rgba(255,255,255,0.4);
+        }
+        @keyframes pulse-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
         /* Ensure fixed navbar stays on top */
         .navbar.fixed-top {
             z-index: 1040;
@@ -1161,6 +1204,68 @@
         [data-theme="dark"] .btn-outline-danger:hover {
             background-color: var(--danger-color) !important;
             color: #fff !important;
+        }
+
+        /* Global text utilities dark mode */
+        [data-theme="dark"] .text-muted {
+            color: var(--text-muted) !important;
+        }
+        [data-theme="dark"] .text-dark {
+            color: var(--text-primary) !important;
+        }
+        [data-theme="dark"] .text-body {
+            color: var(--text-primary) !important;
+        }
+        [data-theme="dark"] .border {
+            border-color: var(--border-color) !important;
+        }
+        [data-theme="dark"] .border-bottom {
+            border-color: var(--border-color) !important;
+        }
+
+        /* Modals dark mode */
+        [data-theme="dark"] .modal-content {
+            background-color: var(--modal-bg);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+        [data-theme="dark"] .modal-header {
+            border-color: var(--border-color);
+        }
+        [data-theme="dark"] .modal-footer {
+            border-color: var(--border-color);
+        }
+
+        /* Dropdown menus dark mode */
+        [data-theme="dark"] .dropdown-menu {
+            background-color: var(--bg-card);
+            border-color: var(--border-color);
+        }
+        [data-theme="dark"] .dropdown-item {
+            color: var(--text-primary);
+        }
+        [data-theme="dark"] .dropdown-item:hover,
+        [data-theme="dark"] .dropdown-item:focus {
+            background-color: var(--hover-bg);
+            color: var(--text-primary);
+        }
+        [data-theme="dark"] .dropdown-divider {
+            border-color: var(--border-color);
+        }
+
+        /* Dashboard top navbar dark mode */
+        [data-theme="dark"] .navbar.navbar-light {
+            background-color: var(--navbar-bg) !important;
+        }
+        [data-theme="dark"] .navbar.navbar-light .nav-link,
+        [data-theme="dark"] .navbar.navbar-light .navbar-text {
+            color: var(--text-primary) !important;
+        }
+        [data-theme="dark"] .navbar.navbar-light .nav-link:hover {
+            color: var(--primary-color) !important;
+        }
+        [data-theme="dark"] .navbar.navbar-light .navbar-toggler-icon {
+            filter: invert(1);
         }
 
         /* Force authentication pages to always use light mode styling */

@@ -10,7 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.middleware.csrf import CSRFMiddleware
 from app.api.routes import auth, admin, vpn, email, webhooks, views, event, public, sponsor, user
-from app.tasks import start_scheduler, stop_scheduler, list_jobs
+from app.api.routes import instances as instances_routes, cloud_init as cloud_init_routes, license as license_routes, cloud_init_vpn
+from app.api.routes import instance_templates, participant_instances
+from app.api.routes import settings as settings_routes
+from app.api.routes import admin_actions, participant_actions, admin_keycloak, admin_cpe, participant_cpe
+from app.api.routes import admin_tls, participant_tls, admin_roles
+from app.api.routes.agent import agent_router, participant_router as agent_participant_router, admin_router as agent_admin_router
+from app.tasks import start_scheduler, stop_scheduler
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
 import base64
@@ -110,6 +116,26 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("  Admin bootstrap: Skipped (ADMIN_EMAIL not configured)")
 
+    # Seed required email templates (idempotent — creates if missing, no-op if exists)
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.template_seeder import seed_required_templates
+        async with AsyncSessionLocal() as session:
+            await seed_required_templates(session)
+        logger.info("  Template seeding: Complete")
+    except Exception as e:
+        logger.error("  Template seeding: Failed - %s", e)
+
+    # Seed required roles (idempotent — creates if missing, updates system role permissions)
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.role_seeder import seed_required_roles
+        async with AsyncSessionLocal() as session:
+            await seed_required_roles(session)
+        logger.info("  Role seeding: Complete")
+    except Exception as e:
+        logger.error("  Role seeding: Failed - %s", e)
+
     # Start the background scheduler
     # Runs scheduled jobs for email processing, session cleanup, and reminders
     logger.info("  Background scheduler: Starting...")
@@ -118,6 +144,19 @@ async def lifespan(app: FastAPI):
         logger.info("  Background scheduler: Started successfully")
     except Exception as e:
         logger.error("  Background scheduler: Failed to start - %s", e)
+        # Don't fail startup if scheduler fails
+
+    # Start the instance sync scheduler
+    # Runs scheduled jobs for syncing instance status from cloud providers
+    logger.info("  Instance sync scheduler: Starting...")
+    try:
+        from app.services.instance_sync_scheduler import get_scheduler
+        instance_scheduler = get_scheduler()
+        instance_scheduler.initialize()
+        instance_scheduler.start()
+        logger.info("  Instance sync scheduler: Started successfully")
+    except Exception as e:
+        logger.error("  Instance sync scheduler: Failed to start - %s", e)
         # Don't fail startup if scheduler fails
 
     yield  # Application runs
@@ -129,6 +168,15 @@ async def lifespan(app: FastAPI):
         logger.info("  Background scheduler: Stopped")
     except Exception as e:
         logger.error("  Background scheduler: Error during shutdown - %s", e)
+
+    # Shutdown instance sync scheduler
+    try:
+        from app.services.instance_sync_scheduler import get_scheduler
+        instance_scheduler = get_scheduler()
+        instance_scheduler.shutdown()
+        logger.info("  Instance sync scheduler: Stopped")
+    except Exception as e:
+        logger.error("  Instance sync scheduler: Error during shutdown - %s", e)
 
 
 # Create FastAPI application
@@ -156,9 +204,14 @@ app.add_middleware(
 csrf_exempt_urls = [
     "/api/webhooks/sendgrid",  # SendGrid webhook
     "/api/webhooks/discord",   # Discord OAuth callback
+    "/api/webhooks/keycloak",  # Keycloak event listener webhook
     "/api/public/confirm",     # Public confirmation endpoint
     "/api/public/decline",     # Public decline endpoint
     "/health",                 # Health check
+    "/api/license/blob",       # VM-facing license endpoint (Bearer token auth)
+    "/api/license/queue/acquire",  # VM-facing queue acquire (Bearer token auth)
+    "/api/license/queue/release",  # VM-facing queue release (Bearer token auth)
+    "/api/agent/*",                # Agent endpoints (Bearer token auth)
 ]
 
 app.add_middleware(
@@ -189,6 +242,24 @@ app.include_router(webhooks.router)
 app.include_router(event.router)
 app.include_router(public.router)
 app.include_router(user.router)
+app.include_router(instances_routes.router)
+app.include_router(cloud_init_routes.router)
+app.include_router(cloud_init_vpn.router)  # Cloud-init VPN config endpoint
+app.include_router(license_routes.router)
+app.include_router(instance_templates.router)  # Admin instance templates management
+app.include_router(participant_instances.router)  # Participant self-service provisioning
+app.include_router(settings_routes.router)  # Admin system settings
+app.include_router(admin_actions.router)  # Admin participant actions management
+app.include_router(participant_actions.router)  # Participant actions (view & respond)
+app.include_router(admin_keycloak.router)  # Admin Keycloak sync management
+app.include_router(admin_cpe.router)  # Admin CPE certificate management
+app.include_router(participant_cpe.router)  # Participant CPE certificate download
+app.include_router(admin_tls.router)  # Admin TLS certificate / CA chain management
+app.include_router(admin_roles.router)  # Admin role management
+app.include_router(participant_tls.router)  # Participant TLS certificate self-service
+app.include_router(agent_router)  # Agent-facing endpoints (Bearer token auth)
+app.include_router(agent_participant_router)  # Participant agent task management
+app.include_router(agent_admin_router)  # Admin agent task management
 
 # Include view routes (HTML pages)
 app.include_router(views.router)
@@ -199,13 +270,6 @@ app.include_router(views.router)
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
-
-
-# Scheduler status endpoint (admin only)
-@app.get("/api/admin/scheduler/jobs")
-async def get_scheduled_jobs():
-    """Get list of scheduled background jobs."""
-    return {"jobs": list_jobs()}
 
 
 # Global exception handler

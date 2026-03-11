@@ -76,110 +76,38 @@ jobs:
       url: https://events.cyberxredteam.org
 
     steps:
-      - name: Check if service is suspended
-        id: check-status
+      - name: Trigger Render Deploy via Deploy Hook
         env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
-        run: |
-          echo "🔍 Checking Render service status..."
-
-          SERVICE_INFO=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
-            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}")
-
-          STATUS=$(echo "$SERVICE_INFO" | jq -r '.service.suspended')
-
-          echo "Service suspended: $STATUS"
-          echo "suspended=$STATUS" >> $GITHUB_OUTPUT
-
-      - name: Resume service if suspended
-        if: steps.check-status.outputs.suspended == 'true' || steps.check-status.outputs.suspended == 'suspended'
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
-        run: |
-          echo "▶️ Resuming suspended service..."
-
-          curl -X POST \
-            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/resume" \
-            -H "Authorization: Bearer ${RENDER_API_KEY}"
-
-          echo "⏳ Waiting for service to resume..."
-          sleep 120
-
-          echo "✅ Service resumed!"
-
-      - name: Set DATABASE_URL for Production
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          PRODUCTION_RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
-          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-        run: |
-          echo "🔧 Setting DATABASE_URL for production service..."
-
-          curl -X PUT \
-            "https://api.render.com/v1/services/${PRODUCTION_RENDER_SERVICE_ID}/env-vars/DATABASE_URL" \
-            -H "Authorization: Bearer ${RENDER_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"value\":\"${PRODUCTION_DATABASE_URL}\"}"
-
-          echo "✅ DATABASE_URL updated"
-
-      # Database migrations are handled by Render during deployment
-      # Render runs 'alembic upgrade head' in the startCommand (see render.yaml)
-
-      - name: Trigger Render Deploy (Production)
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
+          PRODUCTION_DEPLOY_HOOK_URL: ${{ secrets.PRODUCTION_DEPLOY_HOOK_URL }}
         run: |
           echo "🚀 Triggering Render deployment for production..."
+          echo "Note: Database migrations will run automatically (alembic upgrade head)"
+          echo "Note: DATABASE_URL is configured in Render dashboard"
 
-          DEPLOY_RESPONSE=$(curl -X POST \
-            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
-            -H "Authorization: Bearer ${RENDER_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "clearCache": true
-            }')
+          # Trigger web service deployment and capture response
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${PRODUCTION_DEPLOY_HOOK_URL}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
 
-          DEPLOY_ID=$(echo "$DEPLOY_RESPONSE" | jq -r '.id')
-          echo "Deploy ID: $DEPLOY_ID"
-          echo "deploy_id=$DEPLOY_ID" >> $GITHUB_OUTPUT
-          echo "✅ Deployment triggered!"
+          echo "Response: $BODY"
+
+          # Extract deploy ID from JSON response
+          DEPLOY_ID=$(echo "$BODY" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && [ -n "$DEPLOY_ID" ]; then
+            echo "✅ Deployment triggered (Deploy ID: $DEPLOY_ID)"
+          else
+            echo "❌ Deployment failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
 
       - name: Wait for deployment
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
         run: |
-          echo "⏳ Waiting for production deployment to complete..."
+          echo "⏳ Waiting for deployment to complete..."
+          echo "Render is building and deploying the application..."
 
-          MAX_WAIT=600  # 10 minutes
-          ELAPSED=0
-          INTERVAL=15
-
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            STATUS=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
-              "https://api.render.com/v1/services/${RENDER_SERVICE_ID}" | \
-              jq -r '.service.serviceDetails.deployStatus')
-
-            echo "Current status: $STATUS (${ELAPSED}s elapsed)"
-
-            if [ "$STATUS" = "live" ]; then
-              echo "✅ Deployment successful!"
-              exit 0
-            elif [ "$STATUS" = "failed" ]; then
-              echo "❌ Deployment failed!"
-              exit 1
-            fi
-
-            sleep $INTERVAL
-            ELAPSED=$((ELAPSED + INTERVAL))
-          done
-
-          echo "⚠️ Deployment timeout!"
-          exit 1
+          # Wait 2 minutes for Render to build and start deploying
+          sleep 120
 
       - name: Run health check
         run: |
@@ -267,14 +195,14 @@ jobs:
 
       - name: Rollback on failure
         if: failure()
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ secrets.PRODUCTION_RENDER_SERVICE_ID }}
         run: |
           echo "❌ Deployment failed! Initiating rollback..."
-          echo "⚠️ Manual intervention may be required"
+          echo "⚠️ Manual intervention required"
           echo "Check Render dashboard: https://dashboard.render.com"
-          echo "Restore from Supabase backup if needed"
+          echo "Options:"
+          echo "  1. Restore from Supabase backup if needed"
+          echo "  2. Roll back to previous version in Render dashboard"
+          echo "  3. Check logs for deployment errors"
 
   resume-production:
     name: Resume Production Service

@@ -1,7 +1,9 @@
 """Audit logging service for tracking user and admin actions."""
 from typing import Optional, Dict, Any
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit_log import AuditLog
+from app.models.user import User
 
 
 class AuditService:
@@ -36,8 +38,22 @@ class AuditService:
         Returns:
             Created AuditLog entry
         """
+        # Snapshot user identity so it survives user deletion
+        user_email = None
+        user_name = None
+        if user_id:
+            result = await self.session.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            if user:
+                user_email = user.email
+                user_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
+
         audit_log = AuditLog(
             user_id=user_id,
+            user_email=user_email,
+            user_name=user_name,
             action=action,
             resource_type=resource_type,
             resource_id=resource_id,
@@ -510,6 +526,182 @@ class AuditService:
                 "reason": reason,
                 "event_id": event_id
             },
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_certificate_issue(
+        self,
+        user_id: int,
+        target_user_id: int,
+        certificate_id: int,
+        event_id: int,
+        certificate_number: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log CPE certificate issuance."""
+        return await self.log(
+            action="CERTIFICATE_ISSUE",
+            user_id=user_id,
+            resource_type="CERTIFICATE",
+            resource_id=certificate_id,
+            details={
+                "target_user_id": target_user_id,
+                "event_id": event_id,
+                "certificate_number": certificate_number,
+            },
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_certificate_revoke(
+        self,
+        user_id: int,
+        certificate_id: int,
+        certificate_number: str,
+        reason: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log CPE certificate revocation."""
+        return await self.log(
+            action="CERTIFICATE_REVOKE",
+            user_id=user_id,
+            resource_type="CERTIFICATE",
+            resource_id=certificate_id,
+            details={
+                "certificate_number": certificate_number,
+                "reason": reason,
+            },
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_certificate_download(
+        self,
+        user_id: int,
+        certificate_id: int,
+        certificate_number: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log CPE certificate PDF download."""
+        return await self.log(
+            action="CERTIFICATE_DOWNLOAD",
+            user_id=user_id,
+            resource_type="CERTIFICATE",
+            resource_id=certificate_id,
+            details={"certificate_number": certificate_number},
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_bulk_certificate_issue(
+        self,
+        user_id: int,
+        event_id: int,
+        count: int,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log bulk CPE certificate issuance."""
+        return await self.log(
+            action="BULK_CERTIFICATE_ISSUE",
+            user_id=user_id,
+            resource_type="CERTIFICATE",
+            details={"event_id": event_id, "count": count},
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_instance_create(
+        self,
+        user_id: int,
+        instance_id: int,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log instance creation."""
+        return await self.log(
+            action="INSTANCE_CREATE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            resource_id=instance_id,
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_instance_delete(
+        self,
+        user_id: int,
+        instance_id: int,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log instance deletion."""
+        return await self.log(
+            action="INSTANCE_DELETE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            resource_id=instance_id,
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_instance_update(
+        self,
+        user_id: int,
+        instance_id: int,
+        changes: Dict[str, Any],
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log instance update."""
+        return await self.log(
+            action="INSTANCE_UPDATE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            resource_id=instance_id,
+            details={"changes": changes},
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_bulk_instance_create(
+        self,
+        user_id: int,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log bulk instance creation."""
+        return await self.log(
+            action="BULK_INSTANCE_CREATE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_bulk_instance_delete(
+        self,
+        user_id: int,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log bulk instance deletion."""
+        return await self.log(
+            action="BULK_INSTANCE_DELETE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            details=details,
             ip_address=ip_address,
             user_agent=user_agent
         )

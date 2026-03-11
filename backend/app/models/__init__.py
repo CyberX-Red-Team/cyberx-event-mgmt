@@ -1,4 +1,5 @@
 """SQLAlchemy models."""
+from app.models.role import Role, BaseType
 from app.models.user import User, UserRole
 from app.models.vpn import VPNCredential
 from app.models.session import Session
@@ -8,8 +9,18 @@ from app.models.email_template import EmailTemplate
 from app.models.email_queue import EmailQueue, EmailBatchLog, EmailQueueStatus
 from app.models.email_workflow import EmailWorkflow, WorkflowTriggerEvent
 from app.models.app_setting import AppSetting
+from app.models.cloud_init_template import CloudInitTemplate
+from app.models.instance_template import InstanceTemplate
+from app.models.instance import Instance
+from app.models.license import LicenseProduct, LicenseToken, LicenseSlot
+from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+from app.models.cpe_certificate import CPECertificate, CertificateStatus
+from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, TLSCertificateStatus
+from app.models.agent_task import AgentTask
 
 __all__ = [
+    "Role",
+    "BaseType",
     "User",
     "UserRole",
     "VPNCredential",
@@ -27,4 +38,19 @@ __all__ = [
     "EmailWorkflow",
     "WorkflowTriggerEvent",
     "AppSetting",
+    "CloudInitTemplate",
+    "InstanceTemplate",
+    "Instance",
+    "LicenseProduct",
+    "LicenseToken",
+    "LicenseSlot",
+    "PasswordSyncQueue",
+    "SyncOperation",
+    "CPECertificate",
+    "CertificateStatus",
+    "CAChain",
+    "CAChainStatus",
+    "TLSCertificate",
+    "TLSCertificateStatus",
+    "AgentTask",
 ]

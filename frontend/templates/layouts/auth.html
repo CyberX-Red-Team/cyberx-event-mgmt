@@ -1,19 +1,26 @@
 {% extends "layouts/base.html" %}
 
-{% block body_class %}bg-primary{% endblock %}
+{% block body_class %}cyber-auth{% endblock %}
 
 {% block body %}
 <div id="layoutAuthentication">
+    <!-- Background effects (inside layout to avoid z-index issues) -->
+    <div class="cyber-grid"></div>
+    <div class="cyber-glow cyber-glow-1"></div>
+    <div class="cyber-glow cyber-glow-2"></div>
+    <div class="cyber-glow cyber-glow-3"></div>
+    <div class="scan-line"></div>
+
     <div id="layoutAuthentication_content">
         <main>
             {% block content %}{% endblock %}
         </main>
     </div>
     <div id="layoutAuthentication_footer">
-        <footer class="py-4 mt-auto bg-dark">
+        <footer class="py-4 mt-auto" style="background: rgba(0,0,0,0.4);">
             <div class="container-fluid px-4">
-                <div class="d-flex align-items-center justify-content-between small text-white-50">
-                    <div>Copyright &copy; CyberX Red Team {{ now.year if now else '2024' }}</div>
+                <div class="d-flex align-items-center justify-content-between small" style="color: rgba(255,255,255,0.3);">
+                    <div>Copyright &copy; CyberX Red Team {{ now.year if now else '2026' }}</div>
                 </div>
             </div>
         </footer>
@@ -21,33 +28,334 @@
 </div>
 
 <style>
+    /* ── Base ── */
+    body.cyber-auth {
+        background: #080810 !important;
+        background-color: #080810 !important;
+        overflow-x: hidden;
+    }
+
+    /* Override base.html forced blue gradient */
+    body.cyber-auth.bg-primary {
+        background: #080810 !important;
+    }
+
     #layoutAuthentication {
         display: flex;
         flex-direction: column;
         min-height: 100vh;
+        position: relative;
+        overflow: hidden;
         background: transparent !important;
+        background-color: transparent !important;
     }
 
-    #layoutAuthentication #layoutAuthentication_content {
+    #layoutAuthentication_content {
         min-height: calc(100vh - 60px);
+        display: flex;
+        align-items: center;
+        position: relative;
+        z-index: 2;
         background: transparent !important;
+        background-color: transparent !important;
     }
 
-    #layoutAuthentication #layoutAuthentication_content main {
-        background: transparent !important;
+    #layoutAuthentication_content main {
+        width: 100%;
     }
 
-    #layoutAuthentication #layoutAuthentication_footer {
+    #layoutAuthentication_footer {
         min-height: 60px;
+        position: relative;
+        z-index: 2;
+        background: transparent !important;
+        background-color: transparent !important;
     }
 
-    .bg-primary {
-        background: linear-gradient(135deg, #0061f2 0%, #6900c7 100%) !important;
+    /* ── Animated Grid Background ── */
+    .cyber-grid {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 200%;
+        height: 200%;
+        z-index: 0;
+        pointer-events: none;
+        background-image:
+            linear-gradient(rgba(255, 23, 68, 0.15) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 23, 68, 0.15) 1px, transparent 1px),
+            linear-gradient(rgba(0, 207, 213, 0.07) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 207, 213, 0.07) 1px, transparent 1px);
+        background-size:
+            80px 80px,
+            80px 80px,
+            20px 20px,
+            20px 20px;
+        animation: gridShift 20s linear infinite;
     }
 
-    /* Ensure body gradient shows through all auth page elements */
-    body.bg-primary {
-        background: linear-gradient(135deg, #0061f2 0%, #6900c7 100%) !important;
+    @keyframes gridShift {
+        0% { transform: translate(0, 0); }
+        100% { transform: translate(-80px, -80px); }
+    }
+
+    /* ── Ambient Glow Spots ── */
+    .cyber-glow {
+        position: fixed;
+        border-radius: 50%;
+        z-index: 1;
+        pointer-events: none;
+    }
+
+    .cyber-glow-1 {
+        width: 600px;
+        height: 600px;
+        top: -150px;
+        right: -100px;
+        background: radial-gradient(circle, rgba(255, 23, 68, 0.12) 0%, transparent 70%);
+        animation: glowPulse1 6s ease-in-out infinite;
+    }
+
+    .cyber-glow-2 {
+        width: 500px;
+        height: 500px;
+        bottom: -100px;
+        left: -100px;
+        background: radial-gradient(circle, rgba(0, 207, 213, 0.08) 0%, transparent 70%);
+        animation: glowPulse2 8s ease-in-out infinite;
+    }
+
+    .cyber-glow-3 {
+        width: 400px;
+        height: 400px;
+        top: 40%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: radial-gradient(circle, rgba(255, 23, 68, 0.06) 0%, transparent 70%);
+        animation: glowPulse3 10s ease-in-out infinite;
+    }
+
+    @keyframes glowPulse1 {
+        0%, 100% { opacity: 0.6; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.1); }
+    }
+
+    @keyframes glowPulse2 {
+        0%, 100% { opacity: 0.5; transform: scale(1); }
+        50% { opacity: 0.9; transform: scale(1.15); }
+    }
+
+    @keyframes glowPulse3 {
+        0%, 100% { opacity: 0.4; }
+        50% { opacity: 0.8; }
+    }
+
+    /* ── Scanning Line ── */
+    .scan-line {
+        position: fixed;
+        top: -4px;
+        left: 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, transparent 5%, rgba(255, 23, 68, 0.6) 30%, rgba(255, 23, 68, 0.8) 50%, rgba(255, 23, 68, 0.6) 70%, transparent 95%);
+        box-shadow: 0 0 30px rgba(255, 23, 68, 0.5), 0 0 80px rgba(255, 23, 68, 0.2);
+        z-index: 1;
+        pointer-events: none;
+        animation: scanDown 8s ease-in-out infinite;
+    }
+
+    @keyframes scanDown {
+        0% { top: -4px; opacity: 0; }
+        5% { opacity: 1; }
+        95% { opacity: 1; }
+        100% { top: 100vh; opacity: 0; }
+    }
+
+    /* ── Glassmorphism Card (shared by all auth pages) ── */
+    .cyber-card {
+        background: rgba(12, 12, 22, 0.88) !important;
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 23, 68, 0.25) !important;
+        border-radius: 12px !important;
+        box-shadow:
+            0 0 40px rgba(255, 23, 68, 0.12),
+            0 0 80px rgba(255, 23, 68, 0.05),
+            0 8px 32px rgba(0, 0, 0, 0.6),
+            inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .cyber-card .card-footer {
+        background: rgba(0, 0, 0, 0.3) !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 0 0 12px 12px !important;
+    }
+
+    /* ── Logo Glow ── */
+    .cyber-logo {
+        filter: drop-shadow(0 0 12px rgba(255, 23, 68, 0.6));
+        animation: logoPulse 3s ease-in-out infinite;
+    }
+
+    @keyframes logoPulse {
+        0%, 100% { filter: drop-shadow(0 0 12px rgba(255, 23, 68, 0.6)); }
+        50% { filter: drop-shadow(0 0 24px rgba(255, 23, 68, 0.9)) drop-shadow(0 0 48px rgba(255, 23, 68, 0.3)); }
+    }
+
+    /* ── Typography ── */
+    .cyber-title {
+        color: #f0f0f0;
+        font-weight: 300;
+        letter-spacing: 2px;
+        text-shadow: 0 0 20px rgba(255, 23, 68, 0.3);
+    }
+
+    .cyber-subtitle {
+        color: rgba(255, 23, 68, 0.7);
+        font-size: 0.7rem;
+        letter-spacing: 4px;
+        text-transform: uppercase;
+        text-shadow: 0 0 10px rgba(255, 23, 68, 0.3);
+    }
+
+    /* ── Form Inputs ── */
+    .cyber-card .form-control {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #e0e0e0;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+    }
+
+    .cyber-card .form-control::placeholder {
+        color: rgba(255, 255, 255, 0.25);
+    }
+
+    .cyber-card .form-control:focus {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: #ff1744;
+        color: #f0f0f0;
+        box-shadow: 0 0 0 0.2rem rgba(255, 23, 68, 0.15), 0 0 12px rgba(255, 23, 68, 0.3);
+    }
+
+    .cyber-card label {
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    /* ── Button ── */
+    .btn-cyber {
+        background: linear-gradient(135deg, #d32f2f, #ff1744);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1.5rem;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        box-shadow: 0 0 15px rgba(255, 23, 68, 0.3);
+    }
+
+    .btn-cyber:hover {
+        color: #fff;
+        box-shadow: 0 0 25px rgba(255, 23, 68, 0.6), 0 0 50px rgba(255, 23, 68, 0.3);
+        transform: translateY(-1px);
+    }
+
+    .btn-cyber:active {
+        transform: translateY(0);
+    }
+
+    /* ── Links ── */
+    .cyber-card a {
+        color: rgba(255, 23, 68, 0.7);
+        text-decoration: none;
+        transition: color 0.2s;
+    }
+
+    .cyber-card a:hover {
+        color: #ff1744;
+        text-shadow: 0 0 8px rgba(255, 23, 68, 0.3);
+    }
+
+    /* Buttons used as links keep white text */
+    .cyber-card a.btn-cyber,
+    .cyber-card a.btn-cyber:hover {
+        color: #fff;
+    }
+
+    /* ── Alerts ── */
+    .cyber-card .alert-danger {
+        background: rgba(255, 23, 68, 0.1);
+        border: 1px solid rgba(255, 23, 68, 0.3);
+        color: #ff6e7f;
+    }
+
+    .cyber-card .alert-danger .btn-close {
+        filter: invert(1) brightness(0.8);
+    }
+
+    .cyber-card .alert-success {
+        background: rgba(0, 172, 105, 0.1);
+        border: 1px solid rgba(0, 172, 105, 0.3);
+        color: #69f0ae;
+    }
+
+    .cyber-card .alert-success .btn-close {
+        filter: invert(1) brightness(0.8);
+    }
+
+    /* ── Footer Text ── */
+    .cyber-card .card-footer .text-muted {
+        color: rgba(255, 255, 255, 0.25) !important;
+    }
+
+    /* ── Override base.html forced-light auth page styles ── */
+    body.cyber-auth #layoutAuthentication {
+        --bg-primary: transparent;
+        --bg-secondary: transparent;
+        --bg-card: rgba(12, 12, 22, 0.88);
+        --text-primary: #e0e0e0;
+        --text-secondary: rgba(255, 255, 255, 0.5);
+        --border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    body.cyber-auth #layoutAuthentication .card.cyber-card {
+        background: rgba(12, 12, 22, 0.88) !important;
+        color: #e0e0e0 !important;
+    }
+
+    body.cyber-auth #layoutAuthentication .card.cyber-card .card-header,
+    body.cyber-auth #layoutAuthentication .card.cyber-card .card-footer {
+        background: rgba(0, 0, 0, 0.3) !important;
+        color: rgba(255, 255, 255, 0.25) !important;
+    }
+
+    body.cyber-auth #layoutAuthentication .card.cyber-card .form-control,
+    body.cyber-auth #layoutAuthentication .card.cyber-card .form-select {
+        background: rgba(255, 255, 255, 0.05) !important;
+        color: #e0e0e0 !important;
+        border-color: rgba(255, 255, 255, 0.12) !important;
+    }
+
+    body.cyber-auth #layoutAuthentication .card.cyber-card .form-control:focus {
+        background: rgba(255, 255, 255, 0.08) !important;
+        border-color: #ff1744 !important;
+        color: #f0f0f0 !important;
+        box-shadow: 0 0 0 0.2rem rgba(255, 23, 68, 0.15), 0 0 12px rgba(255, 23, 68, 0.3) !important;
+    }
+
+    /* Nuclear override: force all elements in auth layout to transparent bg */
+    body.cyber-auth #layoutAuthentication,
+    body.cyber-auth #layoutAuthentication > *:not(.cyber-grid):not(.cyber-glow):not(.scan-line),
+    body.cyber-auth #layoutAuthentication_content,
+    body.cyber-auth #layoutAuthentication_content > *,
+    body.cyber-auth #layoutAuthentication_footer {
+        background-color: transparent !important;
     }
 </style>
 {% endblock %}

@@ -104,8 +104,6 @@ async def import_participants(csv_path: str) -> int:
                         # Account Status
                         confirmed=row.get('Confirmed', 'UNKNOWN').strip().upper(),
                         email_status=row.get('EmailStatus', 'GOOD').strip().upper(),
-                        future_participation=row.get('FutureParticipation', 'UNKNOWN').strip(),
-                        remove_permanently=row.get('RemovePermanently', 'UNKNOWN').strip(),
 
                         # Credentials
                         pandas_username=row.get('PandasUsername', '').strip() or None,
@@ -115,29 +113,19 @@ async def import_participants(csv_path: str) -> int:
                         # Discord
                         discord_username=row.get('DiscordUsername', '').strip() or None,
                         snowflake_id=row.get('SnowflakeId', '').strip() or None,
-                        discord_invite_code=row.get('DiscordInviteCode', '').strip() or None,
-                        discord_invite_sent=parse_timestamp(row.get('DiscordInviteSent')),
 
                         # Communication tracking
-                        invite_id=row.get('InviteId', '').strip() or None,
                         invite_sent=parse_timestamp(row.get('InviteSent')),
                         invite_reminder_sent=parse_timestamp(row.get('InviteReminderSent')),
                         last_invite_sent=parse_timestamp(row.get('LastInviteSent')),
                         password_email_sent=parse_timestamp(row.get('PasswordEmailSent')),
-                        check_microsoft_email_sent=parse_timestamp(row.get('CheckMicrosoftEmailSent')),
                         survey_email_sent=parse_timestamp(row.get('SurveyEmailSent')),
-                        survey_response_timestamp=parse_timestamp(row.get('SurveyResponseTimestamp')),
-                        orientation_invite_email_sent=parse_timestamp(row.get('OrientationInviteEmailSent')),
-                        in_person_email_sent=parse_timestamp(row.get('InPersonEmailSent')),
 
                         # In-person attendance
-                        slated_in_person=parse_boolean(row.get('SlatedInPerson')),
                         confirmed_in_person=parse_boolean(row.get('ConfirmedInPerson')),
 
                         # System fields
                         sponsor_email=row.get('SponsorEmail', '').strip() or None,
-                        azure_object_id=row.get('AzureObjectId', '').strip() or None,
-                        pandas_groups=row.get('PandasGroups', '').strip() or None,
                     )
 
                     # Parse email_status_timestamp (might be a float/unix timestamp)

@@ -6,9 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
     get_db,
-    get_current_admin_user,
-    get_current_sponsor_user,
-    get_current_active_user
+    get_current_active_user,
+    require_permission,
 )
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 from app.api.utils.pagination import calculate_pagination
@@ -28,7 +27,10 @@ from app.schemas.event import (
     ConfirmParticipationRequest,
     ConfirmParticipationResponse,
     ParticipationHistoryResponse,
+    SSHKeyPairResponse,
+    EventSSHPrivateKeyResponse,
 )
+from app.utils.ssh_keys import generate_ssh_keypair
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/events", tags=["Events"])
@@ -38,7 +40,7 @@ router = APIRouter(prefix="/api/events", tags=["Events"])
 
 @router.get("", response_model=EventListResponse)
 async def list_events(
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """List all events."""
@@ -72,38 +74,89 @@ async def list_events(
 @router.get("/active")
 async def get_active_event(
     current_user: User = Depends(get_current_active_user),
-    service: EventService = Depends(get_event_service)
+    service: EventService = Depends(get_event_service),
+    db: AsyncSession = Depends(get_db)
 ):
-    """Get the currently active event."""
+    """Get the currently active event with user's participation data."""
     event = await service.get_active_event()
     if not event:
-        return {"active": False, "event": None}
+        return {"active": False, "event": None, "participation": None}
+
+    event_response = EventResponse(
+        id=event.id,
+        year=event.year,
+        name=event.name,
+        slug=event.slug,
+        start_date=event.start_date,
+        end_date=event.end_date,
+        event_time=event.event_time,
+        event_location=event.event_location,
+        terms_version=event.terms_version,
+        is_active=event.is_active,
+        vpn_available=getattr(event, 'vpn_available', False),
+        test_mode=getattr(event, 'test_mode', False),
+        ssh_public_key="available" if event.ssh_private_key else None,
+        created_at=event.created_at,
+        updated_at=event.updated_at
+    )
+
+    # Get user's participation for this event (includes Discord invite)
+    from sqlalchemy import select
+    from app.models.event import EventParticipation
+    part_result = await db.execute(
+        select(EventParticipation).where(
+            EventParticipation.user_id == current_user.id,
+            EventParticipation.event_id == event.id
+        )
+    )
+    part = part_result.scalar_one_or_none()
+
+    participation_data = None
+    user_perms = current_user.get_effective_permissions()
+    if part and part.discord_invite_code and "discord.view" in user_perms:
+        discord_invite_link = None
+        discord_joined = False
+
+        if part.discord_invite_used_at:
+            discord_joined = True
+        else:
+            # Lazy check: ask Discord if the invite has been consumed
+            from app.config import get_settings
+            settings = get_settings()
+            if settings.DISCORD_INVITE_ENABLED and settings.DISCORD_BOT_TOKEN:
+                try:
+                    from app.services.discord_invite_service import DiscordInviteService
+                    discord_service = DiscordInviteService()
+                    used = await discord_service.check_invite_used(part.discord_invite_code)
+                    if used:
+                        from datetime import datetime, timezone
+                        part.discord_invite_used_at = datetime.now(timezone.utc)
+                        await db.commit()
+                        discord_joined = True
+                    else:
+                        discord_invite_link = f"https://discord.gg/{part.discord_invite_code}"
+                except Exception as e:
+                    logger.warning(f"Failed to check Discord invite status: {e}")
+                    discord_invite_link = f"https://discord.gg/{part.discord_invite_code}"
+            else:
+                discord_invite_link = f"https://discord.gg/{part.discord_invite_code}"
+
+        participation_data = {
+            "discord_invite_link": discord_invite_link,
+            "discord_joined": discord_joined
+        }
 
     return {
         "active": True,
-        "event": EventResponse(
-            id=event.id,
-            year=event.year,
-            name=event.name,
-            slug=event.slug,
-            start_date=event.start_date,
-            end_date=event.end_date,
-            event_time=event.event_time,
-            event_location=event.event_location,
-            terms_version=event.terms_version,
-            is_active=event.is_active,
-            vpn_available=getattr(event, 'vpn_available', False),
-            test_mode=getattr(event, 'test_mode', False),
-            created_at=event.created_at,
-            updated_at=event.updated_at
-        )
+        "event": event_response,
+        "participation": participation_data
     }
 
 
 @router.get("/{event_id}", response_model=EventResponse)
 async def get_event(
     event_id: int,
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """Get a specific event by ID."""
@@ -132,7 +185,7 @@ async def get_event(
 @router.post("", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
 async def create_event(
     data: EventCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.create")),
     service: EventService = Depends(get_event_service)
 ):
     """Create a new event. Admin only."""
@@ -179,7 +232,7 @@ async def create_event(
 async def update_event(
     event_id: int,
     data: EventUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.edit")),
     service: EventService = Depends(get_event_service)
 ):
     """Update an event. Admin only."""
@@ -261,7 +314,7 @@ async def update_event(
 @router.delete("/{event_id}")
 async def delete_event(
     event_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.delete")),
     service: EventService = Depends(get_event_service)
 ):
     """Delete an event. Admin only."""
@@ -280,7 +333,7 @@ async def list_event_participants(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None, description="Filter by status: invited, confirmed, declined, no_response"),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """List participants for an event."""
@@ -328,7 +381,7 @@ async def list_event_participants(
 async def bulk_invite_to_event(
     event_id: int,
     data: BulkInviteRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.edit")),
     service: EventService = Depends(get_event_service)
 ):
     """Bulk invite users to an event. Admin only."""
@@ -451,7 +504,7 @@ async def decline_my_participation(
 
 @router.get("/reports/chronic-non-participants")
 async def get_chronic_non_participants(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """Get list of chronic non-participants (invited 3+ years, never participated)."""
@@ -475,7 +528,7 @@ async def get_chronic_non_participants(
 
 @router.get("/reports/recommended-removals")
 async def get_recommended_removals(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.view")),
     service: EventService = Depends(get_event_service)
 ):
     """Get list of invitees recommended for removal based on participation history."""
@@ -497,3 +550,63 @@ async def get_recommended_removals(
             for u in users
         ]
     }
+
+
+# ============== SSH Key Management ==============
+
+@router.post("/generate-ssh-keys", response_model=SSHKeyPairResponse)
+async def generate_event_ssh_keys(
+    current_user: User = Depends(require_permission("events.edit"))
+):
+    """
+    Generate a new SSH key pair for event instances (admin only).
+
+    Returns the generated public and private keys that can be saved to an event.
+    """
+    public_key, private_key = generate_ssh_keypair()
+
+    return SSHKeyPairResponse(
+        public_key=public_key,
+        private_key=private_key
+    )
+
+
+@router.get("/{event_id}/ssh-private-key", response_model=EventSSHPrivateKeyResponse)
+async def get_event_ssh_private_key(
+    event_id: int,
+    current_user: User = Depends(get_current_active_user),
+    service: EventService = Depends(get_event_service),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get the SSH private key for an event (accessible by confirmed participants).
+
+    Participants can use this key to SSH into their event instances if they
+    don't want to provide their own SSH key.
+    """
+    event = await service.get_event(event_id)
+    if not event:
+        raise not_found(f"Event {event_id} not found")
+
+    # Check if user is a confirmed participant for this event (or is admin)
+    if current_user.role != "admin" and current_user.role != "sponsor":
+        from sqlalchemy import select
+        from app.models.event import EventParticipation
+
+        result = await db.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == current_user.id,
+                EventParticipation.event_id == event_id
+            )
+        )
+        participation = result.scalar_one_or_none()
+
+        if not participation or participation.status != "confirmed":
+            raise forbidden("You must be a confirmed participant to access this event's SSH key")
+
+    return EventSSHPrivateKeyResponse(
+        event_id=event.id,
+        event_name=event.name,
+        ssh_private_key=event.ssh_private_key,
+        has_ssh_key=bool(event.ssh_private_key)
+    )

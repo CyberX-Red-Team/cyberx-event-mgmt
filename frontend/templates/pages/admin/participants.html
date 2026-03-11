@@ -48,9 +48,9 @@
                     <label class="form-label small">Confirmed</label>
                     <select class="form-select" id="confirmedFilter">
                         <option value="">All</option>
-                        <option value="YES">Yes</option>
-                        <option value="NO">No</option>
-                        <option value="UNKNOWN">Unknown</option>
+                        <option value="YES">Confirmed</option>
+                        <option value="NO">Declined</option>
+                        <option value="UNKNOWN">Pending</option>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -78,6 +78,47 @@
                     </button>
                 </div>
             </div>
+            <div class="row g-3 mt-1">
+                <div class="col-md-2">
+                    <label class="form-label small">Role</label>
+                    <select class="form-select" id="roleFilter">
+                        <option value="">All</option>
+                        <option value="admin">Admin</option>
+                        <option value="sponsor">Sponsor</option>
+                        <option value="invitee">Invitee</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Sponsor</label>
+                    <select class="form-select" id="sponsorFilter">
+                        <option value="">All Sponsors</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Country</label>
+                    <select class="form-select" id="countryFilter">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Email Status</label>
+                    <select class="form-select" id="emailStatusFilter">
+                        <option value="">All</option>
+                        <option value="GOOD">Good</option>
+                        <option value="BOUNCED">Bounced</option>
+                        <option value="SPAM_REPORTED">Spam</option>
+                        <option value="UNSUBSCRIBED">Unsubscribed</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Group By</label>
+                    <select class="form-select" id="groupByFilter" onchange="handleGroupByChange()">
+                        <option value="">None</option>
+                        <option value="sponsor">Sponsor</option>
+                        <option value="confirmed">Status</option>
+                    </select>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -95,7 +136,10 @@
                 <button class="btn btn-sm btn-outline-primary me-2" onclick="bulkAssignVPN()">
                     <i data-feather="shield" class="me-1"></i> Assign VPN
                 </button>
-                <button class="btn btn-sm btn-outline-info" onclick="bulkSendEmail()">
+                <button class="btn btn-sm btn-outline-info me-2" onclick="bulkResendInvitation()">
+                    <i data-feather="send" class="me-1"></i> Resend Invitation
+                </button>
+                <button class="btn btn-sm btn-outline-info me-2" onclick="bulkSendEmail()">
                     <i data-feather="mail" class="me-1"></i> Send Email
                 </button>
             </div>
@@ -121,20 +165,21 @@
                             <th width="30">
                                 <input type="checkbox" class="form-check-input" id="selectAll" onclick="toggleSelectAll()">
                             </th>
-                            <th>First Name</th>
-                            <th>Last Name</th>
-                            <th>Email</th>
+                            <th data-sort-key="first_name">First Name</th>
+                            <th data-sort-key="last_name">Last Name</th>
+                            <th data-sort-key="email">Email</th>
                             <th>Username</th>
-                            <th>Confirmed</th>
+                            <th data-sort-key="confirmed">Confirmed</th>
                             <th>VPN</th>
+                            <th title="Keycloak Sync Status">KC</th>
                             <th>Participation</th>
-                            <th>Status</th>
-                            <th width="120">Actions</th>
+                            <th data-sort-key="is_active">Status</th>
+                            <th width="150">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="participantsBody">
                         <tr>
-                            <td colspan="10" class="text-center py-4">
+                            <td colspan="11" class="text-center py-4">
                                 <div class="spinner-border spinner-border-sm me-2"></div>
                                 Loading participants...
                             </td>
@@ -158,7 +203,6 @@
             </div>
         </div>
     </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -166,6 +210,7 @@
 <script>
 let currentPage = 1;
 let selectedIds = new Set();
+let participantSorter;
 
 async function loadParticipants(page = 1) {
     currentPage = page;
@@ -174,12 +219,40 @@ async function loadParticipants(page = 1) {
     const confirmed = document.getElementById('confirmedFilter').value;
     const hasVpn = document.getElementById('vpnFilter').value;
     const isActive = document.getElementById('activeFilter').value;
+    const role = document.getElementById('roleFilter').value;
+    const sponsorId = document.getElementById('sponsorFilter').value;
+    const country = document.getElementById('countryFilter').value;
+    const emailStatus = document.getElementById('emailStatusFilter').value;
+    const groupBy = document.getElementById('groupByFilter').value;
+
+    // Sort: group-by overrides column sort
+    let sortBy, sortOrder;
+    if (groupBy === 'sponsor') {
+        sortBy = 'sponsor_id';
+        sortOrder = 'asc';
+    } else if (groupBy === 'confirmed') {
+        sortBy = 'confirmed';
+        sortOrder = 'asc';
+    } else {
+        const sort = participantSorter.getSort();
+        sortBy = sort.sortBy;
+        sortOrder = sort.sortOrder;
+    }
 
     let url = `/api/admin/participants?page=${page}&page_size=${pageSize}`;
+    url += `&sort_by=${sortBy}&sort_order=${sortOrder}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (confirmed) url += `&confirmed=${confirmed}`;
     if (hasVpn) url += `&has_vpn=${hasVpn}`;
     if (isActive) url += `&is_active=${isActive}`;
+    if (role) url += `&role=${role}`;
+    if (sponsorId) url += `&sponsor_id=${sponsorId}`;
+    if (country) url += `&country=${encodeURIComponent(country)}`;
+    if (emailStatus) url += `&email_status=${emailStatus}`;
+    if (groupBy) {
+        const groupByColumn = groupBy === 'sponsor' ? 'sponsor_id' : groupBy;
+        url += `&group_by=${encodeURIComponent(groupByColumn)}`;
+    }
 
     try {
         const response = await csrfFetch(url);
@@ -198,10 +271,14 @@ async function loadParticipants(page = 1) {
         document.getElementById('showingCount').textContent = data.items.length;
         document.getElementById('totalCount').textContent = data.total;
 
+        // Hide pagination when grouping (all rows returned)
+        const paginationDiv = document.getElementById('pageSizeSelect').closest('.d-flex');
+        paginationDiv.style.display = groupBy ? 'none' : '';
+
     } catch (error) {
         console.error('Error:', error);
         document.getElementById('participantsBody').innerHTML = `
-            <tr><td colspan="10" class="text-center text-danger py-4">
+            <tr><td colspan="11" class="text-center text-danger py-4">
                 Failed to load participants. Please try again.
             </td></tr>
         `;
@@ -210,17 +287,60 @@ async function loadParticipants(page = 1) {
 
 function renderParticipants(participants) {
     const tbody = document.getElementById('participantsBody');
+    const groupBy = document.getElementById('groupByFilter').value;
 
     if (participants.length === 0) {
         tbody.innerHTML = `
-            <tr><td colspan="10" class="text-center py-4 text-muted">
+            <tr><td colspan="11" class="text-center py-4 text-muted">
                 No invitees found matching your criteria.
             </td></tr>
         `;
         return;
     }
 
-    tbody.innerHTML = participants.map(p => `
+    let lastGroupKey = null;
+    let rows = [];
+
+    // Pre-compute group counts
+    const groupCounts = {};
+    if (groupBy) {
+        participants.forEach(p => {
+            let gk;
+            if (groupBy === 'sponsor') gk = p.sponsor ? p.sponsor.id : 0;
+            else if (groupBy === 'confirmed') gk = p.confirmed || 'UNKNOWN';
+            groupCounts[gk] = (groupCounts[gk] || 0) + 1;
+        });
+    }
+
+    participants.forEach(p => {
+        // Insert group header when grouping is active
+        if (groupBy) {
+            let groupKey, groupName, groupIcon;
+            if (groupBy === 'sponsor') {
+                groupKey = p.sponsor ? p.sponsor.id : 0;
+                groupName = p.sponsor ? p.sponsor.full_name : 'No Sponsor';
+                groupIcon = 'user';
+            } else if (groupBy === 'confirmed') {
+                groupKey = p.confirmed || 'UNKNOWN';
+                const labels = { YES: 'Confirmed', NO: 'Declined', UNKNOWN: 'Pending' };
+                groupName = labels[groupKey] || groupKey;
+                groupIcon = groupKey === 'YES' ? 'check-circle' : groupKey === 'NO' ? 'x-circle' : 'clock';
+            }
+            if (groupKey !== lastGroupKey) {
+                rows.push(`
+                    <tr class="table-secondary">
+                        <td colspan="11" class="fw-bold small py-1 ps-3">
+                            <i data-feather="${groupIcon}" style="width:14px;height:14px;" class="me-1"></i>
+                            ${groupName}
+                            <span class="badge bg-secondary ms-2">${groupCounts[groupKey]}</span>
+                        </td>
+                    </tr>
+                `);
+                lastGroupKey = groupKey;
+            }
+        }
+
+        rows.push(`
         <tr class="${p.should_recommend_removal ? 'table-warning' : ''}">
             <td>
                 <input type="checkbox" class="form-check-input participant-checkbox"
@@ -235,16 +355,22 @@ function renderParticipants(participants) {
             <td>${p.email}</td>
             <td><code>${p.pandas_username || '-'}</code></td>
             <td>
-                ${p.confirmed === 'YES'
-                    ? '<span class="badge bg-success">Yes</span>'
-                    : p.confirmed === 'NO'
-                    ? '<span class="badge bg-danger">No</span>'
-                    : '<span class="badge bg-secondary">Unknown</span>'}
+                ${(() => {
+                    const status = p.event_participation_status || p.confirmed;
+                    if (status === 'YES' || status === 'confirmed') return '<span class="badge bg-success">Confirmed</span>';
+                    if (status === 'NO' || status === 'declined') return '<span class="badge bg-danger">Declined</span>';
+                    return '<span class="badge bg-secondary">Pending</span>';
+                })()}
             </td>
             <td>
                 ${p.has_vpn
                     ? `<span class="badge bg-info">${p.vpn_count}</span>`
                     : '<span class="badge bg-warning">0</span>'}
+            </td>
+            <td class="text-center">
+                ${p.keycloak_synced
+                    ? '<i data-feather="check-circle" class="text-success" style="width:16px;height:16px;" title="Synced to Keycloak"></i>'
+                    : '<i data-feather="minus-circle" class="text-secondary" style="width:16px;height:16px;" title="Not synced"></i>'}
             </td>
             <td>
                 <span class="small" title="Years participated / Years invited">
@@ -266,16 +392,29 @@ function renderParticipants(participants) {
                     <a href="/admin/participants/${p.id}" class="btn btn-outline-primary" title="Edit">
                         <i data-feather="edit-2"></i>
                     </a>
+                    ${(() => {
+                        const status = p.event_participation_status || p.confirmed;
+                        const notConfirmed = status !== 'YES' && status !== 'confirmed';
+                        return notConfirmed && p.is_active && (p.role === 'invitee' || p.role === 'sponsor')
+                            ? `<button class="btn btn-outline-info" onclick="resendInvitation(${p.id}, '${p.email}')" title="Resend Invitation">
+                                <i data-feather="send"></i>
+                               </button>`
+                            : '';
+                    })()}
                     <button class="btn btn-outline-danger" onclick="deleteInvitee(${p.id})" title="Delete">
                         <i data-feather="trash-2"></i>
                     </button>
                 </div>
             </td>
         </tr>
-    `).join('');
+    `);
+    });
+
+    tbody.innerHTML = rows.join('');
 
     // Re-initialize feather icons
     feather.replace();
+    makeGroupsCollapsible('participantsBody');
 }
 
 function renderPagination(currentPage, totalPages, total) {
@@ -350,7 +489,52 @@ function clearFilters() {
     document.getElementById('confirmedFilter').value = '';
     document.getElementById('vpnFilter').value = '';
     document.getElementById('activeFilter').value = '';
+    document.getElementById('roleFilter').value = '';
+    document.getElementById('sponsorFilter').value = '';
+    document.getElementById('countryFilter').value = '';
+    document.getElementById('emailStatusFilter').value = '';
+    document.getElementById('groupByFilter').value = '';
+    participantSorter.setDisabled(false);
+    participantSorter.setSort('created_at', 'desc');
     loadParticipants(1);
+}
+
+function handleGroupByChange() {
+    const groupBy = document.getElementById('groupByFilter').value;
+    participantSorter.setDisabled(groupBy !== '');
+    loadParticipants(1);
+}
+
+async function loadSponsorList() {
+    try {
+        const resp = await csrfFetch('/api/admin/sponsors');
+        if (resp.ok) {
+            const sponsors = await resp.json();
+            const sel = document.getElementById('sponsorFilter');
+            sponsors.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = `${s.first_name} ${s.last_name}`;
+                sel.appendChild(opt);
+            });
+        }
+    } catch (e) { console.error('Failed to load sponsors', e); }
+}
+
+async function loadCountryList() {
+    try {
+        const resp = await csrfFetch('/api/public/countries');
+        if (resp.ok) {
+            const data = await resp.json();
+            const sel = document.getElementById('countryFilter');
+            data.countries.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.value;
+                opt.textContent = `${c.flag} ${c.label}`;
+                sel.appendChild(opt);
+            });
+        }
+    } catch (e) { console.error('Failed to load countries', e); }
 }
 
 function toggleSelectAll() {
@@ -406,14 +590,14 @@ async function bulkAction(action) {
         });
 
         const data = await response.json();
-        alert(data.message);
+        showToast(data.message, 'success');
         loadParticipants(currentPage);
         selectedIds.clear();
         updateBulkActionsUI();
 
     } catch (error) {
         console.error('Error:', error);
-        alert('Operation failed. Please try again.');
+        showToast('Operation failed. Please try again.', 'danger');
     }
 }
 
@@ -431,18 +615,106 @@ async function deleteInvitee(id) {
             loadParticipants(currentPage);
         } else {
             const data = await response.json();
-            alert(data.detail || 'Failed to delete invitee');
+            showToast(data.detail || 'Failed to delete invitee', 'danger');
         }
 
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to delete invitee');
+        showToast('Failed to delete invitee', 'danger');
+    }
+}
+
+async function resendInvitation(id, email) {
+    if (!confirm(`Resend invitation email to ${email}?`)) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch(`/api/admin/participants/${id}/resend-invitation`, {
+            method: 'POST'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            showToast(data.message || 'Invitation email queued successfully', 'success');
+            loadParticipants(currentPage);
+        } else {
+            const data = await response.json();
+            showToast(data.detail || 'Failed to resend invitation', 'danger');
+        }
+
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Failed to resend invitation', 'danger');
+    }
+}
+
+async function bulkResendInvitation() {
+    if (selectedIds.size === 0) return;
+
+    const confirmMsg = `Resend invitation emails to ${selectedIds.size} invitee(s)?\n\n` +
+                      `This will:\n` +
+                      `- Generate new confirmation codes\n` +
+                      `- Create EventParticipation records if needed\n` +
+                      `- Queue invitation emails`;
+
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
+    try {
+        let successCount = 0;
+        let failCount = 0;
+        const failedEmails = [];
+
+        // Process each participant individually
+        for (const id of selectedIds) {
+            try {
+                const response = await csrfFetch(`/api/admin/participants/${id}/resend-invitation`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    failCount++;
+                    const data = await response.json();
+                    failedEmails.push(data.detail || `ID ${id}`);
+                }
+            } catch (error) {
+                failCount++;
+                failedEmails.push(`ID ${id}: ${error.message}`);
+            }
+        }
+
+        // Show results
+        let message = `Successfully queued ${successCount} invitation(s)`;
+        if (failCount > 0) {
+            message += `\n\nFailed: ${failCount}\n${failedEmails.join('\n')}`;
+        }
+
+        showToast(message, failCount > 0 ? 'warning' : 'success');
+        loadParticipants(currentPage);
+        selectedIds.clear();
+        updateBulkActionsUI();
+
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Bulk resend operation failed', 'danger');
     }
 }
 
 // Load on page load
 document.addEventListener('DOMContentLoaded', () => {
+    participantSorter = new SortableTable({
+        tableId: 'participantsTable',
+        defaultSort: { column: 'created_at', order: 'desc' },
+        onSort: () => loadParticipants(1)
+    });
+
     loadParticipants(1);
+    loadSponsorList();
+    loadCountryList();
 
     // Enter key triggers search
     document.getElementById('searchInput').addEventListener('keypress', (e) => {

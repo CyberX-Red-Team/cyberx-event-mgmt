@@ -14,7 +14,10 @@ class WorkflowBase(BaseModel):
     priority: int = Field(default=5, ge=1, le=10)
     custom_vars: Optional[Dict[str, Any]] = None
     delay_minutes: Optional[int] = Field(default=None, ge=0)
+    send_immediately: bool = False
     is_enabled: bool = True
+    from_email: Optional[str] = Field(None, max_length=255)
+    from_name: Optional[str] = Field(None, max_length=255)
 
 
 class WorkflowCreate(WorkflowBase):
@@ -31,7 +34,10 @@ class WorkflowUpdate(BaseModel):
     priority: Optional[int] = Field(None, ge=1, le=10)
     custom_vars: Optional[Dict[str, Any]] = None
     delay_minutes: Optional[int] = Field(None, ge=0)
+    send_immediately: Optional[bool] = None
     is_enabled: Optional[bool] = None
+    from_email: Optional[str] = Field(None, max_length=255)
+    from_name: Optional[str] = Field(None, max_length=255)
 
 
 class WorkflowResponse(WorkflowBase):

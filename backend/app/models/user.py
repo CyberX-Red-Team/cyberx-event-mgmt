@@ -1,5 +1,5 @@
 """User/Invitee model."""
-from sqlalchemy import Column, Integer, String, Boolean, BigInteger, TIMESTAMP, Index, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Boolean, BigInteger, TIMESTAMP, Index, ForeignKey, Enum, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -28,11 +28,9 @@ class User(Base):
     # Primary Key
     id = Column(Integer, primary_key=True, index=True)
 
-    # Migration tracking
-    sharepoint_id = Column(String(50), unique=True, nullable=True)
-
     # Basic Information
-    email = Column(String(255), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)  # Original email for sending
+    email_normalized = Column(String(255), unique=True, nullable=False, index=True)  # Normalized for lookups
     first_name = Column(String(255), nullable=False)
     last_name = Column(String(255), nullable=False)
     country = Column(String(100), nullable=False)
@@ -45,6 +43,17 @@ class User(Base):
         index=True
     )
 
+    # Dynamic role (FK to roles table)
+    role_id = Column(
+        Integer,
+        ForeignKey('roles.id', ondelete='SET NULL'),
+        nullable=True,
+        index=True
+    )
+
+    # Per-user permission overrides: {"add": [...], "remove": [...]}
+    permission_overrides = Column(JSON, default=dict, nullable=False)
+
     # Sponsor relationship - who sponsored this invitee
     sponsor_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
     sponsor = relationship("User", remote_side=[id], backref="sponsored_invitees", foreign_keys=[sponsor_id])
@@ -53,13 +62,13 @@ class User(Base):
     sponsor_email = Column(String(255), nullable=True)
 
     # Account Status
+    # DEPRECATED: Use EventParticipation.status for event-specific tracking
+    # This field will be removed once migration is complete
     confirmed = Column(String(20), default='UNKNOWN', nullable=False)  # YES/NO/UNKNOWN
     confirmed_at = Column(TIMESTAMP(timezone=True), nullable=True)  # When user confirmed participation
     decline_reason = Column(String(500), nullable=True)  # Optional reason for declining participation
-    email_status = Column(String(50), default='GOOD', nullable=False)  # GOOD/BOUNCED/SPAM_REPORTED/UNSUBSCRIBE
+    email_status = Column(String(50), default='GOOD', nullable=False)  # GOOD/BOUNCED/SPAM_REPORTED/UNSUBSCRIBED
     email_status_timestamp = Column(BigInteger, nullable=True)
-    future_participation = Column(String(20), default='UNKNOWN')
-    remove_permanently = Column(String(20), default='UNKNOWN')
 
     # Confirmation & Terms
     confirmation_code = Column(String(100), unique=True, nullable=True, index=True)
@@ -71,8 +80,11 @@ class User(Base):
     # Credentials
     pandas_username = Column(String(255), unique=True, nullable=True, index=True)
     _pandas_password_encrypted = Column('pandas_password', String(500), nullable=True)  # Encrypted storage (Fernet)
-    password_phonetic = Column(String(500), nullable=True)
+    _password_phonetic_encrypted = Column('password_phonetic', String(500), nullable=True)  # Encrypted storage (Fernet)
     password_hash = Column(String(255), nullable=True)  # For web portal login (bcrypt)
+
+    # Keycloak Sync Status
+    keycloak_synced = Column(Boolean, default=False, nullable=False)
 
     # Password Reset
     password_reset_token = Column(String(100), unique=True, nullable=True, index=True)
@@ -81,11 +93,8 @@ class User(Base):
     # Discord Integration
     discord_username = Column(String(255), nullable=True)
     snowflake_id = Column(String(100), nullable=True)
-    discord_invite_code = Column(String(50), nullable=True)
-    discord_invite_sent = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # Communication Tracking
-    invite_id = Column(String(50), nullable=True)
     invite_sent = Column(TIMESTAMP(timezone=True), nullable=True)
     invite_reminder_sent = Column(TIMESTAMP(timezone=True), nullable=True)
     last_invite_sent = Column(TIMESTAMP(timezone=True), nullable=True)
@@ -95,19 +104,12 @@ class User(Base):
     reminder_2_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
     reminder_3_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
     password_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
-    check_microsoft_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
     survey_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
-    survey_response_timestamp = Column(TIMESTAMP(timezone=True), nullable=True)
-    orientation_invite_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
-    in_person_email_sent = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # In-Person Attendance
-    slated_in_person = Column(Boolean, default=False)
     confirmed_in_person = Column(Boolean, default=False)
 
     # System Fields
-    azure_object_id = Column(String(100), nullable=True)
-    pandas_groups = Column(String(500), nullable=True)
     is_admin = Column(Boolean, default=False)  # Legacy - use role instead
     is_active = Column(Boolean, default=True)
 
@@ -123,7 +125,15 @@ class User(Base):
         "EventParticipation",
         back_populates="user",
         foreign_keys="EventParticipation.user_id",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    # Dynamic role relationship
+    role_obj = relationship(
+        "Role",
+        back_populates="users",
+        foreign_keys=[role_id]
     )
 
     # Indexes
@@ -134,6 +144,7 @@ class User(Base):
         Index('idx_users_email_status', 'email_status'),
         Index('idx_users_role', 'role'),
         Index('idx_users_sponsor_id', 'sponsor_id'),
+        Index('idx_users_role_id', 'role_id'),
     )
 
     # Helper properties for role checking
@@ -166,6 +177,40 @@ class User(Base):
     def full_name(self) -> str:
         """Get user's full name."""
         return f"{self.first_name} {self.last_name}"
+
+    # Permission resolution methods
+    def get_effective_permissions(self) -> set:
+        """
+        Calculate effective permissions for this user.
+
+        Resolution: (role.permissions + overrides.add) - overrides.remove
+        Falls back to legacy role string if role_obj is not set.
+        """
+        from app.utils.permissions import get_permissions_for_role_string
+
+        # New system: use role relationship
+        if self.role_obj:
+            base_perms = set(self.role_obj.permissions or [])
+            overrides = self.permission_overrides or {}
+            add_perms = set(overrides.get("add", []))
+            remove_perms = set(overrides.get("remove", []))
+            return (base_perms | add_perms) - remove_perms
+
+        # Legacy fallback: derive from role string
+        if self.role:
+            return get_permissions_for_role_string(self.role)
+
+        return set()
+
+    def has_permission(self, *perms: str) -> bool:
+        """Check if user has ALL specified permissions."""
+        effective = self.get_effective_permissions()
+        return all(p in effective for p in perms)
+
+    def has_any_permission(self, *perms: str) -> bool:
+        """Check if user has ANY of the specified permissions."""
+        effective = self.get_effective_permissions()
+        return any(p in effective for p in perms)
 
     # Participation tracking properties
     @property
@@ -214,6 +259,65 @@ class User(Base):
             return True
         return False
 
+    # Event-specific confirmation helpers
+    async def get_participation_for_event(self, event_id: int, session) -> Optional["EventParticipation"]:
+        """
+        Get EventParticipation record for a specific event.
+
+        Args:
+            event_id: The event ID to check
+            session: Database session (AsyncSession)
+
+        Returns:
+            EventParticipation or None if not found
+        """
+        from sqlalchemy import select
+        from app.models.event import EventParticipation
+
+        result = await session.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == self.id,
+                EventParticipation.event_id == event_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def is_confirmed_for_event(self, event_id: int, session) -> bool:
+        """
+        Check if user is confirmed for a specific event.
+
+        Args:
+            event_id: The event ID to check
+            session: Database session (AsyncSession)
+
+        Returns:
+            True if user has confirmed participation for this event
+        """
+        from app.models.event import ParticipationStatus
+
+        participation = await self.get_participation_for_event(event_id, session)
+        return participation and participation.status == ParticipationStatus.CONFIRMED.value
+
+    async def get_current_event_participation(self, session) -> Optional["EventParticipation"]:
+        """
+        Get EventParticipation record for the current active event.
+
+        Args:
+            session: Database session (AsyncSession)
+
+        Returns:
+            EventParticipation for current event or None
+        """
+        from app.services.event_service import EventService
+
+        event_service = EventService(session)
+        event = await event_service.get_current_event()
+
+        if not event:
+            return None
+
+        return await self.get_participation_for_event(event.id, session)
+
     def can_manage_invitee(self, invitee: "User") -> bool:
         """Check if this user can manage a specific invitee."""
         # Admins can manage anyone
@@ -233,6 +337,12 @@ class User(Base):
         Returns:
             Decrypted password or None
         """
+        # Defensive check: if accessed at class level (not instance), return None
+        # This prevents errors during SQLAlchemy inspection or class-level access
+        from sqlalchemy.orm.attributes import InstrumentedAttribute
+        if isinstance(self._pandas_password_encrypted, InstrumentedAttribute):
+            return None
+
         if self._pandas_password_encrypted is None:
             return None
 
@@ -270,5 +380,60 @@ class User(Base):
             logger.warning(f"Failed to encrypt pandas_password for user {self.id}: {e}")
             self._pandas_password_encrypted = value
 
+    # Encrypted password_phonetic property
+    @hybrid_property
+    def password_phonetic(self) -> Optional[str]:
+        """Get decrypted password phonetic."""
+        from sqlalchemy.orm.attributes import InstrumentedAttribute
+        if isinstance(self._password_phonetic_encrypted, InstrumentedAttribute):
+            return None
+
+        if self._password_phonetic_encrypted is None:
+            return None
+
+        try:
+            from app.utils.encryption import decrypt_field
+            return decrypt_field(self._password_phonetic_encrypted)
+        except Exception as e:
+            # If decryption fails, assume it's plaintext (backward compatibility)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to decrypt password_phonetic for user {self.id}: {e}")
+            return self._password_phonetic_encrypted
+
+    @password_phonetic.setter
+    def password_phonetic(self, value: Optional[str]) -> None:
+        """Set password phonetic (automatically encrypts)."""
+        if value is None:
+            self._password_phonetic_encrypted = None
+            return
+
+        try:
+            from app.utils.encryption import encrypt_field
+            self._password_phonetic_encrypted = encrypt_field(value)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to encrypt password_phonetic for user {self.id}: {e}")
+            self._password_phonetic_encrypted = value
+
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, role={self.role}, name={self.full_name})>"
+
+
+# Event listener to automatically set email_normalized from email
+from sqlalchemy import event
+
+
+@event.listens_for(User, 'before_insert')
+@event.listens_for(User, 'before_update')
+def normalize_user_email(mapper, connection, target):
+    """
+    Automatically normalize email when User is created or updated.
+
+    This ensures email_normalized is always set correctly, even when
+    tests or code create User objects without explicitly setting it.
+    """
+    if target.email and not target.email_normalized:
+        from app.api.utils.validation import normalize_email
+        target.email_normalized = normalize_email(target.email)

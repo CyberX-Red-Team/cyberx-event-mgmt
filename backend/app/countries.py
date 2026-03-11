@@ -6,7 +6,7 @@ COUNTRIES = [
     ("United States", "🇺🇸", "United States"),
     ("Canada", "🇨🇦", "Canada"),
     ("United Kingdom", "🇬🇧", "United Kingdom"),
-    # ("Australia", "🇦🇺", "Australia"),
+    ("Australia", "🇦🇺", "Australia"),
     # ("Germany", "🇩🇪", "Germany"),
     # ("France", "🇫🇷", "France"),
     # ("Japan", "🇯🇵", "Japan"),

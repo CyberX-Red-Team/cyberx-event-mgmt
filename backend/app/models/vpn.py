@@ -30,10 +30,25 @@ class VPNCredential(Base):
     endpoint = Column(String(100), nullable=False)  # "216.208.235.11:51020"
     key_type = Column(String(20), nullable=False)   # cyber/kinetic
 
+    # Optional fields from original config (NULL if not present - preserves exact structure)
+    mtu = Column(String(10), nullable=True)  # MTU from original config
+    dns = Column(Text, nullable=True)  # DNS servers from original config
+    public_key = Column(Text, nullable=True)  # Server public key from original config
+    allowed_ips = Column(Text, nullable=True)  # AllowedIPs from original config
+    persistent_keepalive = Column(String(10), nullable=True)  # PersistentKeepalive from original config
+    table = Column(String(20), nullable=True)  # Table from original config (routing table number or "off")
+    save_config = Column(String(10), nullable=True)  # SaveConfig from original config (true/false)
+    fwmark = Column(String(20), nullable=True)  # FwMark from original config (firewall mark)
+
     # Assignment
+    assignment_type = Column(String(30), default="USER_REQUESTABLE", nullable=False)  # USER_REQUESTABLE, INSTANCE_AUTO_ASSIGN, RESERVED
     assigned_to_username = Column(String(255), nullable=True)
     assigned_to_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    assigned_to_email = Column(String(255), nullable=True)  # Snapshot: survives user deletion
+    assigned_to_name = Column(String(500), nullable=True)   # Snapshot: survives user deletion
     assigned_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    assigned_to_instance_id = Column(Integer, ForeignKey('instances.id', ondelete='SET NULL'), nullable=True)
+    assigned_instance_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # Tracking
     file_hash = Column(String(64), nullable=True)
@@ -51,6 +66,7 @@ class VPNCredential(Base):
 
     # Relationships
     assigned_to_user = relationship("User", backref="vpn_credentials", foreign_keys=[assigned_to_user_id])
+    assigned_to_instance = relationship("Instance", backref="vpn_credentials", foreign_keys=[assigned_to_instance_id])
 
     # Indexes
     __table_args__ = (
@@ -59,6 +75,8 @@ class VPNCredential(Base):
         Index('idx_vpn_key_type', 'key_type'),
         Index('idx_vpn_assigned_to_username', 'assigned_to_username'),
         Index('idx_vpn_request_batch_id', 'request_batch_id'),
+        Index('idx_vpn_assignment_type', 'assignment_type'),
+        Index('idx_vpn_assigned_to_instance_id', 'assigned_to_instance_id'),
     )
 
     def __repr__(self):

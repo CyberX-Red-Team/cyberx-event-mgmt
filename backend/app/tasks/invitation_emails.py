@@ -1,10 +1,11 @@
 """Automated invitation email task for event activation."""
 import logging
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select
+from sqlalchemy import select, and_, or_
 
 from app.database import AsyncSessionLocal
 from app.models.user import User
+from app.models.event import EventParticipation, ParticipationStatus
 
 
 logger = logging.getLogger(__name__)
@@ -57,8 +58,20 @@ async def send_invitations_to_unknown_participants(event_id: int, event_name: st
                 # Test mode: Only sponsors (regardless of registration status)
                 query = (
                     select(User)
+                    .outerjoin(EventParticipation, and_(
+                        EventParticipation.user_id == User.id,
+                        EventParticipation.event_id == event.id
+                    ))
                     .where(User.role == 'sponsor')
-                    .where(User.confirmed == 'UNKNOWN')
+                    .where(or_(
+                        # No participation record yet (newly added user)
+                        EventParticipation.id.is_(None),
+                        # Has participation but not confirmed/declined
+                        EventParticipation.status.in_([
+                            ParticipationStatus.INVITED.value,
+                            ParticipationStatus.NO_RESPONSE.value
+                        ])
+                    ))
                     .where(User.confirmation_sent_at.is_(None))  # Never sent before
                     .where(User.is_active == True)
                 )
@@ -67,8 +80,20 @@ async def send_invitations_to_unknown_participants(event_id: int, event_name: st
                 # Production mode: All invitees and sponsors (registration must be open)
                 query = (
                     select(User)
+                    .outerjoin(EventParticipation, and_(
+                        EventParticipation.user_id == User.id,
+                        EventParticipation.event_id == event.id
+                    ))
                     .where(User.role.in_(['invitee', 'sponsor']))
-                    .where(User.confirmed == 'UNKNOWN')
+                    .where(or_(
+                        # No participation record yet (newly added user)
+                        EventParticipation.id.is_(None),
+                        # Has participation but not confirmed/declined
+                        EventParticipation.status.in_([
+                            ParticipationStatus.INVITED.value,
+                            ParticipationStatus.NO_RESPONSE.value
+                        ])
+                    ))
                     .where(User.confirmation_sent_at.is_(None))  # Never sent before
                     .where(User.is_active == True)
                 )
@@ -78,23 +103,43 @@ async def send_invitations_to_unknown_participants(event_id: int, event_name: st
             participants = result.scalars().all()
 
             if not participants:
-                logger.info(f"No participants with UNKNOWN status found for event {event_name} ({role_desc})")
+                logger.info(f"No unconfirmed participants found for event {event_name} ({role_desc})")
                 return
 
             # Log statistics about filtering
-            # Count total UNKNOWN users (without confirmation_sent_at filter) for comparison
+            # Count total not-yet-confirmed users (without confirmation_sent_at filter) for comparison
             if test_mode:
                 total_query = (
                     select(User)
+                    .outerjoin(EventParticipation, and_(
+                        EventParticipation.user_id == User.id,
+                        EventParticipation.event_id == event.id
+                    ))
                     .where(User.role == 'sponsor')
-                    .where(User.confirmed == 'UNKNOWN')
+                    .where(or_(
+                        EventParticipation.id.is_(None),
+                        EventParticipation.status.in_([
+                            ParticipationStatus.INVITED.value,
+                            ParticipationStatus.NO_RESPONSE.value
+                        ])
+                    ))
                     .where(User.is_active == True)
                 )
             else:
                 total_query = (
                     select(User)
+                    .outerjoin(EventParticipation, and_(
+                        EventParticipation.user_id == User.id,
+                        EventParticipation.event_id == event.id
+                    ))
                     .where(User.role.in_(['invitee', 'sponsor']))
-                    .where(User.confirmed == 'UNKNOWN')
+                    .where(or_(
+                        EventParticipation.id.is_(None),
+                        EventParticipation.status.in_([
+                            ParticipationStatus.INVITED.value,
+                            ParticipationStatus.NO_RESPONSE.value
+                        ])
+                    ))
                     .where(User.is_active == True)
                 )
 

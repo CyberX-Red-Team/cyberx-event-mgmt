@@ -61,7 +61,7 @@
 {% block content %}
 <!-- Page Header -->
 <header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
-    <div class="container-xl px-4">
+    <div class="container-fluid px-4">
         <div class="page-header-content pt-4">
             <div class="row align-items-center justify-content-between">
                 <div class="col-auto mt-4">
@@ -83,7 +83,7 @@
 </header>
 
 <!-- Main Content -->
-<div class="container-xl px-4 mt-n10">
+<div class="container-fluid px-4 mt-n10">
     <!-- Tab Navigation -->
     <div class="card mb-4">
         <div class="card-header p-0">
@@ -680,14 +680,21 @@
                 <div class="card-body">
                     <!-- Pending Emails Section -->
                     <div class="mb-4">
-                        <h6 class="mb-3">
-                            <span class="badge bg-warning text-dark me-2">Pending</span>
-                            <span class="text-muted small" id="pendingCount">-</span>
-                        </h6>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="mb-0">
+                                <span class="badge bg-warning text-dark me-2">Pending</span>
+                                <span class="text-muted small" id="pendingCount">-</span>
+                            </h6>
+                            <button class="btn btn-sm btn-outline-danger d-none" id="bulkCancelBtn" onclick="bulkCancelEmails()">
+                                <i data-feather="x-circle" class="feather-sm me-1"></i>
+                                Cancel Selected (<span id="bulkCancelCount">0</span>)
+                            </button>
+                        </div>
                         <div class="table-responsive">
                             <table class="table table-hover table-sm">
                                 <thead>
                                     <tr>
+                                        <th style="width: 30px;"><input type="checkbox" id="selectAllPending" onchange="toggleSelectAllPending(this)"></th>
                                         <th>ID</th>
                                         <th>Recipient</th>
                                         <th>Template</th>
@@ -701,13 +708,26 @@
                                 </thead>
                                 <tbody id="pendingQueueBody">
                                     <tr>
-                                        <td colspan="9" class="text-center py-4">
+                                        <td colspan="10" class="text-center py-4">
                                             <div class="spinner-border spinner-border-sm me-2"></div>
                                             Loading pending emails...
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                        <div id="pendingPagination" class="d-none">
+                            <nav class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted" id="pendingPageInfo"></small>
+                                <ul class="pagination pagination-sm mb-0">
+                                    <li class="page-item" id="pendingPrevPage">
+                                        <a class="page-link" href="#" onclick="changePendingPage(-1); return false;">&laquo; Prev</a>
+                                    </li>
+                                    <li class="page-item" id="pendingNextPage">
+                                        <a class="page-link" href="#" onclick="changePendingPage(1); return false;">Next &raquo;</a>
+                                    </li>
+                                </ul>
+                            </nav>
                         </div>
                     </div>
 
@@ -742,6 +762,19 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                        <div id="recentPagination" class="d-none">
+                            <nav class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted" id="recentPageInfo"></small>
+                                <ul class="pagination pagination-sm mb-0">
+                                    <li class="page-item" id="recentPrevPage">
+                                        <a class="page-link" href="#" onclick="changeRecentPage(-1); return false;">&laquo; Prev</a>
+                                    </li>
+                                    <li class="page-item" id="recentNextPage">
+                                        <a class="page-link" href="#" onclick="changeRecentPage(1); return false;">Next &raquo;</a>
+                                    </li>
+                                </ul>
+                            </nav>
                         </div>
                     </div>
                 </div>
@@ -1085,7 +1118,7 @@ function renderTemplatesTable() {
             <td>
                 ${t.is_system
                     ? '<span class="badge bg-info">System</span>'
-                    : '<span class="badge bg-light text-dark">Custom</span>'}
+                    : '<span class="badge bg-secondary">Custom</span>'}
                 ${t.sendgrid_template_id
                     ? '<span class="badge bg-primary ms-1" title="Uses SendGrid dynamic template">SendGrid</span>'
                     : ''}
@@ -1165,7 +1198,7 @@ async function editTemplate(id) {
         feather.replace();
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load template');
+        showToast('Failed to load template', 'danger');
     }
 }
 
@@ -1199,10 +1232,10 @@ async function saveTemplate() {
 
         bootstrap.Modal.getInstance(document.getElementById('templateModal')).hide();
         loadTemplates();
-        alert('Template saved successfully');
+        showToast('Template saved successfully', 'success');
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -1222,7 +1255,7 @@ async function deleteTemplate(id) {
         loadTemplates();
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -1241,10 +1274,10 @@ async function duplicateTemplate(id) {
         }
 
         loadTemplates();
-        alert('Template duplicated successfully');
+        showToast('Template duplicated successfully', 'success');
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -1270,7 +1303,7 @@ async function previewTemplate(id) {
         new bootstrap.Modal(document.getElementById('previewModal')).show();
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to preview template');
+        showToast('Failed to preview template', 'danger');
     }
 }
 
@@ -1374,10 +1407,10 @@ async function loadFilteredRecipients() {
         });
 
         updateSelectedRecipientsUI();
-        alert(`Loaded ${data.items.length} recipients`);
+        showToast(`Loaded ${data.items.length} recipients`, 'info');
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load recipients');
+        showToast('Failed to load recipients', 'danger');
     }
 }
 
@@ -1441,7 +1474,7 @@ function updateSelectedRecipientsUI() {
 function previewComposedEmail() {
     const templateId = document.getElementById('composeTemplate').value;
     if (!templateId) {
-        alert('Please select a template');
+        showToast('Please select a template', 'warning');
         return;
     }
     previewTemplate(parseInt(templateId));
@@ -1452,12 +1485,12 @@ async function sendComposedEmail() {
     const customSubject = document.getElementById('composeSubject').value.trim() || null;
 
     if (!templateId) {
-        alert('Please select a template');
+        showToast('Please select a template', 'warning');
         return;
     }
 
     if (selectedRecipients.size === 0) {
-        alert('Please select at least one recipient');
+        showToast('Please select at least one recipient', 'warning');
         return;
     }
 
@@ -1475,7 +1508,7 @@ async function sendComposedEmail() {
         });
 
         const data = await response.json();
-        alert(data.message);
+        showToast(data.message, data.success ? 'success' : 'danger');
 
         if (data.success) {
             clearSelectedRecipients();
@@ -1485,7 +1518,7 @@ async function sendComposedEmail() {
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to send emails');
+        showToast('Failed to send emails', 'danger');
     }
 }
 
@@ -1803,14 +1836,14 @@ async function sendTestEmail() {
     const subject = document.getElementById('testEmailSubject').value.trim() || null;
 
     if (!toEmail) {
-        alert('Please enter a recipient email address');
+        showToast('Please enter a recipient email address', 'warning');
         return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(toEmail)) {
-        alert('Please enter a valid email address');
+        showToast('Please enter a valid email address', 'warning');
         return;
     }
 
@@ -2215,10 +2248,46 @@ async function loadQueueStats() {
     }
 }
 
+// Pagination state
+let pendingPage = 1;
+let pendingTotalPages = 1;
+let recentPage = 1;
+let recentTotalPages = 1;
+const QUEUE_PAGE_SIZE = 50;
+
+function changePendingPage(delta) {
+    pendingPage = Math.max(1, Math.min(pendingPage + delta, pendingTotalPages));
+    loadEmailQueue();
+}
+
+function changeRecentPage(delta) {
+    recentPage = Math.max(1, Math.min(recentPage + delta, recentTotalPages));
+    loadEmailQueue();
+}
+
+function updatePaginationControls(prefix, page, totalPages, total, pageSize) {
+    const paginationEl = document.getElementById(`${prefix}Pagination`);
+    const pageInfoEl = document.getElementById(`${prefix}PageInfo`);
+    const prevEl = document.getElementById(`${prefix}PrevPage`);
+    const nextEl = document.getElementById(`${prefix}NextPage`);
+
+    if (total <= pageSize) {
+        paginationEl.classList.add('d-none');
+        return;
+    }
+
+    paginationEl.classList.remove('d-none');
+    const start = (page - 1) * pageSize + 1;
+    const end = Math.min(page * pageSize, total);
+    pageInfoEl.textContent = `Showing ${start}-${end} of ${total}`;
+    prevEl.classList.toggle('disabled', page <= 1);
+    nextEl.classList.toggle('disabled', page >= totalPages);
+}
+
 async function loadEmailQueue() {
     // Show loading spinners
     document.getElementById('pendingQueueBody').innerHTML =
-        '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading pending emails...</td></tr>';
+        '<tr><td colspan="10" class="text-center py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading pending emails...</td></tr>';
     document.getElementById('recentQueueBody').innerHTML =
         '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading recent activity...</td></tr>';
 
@@ -2231,24 +2300,30 @@ async function loadEmailQueue() {
     });
 
     try {
-        // Load pending emails
-        const pendingResponse = await csrfFetch('/api/admin/email-queue?page_size=100&status=pending');
+        // Load pending emails with pagination
+        const pendingResponse = await csrfFetch(`/api/admin/email-queue?page=${pendingPage}&page_size=${QUEUE_PAGE_SIZE}&status=pending`);
         if (!pendingResponse.ok) throw new Error('Failed to load pending queue');
         const pendingData = await pendingResponse.json();
+        pendingTotalPages = pendingData.total_pages || 1;
 
-        // Load recent non-pending emails (within past hour)
+        // Load recent non-pending emails with pagination
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-        const recentResponse = await csrfFetch(`/api/admin/email-queue?page_size=100&exclude_status=pending&since=${oneHourAgo}`);
+        const recentResponse = await csrfFetch(`/api/admin/email-queue?page=${recentPage}&page_size=${QUEUE_PAGE_SIZE}&exclude_status=pending&since=${oneHourAgo}`);
         if (!recentResponse.ok) throw new Error('Failed to load recent queue');
         const recentData = await recentResponse.json();
+        recentTotalPages = recentData.total_pages || 1;
 
         // Render both sections
-        renderPendingQueueTable(pendingData.items);
-        renderRecentQueueTable(recentData.items);
+        renderPendingQueueTable(pendingData.items, pendingData.total);
+        renderRecentQueueTable(recentData.items, recentData.total);
+
+        // Update pagination controls
+        updatePaginationControls('pending', pendingPage, pendingTotalPages, pendingData.total, QUEUE_PAGE_SIZE);
+        updatePaginationControls('recent', recentPage, recentTotalPages, recentData.total, QUEUE_PAGE_SIZE);
     } catch (error) {
         console.error('Error loading queue:', error);
         document.getElementById('pendingQueueBody').innerHTML =
-            '<tr><td colspan="9" class="text-center text-danger py-4">Failed to load pending emails</td></tr>';
+            '<tr><td colspan="10" class="text-center text-danger py-4">Failed to load pending emails</td></tr>';
         document.getElementById('recentQueueBody').innerHTML =
             '<tr><td colspan="9" class="text-center text-danger py-4">Failed to load recent activity</td></tr>';
     } finally {
@@ -2262,23 +2337,30 @@ async function loadEmailQueue() {
     }
 }
 
-function renderPendingQueueTable(items) {
+function renderPendingQueueTable(items, total) {
     const tbody = document.getElementById('pendingQueueBody');
-    document.getElementById('pendingCount').textContent = `(${items.length} emails)`;
+    const count = total !== undefined ? total : items.length;
+    document.getElementById('pendingCount').textContent = `(${count} email${count !== 1 ? 's' : ''})`;
+
+    // Reset select-all checkbox and bulk cancel button
+    const selectAll = document.getElementById('selectAllPending');
+    if (selectAll) selectAll.checked = false;
+    updateBulkCancelBtn();
 
     if (items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">No pending emails</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">No pending emails</td></tr>';
         return;
     }
 
     tbody.innerHTML = items.map(item => {
         const createdAt = formatDateTime(item.created_at);
         const scheduledFor = item.scheduled_for ? formatDateTime(item.scheduled_for) : '-';
-        const batchId = item.batch_id ? `<code class="small">${item.batch_id.substring(0, 8)}</code>` : '-';
+        const batchId = item.batch_id ? `<code class="small">${item.batch_id}</code>` : '-';
         const priorityBadge = item.priority <= 2 ? 'danger' : item.priority <= 5 ? 'warning' : 'secondary';
 
         return `
             <tr>
+                <td><input type="checkbox" class="pending-email-cb" value="${item.id}" onchange="updateBulkCancelBtn()"></td>
                 <td class="small">${item.id}</td>
                 <td class="small">
                     <div>${item.recipient_name || '-'}</div>
@@ -2302,9 +2384,10 @@ function renderPendingQueueTable(items) {
     feather.replace();
 }
 
-function renderRecentQueueTable(items) {
+function renderRecentQueueTable(items, total) {
     const tbody = document.getElementById('recentQueueBody');
-    document.getElementById('recentCount').textContent = `(${items.length} emails)`;
+    const count = total !== undefined ? total : items.length;
+    document.getElementById('recentCount').textContent = `(${count} email${count !== 1 ? 's' : ''})`;
 
     if (items.length === 0) {
         tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">No recent activity</td></tr>';
@@ -2315,7 +2398,7 @@ function renderRecentQueueTable(items) {
         const statusBadge = getQueueStatusBadge(item.status);
         const createdAt = formatDateTime(item.created_at);
         const completedAt = item.sent_at || item.processed_at ? formatDateTime(item.sent_at || item.processed_at) : '-';
-        const batchId = item.batch_id ? `<code class="small">${item.batch_id.substring(0, 8)}</code>` : '-';
+        const batchId = item.batch_id ? `<code class="small">${item.batch_id}</code>` : '-';
         const priorityBadge = item.priority <= 2 ? 'danger' : item.priority <= 5 ? 'warning' : 'secondary';
 
         return `
@@ -2410,18 +2493,64 @@ async function triggerManualBatch() {
         const data = await response.json();
 
         if (data.success) {
-            alert(`Batch processed: ${data.total_sent} sent, ${data.total_failed} failed`);
+            showToast(`Batch processed: ${data.total_sent} sent, ${data.total_failed} failed`, 'success');
             await loadQueueTab();
         } else {
-            alert('Failed to process batch: ' + data.message);
+            showToast('Failed to process batch: ' + data.message, 'danger');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to trigger batch processing');
+        showToast('Failed to trigger batch processing', 'danger');
     } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
         feather.replace();
+    }
+}
+
+function toggleSelectAllPending(checkbox) {
+    document.querySelectorAll('.pending-email-cb').forEach(cb => cb.checked = checkbox.checked);
+    updateBulkCancelBtn();
+}
+
+function updateBulkCancelBtn() {
+    const checked = document.querySelectorAll('.pending-email-cb:checked');
+    const btn = document.getElementById('bulkCancelBtn');
+    const count = document.getElementById('bulkCancelCount');
+    if (checked.length > 0) {
+        btn.classList.remove('d-none');
+        count.textContent = checked.length;
+    } else {
+        btn.classList.add('d-none');
+    }
+}
+
+async function bulkCancelEmails() {
+    const checked = document.querySelectorAll('.pending-email-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    if (ids.length === 0) return;
+
+    if (!confirm(`Cancel ${ids.length} queued email(s)?`)) return;
+
+    try {
+        const response = await csrfFetch('/api/admin/email-queue/bulk-cancel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email_ids: ids })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(data.message, 'success');
+            await loadEmailQueue();
+            await loadQueueStats();
+        } else {
+            showToast('Failed to cancel emails: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Failed to cancel emails', 'danger');
     }
 }
 
@@ -2436,15 +2565,15 @@ async function cancelQueuedEmail(emailId) {
         const data = await response.json();
 
         if (data.success) {
-            alert('Email cancelled successfully');
+            showToast('Email cancelled successfully', 'success');
             await loadEmailQueue();
             await loadQueueStats();
         } else {
-            alert('Failed to cancel email: ' + data.message);
+            showToast('Failed to cancel email: ' + data.message, 'danger');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to cancel email');
+        showToast('Failed to cancel email', 'danger');
     }
 }
 

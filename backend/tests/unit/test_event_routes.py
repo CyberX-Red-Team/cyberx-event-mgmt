@@ -121,13 +121,20 @@ class TestEventListingRoutes:
         mock_event.is_active = True
         mock_event.vpn_available = True
         mock_event.test_mode = False
+        mock_event.ssh_private_key = None
         mock_event.created_at = datetime.now(timezone.utc)
         mock_event.updated_at = datetime.now(timezone.utc)
 
         mock_service = mocker.Mock()
         mock_service.get_active_event = mocker.AsyncMock(return_value=mock_event)
 
-        result = await get_active_event(current_user=mock_user, service=mock_service)
+        # Mock db session for participation query
+        mock_part_result = mocker.Mock()
+        mock_part_result.scalar_one_or_none = mocker.Mock(return_value=None)
+        mock_db = mocker.AsyncMock()
+        mock_db.execute = mocker.AsyncMock(return_value=mock_part_result)
+
+        result = await get_active_event(current_user=mock_user, service=mock_service, db=mock_db)
 
         assert result["active"] is True
         assert result["event"].year == 2026
@@ -147,7 +154,9 @@ class TestEventListingRoutes:
         mock_service = mocker.Mock()
         mock_service.get_active_event = mocker.AsyncMock(return_value=None)
 
-        result = await get_active_event(current_user=mock_user, service=mock_service)
+        mock_db = mocker.AsyncMock()
+
+        result = await get_active_event(current_user=mock_user, service=mock_service, db=mock_db)
 
         assert result["active"] is False
         assert result["event"] is None

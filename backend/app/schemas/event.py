@@ -44,6 +44,9 @@ class EventUpdate(BaseModel):
     is_active: Optional[bool] = None
     vpn_available: Optional[bool] = None
     test_mode: Optional[bool] = None
+    ssh_public_key: Optional[str] = None
+    ssh_private_key: Optional[str] = None
+    discord_channel_id: Optional[str] = Field(None, max_length=100, description="Discord channel ID for invite generation")
 
 
 class EventResponse(BaseModel):
@@ -60,6 +63,8 @@ class EventResponse(BaseModel):
     is_active: bool
     vpn_available: bool = False
     test_mode: bool = False
+    ssh_public_key: Optional[str] = None
+    discord_channel_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -128,6 +133,9 @@ class EventParticipationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # Discord invite
+    discord_invite_code: Optional[str] = None
+
     # Related entities (populated when needed)
     user: Optional[ParticipantBrief] = None
     event_year: Optional[int] = None
@@ -184,3 +192,17 @@ class ParticipationHistoryResponse(BaseModel):
     is_chronic_non_participant: bool
     should_recommend_removal: bool
     history: List[EventParticipationResponse]
+
+
+class SSHKeyPairResponse(BaseModel):
+    """Response containing SSH key pair."""
+    public_key: str
+    private_key: str
+
+
+class EventSSHPrivateKeyResponse(BaseModel):
+    """Response for event SSH private key (accessible by participants)."""
+    event_id: int
+    event_name: str
+    ssh_private_key: Optional[str] = None
+    has_ssh_key: bool  # Whether the event has SSH keys configured

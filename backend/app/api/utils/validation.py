@@ -7,6 +7,62 @@ from sqlalchemy import select
 from app.models.user import User
 
 
+def normalize_email(email: str) -> str:
+    """
+    Normalize email address for consistent storage and comparison.
+
+    - Converts to lowercase for case-insensitive comparison
+    - Strips leading/trailing whitespace
+    - Gmail/Google Workspace specific normalization:
+      - Removes periods (.) from local part (before @)
+      - PRESERVES plus addressing (+tag) for email delivery and filtering
+    - Ensures consistent format across the application
+
+    Args:
+        email: Email address to normalize
+
+    Returns:
+        Normalized email address (lowercase, trimmed, Gmail periods removed)
+
+    Examples:
+        >>> normalize_email("  John.Doe@EXAMPLE.COM  ")
+        "john.doe@example.com"
+        >>> normalize_email("Wes.Huang@Gmail.com")
+        "weshuang@gmail.com"
+        >>> normalize_email("wes+work@gmail.com")
+        "wes+work@gmail.com"  # + addressing preserved
+        >>> normalize_email("test.user@company.com")
+        "test.user@company.com"
+
+    Note:
+        Plus addressing (+tag) is intentionally preserved so users can:
+        - Receive emails at their preferred alias
+        - Use email filters based on + tags
+        - Maintain their intended email configuration
+    """
+    if not email:
+        return email
+
+    # Strip whitespace and convert to lowercase
+    email = email.strip().lower()
+
+    # Split into local part and domain
+    if '@' not in email:
+        return email
+
+    local_part, domain = email.rsplit('@', 1)
+
+    # Gmail and Google Workspace specific normalization
+    # Gmail ignores periods in email addresses
+    gmail_domains = {'gmail.com', 'googlemail.com'}
+    if domain in gmail_domains or domain.endswith('.google.com'):
+        # Remove periods from local part (Gmail ignores them)
+        local_part = local_part.replace('.', '')
+        # NOTE: Plus addressing (+tag) is preserved for email delivery
+
+    return f"{local_part}@{domain}"
+
+
 async def validate_bulk_email_permissions(
     users: List[User],
     db: AsyncSession,

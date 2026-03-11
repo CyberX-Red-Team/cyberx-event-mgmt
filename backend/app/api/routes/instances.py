@@ -1,0 +1,408 @@
+"""Instance management API routes."""
+import logging
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.dependencies import get_db, require_permission
+from app.api.exceptions import not_found, bad_request, server_error
+from app.services.audit_service import AuditService
+from app.api.utils.dependencies import (
+    get_openstack_service,
+    get_digitalocean_service,
+    get_instance_service,
+)
+from app.models.user import User
+from app.services.openstack_service import OpenStackService
+from app.services.digitalocean_service import DigitalOceanService
+from app.services.instance_service import InstanceService
+from app.schemas.instance import (
+    InstanceCreate,
+    InstanceBulkCreate,
+    InstanceResponse,
+    InstanceListResponse,
+    InstanceStats,
+    BulkDeleteRequest,
+    BulkOperationResponse,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/instances", tags=["Instance Management"])
+
+
+# ── Instance CRUD ──────────────────────────────────────────
+
+@router.get("", response_model=InstanceListResponse)
+async def list_instances(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    event_id: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
+    group_by: Optional[str] = Query(None, description="Group by column (disables pagination)"),
+    current_user: User = Depends(require_permission("instances.view_all")),
+    service: InstanceService = Depends(get_instance_service),
+):
+    """List instances from all cloud providers (paginated, filterable)."""
+    instances, total = await service.list_tracked_instances(
+        page=page,
+        page_size=page_size,
+        event_id=event_id,
+        status=status,
+        search=search,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        group_by=group_by,
+    )
+
+    # Build response items with event_name and created_by_username
+    items = []
+    for instance in instances:
+        item_dict = InstanceResponse.model_validate(instance).model_dump()
+        # Add event name if event exists
+        if instance.event:
+            item_dict["event_name"] = f"{instance.event.year} - {instance.event.name}"
+        # Add creator username if exists (fallback to email if pandas_username not set)
+        if instance.created_by:
+            item_dict["created_by_username"] = instance.created_by.pandas_username or instance.created_by.email
+        items.append(InstanceResponse(**item_dict))
+
+    if group_by:
+        return InstanceListResponse(
+            items=items,
+            total=total,
+            page=1,
+            page_size=total or 1,
+            total_pages=1,
+        )
+
+    total_pages = (total + page_size - 1) // page_size
+
+    return InstanceListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
+
+
+@router.post("", response_model=InstanceResponse, status_code=201)
+async def create_instance(
+    data: InstanceCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("instances.provision")),
+    service: InstanceService = Depends(get_instance_service),
+):
+    """Create a single instance on any cloud provider."""
+    try:
+        # Normalize size parameter (support both flavor_id and size_slug)
+        size = data.size_slug or data.flavor_id
+
+        instance = await service.create_and_track_instance(
+            name=data.name,
+            provider=data.provider,
+            size=size,
+            image=data.image_id,
+            region=data.region,  # DigitalOcean only
+            network=data.network_id,  # OpenStack only
+            key_name=data.key_name,
+            template_id=data.cloud_init_template_id,
+            license_product_id=data.license_product_id,
+            event_id=data.event_id,
+            assigned_to_user_id=data.assigned_to_user_id,
+            created_by_user_id=current_user.id,
+            ssh_public_key=data.ssh_public_key,
+        )
+    except ValueError as e:
+        raise bad_request(str(e))
+    except Exception as e:
+        logger.error("Failed to create instance: %s", e)
+        raise server_error("Failed to create instance")
+
+    audit = AuditService(db)
+    await audit.log_instance_create(
+        user_id=current_user.id,
+        instance_id=instance.id,
+        details={
+            "name": instance.name,
+            "provider": data.provider,
+            "event_id": data.event_id,
+            "assigned_to_user_id": data.assigned_to_user_id,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return InstanceResponse.model_validate(instance)
+
+
+@router.post("/bulk", response_model=BulkOperationResponse, status_code=201)
+async def bulk_create_instances(
+    data: InstanceBulkCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("instances.provision")),
+    service: OpenStackService = Depends(get_openstack_service),
+):
+    """Bulk create instances."""
+    try:
+        success_count, errors = await service.bulk_create_instances(
+            count=data.count,
+            name_prefix=data.name_prefix,
+            flavor_id=data.flavor_id,
+            image_id=data.image_id,
+            network_id=data.network_id,
+            key_name=data.key_name,
+            template_id=data.cloud_init_template_id,
+            license_product_id=data.license_product_id,
+            event_id=data.event_id,
+            created_by_user_id=current_user.id,
+            ssh_public_key=data.ssh_public_key,
+        )
+    except ValueError as e:
+        raise bad_request(str(e))
+
+    audit = AuditService(db)
+    await audit.log_bulk_instance_create(
+        user_id=current_user.id,
+        details={
+            "count": data.count,
+            "success_count": success_count,
+            "name_prefix": data.name_prefix,
+            "provider": "openstack",
+            "event_id": data.event_id,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return BulkOperationResponse(success_count=success_count, errors=errors)
+
+
+@router.get("/stats", response_model=InstanceStats)
+async def get_instance_stats(
+    event_id: Optional[int] = Query(None),
+    current_user: User = Depends(require_permission("instances.view_all")),
+    service: OpenStackService = Depends(get_openstack_service),
+):
+    """Get instance statistics."""
+    stats = await service.get_instance_stats(event_id=event_id)
+    return InstanceStats(**stats)
+
+
+@router.get("/resources/flavors")
+async def list_flavors(
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
+    service: OpenStackService = Depends(get_openstack_service),
+):
+    """List available OpenStack flavors."""
+    try:
+        flavors = await service.list_flavors()
+    except Exception as e:
+        logger.error("Failed to list flavors: %s", e)
+        raise server_error("Failed to fetch flavors from OpenStack")
+    return {"flavors": flavors}
+
+
+@router.get("/resources/images")
+async def list_images(
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
+    service: OpenStackService = Depends(get_openstack_service),
+):
+    """List available OpenStack images."""
+    try:
+        images = await service.list_images()
+    except Exception as e:
+        logger.error("Failed to list images: %s", e)
+        raise server_error("Failed to fetch images from OpenStack")
+    return {"images": images}
+
+
+@router.get("/resources/networks")
+async def list_networks(
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
+    service: OpenStackService = Depends(get_openstack_service),
+):
+    """List available OpenStack networks."""
+    try:
+        networks = await service.list_networks()
+    except Exception as e:
+        logger.error("Failed to list networks: %s", e)
+        raise server_error("Failed to fetch networks from OpenStack")
+    return {"networks": networks}
+
+
+@router.get("/resources/digitalocean/sizes")
+async def list_do_sizes(
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
+    service: DigitalOceanService = Depends(get_digitalocean_service),
+):
+    """List available DigitalOcean sizes."""
+    try:
+        sizes = await service.list_sizes()
+    except Exception as e:
+        logger.error("Failed to list DO sizes: %s", e)
+        raise server_error("Failed to fetch sizes from DigitalOcean")
+    return {"sizes": sizes}
+
+
+@router.get("/resources/digitalocean/images")
+async def list_do_images(
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
+    service: DigitalOceanService = Depends(get_digitalocean_service),
+):
+    """List available DigitalOcean images."""
+    try:
+        images = await service.list_images()
+    except Exception as e:
+        logger.error("Failed to list DO images: %s", e)
+        raise server_error("Failed to fetch images from DigitalOcean")
+    return {"images": images}
+
+
+@router.get("/resources/digitalocean/regions")
+async def list_do_regions(
+    current_user: User = Depends(require_permission("cloud.manage_templates")),
+    service: DigitalOceanService = Depends(get_digitalocean_service),
+):
+    """List available DigitalOcean regions."""
+    try:
+        regions = await service.list_regions_or_networks()
+    except Exception as e:
+        logger.error("Failed to list DO regions: %s", e)
+        raise server_error("Failed to fetch regions from DigitalOcean")
+    return {"regions": regions}
+
+
+@router.get("/{instance_id}", response_model=InstanceResponse)
+async def get_instance(
+    instance_id: int,
+    current_user: User = Depends(require_permission("instances.view_all")),
+    service: OpenStackService = Depends(get_openstack_service),
+):
+    """Get a specific instance."""
+    instance = await service.get_tracked_instance(instance_id)
+    if not instance:
+        raise not_found("Instance", instance_id)
+    return InstanceResponse.model_validate(instance)
+
+
+@router.patch("/{instance_id}", response_model=InstanceResponse)
+async def update_instance(
+    instance_id: int,
+    data: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("instances.view_all")),
+):
+    """Update instance fields (visibility, notes)."""
+    from sqlalchemy import select
+    from app.models.instance import Instance
+
+    result = await db.execute(
+        select(Instance).where(Instance.id == instance_id, Instance.deleted_at.is_(None))
+    )
+    instance = result.scalar_one_or_none()
+    if not instance:
+        raise not_found("Instance", instance_id)
+
+    changes = {}
+    if "visibility" in data:
+        if data["visibility"] not in ("private", "public"):
+            raise bad_request("Visibility must be 'private' or 'public'")
+        changes["visibility"] = {"old": instance.visibility, "new": data["visibility"]}
+        instance.visibility = data["visibility"]
+
+    if "notes" in data:
+        changes["notes"] = True
+        instance.notes = data["notes"]
+
+    await db.commit()
+    await db.refresh(instance)
+
+    if changes:
+        audit = AuditService(db)
+        await audit.log_instance_update(
+            user_id=current_user.id,
+            instance_id=instance_id,
+            changes=changes,
+            ip_address=request.client.host if request.client else None,
+        )
+
+    return InstanceResponse.model_validate(instance)
+
+
+@router.delete("/{instance_id}")
+async def delete_instance(
+    instance_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("instances.delete")),
+    service: InstanceService = Depends(get_instance_service),
+):
+    """Delete (terminate) an instance from its cloud provider."""
+    # Fetch instance details before deletion for audit
+    instance = await service.get_tracked_instance(instance_id)
+    if not instance:
+        raise not_found("Instance", instance_id)
+
+    ok = await service.delete_and_track_instance(instance_id)
+    if not ok:
+        raise server_error("Failed to delete instance")
+
+    audit = AuditService(db)
+    await audit.log_instance_delete(
+        user_id=current_user.id,
+        instance_id=instance_id,
+        details={
+            "name": instance.name,
+            "provider": instance.provider,
+            "status": instance.status,
+            "assigned_to_email": instance.assigned_to_email,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return {"success": True, "message": "Instance deleted"}
+
+
+@router.post("/{instance_id}/sync", response_model=InstanceResponse)
+async def sync_instance(
+    instance_id: int,
+    current_user: User = Depends(require_permission("instances.sync_status")),
+    service: InstanceService = Depends(get_instance_service),
+):
+    """Refresh instance status from its cloud provider."""
+    instance = await service.sync_instance_status(instance_id)
+    if not instance:
+        raise not_found("Instance", instance_id)
+    return InstanceResponse.model_validate(instance)
+
+
+@router.post("/bulk-delete", response_model=BulkOperationResponse)
+async def bulk_delete_instances(
+    data: BulkDeleteRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("instances.delete")),
+    service: InstanceService = Depends(get_instance_service),
+):
+    """Bulk delete instances from their cloud providers."""
+    success_count, errors = await service.bulk_delete_instances(data.instance_ids)
+
+    audit = AuditService(db)
+    await audit.log_bulk_instance_delete(
+        user_id=current_user.id,
+        details={
+            "instance_ids": data.instance_ids,
+            "count": len(data.instance_ids),
+            "success_count": success_count,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return BulkOperationResponse(success_count=success_count, errors=errors)

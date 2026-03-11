@@ -1,9 +1,14 @@
 """Webhook security utilities for signature verification."""
-import hmac
-import hashlib
 import base64
 import time
-from typing import Optional
+import logging
+
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+from cryptography.exceptions import InvalidSignature
+
+logger = logging.getLogger(__name__)
 
 
 def verify_sendgrid_signature(
@@ -13,22 +18,21 @@ def verify_sendgrid_signature(
     verification_key: str
 ) -> bool:
     """
-    Verify SendGrid webhook signature using HMAC-SHA256.
+    Verify SendGrid Event Webhook signature using ECDSA.
 
-    SendGrid signs webhooks with: base64(HMAC-SHA256(verification_key, timestamp + payload))
+    SendGrid signs webhooks with ECDSA (P-256 / SHA-256). The verification
+    key from the SendGrid dashboard is a base64-encoded DER public key.
+
+    Signed data = timestamp + payload (raw bytes concatenation).
 
     Args:
         payload: Raw request body (bytes)
-        signature: X-Twilio-Email-Event-Webhook-Signature header value
+        signature: X-Twilio-Email-Event-Webhook-Signature header value (base64)
         timestamp: X-Twilio-Email-Event-Webhook-Timestamp header value
-        verification_key: Your SendGrid verification key (from dashboard)
+        verification_key: Base64-encoded ECDSA public key from SendGrid dashboard
 
     Returns:
         True if signature is valid, False otherwise
-
-    Security Notes:
-        - Uses constant-time comparison to prevent timing attacks
-        - Signature format: base64(HMAC-SHA256(key, timestamp + payload))
 
     SendGrid Documentation:
         https://docs.sendgrid.com/for-developers/tracking-events/getting-started-event-webhook-security-features
@@ -38,27 +42,34 @@ def verify_sendgrid_signature(
         return True
 
     if not signature or not timestamp:
+        logger.warning("SendGrid webhook missing signature or timestamp header")
         return False
 
     try:
-        # SendGrid's signature algorithm:
-        # 1. Concatenate timestamp + payload (payload as string)
-        signed_payload = (timestamp + payload.decode('utf-8')).encode('utf-8')
+        # 1. Decode the verification key (base64 → DER public key)
+        public_key_der = base64.b64decode(verification_key)
+        public_key = serialization.load_der_public_key(public_key_der)
 
-        # 2. Compute HMAC-SHA256 with verification key
-        expected_signature = hmac.new(
-            verification_key.encode('utf-8'),
+        # 2. Build the signed payload: timestamp + raw body
+        signed_payload = timestamp.encode('utf-8') + payload
+
+        # 3. Decode the signature from base64
+        decoded_signature = base64.b64decode(signature)
+
+        # 4. Verify ECDSA signature (P-256 / SHA-256)
+        public_key.verify(
+            decoded_signature,
             signed_payload,
-            hashlib.sha256
-        ).digest()
+            ECDSA(hashes.SHA256())
+        )
 
-        # 3. Base64 encode the signature
-        expected_signature_b64 = base64.b64encode(expected_signature).decode('utf-8')
+        return True
 
-        # 4. Constant-time comparison to prevent timing attacks
-        return hmac.compare_digest(signature, expected_signature_b64)
-
-    except (ValueError, UnicodeDecodeError, AttributeError):
+    except InvalidSignature:
+        logger.warning("SendGrid webhook signature verification failed")
+        return False
+    except Exception as e:
+        logger.error(f"SendGrid webhook signature verification error: {e}")
         return False
 
 

@@ -4,13 +4,15 @@ from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
-from app.dependencies import get_db, get_current_sponsor_user, PermissionChecker
+from app.dependencies import get_db, require_permission, PermissionChecker
 from app.api.utils.request import extract_client_metadata
 from app.api.utils.pagination import calculate_pagination
 from app.api.utils.dependencies import get_participant_service
 from app.models.user import User
+from app.models.role import Role
 from app.services.participant_service import ParticipantService
 from app.schemas.participant import (
     ParticipantResponse,
@@ -35,14 +37,17 @@ async def list_my_invitees(
     confirmed: Optional[str] = None,
     has_vpn: Optional[bool] = None,
     is_active: Optional[bool] = None,
+    role_id: Optional[int] = None,
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
     List all invitees sponsored by the current user.
 
-    Supports pagination, search, and filtering.
+    Supports pagination, search, filtering, and sorting.
     """
     logger.info(f"Sponsor {current_user.id} listing invitees (page={page}, search={search})")
 
@@ -54,7 +59,10 @@ async def list_my_invitees(
         search=search,
         confirmed=confirmed,
         has_vpn=has_vpn,
-        is_active=is_active
+        is_active=is_active,
+        role_id=role_id,
+        sort_by=sort_by,
+        sort_order=sort_order
     )
 
     # Build responses
@@ -74,7 +82,7 @@ async def list_my_invitees(
 @router.get("/my-invitees/stats", response_model=SponsorInviteeStats)
 async def get_my_invitees_stats(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -100,7 +108,7 @@ async def get_my_invitees_stats(
 async def get_my_invitee(
     invitee_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -127,7 +135,7 @@ async def create_my_invitee(
     request: Request,
     data: InviteeCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -140,13 +148,71 @@ async def create_my_invitee(
         f"({data.email})"
     )
 
-    # Create invitee with auto-assigned sponsor_id
+    # Check if user already exists
+    from app.api.utils.validation import normalize_email
+    normalized_email = normalize_email(data.email)
+
+    result = await db.execute(
+        select(User).where(User.email_normalized == normalized_email)
+    )
+    existing_user = result.scalar_one_or_none()
+
+    if existing_user:
+        # User already exists - provide helpful error message
+        sponsor_info = "no sponsor"
+        if existing_user.sponsor_id:
+            sponsor_result = await db.execute(
+                select(User).where(User.id == existing_user.sponsor_id)
+            )
+            sponsor = sponsor_result.scalar_one_or_none()
+            if sponsor:
+                sponsor_info = f"{sponsor.first_name} {sponsor.last_name} ({sponsor.email})"
+            else:
+                sponsor_info = f"sponsor ID {existing_user.sponsor_id}"
+
+        error_msg = (
+            f"User with email '{data.email}' already exists. "
+            f"Name: {existing_user.first_name} {existing_user.last_name}, "
+            f"Role: {existing_user.role}, "
+            f"Sponsor: {sponsor_info}"
+        )
+
+        logger.warning(
+            f"Sponsor {current_user.id} attempted to create duplicate invitee: {data.email}. "
+            f"Existing user ID: {existing_user.id}, sponsored by: {sponsor_info}"
+        )
+
+        raise conflict(error_msg)
+
+    # Resolve target role (default to system invitee role if not specified)
+    target_role = None
+    if data.role_id:
+        role_result = await db.execute(select(Role).where(Role.id == data.role_id))
+        target_role = role_result.scalar_one_or_none()
+        if not target_role:
+            raise bad_request(f"Role with ID {data.role_id} not found")
+        if target_role.base_type != "invitee":
+            raise forbidden("Sponsors can only create invitee-type participants")
+        # Enforce allowed_role_ids restriction
+        if current_user.role_obj and current_user.role_obj.allowed_role_ids:
+            if target_role.id not in current_user.role_obj.allowed_role_ids:
+                raise forbidden(f"You are not allowed to create participants with the '{target_role.name}' role")
+    else:
+        # Default to system invitee role
+        role_result = await db.execute(
+            select(Role).where(Role.slug == "invitee", Role.is_system == True)
+        )
+        target_role = role_result.scalar_one_or_none()
+
+    # Set role_id at creation time (avoids detached instance issues from post-commit updates)
+    target_role_id = target_role.id if target_role else None
     invitee = await service.create_participant(
         email=data.email,
         first_name=data.first_name,
         last_name=data.last_name,
         country=data.country,
-        role="invitee",  # Always create as invitee
+        role="invitee",  # Always create as invitee base type
+        role_id=target_role_id,
         sponsor_id=current_user.id,  # Auto-assign current sponsor
         confirmed=data.confirmed,
         discord_username=data.discord_username
@@ -154,6 +220,7 @@ async def create_my_invitee(
 
     # Reload with relationships
     invitee = await service.get_participant(invitee.id)
+    logger.info(f"Created invitee {invitee.id} with role_id={invitee.role_id}")
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
@@ -180,19 +247,28 @@ async def create_my_invitee(
     event_service = EventService(db)
     active_event = await event_service.get_active_event()
 
-    if active_event and invitee.confirmed == 'UNKNOWN':
-        # Queue invitation email using helper function
-        from app.services.email_service import queue_invitation_email_for_user
+    if active_event:
+        # Check EventParticipation status for current event
+        from app.models.event import ParticipationStatus
+        participation = await invitee.get_current_event_participation(db)
 
-        await queue_invitation_email_for_user(
-            user=invitee,
-            event=active_event,
-            session=db,
-            force=False
-        )
-        await db.commit()
+        # Send only if not yet confirmed/declined (invited, no_response, or no record yet)
+        if not participation or participation.status in [
+            ParticipationStatus.INVITED.value,
+            ParticipationStatus.NO_RESPONSE.value
+        ]:
+            # Queue invitation email using helper function
+            from app.services.email_service import queue_invitation_email_for_user
 
-        logger.info(f"Queued invitation email for new invitee {invitee.id}")
+            await queue_invitation_email_for_user(
+                user=invitee,
+                event=active_event,
+                session=db,
+                force=False
+            )
+            await db.commit()
+
+            logger.info(f"Queued invitation email for new invitee {invitee.id}")
 
     return await build_participant_response(invitee, db)
 
@@ -203,7 +279,7 @@ async def update_my_invitee(
     request: Request,
     data: InviteeUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -230,8 +306,24 @@ async def update_my_invitee(
     # Permission check
     permissions.can_edit_participant(current_user, invitee)
 
-    # Update allowed fields only
+    # Validate role_id if provided
     update_data = data.model_dump(exclude_unset=True)
+    if 'role_id' in update_data and update_data['role_id'] is not None:
+        role_result = await db.execute(
+            select(Role).where(Role.id == update_data['role_id'])
+        )
+        target_role = role_result.scalar_one_or_none()
+        if not target_role:
+            raise bad_request(f"Role with ID {update_data['role_id']} not found")
+        if target_role.base_type != "invitee":
+            raise forbidden("Sponsors can only assign invitee-type roles")
+        # Enforce allowed_role_ids restriction
+        if current_user.role_obj and current_user.role_obj.allowed_role_ids:
+            if target_role.id not in current_user.role_obj.allowed_role_ids:
+                raise forbidden(f"You are not allowed to assign the '{target_role.name}' role")
+        # Sync legacy role field
+        update_data['role'] = target_role.base_type
+
     updated = await service.update_participant(invitee_id, **update_data)
 
     # Audit log
@@ -260,7 +352,7 @@ async def update_my_invitee(
 @router.delete("/my-invitees/{invitee_id}")
 async def delete_my_invitee(
     invitee_id: int,
-    current_user: User = Depends(get_current_sponsor_user)
+    current_user: User = Depends(require_permission("participants.view"))
 ):
     """
     Sponsors cannot delete invitees.
@@ -280,13 +372,22 @@ async def reset_invitee_password(
     invitee_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
-    Reset an invitee's password and send them an email.
+    Send a password reset link to an invitee.
+
+    Generates a reset token and triggers the PASSWORD_RESET workflow,
+    which emails the invitee a secure link to choose their own password.
     """
-    logger.info(f"Sponsor {current_user.id} resetting password for invitee {invitee_id}")
+    import secrets
+    from datetime import timedelta
+    from app.services.workflow_service import WorkflowService
+    from app.models.email_workflow import WorkflowTriggerEvent
+    from app.config import get_settings
+
+    logger.info(f"Sponsor {current_user.id} sending reset link for invitee {invitee_id}")
 
     permissions = PermissionChecker()
 
@@ -302,11 +403,31 @@ async def reset_invitee_password(
     # Permission check
     permissions.can_edit_participant(current_user, invitee)
 
-    # Reset password
-    success = await service.reset_password(invitee_id)
+    # Generate reset token (same flow as self-service)
+    reset_token = secrets.token_urlsafe(32)
+    reset_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
 
-    if not success:
-        raise server_error("Failed to reset password")
+    invitee.password_reset_token = reset_token
+    invitee.password_reset_expires = reset_expires
+    await db.commit()
+
+    # Trigger PASSWORD_RESET workflow (sends reset link email)
+    settings = get_settings()
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+
+    workflow_service = WorkflowService(db)
+    await workflow_service.trigger_workflow(
+        trigger_event=WorkflowTriggerEvent.PASSWORD_RESET,
+        user_id=invitee.id,
+        custom_vars={
+            "reset_url": reset_url,
+            "reset_token": reset_token,
+            "first_name": invitee.first_name,
+            "last_name": invitee.last_name,
+            "email": invitee.email,
+            "expiry_time": "15 minutes",
+        }
+    )
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
@@ -314,7 +435,7 @@ async def reset_invitee_password(
     audit_service = AuditService(db)
     await audit_service.log(
         user_id=current_user.id,
-        action="RESET_INVITEE_PASSWORD",
+        action="SEND_RESET_LINK_INVITEE",
         resource_type="USER",
         resource_id=invitee_id,
         details={
@@ -325,11 +446,11 @@ async def reset_invitee_password(
         user_agent=user_agent
     )
 
-    logger.info(f"Sponsor {current_user.id} reset password for invitee {invitee_id}")
+    logger.info(f"Sponsor {current_user.id} sent reset link for invitee {invitee_id}")
 
     return {
         "success": True,
-        "message": "Password reset successfully. An email has been sent to the invitee."
+        "message": f"Password reset link sent to {invitee.email}"
     }
 
 
@@ -338,7 +459,7 @@ async def resend_invitee_invitation(
     invitee_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_sponsor_user),
+    current_user: User = Depends(require_permission("participants.view")),
     service: ParticipantService = Depends(get_participant_service)
 ):
     """
@@ -366,8 +487,11 @@ async def resend_invitee_invitation(
     if invitee.role not in ['invitee', 'sponsor']:
         raise bad_request(f"Cannot resend invitation to {invitee.role} role. Only invitees and sponsors can receive invitations.")
 
-    if invitee.confirmed == 'YES':
-        raise bad_request("Participant has already confirmed. Cannot resend invitation to confirmed users.")
+    # Check EventParticipation status for current event
+    from app.models.event import ParticipationStatus
+    participation = await invitee.get_current_event_participation(db)
+    if participation and participation.status == ParticipationStatus.CONFIRMED.value:
+        raise bad_request("Participant has already confirmed for current event. Cannot resend invitation to confirmed users.")
 
     if not invitee.is_active:
         raise bad_request("Cannot resend invitation to inactive participant.")

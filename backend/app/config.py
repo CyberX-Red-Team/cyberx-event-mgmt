@@ -50,9 +50,19 @@ class Settings(BaseSettings):
     POWERDNS_API_URL: str = ""
     POWERDNS_USERNAME: str = ""
     POWERDNS_PASSWORD: str = ""
+    POWERDNS_API_KEY: str = ""          # API key for zone operations (created in PowerDNS-Admin UI)
+    POWERDNS_ACCOUNT_NAME: str = "cyberx"  # Account to auto-assign users to on first login
 
-    # Render API (optional - only needed for deployment automation)
+    # Render API (optional - for sidecar lifecycle management)
     RENDER_API_KEY: str = ""
+    RENDER_OWNER_ID: str = ""  # Render owner ID for creating new services
+    RENDER_REPO_URL: str = ""  # GitHub repo URL for creating new Render services (e.g. https://github.com/org/repo)
+    GOTENBERG_RENDER_SERVICE_ID: str = ""
+
+    # step-ca Configuration (optional - for TLS certificate issuance)
+    STEPCA_DEFAULT_DURATION: str = "2160h"  # 90 days
+    STEPCA_PROVISIONER_PASSWORD: str = ""
+    STEPCA_CA_FILES_R2_PREFIX: str = "tls/ca-chains"
 
     # VPN Server Configuration (optional - only needed if using VPN features)
     VPN_SERVER_PUBLIC_KEY: str = ""
@@ -66,11 +76,91 @@ class Settings(BaseSettings):
     # Email Job
     BULK_EMAIL_INTERVAL_MINUTES: int = 45
 
+    # OpenStack Integration (optional - only needed for instance provisioning)
+    OS_AUTH_URL: str = ""
+    OS_AUTH_TYPE: str = "v3applicationcredential"  # or "password"
+    OS_APPLICATION_CREDENTIAL_ID: str = ""
+    OS_APPLICATION_CREDENTIAL_SECRET: str = ""
+    OS_USERNAME: str = ""
+    OS_PASSWORD: str = ""
+    OS_PROJECT_NAME: str = ""
+    OS_USER_DOMAIN_NAME: str = "Default"
+    OS_PROJECT_DOMAIN_NAME: str = "Default"
+    OS_NOVA_URL: str = ""      # Optional, auto-discovered from Keystone catalog
+    OS_NEUTRON_URL: str = ""   # Optional, auto-discovered from Keystone catalog
+    OS_GLANCE_URL: str = ""    # Optional, auto-discovered from Keystone catalog
+
+    # Default Instance Configuration (optional - can be overridden per-request)
+    OS_DEFAULT_FLAVOR_ID: str = ""
+    OS_DEFAULT_IMAGE_ID: str = ""
+    OS_DEFAULT_NETWORK_ID: str = ""
+    OS_DEFAULT_KEY_NAME: str = ""
+
+    # DigitalOcean Integration (optional - only needed for DO provisioning)
+    DO_API_TOKEN: str = ""
+    DO_DEFAULT_REGION: str = "nyc1"
+    DO_DEFAULT_SIZE: str = "s-1vcpu-1gb"
+    DO_DEFAULT_IMAGE: str = "ubuntu-22-04-x64"
+    DO_SSH_KEY_ID: str = ""  # Optional: DigitalOcean SSH key ID or fingerprint
+
+    # Download Link Generation - Cloudflare R2 (optional)
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET: str = ""
+    R2_CUSTOM_DOMAIN: str = ""
+
+    # Download Link Generation - nginx secure_link alternative (optional)
+    DOWNLOAD_SECRET: str = ""
+    DOWNLOAD_BASE_URL: str = ""
+    DOWNLOAD_LINK_MODE: str = "r2"     # "r2" or "nginx"
+    DOWNLOAD_LINK_EXPIRY: int = 3600   # Default 1 hour
+
+    # CPE Certificate Configuration
+    CPE_TEMPLATE_R2_KEY: str = ""           # R2 object key for DOCX template (e.g. "templates/cpe_template.docx")
+    CPE_SIGNATURE_1_R2_KEY: str = ""        # R2 object key for first signer's signature image (PNG, transparent bg)
+    CPE_SIGNATURE_2_R2_KEY: str = ""        # R2 object key for second signer's signature image (PNG, transparent bg)
+    CPE_SIGNER_1_NAME: str = ""             # First signer name+title (e.g. "Wes Spencer / Director")
+    CPE_SIGNER_2_NAME: str = ""             # Second signer name+title (e.g. "Yves Manzi / Lead Instructor")
+    CPE_CONVERSION_MODE: str = "gotenberg"  # "gotenberg" or "libreoffice"
+    GOTENBERG_URL: str = ""                 # e.g. "http://gotenberg:3000"
+    CPE_HOURS_DEFAULT: float = 32.0
+
+    # Cloud-Init Template Variables
+    # Note: License server URL is derived from FRONTEND_URL + "/api/license"
+    # Note: license_token is auto-generated per-instance (no config needed)
+
+    # Keycloak Integration (optional - only needed for Keycloak SSO sync)
+    KEYCLOAK_URL: str = ""  # e.g. https://auth.cyberxredteam.org
+    KEYCLOAK_REALM: str = "cyberx"
+    KEYCLOAK_ADMIN_CLIENT_ID: str = "admin-cli"
+    KEYCLOAK_ADMIN_CLIENT_SECRET: str = ""
+    KEYCLOAK_USER_GROUPS: str = ""  # Comma-separated group names for synced users (e.g. "cyberx-users,participants")
+    KEYCLOAK_WEBHOOK_SECRET: str = ""  # HMAC secret for verifying inbound Keycloak webhooks
+    KEYCLOAK_WEBHOOK_DEBUG: bool = False  # Log raw webhook payloads for debugging
+
+    # Discord Integration (optional - for per-event invite links)
+    DISCORD_BOT_TOKEN: str = ""  # Bot token for Discord API
+    DISCORD_INVITE_ENABLED: bool = False  # Master toggle
+
+    # Password Sync to Keycloak
+    PASSWORD_SYNC_ENABLED: bool = False  # Master toggle for Keycloak sync job
+    PASSWORD_SYNC_INTERVAL_MINUTES: int = 5
+    PASSWORD_SYNC_MAX_RETRIES: int = 5
+
+    # Instance Agent Configuration
+    AGENT_TASK_TIMEOUT_MINUTES: int = 10
+    AGENT_HEARTBEAT_STALE_MINUTES: int = 2
+    AGENT_TRUST_PROXY_HEADERS: bool = False  # Trust X-Forwarded-For (set True on Render)
+
     # Invitation Reminder Configuration
+    REMINDER_1_ENABLED: bool = False
     REMINDER_1_DAYS_AFTER_INVITE: int = 7  # First reminder: 7 days after initial invitation
     REMINDER_1_MIN_DAYS_BEFORE_EVENT: int = 14  # Don't send if event is less than 14 days away
+    REMINDER_2_ENABLED: bool = False
     REMINDER_2_DAYS_AFTER_INVITE: int = 14  # Second reminder: 14 days after initial invitation
     REMINDER_2_MIN_DAYS_BEFORE_EVENT: int = 7  # Don't send if event is less than 7 days away
+    REMINDER_3_ENABLED: bool = False
     REMINDER_3_DAYS_BEFORE_EVENT: int = 3  # Final reminder: 3 days before event starts
     REMINDER_CHECK_INTERVAL_HOURS: int = 24  # How often to check for reminders to send
 

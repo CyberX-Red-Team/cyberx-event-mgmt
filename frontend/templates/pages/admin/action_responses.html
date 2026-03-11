@@ -1,0 +1,886 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Action Responses{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Action response specific styles */
+.stat-card {
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.progress-thin {
+    height: 8px;
+}
+
+.response-details {
+    font-size: 0.875rem;
+}
+
+.action-group-card {
+    border-left: 4px solid #0061f2;
+}
+
+.badge-confirmed {
+    background-color: #00ac69;
+}
+
+.badge-declined {
+    background-color: #e81500;
+}
+
+.badge-pending {
+    background-color: #f4a100;
+}
+
+/* Token input (email-client style recipient picker) */
+.token-input-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid var(--input-border);
+    border-radius: 0.35rem;
+    background: var(--input-bg);
+    cursor: text;
+    min-height: 38px;
+    position: relative;
+}
+.token-input-wrap:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.2rem rgba(0, 97, 242, 0.25);
+}
+.token-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 3px 4px 3px 8px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    white-space: nowrap;
+    max-width: 300px;
+}
+.token-chip .chip-name { font-weight: 500; color: var(--text-primary); }
+.token-chip .chip-email { color: var(--text-secondary); font-size: 0.75rem; }
+.token-chip .chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 16px;
+    font-weight: bold;
+    line-height: 1;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: var(--hover-bg);
+    border-radius: 3px;
+    margin-left: 2px;
+    flex-shrink: 0;
+}
+.token-chip .chip-remove:hover { color: #fff; background: var(--danger-color); }
+.token-input-field {
+    flex: 1;
+    min-width: 120px;
+    border: none;
+    outline: none;
+    font-size: 0.85rem;
+    padding: 2px 0;
+    background: transparent;
+    color: var(--text-primary);
+}
+.token-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 0.35rem 0.35rem;
+    max-height: 220px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px var(--shadow);
+}
+.token-dropdown-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+.token-dropdown-item:hover, .token-dropdown-item.highlighted {
+    background: var(--hover-bg);
+}
+.token-dropdown-item.disabled {
+    opacity: 0.5;
+    cursor: default;
+    background: transparent;
+}
+.token-dropdown-item .item-name { font-weight: 500; color: var(--text-primary); }
+.token-dropdown-item .item-email { color: var(--text-secondary); font-size: 0.8rem; margin-left: 8px; }
+.token-dropdown-item .item-badge { margin-left: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-auto mt-4">
+                    <h1 class="page-header-title">
+                        <div class="page-header-icon"><i data-feather="check-square"></i></div>
+                        Action Responses
+                    </h1>
+                    <div class="page-header-subtitle">View and analyze participant action responses</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<div class="container-xl px-4 mt-n10">
+
+    <!-- Loading State -->
+    <div id="loadingState" class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-3 text-muted">Loading action statistics...</p>
+    </div>
+
+    <!-- Content State -->
+    <div id="contentState" class="d-none">
+
+        <!-- Statistics Summary Cards -->
+        <div class="row mb-4" id="summaryCards">
+            <!-- Will be populated dynamically -->
+        </div>
+
+        <!-- Action Groups -->
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <i data-feather="list" class="me-2"></i>
+                        Action Groups
+                    </div>
+                    <div class="col-auto">
+                        <select class="form-select form-select-sm" id="filterActionType">
+                            <option value="">All Types</option>
+                            <option value="in_person_attendance">In-Person Attendance</option>
+                            <option value="orientation_rsvp">Orientation RSVP</option>
+                            <option value="survey_completion">Survey Completion</option>
+                            <option value="document_review">Document Review</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="actionGroups">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="text-center py-5 d-none">
+        <i data-feather="inbox" style="width: 64px; height: 64px;" class="text-muted mb-3"></i>
+        <h4 class="text-muted">No Actions Found</h4>
+        <p class="text-muted">No participant actions have been created yet.</p>
+    </div>
+</div>
+
+<!-- Response Details Modal -->
+<div class="modal fade" id="responseDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="users" class="me-2"></i>
+                    Detailed Responses: <span id="modalActionTitle"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="responseDetailsList"></div>
+
+                <!-- Assign More Participants (collapsible) -->
+                <div id="assignMoreSection" class="d-none mt-3 border-top pt-3">
+                    <h6 class="mb-3"><i data-feather="user-plus" class="me-1"></i> Assign Additional Participants</h6>
+                    <div class="token-input-wrap" id="tokenInputWrap" onclick="document.getElementById('assignSearchInput').focus()">
+                        <!-- Chips inserted here dynamically -->
+                        <input type="text" class="token-input-field" id="assignSearchInput"
+                               placeholder="Type a name or email..." autocomplete="off">
+                        <div class="token-dropdown d-none" id="tokenDropdown"></div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mt-2">
+                        <div class="form-check form-check-inline mb-0">
+                            <input class="form-check-input" type="checkbox" id="assignSendNotification" checked>
+                            <label class="form-check-label small" for="assignSendNotification">Send notification</label>
+                        </div>
+                        <button class="btn btn-primary btn-sm" id="submitAssignMore" onclick="submitAssignMore()" disabled>
+                            Assign (<span id="assignSelectedCount">0</span>)
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="hideAssignMore()">Cancel</button>
+                    </div>
+                    <div id="assignError" class="alert alert-danger small mt-2 d-none"></div>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-primary btn-sm" id="assignMoreBtn" onclick="showAssignMore()">
+                    <i data-feather="user-plus" class="me-1"></i> Assign More Participants
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+'use strict';
+
+let actionStatistics = [];
+let detailedActions = [];
+let currentModalBatchId = null;
+let assignSelectedUsers = new Map(); // id -> {name, email}
+
+// Load action statistics
+async function loadActionStatistics() {
+    try {
+        const [statsResponse, actionsResponse] = await Promise.all([
+            csrfFetch('/api/admin/actions/statistics'),
+            csrfFetch('/api/admin/actions')
+        ]);
+
+        actionStatistics = await statsResponse.json();
+        detailedActions = await actionsResponse.json();
+
+        // Ensure arrays
+        if (!Array.isArray(actionStatistics)) actionStatistics = [];
+        if (!Array.isArray(detailedActions)) detailedActions = [];
+
+        if (actionStatistics.length === 0) {
+            document.getElementById('loadingState').classList.add('d-none');
+            document.getElementById('emptyState').classList.remove('d-none');
+        } else {
+            renderStatistics();
+            document.getElementById('loadingState').classList.add('d-none');
+            document.getElementById('contentState').classList.remove('d-none');
+        }
+    } catch (error) {
+        console.error('Failed to load action statistics:', error);
+        showToast('Failed to load action statistics', 'danger');
+        document.getElementById('loadingState').classList.add('d-none');
+        document.getElementById('emptyState').classList.remove('d-none');
+    }
+}
+
+// Render summary statistics
+function renderStatistics() {
+    // Calculate totals
+    const totals = actionStatistics.reduce((acc, stat) => {
+        acc.confirmed += stat.confirmed;
+        acc.declined += stat.declined;
+        acc.pending += stat.pending;
+        acc.total += stat.total;
+        return acc;
+    }, { confirmed: 0, declined: 0, pending: 0, total: 0 });
+
+    const confirmedPercent = totals.total ? Math.round((totals.confirmed / totals.total) * 100) : 0;
+    const declinedPercent = totals.total ? Math.round((totals.declined / totals.total) * 100) : 0;
+    const pendingPercent = totals.total ? Math.round((totals.pending / totals.total) * 100) : 0;
+
+    // Render summary cards
+    const summaryHtml = `
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card bg-success text-white shadow-sm stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Confirmed</div>
+                            <div class="h2 mb-0">${totals.confirmed}</div>
+                            <div class="small text-white-50">${confirmedPercent}% of total</div>
+                        </div>
+                        <div class="ms-3">
+                            <i data-feather="check-circle" style="width: 48px; height: 48px;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card bg-danger text-white shadow-sm stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Declined</div>
+                            <div class="h2 mb-0">${totals.declined}</div>
+                            <div class="small text-white-50">${declinedPercent}% of total</div>
+                        </div>
+                        <div class="ms-3">
+                            <i data-feather="x-circle" style="width: 48px; height: 48px;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card bg-warning text-white shadow-sm stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Pending</div>
+                            <div class="h2 mb-0">${totals.pending}</div>
+                            <div class="small text-white-50">${pendingPercent}% of total</div>
+                        </div>
+                        <div class="ms-3">
+                            <i data-feather="clock" style="width: 48px; height: 48px;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card bg-primary text-white shadow-sm stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-white-75 small">Total Actions</div>
+                            <div class="h2 mb-0">${totals.total}</div>
+                            <div class="small text-white-50">${actionStatistics.length} groups</div>
+                        </div>
+                        <div class="ms-3">
+                            <i data-feather="check-square" style="width: 48px; height: 48px;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('summaryCards').innerHTML = summaryHtml;
+    renderActionGroups();
+    feather.replace();
+}
+
+// Render action groups
+function renderActionGroups() {
+    const filterValue = document.getElementById('filterActionType').value;
+    const filtered = filterValue
+        ? actionStatistics.filter(s => s.action_type === filterValue)
+        : actionStatistics;
+
+    const html = filtered.map(stat => {
+        const confirmedPercent = (stat.confirmed / stat.total) * 100;
+        const declinedPercent = (stat.declined / stat.total) * 100;
+        const pendingPercent = (stat.pending / stat.total) * 100;
+
+        return `
+            <div class="card action-group-card mb-3 shadow-sm">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <h5 class="mb-1">${escapeHtml(stat.title)}</h5>
+                            <p class="text-muted small mb-2">
+                                <span class="badge bg-secondary">${stat.action_type}</span>
+                                <span class="ms-2">${formatDateTime(stat.created_at)}</span>
+                            </p>
+                            <div class="progress progress-thin mb-2">
+                                <div class="progress-bar bg-success" style="width: ${confirmedPercent}%"></div>
+                                <div class="progress-bar bg-danger" style="width: ${declinedPercent}%"></div>
+                                <div class="progress-bar bg-warning" style="width: ${pendingPercent}%"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="row text-center">
+                                <div class="col">
+                                    <span class="badge badge-confirmed">${stat.confirmed}</span>
+                                    <div class="small text-muted">Confirmed</div>
+                                </div>
+                                <div class="col">
+                                    <span class="badge badge-declined">${stat.declined}</span>
+                                    <div class="small text-muted">Declined</div>
+                                </div>
+                                <div class="col">
+                                    <span class="badge badge-pending">${stat.pending}</span>
+                                    <div class="small text-muted">Pending</div>
+                                </div>
+                                ${stat.cancelled > 0 ? `
+                                <div class="col">
+                                    <span class="badge bg-secondary">${stat.cancelled}</span>
+                                    <div class="small text-muted">Cancelled</div>
+                                </div>` : ''}
+                            </div>
+                        </div>
+                        <div class="col-md-2 text-end">
+                            <button class="btn btn-primary btn-sm mb-1" onclick="showResponseDetails('${escapeHtml(stat.title)}', ${stat.batch_id ? `'${escapeHtml(stat.batch_id)}'` : 'null'})">
+                                <i data-feather="eye" class="feather-sm"></i> View
+                            </button>
+                            ${stat.pending > 0 && stat.batch_id ? `
+                            <button class="btn btn-outline-danger btn-sm" onclick="revokeActionGroup('${escapeHtml(stat.batch_id)}', '${escapeHtml(stat.title)}', ${stat.pending})">
+                                <i data-feather="x-octagon" class="feather-sm"></i> Revoke
+                            </button>` : ''}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    document.getElementById('actionGroups').innerHTML = html || '<p class="text-muted text-center py-4">No actions match the filter.</p>';
+    feather.replace();
+}
+
+// Show detailed responses
+window.showResponseDetails = function(actionTitle, batchId) {
+    const actions = batchId
+        ? detailedActions.filter(a => a.batch_id === batchId)
+        : detailedActions.filter(a => a.title === actionTitle);
+
+    document.getElementById('modalActionTitle').textContent = actionTitle;
+
+    const html = actions.map(action => {
+        const statusBadge = action.status === 'confirmed'
+            ? '<span class="badge badge-confirmed">Confirmed</span>'
+            : action.status === 'declined'
+            ? '<span class="badge badge-declined">Declined</span>'
+            : action.status === 'cancelled'
+            ? '<span class="badge bg-secondary">Cancelled</span>'
+            : '<span class="badge badge-pending">Pending</span>';
+
+        const responseNote = action.response_note
+            ? `<div class="mt-2"><strong>Note:</strong> ${escapeHtml(action.response_note)}</div>`
+            : '';
+
+        const respondedAt = action.responded_at
+            ? `<div class="small text-muted">Responded: ${formatDateTime(action.responded_at)}</div>`
+            : '<div class="small text-muted">Not yet responded</div>';
+
+        const revokeBtn = action.status === 'pending'
+            ? `<button class="btn btn-outline-danger btn-sm ms-2" onclick="revokeParticipantAction(${action.id}, '${escapeHtml(action.user_name).replace(/'/g, "\\'")}')">
+                <i data-feather="x" style="width:14px;height:14px"></i> Revoke
+               </button>`
+            : '';
+
+        return `
+            <div class="border-bottom pb-3 mb-3">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${escapeHtml(action.user_name)}</strong>
+                        <div class="small text-muted">${escapeHtml(action.user_email)}</div>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        ${statusBadge}
+                        ${revokeBtn}
+                    </div>
+                </div>
+                ${respondedAt}
+                ${responseNote}
+            </div>
+        `;
+    }).join('');
+
+    document.getElementById('responseDetailsList').innerHTML = html;
+
+    // Store batch_id for assign more, reset assign UI
+    currentModalBatchId = batchId;
+    hideAssignMore();
+    document.getElementById('assignMoreBtn').classList.toggle('d-none', !batchId);
+
+    const modal = new bootstrap.Modal(document.getElementById('responseDetailsModal'));
+    modal.show();
+    feather.replace();
+};
+
+// Revoke action group
+window.revokeActionGroup = async function(batchId, title, pendingCount) {
+    if (!confirm(`Revoke ${pendingCount} pending action(s) for "${title}"?\n\nThis will cancel all pending actions in this batch. Already confirmed or declined actions are not affected.`)) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch('/api/admin/actions/revoke', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ batch_id: batchId })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast(`Revoked ${result.actions_revoked} pending action(s)`, 'success');
+            await loadActionStatistics();
+        } else {
+            showToast(result.detail || 'Failed to revoke actions', 'danger');
+        }
+    } catch (error) {
+        console.error('Failed to revoke actions:', error);
+        showToast('Failed to revoke actions', 'danger');
+    }
+};
+
+// Revoke a single participant's action
+window.revokeParticipantAction = async function(actionId, userName) {
+    if (!confirm(`Revoke this action for ${userName}?`)) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch('/api/admin/actions/revoke-participant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action_id: actionId })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast(result.message, 'success');
+            await loadActionStatistics();
+            // Re-render the modal with updated data
+            if (currentModalBatchId) {
+                showResponseDetails(
+                    document.getElementById('modalActionTitle').textContent,
+                    currentModalBatchId
+                );
+            }
+        } else {
+            showToast(result.detail || 'Failed to revoke action', 'danger');
+        }
+    } catch (error) {
+        console.error('Failed to revoke participant action:', error);
+        showToast('Failed to revoke action', 'danger');
+    }
+};
+
+// Filter change handler
+document.getElementById('filterActionType').addEventListener('change', renderActionGroups);
+
+// Format datetime
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleString();
+}
+
+// Escape HTML
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// --- Assign More Participants (token/chip input) ---
+
+let searchDebounceTimer = null;
+let dropdownHighlightIdx = -1;
+let lastSearchResults = [];
+
+window.showAssignMore = function() {
+    document.getElementById('assignMoreSection').classList.remove('d-none');
+    document.getElementById('assignMoreBtn').classList.add('d-none');
+    document.getElementById('assignSearchInput').focus();
+    feather.replace();
+};
+
+window.hideAssignMore = function() {
+    document.getElementById('assignMoreSection').classList.add('d-none');
+    document.getElementById('assignMoreBtn').classList.remove('d-none');
+    document.getElementById('assignSearchInput').value = '';
+    document.getElementById('assignError').classList.add('d-none');
+    closeDropdown();
+    assignSelectedUsers.clear();
+    renderChips();
+    updateAssignCount();
+};
+
+function getExistingUserIds() {
+    return new Set(
+        detailedActions
+            .filter(a => a.batch_id === currentModalBatchId)
+            .map(a => a.user_id)
+    );
+}
+
+// --- Chip rendering ---
+function renderChips() {
+    const wrap = document.getElementById('tokenInputWrap');
+    const input = document.getElementById('assignSearchInput');
+    const dropdown = document.getElementById('tokenDropdown');
+    // Remove existing chips
+    wrap.querySelectorAll('.token-chip').forEach(el => el.remove());
+    // Insert chips before the input
+    Array.from(assignSelectedUsers.entries()).forEach(([id, u]) => {
+        const chip = document.createElement('span');
+        chip.className = 'token-chip';
+        chip.dataset.userId = id;
+        chip.innerHTML = `<span class="chip-name">${escapeHtml(u.name)}</span>` +
+            (u.email ? `<span class="chip-email">${escapeHtml(u.email)}</span>` : '') +
+            `<button type="button" class="chip-remove" data-uid="${id}">&times;</button>`;
+        wrap.insertBefore(chip, input);
+    });
+    // Update placeholder
+    input.placeholder = assignSelectedUsers.size === 0 ? 'Type a name or email...' : '';
+}
+
+// Remove chip on click
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('chip-remove')) {
+        const uid = parseInt(e.target.dataset.uid);
+        assignSelectedUsers.delete(uid);
+        renderChips();
+        updateAssignCount();
+        refreshDropdown();
+        document.getElementById('assignSearchInput').focus();
+    }
+});
+
+// --- Dropdown search ---
+async function fetchParticipants(query) {
+    const params = new URLSearchParams({ page: 1, page_size: 20 });
+    if (query) params.set('search', query);
+    const response = await csrfFetch(`/api/admin/participants?${params}`);
+    const data = await response.json();
+    return data.items || [];
+}
+
+function renderDropdown(users) {
+    const dropdown = document.getElementById('tokenDropdown');
+    const existingIds = getExistingUserIds();
+    lastSearchResults = users;
+    dropdownHighlightIdx = -1;
+
+    if (users.length === 0) {
+        dropdown.innerHTML = '<div class="px-3 py-2 text-muted small">No participants found</div>';
+        dropdown.classList.remove('d-none');
+        return;
+    }
+
+    dropdown.innerHTML = users.map((user, idx) => {
+        const name = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
+        const alreadyAssigned = existingIds.has(user.id);
+        const alreadySelected = assignSelectedUsers.has(user.id);
+        const disabled = alreadyAssigned || alreadySelected;
+        const badge = alreadyAssigned
+            ? '<span class="item-badge badge bg-secondary">Assigned</span>'
+            : alreadySelected
+            ? '<span class="item-badge badge bg-primary">Selected</span>'
+            : '';
+
+        return `<div class="token-dropdown-item ${disabled ? 'disabled' : ''}"
+                     data-idx="${idx}" data-uid="${user.id}"
+                     data-name="${escapeHtml(name)}" data-email="${escapeHtml(user.email)}">
+            <span class="item-name">${escapeHtml(name)}</span>
+            <span class="item-email">${escapeHtml(user.email)}</span>
+            ${badge}
+        </div>`;
+    }).join('');
+
+    dropdown.classList.remove('d-none');
+}
+
+function closeDropdown() {
+    const dropdown = document.getElementById('tokenDropdown');
+    dropdown.classList.add('d-none');
+    dropdown.innerHTML = '';
+    lastSearchResults = [];
+    dropdownHighlightIdx = -1;
+}
+
+function refreshDropdown() {
+    if (lastSearchResults.length > 0) {
+        renderDropdown(lastSearchResults);
+    }
+}
+
+function highlightDropdownItem(newIdx) {
+    const items = document.querySelectorAll('.token-dropdown-item:not(.disabled)');
+    if (items.length === 0) return;
+    // Clamp
+    if (newIdx < 0) newIdx = items.length - 1;
+    if (newIdx >= items.length) newIdx = 0;
+    // Remove old highlight
+    document.querySelectorAll('.token-dropdown-item.highlighted').forEach(el => el.classList.remove('highlighted'));
+    items[newIdx].classList.add('highlighted');
+    items[newIdx].scrollIntoView({ block: 'nearest' });
+    dropdownHighlightIdx = newIdx;
+}
+
+function selectHighlightedItem() {
+    const highlighted = document.querySelector('.token-dropdown-item.highlighted');
+    if (highlighted && !highlighted.classList.contains('disabled')) {
+        selectDropdownItem(highlighted);
+    }
+}
+
+function selectDropdownItem(el) {
+    const uid = parseInt(el.dataset.uid);
+    const name = el.dataset.name;
+    const email = el.dataset.email;
+    if (assignSelectedUsers.has(uid)) return;
+
+    assignSelectedUsers.set(uid, { name, email });
+    renderChips();
+    updateAssignCount();
+    document.getElementById('assignSearchInput').value = '';
+    refreshDropdown();
+    document.getElementById('assignSearchInput').focus();
+}
+
+// --- Event handlers ---
+document.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('assignSearchInput');
+    if (!input) return;
+
+    // Live search on input (debounced)
+    input.addEventListener('input', () => {
+        clearTimeout(searchDebounceTimer);
+        const query = input.value.trim();
+        if (query.length < 1) {
+            closeDropdown();
+            return;
+        }
+        searchDebounceTimer = setTimeout(async () => {
+            try {
+                const users = await fetchParticipants(query);
+                renderDropdown(users);
+            } catch (e) {
+                console.error('Search failed:', e);
+            }
+        }, 250);
+    });
+
+    // Keyboard navigation
+    input.addEventListener('keydown', (e) => {
+        const dropdown = document.getElementById('tokenDropdown');
+        const isOpen = !dropdown.classList.contains('d-none');
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (isOpen) {
+                highlightDropdownItem(dropdownHighlightIdx + 1);
+            } else if (input.value.trim().length === 0) {
+                // Open dropdown with all participants on arrow down with empty input
+                fetchParticipants('').then(users => renderDropdown(users));
+            }
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (isOpen) highlightDropdownItem(dropdownHighlightIdx - 1);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (isOpen && dropdownHighlightIdx >= 0) {
+                selectHighlightedItem();
+            }
+        } else if (e.key === 'Escape') {
+            closeDropdown();
+        } else if (e.key === 'Backspace' && input.value === '' && assignSelectedUsers.size > 0) {
+            // Remove last chip
+            const lastKey = Array.from(assignSelectedUsers.keys()).pop();
+            assignSelectedUsers.delete(lastKey);
+            renderChips();
+            updateAssignCount();
+            refreshDropdown();
+        }
+    });
+
+    // Click on dropdown item
+    document.getElementById('tokenDropdown').addEventListener('click', (e) => {
+        const item = e.target.closest('.token-dropdown-item');
+        if (item && !item.classList.contains('disabled')) {
+            selectDropdownItem(item);
+        }
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#tokenInputWrap')) {
+            closeDropdown();
+        }
+    });
+
+    // Open dropdown on focus if input has text
+    input.addEventListener('focus', () => {
+        const query = input.value.trim();
+        if (query.length >= 1 && lastSearchResults.length > 0) {
+            document.getElementById('tokenDropdown').classList.remove('d-none');
+        }
+    });
+});
+
+function updateAssignCount() {
+    const count = assignSelectedUsers.size;
+    document.getElementById('assignSelectedCount').textContent = count;
+    document.getElementById('submitAssignMore').disabled = count === 0;
+}
+
+window.submitAssignMore = async function() {
+    if (!currentModalBatchId || assignSelectedUsers.size === 0) return;
+
+    const btn = document.getElementById('submitAssignMore');
+    btn.disabled = true;
+    btn.textContent = 'Assigning...';
+
+    try {
+        const response = await csrfFetch('/api/admin/actions/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                batch_id: currentModalBatchId,
+                user_ids: Array.from(assignSelectedUsers.keys()),
+                send_notification: document.getElementById('assignSendNotification').checked
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast(`Assigned action to ${result.actions_created} participant(s)`, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('responseDetailsModal')).hide();
+            await loadActionStatistics();
+        } else {
+            document.getElementById('assignError').textContent = result.detail || 'Failed to assign action';
+            document.getElementById('assignError').classList.remove('d-none');
+        }
+    } catch (error) {
+        console.error('Failed to assign action:', error);
+        document.getElementById('assignError').textContent = 'Failed to assign action';
+        document.getElementById('assignError').classList.remove('d-none');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `Assign (<span id="assignSelectedCount">${assignSelectedUsers.size}</span>)`;
+    }
+};
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadActionStatistics();
+});
+
+})(); // End IIFE
+</script>
+{% endblock %}

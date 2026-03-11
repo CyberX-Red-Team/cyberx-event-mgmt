@@ -97,16 +97,16 @@ class TestUsernameGeneration:
 
         # First call returns existing user (conflict), second call returns None (available)
         mock_result1 = mocker.Mock()
-        mock_result1.scalar_one_or_none.return_value = Mock(id=1)  # Exists
+        mock_result1.scalar_one_or_none.return_value = Mock(id=1)  # jsmith taken
 
         mock_result2 = mocker.Mock()
-        mock_result2.scalar_one_or_none.return_value = None  # Available
+        mock_result2.scalar_one_or_none.return_value = None  # jsmith1 available
 
         mock_db.execute = mocker.AsyncMock(side_effect=[mock_result1, mock_result2])
 
         username = await generate_username("John", "Smith", mock_db)
 
-        assert username == "jsmith2"
+        assert username == "jsmith1"
 
     async def test_generate_username_multiple_conflicts(self, mocker):
         """Test generating username with multiple conflicts."""
@@ -115,16 +115,16 @@ class TestUsernameGeneration:
         # First 3 calls return conflicts, 4th is available
         mock_results = [
             mocker.Mock(scalar_one_or_none=lambda: Mock(id=1)),  # jsmith taken
-            mocker.Mock(scalar_one_or_none=lambda: Mock(id=2)),  # jsmith2 taken
-            mocker.Mock(scalar_one_or_none=lambda: Mock(id=3)),  # jsmith3 taken
-            mocker.Mock(scalar_one_or_none=lambda: None),        # jsmith4 available
+            mocker.Mock(scalar_one_or_none=lambda: Mock(id=2)),  # jsmith1 taken
+            mocker.Mock(scalar_one_or_none=lambda: Mock(id=3)),  # jsmith2 taken
+            mocker.Mock(scalar_one_or_none=lambda: None),        # jsmith3 available
         ]
 
         mock_db.execute = mocker.AsyncMock(side_effect=mock_results)
 
         username = await generate_username("John", "Smith", mock_db)
 
-        assert username == "jsmith4"
+        assert username == "jsmith3"
 
 
 @pytest.mark.unit
@@ -295,10 +295,12 @@ class TestConfirmParticipationRoute:
         mock_user.role = "invitee"
         mock_user.pandas_username = None
         mock_user.pandas_password = None
+        mock_user.get_effective_permissions.return_value = {"discord.view", "instances.view"}
 
         mock_event = Mock()
         mock_event.id = 1
         mock_event.name = "CyberX 2026"
+        mock_event.discord_channel_id = None  # Skip Discord invite generation
 
         mock_db = mocker.AsyncMock()
         mock_result = mocker.Mock()
@@ -320,8 +322,9 @@ class TestConfirmParticipationRoute:
         mock_workflow.trigger_workflow = mocker.AsyncMock()
         mocker.patch('app.api.routes.public.WorkflowService', return_value=mock_workflow)
 
-        # Mock username generation
+        # Mock username generation and encryption
         mocker.patch('app.api.routes.public.generate_username', return_value="tuser")
+        mocker.patch('app.utils.encryption.encrypt_field', return_value="encrypted_password")
 
         data = {
             "confirmation_code": "code123",
@@ -352,10 +355,12 @@ class TestConfirmParticipationRoute:
         mock_user.role = "sponsor"
         mock_user.pandas_username = "tsponsor"
         mock_user.pandas_password = "existing_password"
+        mock_user.get_effective_permissions.return_value = {"discord.view", "participants.view"}
 
         mock_event = Mock()
         mock_event.id = 1
         mock_event.name = "CyberX 2026"
+        mock_event.discord_channel_id = None  # Skip Discord invite generation
 
         mock_db = mocker.AsyncMock()
         mock_result = mocker.Mock()
@@ -446,15 +451,23 @@ class TestDeclineParticipationRoute:
         mock_user.confirmed = "UNKNOWN"
         mock_user.first_name = "Test"
         mock_user.email = "test@test.com"
+        mock_user.sponsor_id = None
 
         mock_event = Mock()
         mock_event.id = 1
         mock_event.name = "CyberX 2026"
 
+        mock_participation = Mock()
+
+        # db.execute returns different results for different queries:
+        # 1st call: user lookup, 2nd call: EventParticipation lookup
+        mock_user_result = mocker.Mock()
+        mock_user_result.scalar_one_or_none.return_value = mock_user
+        mock_ep_result = mocker.Mock()
+        mock_ep_result.scalar_one_or_none.return_value = mock_participation
+
         mock_db = mocker.AsyncMock()
-        mock_result = mocker.Mock()
-        mock_result.scalar_one_or_none.return_value = mock_user
-        mock_db.execute = mocker.AsyncMock(return_value=mock_result)
+        mock_db.execute = mocker.AsyncMock(side_effect=[mock_user_result, mock_ep_result])
         mock_db.commit = mocker.AsyncMock()
         mock_db.refresh = mocker.AsyncMock()
 
@@ -466,6 +479,10 @@ class TestDeclineParticipationRoute:
         mock_event_service = mocker.Mock()
         mock_event_service.get_current_event = mocker.AsyncMock(return_value=mock_event)
         mocker.patch('app.api.routes.public.EventService', return_value=mock_event_service)
+
+        mock_workflow = mocker.Mock()
+        mock_workflow.trigger_workflow = mocker.AsyncMock(return_value=0)
+        mocker.patch('app.api.routes.public.WorkflowService', return_value=mock_workflow)
 
         data = {
             "confirmation_code": "code123",
@@ -478,6 +495,7 @@ class TestDeclineParticipationRoute:
         assert "declined" in result["message"].lower()
         assert mock_user.confirmed == "NO"
         assert mock_user.decline_reason == "Schedule conflict"
+        assert mock_participation.status == "declined"
 
     async def test_decline_participation_success_no_reason(self, mocker):
         """Test successful decline without reason."""
@@ -488,15 +506,21 @@ class TestDeclineParticipationRoute:
         mock_user = Mock()
         mock_user.id = 1
         mock_user.confirmed = "UNKNOWN"
+        mock_user.sponsor_id = None
 
         mock_event = Mock()
         mock_event.id = 1
         mock_event.name = "CyberX 2026"
 
+        mock_participation = Mock()
+
+        mock_user_result = mocker.Mock()
+        mock_user_result.scalar_one_or_none.return_value = mock_user
+        mock_ep_result = mocker.Mock()
+        mock_ep_result.scalar_one_or_none.return_value = mock_participation
+
         mock_db = mocker.AsyncMock()
-        mock_result = mocker.Mock()
-        mock_result.scalar_one_or_none.return_value = mock_user
-        mock_db.execute = mocker.AsyncMock(return_value=mock_result)
+        mock_db.execute = mocker.AsyncMock(side_effect=[mock_user_result, mock_ep_result])
         mock_db.commit = mocker.AsyncMock()
         mock_db.refresh = mocker.AsyncMock()
 
@@ -508,6 +532,10 @@ class TestDeclineParticipationRoute:
         mock_event_service = mocker.Mock()
         mock_event_service.get_current_event = mocker.AsyncMock(return_value=mock_event)
         mocker.patch('app.api.routes.public.EventService', return_value=mock_event_service)
+
+        mock_workflow = mocker.Mock()
+        mock_workflow.trigger_workflow = mocker.AsyncMock(return_value=0)
+        mocker.patch('app.api.routes.public.WorkflowService', return_value=mock_workflow)
 
         data = {"confirmation_code": "code123"}
 

@@ -12,7 +12,7 @@ alembic==1.14.0
 bcrypt==4.2.1
 passlib==1.7.4
 python-jose[cryptography]==3.3.0
-cryptography==44.0.0  # For field encryption (Fernet)
+cryptography==44.0.0  # For field encryption (Fernet) + step-ca JWE decryption
 itsdangerous==2.2.0  # For CSRF token signing
 
 # Email
@@ -32,6 +32,17 @@ email-validator==2.2.0
 
 # Template Engine
 jinja2==3.1.5
+
+# Document Generation (CPE certificates)
+python-docx==1.1.2
+reportlab==4.4.10
+pypdf==6.7.4
+Pillow==12.1.1
+cairosvg==2.8.2
+pdfplumber==0.11.9
+
+# Cloud Storage (Cloudflare R2 signed URLs)
+boto3==1.35.0
 
 # Environment
 python-dotenv==1.0.1

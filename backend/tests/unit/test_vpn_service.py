@@ -597,7 +597,7 @@ class TestVPNServiceGeneration:
             key_type="vpn"
         )
 
-        config = service.generate_wireguard_config(vpn)
+        config = await service.generate_wireguard_config(vpn)
 
         assert "PrivateKey = oK56DE9Ue9zK76rAc8pBl6opph+1v36lm7cXXsQKrQM=" in config
         assert "PresharedKey = 0Q8P8LkNfPrPgDEJOBR5p7N6DwUhJHbmhJDRwLF8G38=" in config
@@ -619,7 +619,7 @@ class TestVPNServiceGeneration:
             key_type="vpn"
         )
 
-        config = service.generate_wireguard_config(vpn)
+        config = await service.generate_wireguard_config(vpn)
 
         assert "PresharedKey" not in config  # Should be omitted
 

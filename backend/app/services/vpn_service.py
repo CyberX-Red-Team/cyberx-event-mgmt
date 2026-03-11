@@ -53,13 +53,26 @@ class VPNService:
         )
         return result.scalar() or 0
 
+    _SORTABLE_VPN_COLUMNS = {
+        "id", "ipv4_address", "endpoint", "assignment_type",
+        "is_available", "assigned_at", "assigned_to_user_id", "created_at",
+    }
+
+    _GROUPABLE_VPN_COLUMNS = {
+        "assignment_type", "endpoint", "is_available", "assigned_to_user_id",
+    }
+
     async def list_credentials(
         self,
         page: int = 1,
         page_size: int = 50,
         is_available: Optional[bool] = None,
+        assignment_type: Optional[str] = None,
         assigned_to_user_id: Optional[int] = None,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        sort_by: str = "id",
+        sort_order: str = "asc",
+        group_by: Optional[str] = None,
     ) -> Tuple[List[VPNCredential], int]:
         """List VPN credentials with filtering and pagination."""
         query = select(VPNCredential)
@@ -69,6 +82,10 @@ class VPNService:
         if is_available is not None:
             query = query.where(VPNCredential.is_available == is_available)
             count_query = count_query.where(VPNCredential.is_available == is_available)
+
+        if assignment_type is not None:
+            query = query.where(VPNCredential.assignment_type == assignment_type)
+            count_query = count_query.where(VPNCredential.assignment_type == assignment_type)
 
         if assigned_to_user_id is not None:
             query = query.where(VPNCredential.assigned_to_user_id == assigned_to_user_id)
@@ -86,9 +103,46 @@ class VPNService:
         total_result = await self.session.execute(count_query)
         total = total_result.scalar()
 
-        # Apply pagination
-        offset = (page - 1) * page_size
-        query = query.order_by(VPNCredential.id).offset(offset).limit(page_size)
+        # Apply sorting and pagination
+        if sort_by not in self._SORTABLE_VPN_COLUMNS:
+            sort_by = "id"
+        sort_column = getattr(VPNCredential, sort_by, VPNCredential.id)
+
+        # When grouping, use group column as primary sort so same-group
+        # rows are contiguous; sort_column is a tiebreaker within groups.
+        if group_by and group_by in self._GROUPABLE_VPN_COLUMNS:
+            if group_by == "assigned_to_user_id":
+                # Special handling: group users, then instances, then unassigned.
+                # Include snapshot fields (assigned_to_name) so rows where the
+                # user FK was SET NULL on deletion still group with users
+                # (matches frontend grouping which checks assigned_to_name).
+                from sqlalchemy import case, literal
+                group_order = case(
+                    (or_(
+                        VPNCredential.assigned_to_user_id.isnot(None),
+                        VPNCredential.assigned_to_name.isnot(None),
+                    ), literal(1)),
+                    (VPNCredential.assigned_to_instance_id.isnot(None), literal(2)),
+                    else_=literal(3),
+                )
+                query = query.order_by(
+                    group_order,
+                    VPNCredential.assigned_to_name.asc().nullslast(),
+                    VPNCredential.assigned_to_user_id.asc().nullslast(),
+                    VPNCredential.assigned_to_instance_id.asc().nullslast(),
+                    sort_column.asc(),
+                )
+            else:
+                group_col = getattr(VPNCredential, group_by)
+                query = query.order_by(group_col.asc().nullslast(), sort_column.asc())
+        elif sort_order == "desc":
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+        # Skip pagination when grouping (return all rows for accurate groups)
+        if not (group_by and group_by in self._GROUPABLE_VPN_COLUMNS):
+            offset = (page - 1) * page_size
+            query = query.offset(offset).limit(page_size)
 
         result = await self.session.execute(query)
         credentials = result.scalars().all()
@@ -113,7 +167,10 @@ class VPNService:
         # skip_locked=True: Skip rows locked by other transactions (prevents deadlocks)
         result = await self.session.execute(
             select(VPNCredential)
-            .where(VPNCredential.is_available == True)
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assignment_type == "USER_REQUESTABLE"  # Only user-requestable VPNs
+            )
             .order_by(func.random())
             .limit(1)
             .with_for_update(skip_locked=True)
@@ -128,6 +185,13 @@ class VPNService:
         vpn.assigned_to_username = username
         vpn.assigned_at = datetime.now(timezone.utc)
         vpn.is_available = False
+
+        # Snapshot user identity (survives user deletion)
+        user_result = await self.session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if user:
+            vpn.assigned_to_email = user.email
+            vpn.assigned_to_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
 
         await self.session.commit()
         await self.session.refresh(vpn)
@@ -166,7 +230,10 @@ class VPNService:
         # This prevents race conditions during concurrent bulk assignments
         result = await self.session.execute(
             select(VPNCredential)
-            .where(VPNCredential.is_available == True)
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assignment_type == "USER_REQUESTABLE"  # Only user-requestable VPNs
+            )
             .order_by(func.random())
             .limit(count)
             .with_for_update(skip_locked=True)
@@ -183,10 +250,18 @@ class VPNService:
         assigned_vpns = []
         now = datetime.now(timezone.utc)
 
+        # Snapshot user identity (survives user deletion)
+        user_result = await self.session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        snapshot_email = user.email if user else None
+        snapshot_name = (f"{user.first_name or ''} {user.last_name or ''}".strip() or None) if user else None
+
         # Update all VPNs (rows are now locked until commit)
         for vpn in available_vpns:
             vpn.assigned_to_user_id = user_id
             vpn.assigned_to_username = username
+            vpn.assigned_to_email = snapshot_email
+            vpn.assigned_to_name = snapshot_name
             vpn.assigned_at = now
             vpn.request_batch_id = batch_id
             vpn.is_available = False
@@ -200,10 +275,13 @@ class VPNService:
         return len(assigned_vpns), f"Assigned {len(assigned_vpns)} VPN credentials", assigned_vpns
 
     async def get_available_count(self) -> int:
-        """Get count of available VPN credentials."""
+        """Get count of available VPN credentials for user requests."""
         result = await self.session.execute(
             select(func.count(VPNCredential.id))
-            .where(VPNCredential.is_available == True)
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assignment_type == 'USER_REQUESTABLE'
+            )
         )
         return result.scalar() or 0
 
@@ -256,10 +334,199 @@ class VPNService:
             "assigned_count": total - available
         }
 
+    # ─── Instance VPN Assignment Methods ────────────────────────────────────
+
+    async def assign_vpn_to_instance(
+        self,
+        instance_id: int
+    ) -> Tuple[bool, str, Optional[VPNCredential]]:
+        """
+        Assign an available INSTANCE_AUTO_ASSIGN VPN to an instance.
+
+        Uses SELECT FOR UPDATE with skip_locked to prevent race conditions
+        when multiple instances are being created concurrently.
+
+        Args:
+            instance_id: Instance ID to assign VPN to
+
+        Returns:
+            Tuple of (success, message, vpn_credential)
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Find available INSTANCE_AUTO_ASSIGN credential with row-level lock
+        result = await self.session.execute(
+            select(VPNCredential)
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assignment_type == "INSTANCE_AUTO_ASSIGN"
+            )
+            .order_by(func.random())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        vpn = result.scalar_one_or_none()
+
+        if not vpn:
+            logger.warning("No available INSTANCE_AUTO_ASSIGN VPN credentials for instance %d", instance_id)
+            return False, "No available INSTANCE_AUTO_ASSIGN VPN credentials", None
+
+        # Assign to instance (row is now locked until commit)
+        # Only set instance_id if it's a real ID (> 0)
+        # For placeholder (0), we reserve the VPN without setting FK
+        if instance_id > 0:
+            vpn.assigned_to_instance_id = instance_id
+        vpn.assigned_instance_at = datetime.now(timezone.utc)
+        vpn.is_available = False
+
+        await self.session.commit()
+        await self.session.refresh(vpn)
+
+        if instance_id > 0:
+            logger.info("Assigned VPN %d to instance %d", vpn.id, instance_id)
+        else:
+            logger.info("Reserved VPN %d for instance (ID pending)", vpn.id)
+        return True, "VPN assigned to instance successfully", vpn
+
+    async def get_instance_vpn(self, instance_id: int) -> Optional[VPNCredential]:
+        """
+        Get VPN credential assigned to an instance.
+
+        Args:
+            instance_id: Instance ID to look up
+
+        Returns:
+            VPNCredential if found, None otherwise
+        """
+        result = await self.session.execute(
+            select(VPNCredential)
+            .where(
+                VPNCredential.assigned_to_instance_id == instance_id,
+                VPNCredential.is_available == True,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_available_instance_vpn_count(self) -> int:
+        """
+        Get count of available INSTANCE_AUTO_ASSIGN VPN credentials.
+
+        Returns:
+            Number of available instance VPN credentials
+        """
+        result = await self.session.execute(
+            select(func.count(VPNCredential.id))
+            .where(
+                VPNCredential.is_available == True,
+                VPNCredential.assignment_type == "INSTANCE_AUTO_ASSIGN"
+            )
+        )
+        return result.scalar() or 0
+
+    async def update_assignment_type(
+        self,
+        vpn_id: int,
+        assignment_type: str
+    ) -> Tuple[bool, str]:
+        """
+        Update VPN assignment type.
+
+        Can only change if VPN is not currently assigned to a user or instance.
+
+        Args:
+            vpn_id: VPN credential ID
+            assignment_type: New type (USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED)
+
+        Returns:
+            Tuple of (success, message)
+        """
+        # Validate assignment type
+        valid_types = ["USER_REQUESTABLE", "INSTANCE_AUTO_ASSIGN", "RESERVED"]
+        if assignment_type not in valid_types:
+            return False, f"Invalid assignment type. Must be one of: {', '.join(valid_types)}"
+
+        # Get the VPN credential
+        vpn = await self.get_credential(vpn_id)
+        if not vpn:
+            return False, "VPN credential not found"
+
+        # Check if VPN is currently assigned
+        if not vpn.is_available:
+            return False, "Cannot change assignment type while VPN is assigned to a user or instance"
+
+        # Update assignment type
+        vpn.assignment_type = assignment_type
+        await self.session.commit()
+
+        return True, f"Assignment type updated to {assignment_type}"
+
+    async def bulk_update_assignment_type(
+        self,
+        vpn_ids: List[int],
+        assignment_type: str
+    ) -> Tuple[int, int, List[str]]:
+        """
+        Bulk update assignment type for multiple VPN credentials.
+
+        Args:
+            vpn_ids: List of VPN credential IDs
+            assignment_type: New type for all VPNs
+
+        Returns:
+            Tuple of (success_count, skipped_count, error_messages)
+        """
+        success_count = 0
+        skipped_count = 0
+        errors = []
+
+        for vpn_id in vpn_ids:
+            success, message = await self.update_assignment_type(vpn_id, assignment_type)
+            if success:
+                success_count += 1
+            else:
+                skipped_count += 1
+                errors.append(f"VPN {vpn_id}: {message}")
+
+        return success_count, skipped_count, errors
+
+    async def get_instance_pool_stats(self) -> dict:
+        """
+        Get statistics for INSTANCE_AUTO_ASSIGN VPN pool.
+
+        Returns:
+            Dict with total, available, and assigned counts
+        """
+        # Total INSTANCE_AUTO_ASSIGN VPNs
+        total_result = await self.session.execute(
+            select(func.count(VPNCredential.id))
+            .where(VPNCredential.assignment_type == "INSTANCE_AUTO_ASSIGN")
+        )
+        total = total_result.scalar() or 0
+
+        # Available INSTANCE_AUTO_ASSIGN VPNs
+        available_result = await self.session.execute(
+            select(func.count(VPNCredential.id))
+            .where(
+                VPNCredential.assignment_type == "INSTANCE_AUTO_ASSIGN",
+                VPNCredential.is_available == True
+            )
+        )
+        available = available_result.scalar() or 0
+
+        return {
+            "total": total,
+            "available": available,
+            "assigned": total - available
+        }
+
+    # ────────────────────────────────────────────────────────────────────────
+
     async def import_from_zip(
         self,
         zip_content: bytes,
-        endpoint: Optional[str] = None
+        endpoint: Optional[str] = None,
+        assignment_type: str = "USER_REQUESTABLE"
     ) -> Tuple[int, int, List[str]]:
         """
         Import VPN credentials from a ZIP file containing WireGuard configuration files.
@@ -271,6 +538,7 @@ class VPNService:
             zip_content: Raw bytes of the ZIP file
             endpoint: Optional VPN server endpoint override for all imported configs
                      (if not provided, will be parsed from each config file)
+            assignment_type: Type of assignment (USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED)
 
         Returns:
             Tuple of (imported_count, skipped_count, error_messages)
@@ -297,7 +565,7 @@ class VPNService:
 
                         # Validate and parse WireGuard config by content
                         vpn = await self._parse_and_create_vpn(
-                            config_content, filename, endpoint
+                            config_content, filename, endpoint, assignment_type
                         )
                         if vpn:
                             imported_count += 1
@@ -322,7 +590,8 @@ class VPNService:
         self,
         config_content: str,
         filename: str,
-        endpoint: Optional[str] = None
+        endpoint: Optional[str] = None,
+        assignment_type: str = "USER_REQUESTABLE"
     ) -> Optional[VPNCredential]:
         """
         Parse a WireGuard config file and create a VPN credential.
@@ -337,6 +606,7 @@ class VPNService:
             config_content: Raw text content of the config file
             filename: Name of the file (for error reporting)
             endpoint: VPN server endpoint to use (optional, will be parsed from config if not provided)
+            assignment_type: Type of assignment (USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED)
 
         Returns:
             VPNCredential object if valid, None if invalid or duplicate
@@ -344,10 +614,21 @@ class VPNService:
         Raises:
             ValueError: If config is missing required fields
         """
+        # Required fields
         private_key = None
-        preshared_key = None  # Optional
         addresses = []
         parsed_endpoint = None
+
+        # Optional fields (preserve from original config)
+        preshared_key = None
+        mtu = None
+        dns = None
+        public_key = None
+        allowed_ips = None
+        persistent_keepalive = None
+        table = None
+        save_config = None
+        fwmark = None
 
         # Parse the config
         for line in config_content.split('\n'):
@@ -370,6 +651,38 @@ class VPNService:
                 match = re.match(r'Endpoint\s*=\s*(.+)', line)
                 if match:
                     parsed_endpoint = match.group(1).strip()
+            elif line.startswith('MTU'):
+                match = re.match(r'MTU\s*=\s*(.+)', line)
+                if match:
+                    mtu = match.group(1).strip()
+            elif line.startswith('DNS'):
+                match = re.match(r'DNS\s*=\s*(.+)', line)
+                if match:
+                    dns = match.group(1).strip()
+            elif line.startswith('PublicKey'):
+                match = re.match(r'PublicKey\s*=\s*(.+)', line)
+                if match:
+                    public_key = match.group(1).strip()
+            elif line.startswith('AllowedIPs'):
+                match = re.match(r'AllowedIPs\s*=\s*(.+)', line)
+                if match:
+                    allowed_ips = match.group(1).strip()
+            elif line.startswith('PersistentKeepalive'):
+                match = re.match(r'PersistentKeepalive\s*=\s*(.+)', line)
+                if match:
+                    persistent_keepalive = match.group(1).strip()
+            elif line.startswith('Table'):
+                match = re.match(r'Table\s*=\s*(.+)', line)
+                if match:
+                    table = match.group(1).strip()
+            elif line.startswith('SaveConfig'):
+                match = re.match(r'SaveConfig\s*=\s*(.+)', line)
+                if match:
+                    save_config = match.group(1).strip()
+            elif line.startswith('FwMark'):
+                match = re.match(r'FwMark\s*=\s*(.+)', line)
+                if match:
+                    fwmark = match.group(1).strip()
 
         # Use provided endpoint or parsed endpoint
         final_endpoint = endpoint or parsed_endpoint
@@ -412,7 +725,7 @@ class VPNService:
         if existing.scalar_one_or_none():
             return None  # Skip duplicate
 
-        # Create the credential
+        # Create the credential (preserve all fields from original config)
         vpn = VPNCredential(
             interface_ip=interface_ip,
             ipv4_address=ipv4_address,
@@ -422,7 +735,17 @@ class VPNService:
             preshared_key=preshared_key,
             endpoint=final_endpoint,
             key_type="vpn",  # Generic type
+            # Optional fields from original config (NULL if not present)
+            mtu=mtu,
+            dns=dns,
+            public_key=public_key,
+            allowed_ips=allowed_ips,
+            persistent_keepalive=persistent_keepalive,
+            table=table,
+            save_config=save_config,
+            fwmark=fwmark,
             file_hash=file_hash,
+            assignment_type=assignment_type,  # Assignment type from import
             is_available=True,
             is_active=True
         )
@@ -430,26 +753,91 @@ class VPNService:
         self.session.add(vpn)
         return vpn
 
-    def generate_wireguard_config(self, vpn: VPNCredential) -> str:
-        """Generate WireGuard configuration file content."""
+    async def get_server_settings(self) -> dict:
+        """
+        Get VPN server settings from database, falling back to environment defaults.
+
+        Returns:
+            Dict with public_key, dns_servers, allowed_ips, and mtu
+        """
+        from app.models.app_setting import AppSetting
+
+        result = await self.session.execute(
+            select(AppSetting).where(
+                AppSetting.key.in_([
+                    'vpn_server_public_key',
+                    'vpn_dns_servers',
+                    'vpn_allowed_ips',
+                    'vpn_mtu'
+                ])
+            )
+        )
+        settings_dict = {s.key: s.value for s in result.scalars().all()}
+
+        return {
+            'public_key': settings_dict.get('vpn_server_public_key', settings.VPN_SERVER_PUBLIC_KEY),
+            'dns_servers': settings_dict.get('vpn_dns_servers', settings.VPN_DNS_SERVERS),
+            'allowed_ips': settings_dict.get('vpn_allowed_ips', settings.VPN_ALLOWED_IPS),
+            'mtu': settings_dict.get('vpn_mtu', '1420')
+        }
+
+    async def generate_wireguard_config(
+        self,
+        vpn: VPNCredential,
+        public_key: str = None,
+        dns_servers: str = None,
+        allowed_ips: str = None,
+        mtu: str = None
+    ) -> str:
+        """
+        Generate WireGuard configuration file content.
+
+        Args:
+            vpn: VPN credential object
+            public_key: Optional override for server public key (fetched from DB if None)
+            dns_servers: Optional override for DNS servers (fetched from DB if None)
+            allowed_ips: Optional override for allowed IPs (fetched from DB if None)
+            mtu: Optional override for MTU size (fetched from DB if None)
+        """
+        # Fetch settings from database if not provided
+        if public_key is None or dns_servers is None or allowed_ips is None or mtu is None:
+            server_settings = await self.get_server_settings()
+            public_key = public_key or server_settings['public_key']
+            dns_servers = dns_servers or server_settings['dns_servers']
+            allowed_ips = allowed_ips or server_settings['allowed_ips']
+            mtu = mtu or server_settings['mtu']
+
         # Parse interface IPs (no spaces after commas to match import format)
         interface_ips = [ip.strip() for ip in vpn.interface_ip.split(",")]
         address_line = ",".join(interface_ips)
 
-        # Build PresharedKey line only if present (omit if None)
-        preshared_line = f"PresharedKey = {vpn.preshared_key}\n" if vpn.preshared_key else ""
+        # Use values from original config if present, otherwise fall back to server defaults
+        # This ensures generated config matches uploaded config structure for hash verification
+        final_dns = vpn.dns if vpn.dns is not None else dns_servers
+        final_mtu = vpn.mtu if vpn.mtu is not None else mtu
+        final_public_key = vpn.public_key if vpn.public_key is not None else public_key
+        final_allowed_ips = vpn.allowed_ips if vpn.allowed_ips is not None else allowed_ips
+        final_keepalive = vpn.persistent_keepalive if vpn.persistent_keepalive is not None else "25"
 
-        # Match import format: [Peer] section first, then [Interface]
-        config = f"""[Peer]
-Endpoint = {vpn.endpoint}
-PublicKey = {settings.VPN_SERVER_PUBLIC_KEY}
-{preshared_line}AllowedIPs = {settings.VPN_ALLOWED_IPS}
-PersistentKeepalive = 25
-[Interface]
+        # Build optional lines only if they were present in original config
+        dns_line = f"DNS = {final_dns}\n" if vpn.dns is not None else ""
+        mtu_line = f"MTU = {final_mtu}\n" if vpn.mtu is not None else ""
+        table_line = f"Table = {vpn.table}\n" if vpn.table is not None else ""
+        save_config_line = f"SaveConfig = {vpn.save_config}\n" if vpn.save_config is not None else ""
+        fwmark_line = f"FwMark = {vpn.fwmark}\n" if vpn.fwmark is not None else ""
+        preshared_line = f"PresharedKey = {vpn.preshared_key}\n" if vpn.preshared_key else ""
+        allowed_ips_line = f"AllowedIPs = {final_allowed_ips}\n" if vpn.allowed_ips is not None else ""
+        keepalive_line = f"PersistentKeepalive = {final_keepalive}\n" if vpn.persistent_keepalive is not None else ""
+
+        # Standard WireGuard format: [Interface] section first, then [Peer]
+        config = f"""[Interface]
 PrivateKey = {vpn.private_key}
 Address = {address_line}
-DNS = {settings.VPN_DNS_SERVERS}
-"""
+{dns_line}{mtu_line}{table_line}{save_config_line}{fwmark_line}
+[Peer]
+PublicKey = {final_public_key}
+{preshared_line}Endpoint = {vpn.endpoint}
+{allowed_ips_line}{keepalive_line}"""
         return config
 
     def get_config_filename(self, user: User, vpn: VPNCredential) -> str:

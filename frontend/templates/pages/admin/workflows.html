@@ -5,7 +5,7 @@
 {% block content %}
 <!-- Page Header -->
 <header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
-    <div class="container-xl px-4">
+    <div class="container-fluid px-4">
         <div class="page-header-content pt-4">
             <div class="row align-items-center justify-content-between">
                 <div class="col-auto mt-4">
@@ -27,7 +27,7 @@
 </header>
 
 <!-- Main Content -->
-<div class="container-xl px-4 mt-n10">
+<div class="container-fluid px-4 mt-n10">
     <!-- Workflows Table -->
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -113,8 +113,16 @@
                             <div class="form-text" id="triggerEventDescription"></div>
                         </div>
 
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="workflowSendImmediately" onchange="onSendImmediatelyChange()">
+                            <label class="form-check-label" for="workflowSendImmediately">
+                                <strong>Send Immediately</strong>
+                                <div class="small text-muted">Bypass email queue and send inline via SendGrid. Use for time-sensitive emails like password resets.</div>
+                            </label>
+                        </div>
+
                         <div class="row">
-                            <div class="col-md-6">
+                            <div class="col-md-6" id="delayGroup">
                                 <label class="form-label">Delay (minutes)</label>
                                 <input type="number" class="form-control" id="workflowDelay" min="0" placeholder="0">
                                 <div class="form-text">Optional delay before sending (0 = immediate)</div>
@@ -155,6 +163,25 @@
                             <textarea class="form-control font-monospace" id="workflowCustomVars" rows="3" placeholder='{"login_url": "https://portal.example.com"}'></textarea>
                             <div class="form-text">Additional template variables as JSON</div>
                             <div id="availableVarsInfo" class="small text-muted mt-1"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sender Override -->
+                <div class="card bg-light mb-3">
+                    <div class="card-body">
+                        <h6 class="mb-3"><i data-feather="at-sign" class="me-2"></i>Sender Override <span class="badge bg-secondary">Optional</span></h6>
+                        <div class="form-text mb-3">Override the default sender address for this workflow. Leave blank to use the system default.</div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label">From Email</label>
+                                <input type="email" class="form-control" id="workflowFromEmail" placeholder="e.g., invite@cyberxrt.com">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">From Name</label>
+                                <input type="text" class="form-control" id="workflowFromName" placeholder="e.g., CyberX Invitations">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -281,7 +308,7 @@ function renderWorkflowsTable() {
                 </td>
                 <td>
                     <code class="small">${escapeHtml(wf.trigger_event)}</code>
-                    ${wf.delay_minutes ? `<br><small class="text-muted">Delay: ${wf.delay_minutes}m</small>` : ''}
+                    ${wf.send_immediately ? '<br><span class="badge bg-warning text-dark" style="font-size: 0.65em;">Immediate</span>' : wf.delay_minutes ? `<br><small class="text-muted">Delay: ${wf.delay_minutes}m</small>` : ''}
                 </td>
                 <td><code class="small">${escapeHtml(wf.template_name)}</code></td>
                 <td><span class="badge bg-${priorityColor}">${wf.priority}</span></td>
@@ -368,7 +395,11 @@ function openCreateWorkflowModal() {
     document.getElementById('workflowTemplate').value = '';
     document.getElementById('workflowPriority').value = '5';
     document.getElementById('workflowDelay').value = '';
+    document.getElementById('workflowSendImmediately').checked = false;
+    onSendImmediatelyChange();
     document.getElementById('workflowCustomVars').value = '';
+    document.getElementById('workflowFromEmail').value = '';
+    document.getElementById('workflowFromName').value = '';
     document.getElementById('workflowEnabled').checked = true;
     document.getElementById('triggerEventDescription').textContent = '';
     document.getElementById('availableVarsInfo').textContent = '';
@@ -394,7 +425,11 @@ async function editWorkflow(id) {
         document.getElementById('workflowTemplate').value = workflow.template_name;
         document.getElementById('workflowPriority').value = workflow.priority;
         document.getElementById('workflowDelay').value = workflow.delay_minutes || '';
+        document.getElementById('workflowSendImmediately').checked = workflow.send_immediately || false;
+        onSendImmediatelyChange();
         document.getElementById('workflowCustomVars').value = workflow.custom_vars ? JSON.stringify(workflow.custom_vars, null, 2) : '';
+        document.getElementById('workflowFromEmail').value = workflow.from_email || '';
+        document.getElementById('workflowFromName').value = workflow.from_name || '';
         document.getElementById('workflowEnabled').checked = workflow.is_enabled;
 
         onTriggerEventChange();
@@ -403,7 +438,7 @@ async function editWorkflow(id) {
         feather.replace();
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load workflow');
+        showToast('Failed to load workflow', 'danger');
     }
 }
 
@@ -416,7 +451,7 @@ async function saveWorkflow() {
         try {
             customVars = JSON.parse(customVarsText);
         } catch (e) {
-            alert('Invalid JSON in Custom Variables');
+            showToast('Invalid JSON in Custom Variables', 'warning');
             return;
         }
     }
@@ -429,7 +464,10 @@ async function saveWorkflow() {
         template_name: document.getElementById('workflowTemplate').value,
         priority: parseInt(document.getElementById('workflowPriority').value),
         delay_minutes: document.getElementById('workflowDelay').value ? parseInt(document.getElementById('workflowDelay').value) : null,
+        send_immediately: document.getElementById('workflowSendImmediately').checked,
         custom_vars: customVars,
+        from_email: document.getElementById('workflowFromEmail').value || null,
+        from_name: document.getElementById('workflowFromName').value || null,
         is_enabled: document.getElementById('workflowEnabled').checked
     };
 
@@ -445,7 +483,7 @@ async function saveWorkflow() {
 
     const missingFields = requiredFields.filter(field => !data[field]);
     if (missingFields.length > 0) {
-        alert('Please fill in all required fields');
+        showToast('Please fill in all required fields', 'warning');
         return;
     }
 
@@ -465,10 +503,10 @@ async function saveWorkflow() {
 
         bootstrap.Modal.getInstance(document.getElementById('workflowModal')).hide();
         await loadWorkflows();
-        alert('Workflow saved successfully');
+        showToast('Workflow saved successfully', 'success');
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -487,7 +525,7 @@ async function toggleWorkflow(id, enabled) {
         await loadWorkflows();
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -505,10 +543,10 @@ async function deleteWorkflow(id) {
         }
 
         await loadWorkflows();
-        alert('Workflow deleted successfully');
+        showToast('Workflow deleted successfully', 'success');
     } catch (error) {
         console.error('Error:', error);
-        alert(error.message);
+        showToast(error.message, 'danger');
     }
 }
 
@@ -519,7 +557,20 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function onSendImmediatelyChange() {
+    const immediate = document.getElementById('workflowSendImmediately').checked;
+    const delayGroup = document.getElementById('delayGroup');
+    if (immediate) {
+        delayGroup.style.opacity = '0.5';
+        delayGroup.querySelector('input').disabled = true;
+    } else {
+        delayGroup.style.opacity = '1';
+        delayGroup.querySelector('input').disabled = false;
+    }
+}
+
 // Expose functions to global scope for onclick handlers
+window.onSendImmediatelyChange = onSendImmediatelyChange;
 window.openCreateWorkflowModal = openCreateWorkflowModal;
 window.editWorkflow = editWorkflow;
 window.saveWorkflow = saveWorkflow;

@@ -6,12 +6,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.models.user import User
-from app.models.event import Event
+from app.models.event import Event, EventParticipation, ParticipationStatus
 from app.services.email_queue_service import EmailQueueService
 from app.services.audit_service import AuditService
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_utc(dt) -> datetime:
+    """Return a UTC-aware datetime from a date or datetime object."""
+    from datetime import date
+    if isinstance(dt, datetime):
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+    # datetime.date — convert to datetime at midnight UTC
+    if isinstance(dt, date):
+        return datetime.combine(dt, datetime.min.time(), tzinfo=timezone.utc)
+    raise TypeError(f"Expected date or datetime, got {type(dt)}")
 
 
 async def process_invitation_reminders():
@@ -69,12 +82,16 @@ async def process_reminder_stage_1(session: AsyncSession, event: Event, settings
     - confirmed is still UNKNOWN
     - event is at least Y days away
     """
+    if not settings.REMINDER_1_ENABLED:
+        logger.info("Stage 1: Disabled via REMINDER_1_ENABLED - skipping")
+        return
+
     now = datetime.now(timezone.utc)
     days_after = settings.REMINDER_1_DAYS_AFTER_INVITE
     min_days_before_event = settings.REMINDER_1_MIN_DAYS_BEFORE_EVENT
 
     # Check if event is far enough away
-    days_until_event = (event.start_date.replace(tzinfo=timezone.utc) - now).days
+    days_until_event = (_ensure_utc(event.start_date) - now).days
     if days_until_event < min_days_before_event:
         logger.info(
             f"Stage 1: Event is only {days_until_event} days away (minimum: {min_days_before_event}) - skipping"
@@ -86,9 +103,17 @@ async def process_reminder_stage_1(session: AsyncSession, event: Event, settings
     target_date_end = now - timedelta(days=days_after)
 
     result = await session.execute(
-        select(User).where(
+        select(User)
+        .join(EventParticipation, and_(
+            EventParticipation.user_id == User.id,
+            EventParticipation.event_id == event.id
+        ))
+        .where(
             and_(
-                User.confirmed == 'UNKNOWN',
+                EventParticipation.status.in_([
+                    ParticipationStatus.INVITED.value,
+                    ParticipationStatus.NO_RESPONSE.value
+                ]),
                 User.confirmation_sent_at.isnot(None),
                 User.confirmation_sent_at >= target_date_start,
                 User.confirmation_sent_at < target_date_end,
@@ -133,12 +158,16 @@ async def process_reminder_stage_2(session: AsyncSession, event: Event, settings
     - confirmed is still UNKNOWN
     - event is at least Z days away
     """
+    if not settings.REMINDER_2_ENABLED:
+        logger.info("Stage 2: Disabled via REMINDER_2_ENABLED - skipping")
+        return
+
     now = datetime.now(timezone.utc)
     days_after = settings.REMINDER_2_DAYS_AFTER_INVITE
     min_days_before_event = settings.REMINDER_2_MIN_DAYS_BEFORE_EVENT
 
     # Check if event is far enough away
-    days_until_event = (event.start_date.replace(tzinfo=timezone.utc) - now).days
+    days_until_event = (_ensure_utc(event.start_date) - now).days
     if days_until_event < min_days_before_event:
         logger.info(
             f"Stage 2: Event is only {days_until_event} days away (minimum: {min_days_before_event}) - skipping"
@@ -150,9 +179,17 @@ async def process_reminder_stage_2(session: AsyncSession, event: Event, settings
     target_date_end = now - timedelta(days=days_after)
 
     result = await session.execute(
-        select(User).where(
+        select(User)
+        .join(EventParticipation, and_(
+            EventParticipation.user_id == User.id,
+            EventParticipation.event_id == event.id
+        ))
+        .where(
             and_(
-                User.confirmed == 'UNKNOWN',
+                EventParticipation.status.in_([
+                    ParticipationStatus.INVITED.value,
+                    ParticipationStatus.NO_RESPONSE.value
+                ]),
                 User.confirmation_sent_at.isnot(None),
                 User.confirmation_sent_at >= target_date_start,
                 User.confirmation_sent_at < target_date_end,
@@ -197,11 +234,15 @@ async def process_reminder_stage_3(session: AsyncSession, event: Event, settings
     - confirmed is still UNKNOWN
     - This is the "last chance to RSVP" reminder
     """
+    if not settings.REMINDER_3_ENABLED:
+        logger.info("Stage 3: Disabled via REMINDER_3_ENABLED - skipping")
+        return
+
     now = datetime.now(timezone.utc)
     days_before = settings.REMINDER_3_DAYS_BEFORE_EVENT
 
     # Calculate target date range (Z days before event, with 24-hour window)
-    event_start_utc = event.start_date.replace(tzinfo=timezone.utc)
+    event_start_utc = _ensure_utc(event.start_date)
     target_date = event_start_utc - timedelta(days=days_before)
 
     # Check if today is the target date (within 24 hours)
@@ -216,9 +257,17 @@ async def process_reminder_stage_3(session: AsyncSession, event: Event, settings
 
     # Find all users who still haven't confirmed
     result = await session.execute(
-        select(User).where(
+        select(User)
+        .join(EventParticipation, and_(
+            EventParticipation.user_id == User.id,
+            EventParticipation.event_id == event.id
+        ))
+        .where(
             and_(
-                User.confirmed == 'UNKNOWN',
+                EventParticipation.status.in_([
+                    ParticipationStatus.INVITED.value,
+                    ParticipationStatus.NO_RESPONSE.value
+                ]),
                 User.confirmation_sent_at.isnot(None),
                 User.reminder_3_sent_at.is_(None),
                 User.is_active == True
@@ -262,17 +311,63 @@ async def queue_reminders(
     """
     Queue reminder emails for a list of users.
 
+    Resolves the template name and custom_vars from the corresponding
+    event_reminder workflow (configurable via admin UI), falling back
+    to the hardcoded template_name if no workflow is configured.
+
     Args:
         session: Database session
         users: List of users to send reminders to
         event: Active event
         stage: Reminder stage (1, 2, or 3)
-        template_name: Email template to use
+        template_name: Fallback email template name
         days_until_event: Number of days until event starts
     """
+    # Hard guard: never send reminders if the event has already started
+    now = datetime.now(timezone.utc)
+    event_start_utc = _ensure_utc(event.start_date) if event.start_date else None
+    if event_start_utc and event_start_utc <= now:
+        logger.info(f"Stage {stage}: Event already started - skipping reminders")
+        return
+
     settings = get_settings()
     queue_service = EmailQueueService(session)
     audit_service = AuditService(session)
+
+    # Resolve template from workflow config (falls back to hardcoded default)
+    from sqlalchemy import select
+    from app.models.email_workflow import EmailWorkflow, WorkflowTriggerEvent
+
+    stage_trigger_map = {
+        1: WorkflowTriggerEvent.EVENT_REMINDER_1,
+        2: WorkflowTriggerEvent.EVENT_REMINDER_2,
+        3: WorkflowTriggerEvent.EVENT_REMINDER_FINAL,
+    }
+    trigger_event = stage_trigger_map.get(stage)
+
+    workflow = None
+    if trigger_event:
+        workflow_result = await session.execute(
+            select(EmailWorkflow)
+            .where(EmailWorkflow.trigger_event == trigger_event)
+            .where(EmailWorkflow.is_enabled == True)
+            .limit(1)
+        )
+        workflow = workflow_result.scalar_one_or_none()
+
+    resolved_template = workflow.template_name if workflow else template_name
+    workflow_vars = workflow.custom_vars if workflow and workflow.custom_vars else {}
+
+    # Inject sender overrides if configured on the workflow
+    if workflow and workflow.from_email:
+        workflow_vars["__from_email"] = workflow.from_email
+    if workflow and workflow.from_name:
+        workflow_vars["__from_name"] = workflow.from_name
+
+    logger.info(
+        f"Stage {stage}: Using template '{resolved_template}' "
+        f"(workflow: {'yes' if workflow else 'fallback'})"
+    )
 
     queued_count = 0
     failed_count = 0
@@ -291,12 +386,13 @@ async def queue_reminders(
             from app.services.email_service import build_event_template_vars
             event_vars = build_event_template_vars(event)
 
-            # Queue email
+            # Queue email (workflow_vars first so trigger-time vars override)
             await queue_service.enqueue_email(
                 user_id=user.id,
-                template_name=template_name,
+                template_name=resolved_template,
                 priority=4,  # High priority for reminders
                 custom_vars={
+                    **workflow_vars,
                     "first_name": user.first_name,
                     "last_name": user.last_name,
                     "email": user.email,
@@ -341,7 +437,7 @@ async def queue_reminders(
 
     logger.info(
         f"Stage {stage}: Queued {queued_count} reminders, {failed_count} failed "
-        f"(template: {template_name}, days until event: {days_until_event})"
+        f"(template: {resolved_template}, days until event: {days_until_event})"
     )
 
 

@@ -68,7 +68,7 @@
 <div class="container-fluid px-4 mt-n10">
     <!-- Stats Cards -->
     <div class="row mb-4">
-        <div class="col-xl-4 col-md-6">
+        <div class="col-xl-3 col-md-6 mb-4">
             <div class="card bg-primary text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -81,7 +81,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-xl-4 col-md-6">
+        <div class="col-xl-3 col-md-6 mb-4">
             <div class="card bg-success text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -94,7 +94,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-xl-4 col-md-6">
+        <div class="col-xl-3 col-md-6 mb-4">
             <div class="card bg-warning text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -107,10 +107,23 @@
                 </div>
             </div>
         </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card bg-info text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="me-3">
+                            <div class="text-white-75 small">Instance Pool Available</div>
+                            <div class="text-lg fw-bold" id="statInstancePoolAvailable">-</div>
+                        </div>
+                        <i data-feather="server" class="feather-xl text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Bulk Import Card (Admin Only) -->
-    {% if current_user.is_admin_role %}
+    {% if 'vpn.manage_pool' in perms %}
     <div class="card mb-4">
         <div class="card-header">
             <i data-feather="upload" class="me-2"></i>
@@ -134,6 +147,19 @@
                     <div id="uploadResult" class="mt-3" style="display: none;"></div>
                 </div>
                 <div class="col-lg-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">VPN Assignment Type</label>
+                        <select class="form-select" id="assignmentType">
+                            <option value="USER_REQUESTABLE" selected>User Requestable (Self-Service)</option>
+                            <option value="INSTANCE_AUTO_ASSIGN">Instance Auto-Assign</option>
+                            <option value="RESERVED">Reserved</option>
+                        </select>
+                        <div class="form-text small mt-2">
+                            <strong>USER_REQUESTABLE:</strong> Participants can request these VPNs themselves<br>
+                            <strong>INSTANCE_AUTO_ASSIGN:</strong> Automatically assigned to instances in VPN-enabled events<br>
+                            <strong>RESERVED:</strong> Held in reserve, not available for auto-assignment
+                        </div>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold">Download File Naming Pattern</label>
                         <input type="text" class="form-control form-control-sm font-monospace" id="namingPattern" placeholder="simnet_{ipv4_address}.conf" value="simnet_{ipv4_address}.conf">
@@ -162,11 +188,11 @@
         </div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label small">Search</label>
                     <input type="text" class="form-control" id="searchInput" placeholder="IP address, username...">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label small">Status</label>
                     <select class="form-select" id="availableFilter">
                         <option value="">All</option>
@@ -174,7 +200,26 @@
                         <option value="false">Assigned</option>
                     </select>
                 </div>
-                <div class="col-md-5 d-flex align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small">Assignment Type</label>
+                    <select class="form-select" id="assignmentTypeFilter">
+                        <option value="">All Types</option>
+                        <option value="USER_REQUESTABLE">User Requestable</option>
+                        <option value="INSTANCE_AUTO_ASSIGN">Instance Auto-Assign</option>
+                        <option value="RESERVED">Reserved</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Group By</label>
+                    <select class="form-select" id="vpnGroupByFilter" onchange="handleVpnGroupByChange()">
+                        <option value="">None</option>
+                        <option value="assignment_type">Assignment Type</option>
+                        <option value="endpoint">Endpoint</option>
+                        <option value="is_available">Status</option>
+                        <option value="assigned_to_user_id">Assigned To</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
                     <button class="btn btn-primary me-2" onclick="applyFilters()">
                         <i data-feather="search" class="me-1"></i> Search
                     </button>
@@ -213,21 +258,22 @@
                             <th width="30">
                                 <input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleSelectAll()">
                             </th>
-                            <th>ID</th>
-                            <th>IPv4 Address</th>
+                            <th data-sort-key="id">ID</th>
+                            <th data-sort-key="ipv4_address">IPv4 Address</th>
                             <th>Interface IP</th>
-                            <th>Endpoint</th>
+                            <th data-sort-key="endpoint">Endpoint</th>
+                            <th data-sort-key="assignment_type">Type</th>
                             <th>SHA256 Hash</th>
                             <th>Request ID</th>
-                            <th>Status</th>
+                            <th data-sort-key="is_available">Status</th>
                             <th>Assigned To</th>
-                            <th>Assigned At</th>
+                            <th data-sort-key="assigned_at">Assigned At</th>
                             <th width="100">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="vpnBody">
                         <tr>
-                            <td colspan="10" class="text-center py-4">
+                            <td colspan="12" class="text-center py-4">
                                 <div class="spinner-border spinner-border-sm me-2"></div>
                                 Loading VPN credentials...
                             </td>
@@ -306,6 +352,7 @@
 {{ super() }}
 <script>
 let currentPage = 1;
+let vpnSorter;
 let searchTimeout = null;
 
 // Load VPN stats
@@ -318,9 +365,28 @@ async function loadStats() {
             document.getElementById('statAvailable').textContent = data.available_count;
             document.getElementById('statAssigned').textContent = data.assigned_count;
         }
+
+        // Load instance pool stats
+        const poolResponse = await csrfFetch('/api/vpn/stats/instance-pool');
+        if (poolResponse.ok) {
+            const poolData = await poolResponse.json();
+            document.getElementById('statInstancePoolAvailable').textContent = poolData.available;
+        }
     } catch (error) {
         console.error('Failed to load stats:', error);
     }
+}
+
+function handleVpnGroupByChange() {
+    const groupBy = document.getElementById('vpnGroupByFilter').value;
+    if (groupBy) {
+        vpnSorter.setSort(groupBy, 'asc');
+        vpnSorter.setDisabled(true);
+    } else {
+        vpnSorter.setDisabled(false);
+        vpnSorter.setSort('id', 'asc');
+    }
+    loadVPNCredentials(1);
 }
 
 // Load VPN credentials
@@ -329,10 +395,22 @@ async function loadVPNCredentials(page = 1) {
     const pageSize = document.getElementById('pageSizeSelect').value;
     const search = document.getElementById('searchInput').value;
     const isAvailable = document.getElementById('availableFilter').value;
+    const assignmentType = document.getElementById('assignmentTypeFilter').value;
+    const groupBy = document.getElementById('vpnGroupByFilter').value;
 
+    let sortBy, sortOrder;
+    if (groupBy) {
+        sortBy = groupBy;
+        sortOrder = 'asc';
+    } else {
+        ({ sortBy, sortOrder } = vpnSorter.getSort());
+    }
     let url = `/api/vpn/credentials?page=${page}&page_size=${pageSize}`;
+    url += `&sort_by=${sortBy}&sort_order=${sortOrder}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (isAvailable) url += `&is_available=${isAvailable}`;
+    if (assignmentType) url += `&assignment_type=${encodeURIComponent(assignmentType)}`;
+    if (groupBy) url += `&group_by=${encodeURIComponent(groupBy)}`;
 
     try {
         const response = await csrfFetch(url);
@@ -351,10 +429,14 @@ async function loadVPNCredentials(page = 1) {
         document.getElementById('showingCount').textContent = data.items.length;
         document.getElementById('totalCount').textContent = data.total;
 
+        // Hide pagination when grouping (all rows returned)
+        const paginationDiv = document.getElementById('pageSizeSelect').closest('.d-flex');
+        paginationDiv.style.display = groupBy ? 'none' : '';
+
     } catch (error) {
         console.error('Error:', error);
         document.getElementById('vpnBody').innerHTML = `
-            <tr><td colspan="10" class="text-center text-danger py-4">
+            <tr><td colspan="12" class="text-center text-danger py-4">
                 Failed to load VPN credentials. Please try again.
             </td></tr>
         `;
@@ -366,14 +448,85 @@ function renderVPNCredentials(credentials) {
 
     if (credentials.length === 0) {
         tbody.innerHTML = `
-            <tr><td colspan="10" class="text-center py-4 text-muted">
+            <tr><td colspan="12" class="text-center py-4 text-muted">
                 No VPN credentials found matching your criteria.
             </td></tr>
         `;
         return;
     }
 
-    tbody.innerHTML = credentials.map(v => `
+    // Helper function to format assignment type
+    function formatAssignmentType(type) {
+        if (type === 'USER_REQUESTABLE') {
+            return '<span class="badge bg-primary" title="User Requestable">User</span>';
+        } else if (type === 'INSTANCE_AUTO_ASSIGN') {
+            return '<span class="badge bg-info" title="Instance Auto-Assign">Instance</span>';
+        } else if (type === 'RESERVED') {
+            return '<span class="badge bg-secondary" title="Reserved">Reserved</span>';
+        }
+        return '<span class="badge bg-secondary">Unknown</span>';
+    }
+
+    const groupBy = document.getElementById('vpnGroupByFilter').value;
+    let lastGroupValue = null;
+    const rows = [];
+
+    // Pre-compute group counts
+    const groupCounts = {};
+    if (groupBy) {
+        credentials.forEach(v => {
+            let gk;
+            if (groupBy === 'assignment_type') gk = v.assignment_type || 'USER_REQUESTABLE';
+            else if (groupBy === 'endpoint') gk = v.endpoint || 'Unknown';
+            else if (groupBy === 'is_available') gk = v.is_available ? 'available' : 'assigned';
+            else if (groupBy === 'assigned_to_user_id') {
+                if (v.assigned_to_name) gk = v.assigned_to_user_id || ('name_' + v.assigned_to_name);
+                else if (v.assigned_instance_name) gk = 'instance_' + v.assigned_to_instance_id;
+                else gk = 0;
+            }
+            groupCounts[gk] = (groupCounts[gk] || 0) + 1;
+        });
+    }
+
+    credentials.forEach(v => {
+        // Insert group header row if grouping is active
+        if (groupBy) {
+            let groupValue, groupLabel, groupIcon;
+            if (groupBy === 'assignment_type') {
+                groupValue = v.assignment_type || 'USER_REQUESTABLE';
+                const labels = { USER_REQUESTABLE: 'User Requestable', INSTANCE_AUTO_ASSIGN: 'Instance Auto-Assign', RESERVED: 'Reserved' };
+                groupLabel = labels[groupValue] || groupValue;
+                groupIcon = 'tag';
+            } else if (groupBy === 'endpoint') {
+                groupValue = v.endpoint || 'Unknown';
+                groupLabel = groupValue;
+                groupIcon = 'server';
+            } else if (groupBy === 'is_available') {
+                groupValue = v.is_available ? 'available' : 'assigned';
+                groupLabel = v.is_available ? 'Available' : 'Assigned';
+                groupIcon = v.is_available ? 'check-circle' : 'user-check';
+            } else if (groupBy === 'assigned_to_user_id') {
+                if (v.assigned_to_name) {
+                    groupValue = v.assigned_to_user_id || ('name_' + v.assigned_to_name);
+                    groupLabel = v.assigned_to_name;
+                    groupIcon = 'user';
+                } else if (v.assigned_instance_name) {
+                    groupValue = 'instance_' + v.assigned_to_instance_id;
+                    groupLabel = 'Instance: ' + v.assigned_instance_name;
+                    groupIcon = 'server';
+                } else {
+                    groupValue = 0;
+                    groupLabel = 'Unassigned';
+                    groupIcon = 'minus-circle';
+                }
+            }
+            if (groupValue !== lastGroupValue) {
+                rows.push(`<tr class="table-secondary"><td colspan="12" class="fw-bold py-2"><i data-feather="${groupIcon}" class="me-2" style="width:16px;height:16px;"></i>${groupLabel} <span class="badge bg-secondary ms-2">${groupCounts[groupValue]}</span></td></tr>`);
+                lastGroupValue = groupValue;
+            }
+        }
+
+        rows.push(`
         <tr>
             <td>
                 <input type="checkbox" class="form-check-input vpn-checkbox" value="${v.id}" onchange="updateSelectionCount()">
@@ -382,6 +535,7 @@ function renderVPNCredentials(credentials) {
             <td><code class="vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.ipv4_address || 'N/A'}">${v.ipv4_address || '-'}</code></td>
             <td><code class="small vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.interface_ip || 'N/A'}">${truncate(v.interface_ip, 30)}</code></td>
             <td><code class="vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.endpoint || 'N/A'}">${v.endpoint}</code></td>
+            <td>${formatAssignmentType(v.assignment_type || 'USER_REQUESTABLE')}</td>
             <td><code class="small text-muted vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.file_hash || 'No hash'}">${v.file_hash ? truncate(v.file_hash, 16) : '-'}</code></td>
             <td><code class="small text-muted vpn-cell" tabindex="0" data-bs-toggle="popover" data-bs-trigger="click" data-bs-content="${v.request_batch_id || 'No batch ID'}">${v.request_batch_id ? v.request_batch_id.substring(0, 8) : '-'}</code></td>
             <td>
@@ -392,9 +546,14 @@ function renderVPNCredentials(credentials) {
             <td>
                 ${v.assigned_to_name
                     ? `<a href="/admin/participants/${v.assigned_to_user_id}" title="${v.assigned_to_email || ''}">${v.assigned_to_name}</a>`
-                    : '-'}
+                    : v.assigned_instance_name
+                        ? `<div>
+                            <strong>Instance:</strong> <a href="/admin/instances" title="Instance ID: ${v.assigned_to_instance_id}">${v.assigned_instance_name}</a><br>
+                            <small class="text-muted">Created by: ${v.assigned_instance_created_by_name || 'Unknown'}</small>
+                           </div>`
+                        : '-'}
             </td>
-            <td>${v.assigned_at ? formatDateTime(v.assigned_at) : '-'}</td>
+            <td>${v.assigned_to_instance_id ? (v.assigned_instance_at ? formatDateTime(v.assigned_instance_at) : '-') : (v.assigned_at ? formatDateTime(v.assigned_at) : '-')}</td>
             <td>
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-primary" onclick="viewVPN(${v.id})" title="View Details">
@@ -403,9 +562,13 @@ function renderVPNCredentials(credentials) {
                 </div>
             </td>
         </tr>
-    `).join('');
+        `);
+    });
+
+    tbody.innerHTML = rows.join('');
 
     feather.replace();
+    makeGroupsCollapsible('vpnBody');
     updateSelectionCount();
 
     // Initialize popovers and store instances
@@ -497,6 +660,10 @@ function applyFilters() {
 function clearFilters() {
     document.getElementById('searchInput').value = '';
     document.getElementById('availableFilter').value = '';
+    document.getElementById('assignmentTypeFilter').value = '';
+    document.getElementById('vpnGroupByFilter').value = '';
+    vpnSorter.setDisabled(false);
+    vpnSorter.setSort('id', 'asc');
     loadVPNCredentials(1);
 }
 
@@ -508,55 +675,83 @@ async function viewVPN(id) {
 
         const vpn = await response.json();
 
+        // Helper function to format assignment type
+        const formatAssignmentType = (type) => {
+            if (type === 'USER_REQUESTABLE') {
+                return '<span class="badge bg-primary">User Requestable</span>';
+            } else if (type === 'INSTANCE_AUTO_ASSIGN') {
+                return '<span class="badge bg-info">Instance Auto-Assign</span>';
+            } else if (type === 'RESERVED') {
+                return '<span class="badge bg-secondary">Reserved</span>';
+            }
+            return '<span class="badge bg-secondary">Unknown</span>';
+        };
+
         document.getElementById('vpnDetailsBody').innerHTML = `
-            <table class="table table-sm">
+            <table class="table table-sm table-borderless">
+                <tbody>
                 <tr>
-                    <th style="width: 140px;">ID</th>
+                    <td class="text-muted fw-bold" style="width: 140px;">ID</td>
                     <td>${vpn.id}</td>
                 </tr>
                 <tr>
-                    <th>IPv4 Address</th>
+                    <td class="text-muted fw-bold">IPv4 Address</td>
                     <td><code>${vpn.ipv4_address || 'N/A'}</code></td>
                 </tr>
                 <tr>
-                    <th>Interface IP</th>
+                    <td class="text-muted fw-bold">Interface IP</td>
                     <td><code class="small" style="word-break: break-all;">${vpn.interface_ip || 'N/A'}</code></td>
                 </tr>
                 <tr>
-                    <th>Endpoint</th>
+                    <td class="text-muted fw-bold">Endpoint</td>
                     <td><code>${vpn.endpoint || 'N/A'}</code></td>
                 </tr>
                 <tr>
-                    <th>SHA256 Hash</th>
+                    <td class="text-muted fw-bold">Assignment Type</td>
+                    <td>${formatAssignmentType(vpn.assignment_type || 'USER_REQUESTABLE')}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted fw-bold">SHA256 Hash</td>
                     <td>${vpn.file_hash ? `<code class="small text-muted" style="word-break: break-all; user-select: all;">${vpn.file_hash}</code>` : '<span class="text-muted">Not available</span>'}</td>
                 </tr>
                 <tr>
-                    <th>Request ID</th>
+                    <td class="text-muted fw-bold">Request ID</td>
                     <td>${vpn.request_batch_id ? `<code class="small text-muted" style="user-select: all;">${vpn.request_batch_id}</code>` : '<span class="text-muted">Not available</span>'}</td>
                 </tr>
                 <tr>
-                    <th>Status</th>
+                    <td class="text-muted fw-bold">Status</td>
                     <td>${vpn.is_available ? '<span class="badge bg-success">Available</span>' : '<span class="badge bg-warning">Assigned</span>'}</td>
                 </tr>
                 <tr>
-                    <th>Assigned To</th>
-                    <td>${vpn.assigned_to_name ? `${vpn.assigned_to_name}${vpn.assigned_to_email ? ` <span class="text-muted">(${vpn.assigned_to_email})</span>` : ''}` : '<span class="text-muted">Not assigned</span>'}</td>
+                    <td class="text-muted fw-bold">Assigned To</td>
+                    <td>
+                        ${vpn.assigned_to_name
+                            ? `${vpn.assigned_to_name}${vpn.assigned_to_email ? ` <span class="text-muted">(${vpn.assigned_to_email})</span>` : ''}`
+                            : vpn.assigned_instance_name
+                                ? `<div>
+                                    <strong>Instance:</strong> ${vpn.assigned_instance_name} <span class="text-muted">(ID: ${vpn.assigned_to_instance_id})</span><br>
+                                    <strong>Created by:</strong> ${vpn.assigned_instance_created_by_name || 'Unknown'}
+                                    ${vpn.assigned_instance_created_by_email ? `<span class="text-muted">(${vpn.assigned_instance_created_by_email})</span>` : ''}
+                                   </div>`
+                                : '<span class="text-muted">Not assigned</span>'}
+                    </td>
                 </tr>
                 <tr>
-                    <th>Assigned At</th>
-                    <td>${vpn.assigned_at ? formatDateTime(vpn.assigned_at) : '<span class="text-muted">N/A</span>'}</td>
+                    <td class="text-muted fw-bold">Assigned At</td>
+                    <td>${vpn.assigned_to_instance_id ? (vpn.assigned_instance_at ? formatDateTime(vpn.assigned_instance_at) : '<span class="text-muted">N/A</span>') : (vpn.assigned_at ? formatDateTime(vpn.assigned_at) : '<span class="text-muted">N/A</span>')}</td>
                 </tr>
                 <tr>
-                    <th>Created At</th>
+                    <td class="text-muted fw-bold">Created At</td>
                     <td>${formatDateTime(vpn.created_at)}</td>
                 </tr>
+                </tbody>
             </table>
         `;
 
         new bootstrap.Modal(document.getElementById('vpnDetailsModal')).show();
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load VPN details');
+        showToast('Failed to load VPN details', 'danger');
     }
 }
 
@@ -631,12 +826,12 @@ async function assignVPN() {
     const count = parseInt(document.getElementById('assignCount').value);
 
     if (!participantId) {
-        alert('Please select a participant');
+        showToast('Please select a participant', 'warning');
         return;
     }
 
     if (count < 1 || count > 25) {
-        alert('Please enter a valid count (1-25)');
+        showToast('Please enter a valid count (1-25)', 'warning');
         return;
     }
 
@@ -652,21 +847,21 @@ async function assignVPN() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            showToast(data.message, 'success');
             bootstrap.Modal.getInstance(document.getElementById('assignModal')).hide();
             loadVPNCredentials(currentPage);
             loadStats();
         } else {
-            alert(data.detail || data.message || 'Failed to assign VPN');
+            showToast(data.detail || data.message || 'Failed to assign VPN', 'danger');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign VPN');
+        showToast('Failed to assign VPN', 'danger');
     }
 }
 
 // Bulk import functionality
-{% if current_user.is_admin_role %}
+{% if current_user.has_permission('vpn.manage_pool') %}
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 
@@ -696,7 +891,7 @@ fileInput.addEventListener('change', () => {
 
 async function handleFileUpload(file) {
     if (!file.name.endsWith('.zip')) {
-        alert('Please upload a ZIP file');
+        showToast('Please upload a ZIP file', 'warning');
         return;
     }
 
@@ -704,11 +899,17 @@ async function handleFileUpload(file) {
     document.getElementById('uploadProgress').style.display = 'block';
     document.getElementById('uploadResult').style.display = 'none';
 
+    // Get assignment type from dropdown
+    const assignmentType = document.getElementById('assignmentType').value;
+
     const formData = new FormData();
     formData.append('file', file);
 
+    // Build URL with assignment_type query parameter
+    const url = `/api/vpn/import?assignment_type=${encodeURIComponent(assignmentType)}`;
+
     try {
-        const response = await csrfFetch('/api/vpn/import', {
+        const response = await csrfFetch(url, {
             method: 'POST',
             body: formData
         });
@@ -911,6 +1112,12 @@ function getNamingPattern() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    vpnSorter = new SortableTable({
+        tableId: 'vpnTable',
+        defaultSort: { column: 'id', order: 'asc' },
+        onSort: () => loadVPNCredentials(1)
+    });
+
     loadStats();
     loadVPNCredentials(1);
 
@@ -919,7 +1126,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Load saved naming pattern from API
-    {% if current_user.is_admin_role %}
+    {% if current_user.has_permission('vpn.manage_pool') %}
     loadNamingPattern();
 
     // Save naming pattern when it changes (debounced)

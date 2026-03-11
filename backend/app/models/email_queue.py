@@ -29,7 +29,7 @@ class EmailQueue(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # User Reference
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
 
     # Email Details
     template_name = Column(String(100), nullable=False)  # invite, password, reminder, etc.

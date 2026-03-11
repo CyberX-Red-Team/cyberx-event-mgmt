@@ -1,0 +1,16 @@
+FROM smallstep/step-ca:latest
+
+USER root
+
+# Strip Linux capabilities from step-ca binary — Render's container runtime
+# blocks execution of capability-enhanced binaries (causes "Operation not permitted").
+# The step CLI works fine because only step-ca has caps set (cap_net_bind_service).
+# We listen on :9000 (>1024) so binding to privileged ports isn't needed.
+RUN apk add --no-cache libcap jq 2>/dev/null || true; \
+    setcap -r /usr/local/bin/step-ca 2>/dev/null || true
+
+COPY stepca-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+USER step
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,10 +1,10 @@
 {% extends "layouts/base.html" %}
 
-{% block body_class %}nav-fixed{% endblock %}
+{% block body_class %}nav-fixed{% if app_environment == 'staging' and not sendgrid_sandbox_mode %} has-email-banner{% endif %}{% endblock %}
 
 {% block body %}
 <!-- Top Navigation -->
-<nav class="navbar navbar-expand-lg navbar-light bg-white fixed-top shadow-sm">
+<nav class="navbar navbar-expand-lg navbar-light fixed-top shadow-sm" style="background-color: var(--navbar-bg, #ffffff);">
     <div class="container-fluid px-4">
         <a class="navbar-brand fw-bold" href="/" style="color: #d32f2f;">
             <img src="/static/img/cyberx-star-logo.svg" alt="CyberX" style="width: 28px; height: 28px; vertical-align: middle;" class="me-2">CyberX
@@ -14,6 +14,12 @@
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="https://github.com/CyberX-Red-Team/cyberx-event-mgmt/issues" target="_blank" rel="noopener noreferrer" title="Report an issue">
+                        <i data-feather="alert-circle" class="me-1"></i>
+                        <span class="d-none d-md-inline">Report Issue</span>
+                    </a>
+                </li>
                 <li class="nav-item">
                     <a class="nav-link" href="/profile" id="timezoneIndicator" title="Click to change timezone preference">
                         <i data-feather="clock" class="me-1"></i>
@@ -43,17 +49,30 @@
     </div>
 </nav>
 
-{% set show_sidebar = current_user.is_admin or current_user.role == 'admin' or current_user.role == 'sponsor' %}
+{% if app_environment == 'staging' and not sendgrid_sandbox_mode %}
+<div class="email-live-banner" role="alert">
+    <div class="banner-inner">
+        <span class="pulse-dot"></span>
+        <strong>Staging</strong>
+        <span class="separator"></span>
+        <span>Email sending is <strong>LIVE</strong> &mdash; SendGrid sandbox mode is off. Emails will be delivered to real recipients.</span>
+    </div>
+</div>
+{% endif %}
+
+{% set perms = current_user.get_effective_permissions() %}
+{% set is_sponsor = current_user.is_sponsor_role and not current_user.is_admin_role %}
+{% set show_sidebar = current_user.is_admin_role or is_sponsor or perms|length > 0 %}
 
 <div id="layoutSidenav" class="{% if not show_sidebar %}no-sidebar{% endif %}">
-    <!-- Sidenav (Admin and Sponsors only) -->
+    <!-- Sidenav -->
     {% if show_sidebar %}
     <div id="layoutSidenav_nav">
         <nav class="sidenav sidenav-light">
             <div class="sidenav-menu">
                 <div class="nav pt-3">
-                    <!-- Sponsor Navigation (Sponsors Only) -->
-                    {% if current_user.role == 'sponsor' and not (current_user.is_admin or current_user.role == 'admin') %}
+                    <!-- Sponsor: My Invitees (always shown for sponsor base_type) -->
+                    {% if is_sponsor and 'participants.view' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2">My Participants</div>
                     <a class="nav-link {% if active_page == 'invitees' %}active{% endif %}" href="/sponsor/invitees">
                         <i data-feather="users"></i>
@@ -61,62 +80,144 @@
                     </a>
                     {% endif %}
 
-                    <!-- Admin Navigation (Admins Only) -->
-                    {% if current_user.is_admin or current_user.role == 'admin' %}
-                    <!-- Dashboard Section -->
+                    <!-- Dashboard (visible if user has any admin-level permission) -->
+                    {% if current_user.is_admin_role or 'events.view' in perms or 'participants.view_all' in perms or 'vpn.manage_pool' in perms or 'email.view' in perms or 'instances.view_all' in perms or 'cloud.manage_templates' in perms or 'cpe.manage' in perms or 'tls.manage' in perms or 'admin.manage_roles' in perms or 'admin.manage_settings' in perms or 'admin.view_audit_log' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2">Dashboard</div>
                     <a class="nav-link {% if active_page == 'dashboard' %}active{% endif %}" href="/admin/dashboard">
                         <i data-feather="activity"></i>
                         <span>Dashboard</span>
                     </a>
+                    {% endif %}
 
-                    <!-- Event Management Section -->
+                    <!-- Event Management -->
+                    {% if 'events.view' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Event Management</div>
                     <a class="nav-link {% if active_page == 'events' %}active{% endif %}" href="/admin/events">
                         <i data-feather="calendar"></i>
                         <span>Events</span>
                     </a>
+                    {% endif %}
 
-                    <!-- Participants Section -->
+                    <!-- Participants -->
+                    {% if 'participants.view_all' in perms or 'actions.view' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Participants</div>
+                    {% if 'participants.view_all' in perms %}
                     <a class="nav-link {% if active_page == 'participants' or active_page == 'users' %}active{% endif %}" href="/admin/users">
                         <i data-feather="users"></i>
                         <span>Invitees</span>
                     </a>
+                    {% endif %}
+                    {% if 'actions.view' in perms %}
+                    <a class="nav-link {% if active_page == 'action-responses' %}active{% endif %}" href="/admin/action-responses">
+                        <i data-feather="check-square"></i>
+                        <span>Action Responses</span>
+                    </a>
+                    {% endif %}
+                    {% endif %}
 
-                    <!-- VPN Section -->
+                    <!-- VPN Management -->
+                    {% if 'vpn.manage_pool' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">VPN Management</div>
                     <a class="nav-link {% if active_page == 'vpn' %}active{% endif %}" href="/admin/vpn">
                         <i data-feather="shield"></i>
                         <span>VPN Credentials</span>
                     </a>
+                    {% endif %}
 
-                    <!-- Email Section -->
+                    <!-- Communications -->
+                    {% if 'email.view' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Communications</div>
                     <a class="nav-link {% if active_page == 'email' %}active{% endif %}" href="/admin/email">
                         <i data-feather="mail"></i>
                         <span>Email Center</span>
                     </a>
+                    {% endif %}
 
-                    <!-- Automation Section -->
+                    <!-- Infrastructure -->
+                    {% if 'instances.view_all' in perms or 'cloud.manage_templates' in perms or 'cloud.manage_images' in perms or 'licenses.view' in perms %}
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Infrastructure</div>
+                    {% if 'instances.view_all' in perms %}
+                    <a class="nav-link {% if active_page == 'instances' %}active{% endif %}" href="/admin/instances">
+                        <i data-feather="server"></i>
+                        <span>Instances</span>
+                    </a>
+                    {% endif %}
+                    {% if 'cloud.manage_templates' in perms %}
+                    <a class="nav-link {% if active_page == 'instance-templates' %}active{% endif %}" href="/admin/instance-templates">
+                        <i data-feather="layout"></i>
+                        <span>Instance Templates</span>
+                    </a>
+                    {% endif %}
+                    {% if 'cloud.manage_images' in perms %}
+                    <a class="nav-link {% if active_page == 'cloud_init' %}active{% endif %}" href="/admin/cloud-init">
+                        <i data-feather="file-text"></i>
+                        <span>Cloud-Init Templates</span>
+                    </a>
+                    {% endif %}
+                    {% if 'licenses.view' in perms %}
+                    <a class="nav-link {% if active_page == 'licenses' %}active{% endif %}" href="/admin/licenses">
+                        <i data-feather="key"></i>
+                        <span>License Products</span>
+                    </a>
+                    {% endif %}
+                    {% endif %}
+
+                    <!-- Certificates -->
+                    {% if 'cpe.manage' in perms or 'tls.manage' in perms %}
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Certificates</div>
+                    {% if 'cpe.manage' in perms %}
+                    <a class="nav-link {% if active_page == 'cpe-certificates' %}active{% endif %}" href="/admin/cpe-certificates">
+                        <i data-feather="award"></i>
+                        <span>CPE Certificates</span>
+                    </a>
+                    {% endif %}
+                    {% if 'tls.manage' in perms %}
+                    <a class="nav-link {% if active_page == 'tls-certificates' %}active{% endif %}" href="/admin/tls-certificates">
+                        <i data-feather="shield"></i>
+                        <span>TLS Certificates</span>
+                    </a>
+                    {% endif %}
+                    {% endif %}
+
+                    <!-- Automation -->
+                    {% if 'email.manage_workflows' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Automation</div>
                     <a class="nav-link {% if active_page == 'workflows' %}active{% endif %}" href="/admin/workflows">
                         <i data-feather="zap"></i>
                         <span>Email Workflows</span>
                     </a>
+                    {% endif %}
 
                     <!-- Security & Audit -->
+                    {% if 'admin.view_audit_log' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Security</div>
                     <a class="nav-link {% if active_page == 'audit' %}active{% endif %}" href="/admin/audit">
                         <i data-feather="file-text"></i>
                         <span>Audit Logs</span>
                     </a>
                     {% endif %}
+
+                    <!-- System -->
+                    {% if 'admin.manage_roles' in perms or 'admin.manage_settings' in perms %}
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3" style="flex-basis: 100%;">System</div>
+                    {% if 'admin.manage_roles' in perms %}
+                    <a class="nav-link {% if active_page == 'roles' %}active{% endif %}" href="/admin/roles" style="flex-basis: 100%;">
+                        <i data-feather="shield"></i>
+                        <span>Roles</span>
+                    </a>
+                    {% endif %}
+                    {% if 'admin.manage_settings' in perms %}
+                    <a class="nav-link {% if active_page == 'settings' %}active{% endif %}" href="/admin/settings" style="flex-basis: 100%;">
+                        <i data-feather="settings"></i>
+                        <span>Settings</span>
+                    </a>
+                    {% endif %}
+                    {% endif %}
                 </div>
             </div>
             <div class="sidenav-footer p-3 border-top">
                 <div class="small text-muted">Logged in as:</div>
-                <div class="small fw-bold">{{ current_user.email }}</div>
+                <div class="small fw-bold text-body">{{ current_user.email }}</div>
             </div>
         </nav>
     </div>
@@ -125,7 +226,7 @@
     <!-- Content -->
     <div id="layoutSidenav_content" class="{% if not show_sidebar %}full-width{% endif %}">
         <main>
-            {% block content %}{% endblock %}
+            {% block content scoped %}{% endblock %}
         </main>
 
         <!-- Footer -->
@@ -143,8 +244,44 @@
 </div>
 {% endblock %}
 
-{% block extra_css %}
 <style>
+/* Email-live warning banner (staging only) */
+.email-live-banner {
+    background: linear-gradient(90deg, #dc3545 0%, #b02a37 100%);
+    color: #fff;
+    position: fixed;
+    top: 56px;
+    left: 0;
+    right: 0;
+    z-index: 1030;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+.email-live-banner .banner-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.625rem;
+    padding: 0.5rem 1rem;
+}
+.email-live-banner .pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border-radius: 50%;
+    animation: pulse-live 1.5s ease-in-out infinite;
+}
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+.email-live-banner .separator {
+    width: 1px;
+    height: 14px;
+    background: rgba(255,255,255,0.4);
+}
+
 /* Full-width layout for users without sidebar */
 #layoutSidenav.no-sidebar {
     padding-left: 0 !important;
@@ -163,10 +300,23 @@
 #layoutSidenav_content.full-width main {
     padding-top: 3.5rem;
 }
+
+/* Sortable table headers */
+.sortable-header:hover { background-color: rgba(0,0,0,0.04); }
+.sortable-header.sorted { background-color: rgba(13,110,253,0.05); }
+.sort-indicator { font-size: 0.7em; opacity: 0.4; }
+.sortable-header.sorted .sort-indicator { opacity: 1; color: #0d6efd; }
+
+/* Collapsible group headers */
+.group-header { cursor: pointer; user-select: none; }
+.group-header:hover { background-color: rgba(0,0,0,0.08) !important; }
+.group-chevron { display: inline-block; margin-right: 0.35rem; transition: transform 0.2s ease; font-size: 0.85em; }
+.group-collapsed .group-chevron { transform: rotate(-90deg); }
 </style>
-{% endblock %}
+{% block extra_css %}{% endblock %}
 
 {% block extra_js %}
+<script src="/static/js/sortable-table.js"></script>
 <script>
 // =============================================================================
 // Global Timezone Management
@@ -227,6 +377,39 @@ window.logout = async function() {
         // Redirect anyway to login page
         window.location.href = '/login';
     }
+}
+
+// Global toast notification function
+window.showToast = function(message, type = 'info') {
+    // Map type to Bootstrap alert classes
+    const typeMap = {
+        'success': 'alert-success',
+        'danger': 'alert-danger',
+        'warning': 'alert-warning',
+        'info': 'alert-info'
+    };
+
+    const alertClass = typeMap[type] || 'alert-info';
+
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = 'alert ' + alertClass + ' alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
+    toast.style.zIndex = '9999';
+    toast.style.minWidth = '300px';
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+
+    document.body.appendChild(toast);
+
+    // Auto-remove after 5 seconds
+    setTimeout(function() {
+        toast.classList.remove('show');
+        setTimeout(function() {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 150);
+    }, 5000);
 }
 </script>
 {% endblock %}

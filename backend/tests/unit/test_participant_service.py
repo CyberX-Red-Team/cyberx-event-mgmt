@@ -1245,10 +1245,14 @@ class TestParticipantServiceEventIntegration:
         # Workflow not triggered for invitees without credentials
         assert mock_trigger.call_count == 0
 
-    async def test_create_sponsor_with_active_event_triggers_workflow(
+    async def test_create_sponsor_with_active_event_defers_credentials(
         self, db_session: AsyncSession, mocker
     ):
-        """Test creating sponsor with active event triggers user_created workflow."""
+        """Test creating sponsor with active event does NOT trigger credentials workflow.
+
+        Sponsors must confirm participation before receiving credentials.
+        Credentials are sent via user_confirmed workflow after confirmation.
+        """
         service = ParticipantService(db_session)
         from app.models.event import Event
         from app.services.workflow_service import WorkflowService
@@ -1282,16 +1286,10 @@ class TestParticipantServiceEventIntegration:
             role=UserRole.SPONSOR.value
         )
 
-        # Should have confirmation code and trigger workflow
+        # Should have confirmation code but NOT trigger workflow
         assert participant.confirmation_code is not None
         assert participant.confirmation_sent_at is not None
-        assert mock_trigger.call_count == 1
-
-        # Verify workflow was called with correct trigger
-        call_args = mock_trigger.call_args
-        assert call_args[1]['trigger_event'] == 'user_created'
-        assert call_args[1]['user_id'] == participant.id
-        assert 'confirmation_code' in call_args[1]['custom_vars']
+        assert mock_trigger.call_count == 0  # No credentials email before confirmation
 
     async def test_create_participant_test_mode_blocks_invitees(
         self, db_session: AsyncSession, mocker
@@ -1342,7 +1340,7 @@ class TestParticipantServiceEventIntegration:
     async def test_create_participant_test_mode_allows_sponsors(
         self, db_session: AsyncSession, mocker
     ):
-        """Test creating sponsor with test mode enabled allows invitation."""
+        """Test creating sponsor with test mode generates confirmation code but defers credentials."""
         service = ParticipantService(db_session)
         from app.models.event import Event
         from app.services.workflow_service import WorkflowService
@@ -1376,10 +1374,10 @@ class TestParticipantServiceEventIntegration:
             role=UserRole.SPONSOR.value
         )
 
-        # Should have confirmation code (allowed in test mode)
+        # Should have confirmation code (allowed in test mode) but NO credentials email
         assert participant.confirmation_code is not None
         assert participant.confirmation_sent_at is not None
-        assert mock_trigger.call_count == 1
+        assert mock_trigger.call_count == 0  # Credentials deferred until confirmation
 
     async def test_create_participant_inactive_event_no_invitation(
         self, db_session: AsyncSession
@@ -1413,10 +1411,10 @@ class TestParticipantServiceEventIntegration:
         assert participant.confirmation_code is None
         assert participant.confirmation_sent_at is None
 
-    async def test_create_sponsor_inactive_event_sends_credentials(
+    async def test_create_sponsor_inactive_event_defers_credentials(
         self, db_session: AsyncSession, mocker
     ):
-        """Test creating sponsor with inactive event sends credentials email."""
+        """Test creating sponsor with inactive event defers credentials until confirmation."""
         service = ParticipantService(db_session)
         from app.models.event import Event
         from app.services.email_queue_service import EmailQueueService
@@ -1450,11 +1448,8 @@ class TestParticipantServiceEventIntegration:
             role=UserRole.SPONSOR.value
         )
 
-        # Should enqueue password email
-        assert mock_enqueue.call_count == 1
-        call_args = mock_enqueue.call_args[1]
-        assert call_args['template_name'] == 'password'
-        assert call_args['user_id'] == participant.id
+        # Should NOT enqueue password email — credentials deferred until confirmation
+        assert mock_enqueue.call_count == 0
 
     async def test_create_confirmed_invitee_with_active_event_triggers_workflow(
         self, db_session: AsyncSession, mocker
@@ -1695,7 +1690,7 @@ class TestParticipantServiceEventIntegration:
     async def test_create_participant_workflow_trigger_error(
         self, db_session: AsyncSession, mocker
     ):
-        """Test creating participant handles workflow trigger errors gracefully."""
+        """Test creating pre-confirmed participant handles workflow trigger errors gracefully."""
         service = ParticipantService(db_session)
         from app.models.event import Event
         from app.services.workflow_service import WorkflowService
@@ -1720,28 +1715,29 @@ class TestParticipantServiceEventIntegration:
             side_effect=Exception("Workflow system error")
         )
 
+        # Create pre-confirmed invitee (triggers workflow because confirmed=YES)
         # Should not raise, just log error
         participant = await service.create_participant(
-            email="sponsor@test.com",
-            first_name="Sponsor",
+            email="invitee@test.com",
+            first_name="Invitee",
             last_name="User",
             country="USA",
-            role=UserRole.SPONSOR.value
+            confirmed="YES"
         )
 
-        # Participant should still be created
+        # Participant should still be created despite workflow error
         assert participant.id is not None
         assert mock_trigger.call_count == 1
 
     async def test_create_sponsor_credentials_email_error(
         self, db_session: AsyncSession, mocker
     ):
-        """Test creating sponsor handles credentials email errors gracefully."""
+        """Test creating pre-confirmed sponsor handles credentials email errors gracefully."""
         service = ParticipantService(db_session)
         from app.models.event import Event
         from app.services.email_queue_service import EmailQueueService
 
-        # Create inactive event (triggers credentials email path)
+        # Create inactive event (no invitation, but confirmed=YES triggers credentials email)
         event = Event(
             year=2026,
             name="CyberX 2026",
@@ -1761,16 +1757,17 @@ class TestParticipantServiceEventIntegration:
             side_effect=Exception("Email queue error")
         )
 
-        # Should not raise, just log error
+        # Create pre-confirmed sponsor — should not raise, just log error
         participant = await service.create_participant(
             email="sponsor@test.com",
             first_name="Sponsor",
             last_name="User",
             country="USA",
-            role=UserRole.SPONSOR.value
+            role=UserRole.SPONSOR.value,
+            confirmed="YES"
         )
 
-        # Participant should still be created
+        # Participant should still be created despite email error
         assert participant.id is not None
         assert mock_enqueue.call_count == 1
 

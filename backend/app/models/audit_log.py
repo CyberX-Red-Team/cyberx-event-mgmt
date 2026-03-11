@@ -16,6 +16,8 @@ class AuditLog(Base):
 
     # User Reference
     user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    user_email = Column(String(255), nullable=True)   # Snapshot: survives user deletion
+    user_name = Column(String(500), nullable=True)     # Snapshot: survives user deletion
 
     # Action Details
     action = Column(String(100), nullable=False)  # LOGIN, LOGOUT, VPN_REQUEST, PASSWORD_RESET, etc.
@@ -100,7 +102,9 @@ class VPNRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # User and VPN References
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    user_email = Column(String(255), nullable=True)   # Snapshot: survives user deletion
+    user_name = Column(String(500), nullable=True)     # Snapshot: survives user deletion
     vpn_credential_id = Column(Integer, ForeignKey('vpn_credentials.id', ondelete='SET NULL'), nullable=True)
 
     # Request Details

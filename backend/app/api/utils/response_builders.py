@@ -4,6 +4,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.models.user import User
+from app.models.role import Role
 from app.models.event import EventParticipation
 from app.models.vpn import VPNCredential
 from app.schemas.auth import UserResponse
@@ -30,6 +31,8 @@ async def build_auth_user_response(
         UserResponse from app.schemas.auth
     """
     has_vpn = False
+    event_participation_status = None
+    event_participation_id = None
 
     if include_vpn_check:
         # Check if user has any VPN credentials
@@ -40,6 +43,22 @@ async def build_auth_user_response(
         vpn_count = vpn_result.scalar() or 0
         has_vpn = vpn_count > 0
 
+    # Get current event participation status
+    participation = await user.get_current_event_participation(db)
+    if participation:
+        event_participation_status = participation.status
+        event_participation_id = participation.id
+
+    # Eagerly load role_obj to avoid lazy-load in async context
+    if user.role_id:
+        await db.execute(
+            select(Role).where(Role.id == user.role_id)
+        )
+        await db.refresh(user, ["role_obj"])
+
+    # Resolve effective permissions from role + overrides
+    effective_permissions = sorted(user.get_effective_permissions())
+
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -48,13 +67,17 @@ async def build_auth_user_response(
         country=user.country,
         is_admin=user.is_admin,
         is_active=user.is_active,
-        confirmed=user.confirmed,
+        confirmed=user.confirmed,  # DEPRECATED - backward compatible
         email_status=user.email_status,
         theme_preference=user.theme_preference,
         pandas_username=user.pandas_username,
         discord_username=user.discord_username,
         snowflake_id=user.snowflake_id,
-        has_vpn=has_vpn
+        has_vpn=has_vpn,
+        keycloak_synced=user.keycloak_synced,
+        event_participation_status=event_participation_status,
+        event_participation_id=event_participation_id,
+        permissions=effective_permissions,
     )
 
 
@@ -109,15 +132,35 @@ async def build_participant_response(
                 full_name=f"{sponsor.first_name} {sponsor.last_name}"
             )
 
+    # Load role name (explicit query to avoid lazy load in async context)
+    role_name = None
+    if user.role_id:
+        role_result = await db.execute(
+            select(Role.name).where(Role.id == user.role_id)
+        )
+        role_name = role_result.scalar_one_or_none()
+
+    # Get current event participation status
+    event_participation_status = None
+    event_participation_id = None
+    participation = await user.get_current_event_participation(db)
+    if participation:
+        event_participation_status = participation.status
+        event_participation_id = participation.id
+
     return ParticipantResponse(
         id=user.id,
         email=user.email,
         first_name=user.first_name,
         last_name=user.last_name,
         country=user.country,
-        confirmed=user.confirmed,
+        confirmed=user.confirmed,  # DEPRECATED - backward compatible
         email_status=user.email_status,
+        event_participation_status=event_participation_status,
+        event_participation_id=event_participation_id,
         role=user.role,
+        role_id=user.role_id,
+        role_name=role_name,
         is_admin=user.is_admin,
         is_active=user.is_active,
         created_at=user.created_at,
@@ -132,6 +175,7 @@ async def build_participant_response(
         password_email_sent=user.password_email_sent,
         has_vpn=vpn_count > 0,
         vpn_count=vpn_count,
+        keycloak_synced=user.keycloak_synced,
         # Participation tracking
         years_invited=user.years_invited,
         years_participated=user.years_participated,
@@ -180,6 +224,7 @@ async def build_event_participation_response(
         declined_reason=p.declined_reason,
         created_at=p.created_at,
         updated_at=p.updated_at,
+        discord_invite_code=p.discord_invite_code,
         user_email=p.user.email if p.user else None,
         user_first_name=p.user.first_name if p.user else None,
         user_last_name=p.user.last_name if p.user else None,

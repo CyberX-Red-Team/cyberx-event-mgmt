@@ -1103,41 +1103,30 @@ class TestEmailServiceEventLogging:
         await db_session.refresh(user)
         assert user.survey_email_sent is not None
 
-    async def test_update_user_email_status_orientation(self, db_session: AsyncSession):
-        """Test updating user status for orientation email."""
-        from app.models.user import User, UserRole
-
-        service = EmailService(db_session)
-
-        # Create user
-        user = User(
-            email="test@example.com",
-            first_name="Test",
-            last_name="User",
-            country="USA",
-            role=UserRole.INVITEE.value
-        )
-        db_session.add(user)
-        await db_session.commit()
-        await db_session.refresh(user)
-
-        assert user.orientation_invite_email_sent is None
-
-        # Update status for orientation
-        await service._update_user_email_status(user, "orientation")
-
-        # Verify timestamp updated
-        await db_session.refresh(user)
-        assert user.orientation_invite_email_sent is not None
-
     async def test_process_webhook_event_delivered(self, db_session: AsyncSession):
-        """Test processing a delivered webhook event."""
+        """Test processing a delivered event transitions UNKNOWN → GOOD."""
+        from app.models.user import User, UserRole
         from app.models.audit_log import EmailEvent
         from sqlalchemy import select
 
         service = EmailService(db_session)
 
-        # Process webhook event
+        # Create user with UNKNOWN status (mimics new user creation)
+        user = User(
+            email="test@example.com",
+            first_name="Test",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value,
+            email_status="UNKNOWN"
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        assert user.email_status == "UNKNOWN"
+
+        # Process delivered event
         event_data = {
             "email": "test@example.com",
             "event": "delivered",
@@ -1149,6 +1138,11 @@ class TestEmailServiceEventLogging:
 
         assert success is True
 
+        # Verify user status updated to GOOD
+        await db_session.refresh(user)
+        assert user.email_status == "GOOD"
+        assert user.email_status_timestamp == 1234567890
+
         # Verify event was logged
         result = await db_session.execute(
             select(EmailEvent).where(EmailEvent.email_to == "test@example.com")
@@ -1158,6 +1152,42 @@ class TestEmailServiceEventLogging:
         assert event is not None
         assert event.event_type == "delivered"
         assert event.sendgrid_message_id == "msg123"
+
+    async def test_process_webhook_event_stale_event_ignored(self, db_session: AsyncSession):
+        """Test that a stale event doesn't override a newer status."""
+        from app.models.user import User, UserRole
+
+        service = EmailService(db_session)
+
+        # Create user already marked BOUNCED at timestamp 2000000000
+        user = User(
+            email="test@example.com",
+            first_name="Test",
+            last_name="User",
+            country="USA",
+            role=UserRole.INVITEE.value,
+            email_status="BOUNCED",
+            email_status_timestamp=2000000000
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        # Process an older delivered event (timestamp < current)
+        event_data = {
+            "email": "test@example.com",
+            "event": "delivered",
+            "sg_message_id": "msg_old",
+            "timestamp": 1000000000
+        }
+
+        success = await service.process_webhook_event(event_data)
+        assert success is True
+
+        # Status should NOT have changed — stale event was ignored
+        await db_session.refresh(user)
+        assert user.email_status == "BOUNCED"
+        assert user.email_status_timestamp == 2000000000
 
     async def test_process_webhook_event_bounce(self, db_session: AsyncSession):
         """Test processing a bounce event updates user status."""
@@ -1179,7 +1209,7 @@ class TestEmailServiceEventLogging:
         await db_session.commit()
         await db_session.refresh(user)
 
-        assert user.email_status != "BAD"
+        assert user.email_status == "GOOD"
 
         # Process bounce event
         event_data = {
@@ -1196,8 +1226,8 @@ class TestEmailServiceEventLogging:
 
         # Verify user status updated
         await db_session.refresh(user)
-        assert user.email_status == "BAD"
-        assert user.email_status_timestamp is not None
+        assert user.email_status == "BOUNCED"
+        assert user.email_status_timestamp == 1234567890
 
     async def test_process_webhook_event_dropped(self, db_session: AsyncSession):
         """Test processing a dropped event marks email as bad."""
@@ -1232,10 +1262,10 @@ class TestEmailServiceEventLogging:
 
         # Verify user status updated
         await db_session.refresh(user)
-        assert user.email_status == "BAD"
+        assert user.email_status == "BOUNCED"
 
     async def test_process_webhook_event_spamreport(self, db_session: AsyncSession):
-        """Test processing a spam report marks email as bad."""
+        """Test processing a spam report marks email as spam reported."""
         from app.models.user import User, UserRole
 
         service = EmailService(db_session)
@@ -1266,7 +1296,7 @@ class TestEmailServiceEventLogging:
 
         # Verify user status updated
         await db_session.refresh(user)
-        assert user.email_status == "BAD"
+        assert user.email_status == "SPAM_REPORTED"
 
     async def test_process_webhook_event_invalid(self, db_session: AsyncSession):
         """Test processing invalid webhook event returns False."""
@@ -1570,7 +1600,7 @@ class TestEmailServiceSendGridMocking:
             last_name="User",
             country="USA",
             role=UserRole.INVITEE.value,
-            email_status="BAD"
+            email_status="BOUNCED"
         )
         db_session.add(user)
         await db_session.commit()
@@ -1673,7 +1703,7 @@ class TestEmailServiceBulkOperations:
             last_name="User",
             country="USA",
             role=UserRole.INVITEE.value,
-            email_status="BAD"
+            email_status="BOUNCED"
         )
         db_session.add_all([user1, user2])
         await db_session.commit()

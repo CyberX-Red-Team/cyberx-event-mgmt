@@ -147,7 +147,15 @@
                             <input type="text" class="form-control" id="eventTermsVersion" placeholder="e.g., 2026-v1">
                         </div>
                         <div class="col-md-6">
-                            <div class="form-check mt-4">
+                            <label class="form-label" for="eventDiscordChannelId">Discord Channel ID</label>
+                            <input type="text" class="form-control" id="eventDiscordChannelId" placeholder="e.g., 1234567890123456789">
+                            <small class="text-muted">Right-click channel in Discord (Developer Mode) &rarr; Copy Channel ID</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check mt-2">
                                 <input class="form-check-input" type="checkbox" id="eventRegistrationOpen">
                                 <label class="form-check-label" for="eventRegistrationOpen">
                                     Registration Open
@@ -160,6 +168,36 @@
                         <label class="form-label" for="eventTermsContent">Terms & Conditions</label>
                         <textarea class="form-control" id="eventTermsContent" rows="8" placeholder="Enter terms and conditions in Markdown format"></textarea>
                         <small class="text-muted">Supports Markdown formatting</small>
+                    </div>
+
+                    <!-- SSH Keys Section -->
+                    <div class="border-top pt-3 mt-3">
+                        <h6 class="mb-3">SSH Keys for Participant Instances</h6>
+                        <p class="text-muted small mb-3">
+                            Generate an SSH keypair for this event. Participants can use the private key to access their instances if they don't provide their own.
+                        </p>
+
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="generateEventSSHKeys()">
+                                <i data-feather="key" class="me-1"></i> Generate New SSH Keys
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="downloadSSHKeys()" id="downloadKeysBtn" style="display: none;">
+                                <i data-feather="download" class="me-1"></i> Download Keys
+                            </button>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Public Key</label>
+                                <textarea class="form-control font-monospace" id="eventSshPublicKey" rows="4" readonly style="font-size: 0.75rem;"></textarea>
+                                <small class="text-muted">Injected into instances</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Private Key</label>
+                                <textarea class="form-control font-monospace" id="eventSshPrivateKey" rows="4" readonly style="font-size: 0.75rem;"></textarea>
+                                <small class="text-muted">Shared with participants for SSH access</small>
+                            </div>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -254,6 +292,10 @@
                             `<button class="btn btn-outline-success" onclick="toggleEventActive(${event.id}, ${event.is_active}, '${event.name}')">Activate</button>`
                         }
                         <button class="btn btn-outline-primary" onclick="editEvent(${event.id})">Edit</button>
+                        ${event.is_active ?
+                            `<button class="btn btn-outline-info" onclick="bulkResetForNewEvent()" title="Reset all invitees and sponsors for a new event cycle"><i data-feather="refresh-cw" class="me-1"></i>Reset Users</button>` :
+                            ''
+                        }
                         ${!event.is_active ?
                             `<button class="btn btn-outline-danger" onclick="archiveEvent(${event.id}, ${event.year})">Archive</button>` :
                             ''
@@ -285,7 +327,7 @@
         } catch (error) {
             console.error('Error loading events:', error);
             loadingState.classList.add('d-none');
-            alert('Failed to load events');
+            showToast('Failed to load events', 'danger');
         }
     };
 
@@ -301,6 +343,12 @@
         document.getElementById('eventName').value = `CyberX Red Team Exercise ${currentYear + 1}`;
         document.getElementById('eventTermsVersion').value = `${currentYear + 1}-v1`;
         document.getElementById('eventConfirmationDays').value = 30;
+
+        // Clear Discord and SSH keys
+        document.getElementById('eventDiscordChannelId').value = '';
+        document.getElementById('eventSshPublicKey').value = '';
+        document.getElementById('eventSshPrivateKey').value = '';
+        document.getElementById('downloadKeysBtn').style.display = 'none';
 
         if (!eventModal) {
             eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
@@ -333,6 +381,13 @@
             document.getElementById('eventTermsVersion').value = event.terms_version || '';
             document.getElementById('eventTermsContent').value = event.terms_content || '';
             document.getElementById('eventRegistrationOpen').checked = event.registration_open;
+            document.getElementById('eventDiscordChannelId').value = event.discord_channel_id || '';
+            document.getElementById('eventSshPublicKey').value = event.ssh_public_key || '';
+            document.getElementById('eventSshPrivateKey').value = event.ssh_private_key || '';
+
+            // Show download button if keys exist
+            const hasKeys = event.ssh_public_key && event.ssh_private_key;
+            document.getElementById('downloadKeysBtn').style.display = hasKeys ? 'inline-block' : 'none';
 
             if (!eventModal) {
                 eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
@@ -341,13 +396,16 @@
 
         } catch (error) {
             console.error('Error loading event:', error);
-            alert('Failed to load event details');
+            showToast('Failed to load event details', 'danger');
         }
     };
 
     window.saveEvent = async function() {
         const eventId = document.getElementById('eventId').value;
         const isEdit = eventId !== '';
+
+        const sshPublicKey = document.getElementById('eventSshPublicKey').value.trim();
+        const sshPrivateKey = document.getElementById('eventSshPrivateKey').value.trim();
 
         const eventData = {
             year: parseInt(document.getElementById('eventYear').value),
@@ -360,7 +418,10 @@
             confirmation_expires_days: parseInt(document.getElementById('eventConfirmationDays').value) || 30,
             terms_version: document.getElementById('eventTermsVersion').value || null,
             terms_content: document.getElementById('eventTermsContent').value || null,
-            registration_open: document.getElementById('eventRegistrationOpen').checked
+            registration_open: document.getElementById('eventRegistrationOpen').checked,
+            discord_channel_id: document.getElementById('eventDiscordChannelId').value.trim() || null,
+            ssh_public_key: sshPublicKey || null,
+            ssh_private_key: sshPrivateKey || null
         };
 
         const saveBtn = document.getElementById('saveEventBtnText');
@@ -390,7 +451,7 @@
 
         } catch (error) {
             console.error('Error saving event:', error);
-            alert(error.message || 'Failed to save event');
+            showToast(error.message || 'Failed to save event', 'danger');
         } finally {
             saveBtn.textContent = 'Save Event';
         }
@@ -421,7 +482,15 @@
                 throw new Error(error.detail || `Failed to ${action} event`);
             }
 
+            const data = await response.json();
+
             await loadEvents();
+            showToast(`Event ${action}d successfully`, 'success');
+
+            // Show activation warning about unreset users
+            if (data.warning) {
+                setTimeout(() => showToast(data.warning, 'warning'), 500);
+            }
 
             // Reload dashboard event status if exists
             if (typeof loadEventStatus === 'function') {
@@ -430,7 +499,7 @@
 
         } catch (error) {
             console.error(`Error ${action}ing event:`, error);
-            alert(error.message || `Failed to ${action} event`);
+            showToast(error.message || `Failed to ${action} event`, 'danger');
         }
     };
 
@@ -453,7 +522,7 @@
 
         } catch (error) {
             console.error('Error archiving event:', error);
-            alert(error.message || 'Failed to archive event');
+            showToast(error.message || 'Failed to archive event', 'danger');
         }
     };
 
@@ -482,7 +551,7 @@
 
         } catch (error) {
             console.error('Error toggling VPN availability:', error);
-            alert(error.message || 'Failed to update VPN availability');
+            showToast(error.message || 'Failed to update VPN availability', 'danger');
         }
     };
 
@@ -517,7 +586,114 @@
 
         } catch (error) {
             console.error('Error toggling test mode:', error);
-            alert(error.message || 'Failed to update test mode');
+            showToast(error.message || 'Failed to update test mode', 'danger');
+        }
+    };
+
+    // SSH Key Management
+    window.generateEventSSHKeys = async function() {
+        if (!confirm('Generate new SSH keys for this event? This will replace any existing keys.')) {
+            return;
+        }
+
+        try {
+            const response = await csrfFetch('/api/events/generate-ssh-keys', {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to generate SSH keys');
+            }
+
+            const data = await response.json();
+            document.getElementById('eventSshPublicKey').value = data.public_key;
+            document.getElementById('eventSshPrivateKey').value = data.private_key;
+            document.getElementById('downloadKeysBtn').style.display = 'inline-block';
+
+            showToast('SSH keys generated successfully', 'success');
+        } catch (error) {
+            console.error('Error generating SSH keys:', error);
+            showToast('Failed to generate SSH keys', 'danger');
+        }
+    };
+
+    window.downloadSSHKeys = function() {
+        const publicKey = document.getElementById('eventSshPublicKey').value;
+        const privateKey = document.getElementById('eventSshPrivateKey').value;
+        const eventName = document.getElementById('eventName').value || 'event';
+        const slug = eventName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+        if (!publicKey || !privateKey) {
+            showToast('No SSH keys to download. Generate keys first.', 'warning');
+            return;
+        }
+
+        // Download public key
+        const publicBlob = new Blob([publicKey], { type: 'text/plain' });
+        const publicUrl = URL.createObjectURL(publicBlob);
+        const publicLink = document.createElement('a');
+        publicLink.href = publicUrl;
+        publicLink.download = `${slug}-ssh-key.pub`;
+        publicLink.click();
+        URL.revokeObjectURL(publicUrl);
+
+        // Download private key
+        setTimeout(() => {
+            const privateBlob = new Blob([privateKey], { type: 'text/plain' });
+            const privateUrl = URL.createObjectURL(privateBlob);
+            const privateLink = document.createElement('a');
+            privateLink.href = privateUrl;
+            privateLink.download = `${slug}-ssh-key`;
+            privateLink.click();
+            URL.revokeObjectURL(privateUrl);
+        }, 100);
+
+        showToast('SSH keys downloaded', 'success');
+    };
+
+    // Bulk reset all users for new event cycle
+    window.bulkResetForNewEvent = async function() {
+        if (!confirm(
+            'Reset workflow state for ALL invitees and sponsors?\n\n' +
+            'This will:\n' +
+            '• Reset confirmation status to UNKNOWN\n' +
+            '• Clear all reminder and email timestamps\n' +
+            '• Clear terms acceptance\n' +
+            '• Delete EventParticipation for the current event\n' +
+            '• Generate new confirmation codes\n\n' +
+            'Use this to prepare users for a new event cycle.'
+        )) {
+            return;
+        }
+
+        const resetCreds = confirm(
+            'Also clear invitee credentials?\n\n' +
+            '• YES = Invitees get fresh passwords on next confirmation (new event cycle)\n' +
+            '• NO = Keep existing passwords (re-testing flows)\n\n' +
+            'Note: Sponsor/admin credentials are never affected.'
+        );
+
+        try {
+            const params = new URLSearchParams({
+                reset_event_participation: true,
+                reset_credentials: resetCreds
+            });
+
+            const response = await csrfFetch(`/api/admin/participants/bulk-reset-workflow?${params}`, {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to bulk reset workflows');
+            }
+
+            const data = await response.json();
+            showToast(data.message || `Reset ${data.affected_count} users`, 'success');
+
+        } catch (error) {
+            console.error('Error in bulk reset:', error);
+            showToast(error.message || 'Bulk reset failed', 'danger');
         }
     };
 

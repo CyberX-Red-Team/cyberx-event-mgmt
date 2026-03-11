@@ -30,11 +30,18 @@ class EmailWorkflow(Base):
     template_name = Column(String(100), nullable=False)  # Which EmailTemplate to use
     priority = Column(Integer, default=5, nullable=False)  # Queue priority (1=highest, 10=lowest)
 
+    # Sender Override (optional, falls back to SENDGRID_FROM_EMAIL / SENDGRID_FROM_NAME)
+    from_email = Column(String(255), nullable=True)  # e.g., "invite@cyberxrt.com"
+    from_name = Column(String(255), nullable=True)   # e.g., "CyberX Invitations"
+
     # Custom Variables (merged with event data)
     # Use JSON for cross-database compatibility (PostgreSQL and SQLite)
     custom_vars = Column(JSON, nullable=True, default=dict)  # Default template variables
 
-    # Scheduling (optional)
+    # Delivery Mode
+    send_immediately = Column(Boolean, default=False, nullable=False)  # True = bypass queue, send inline via SendGrid
+
+    # Scheduling (optional, ignored when send_immediately=True)
     delay_minutes = Column(Integer, nullable=True)  # Delay before sending (null = immediate)
 
     # Status
@@ -61,8 +68,11 @@ class WorkflowTriggerEvent:
     # User Events
     USER_CREATED = "user_created"
     USER_CONFIRMED = "user_confirmed"
+    USER_DECLINED = "user_declined"
     USER_ACTIVATED = "user_activated"
     USER_DEACTIVATED = "user_deactivated"
+    ADMIN_CREATED = "admin_created"
+    SPONSOR_CREATED = "sponsor_created"
 
     # Credential Events
     PASSWORD_RESET = "password_reset"
@@ -70,7 +80,9 @@ class WorkflowTriggerEvent:
 
     # Event Participation
     PARTICIPATION_CONFIRMED = "participation_confirmed"
-    EVENT_REMINDER = "event_reminder"
+    EVENT_REMINDER_1 = "event_reminder_1"
+    EVENT_REMINDER_2 = "event_reminder_2"
+    EVENT_REMINDER_FINAL = "event_reminder_final"
     EVENT_STARTED = "event_started"
     EVENT_ENDED = "event_ended"
 
@@ -80,3 +92,10 @@ class WorkflowTriggerEvent:
     # Admin Actions
     BULK_INVITE = "bulk_invite"
     CUSTOM_EMAIL = "custom_email"
+    ACTION_ASSIGNED = "action_assigned"  # Generic fallback for custom/unknown action types
+
+    # Per-Action-Type Triggers (allow distinct workflows per action type)
+    ACTION_ASSIGNED_IN_PERSON_ATTENDANCE = "action_assigned_in_person_attendance"
+    ACTION_ASSIGNED_SURVEY_COMPLETION = "action_assigned_survey_completion"
+    ACTION_ASSIGNED_ORIENTATION_RSVP = "action_assigned_orientation_rsvp"
+    ACTION_ASSIGNED_DOCUMENT_REVIEW = "action_assigned_document_review"

@@ -167,6 +167,11 @@
                         <option value="false">Inactive</option>
                     </select>
                 </div>
+                <div class="col-md-2 mb-2" id="roleFilterSection" style="display: none;">
+                    <select class="form-select" id="filterRole">
+                        <option value="">All Types</option>
+                    </select>
+                </div>
                 <div class="col-md-2 mb-2">
                     <button class="btn btn-primary w-100" onclick="applyFilters()">
                         <i data-feather="filter" class="me-1"></i>
@@ -185,15 +190,17 @@
 
             <!-- Table -->
             <div id="tableContainer" class="table-responsive">
-                <table class="table table-hover">
+                <table class="table table-hover" id="inviteesTable">
                     <thead>
                         <tr>
-                            <th>Name</th>
-                            <th>Email</th>
-                            <th>Country</th>
-                            <th>Status</th>
+                            <th data-sort-key="last_name">Name</th>
+                            <th data-sort-key="email">Email</th>
+                            <th data-sort-key="country">Country</th>
+                            <th id="roleColumnHeader" style="display: none;">Role</th>
+                            <th data-sort-key="confirmed">Status</th>
                             <th>VPN</th>
-                            <th>Active</th>
+                            <th title="Keycloak Sync Status">KC</th>
+                            <th data-sort-key="is_active">Active</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -227,6 +234,11 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <!-- Error Alert -->
+                <div id="addInviteeError" class="alert alert-danger d-none" role="alert">
+                    <i data-feather="alert-circle" class="feather-sm me-1"></i>
+                    <span id="addInviteeErrorText"></span>
+                </div>
                 <form id="addInviteeForm">
                     <div class="mb-3">
                         <label for="addFirstName" class="form-label">First Name <span class="text-danger">*</span></label>
@@ -245,6 +257,12 @@
                         <select class="form-select" id="addCountry">
                             <option value="">Loading countries...</option>
                         </select>
+                    </div>
+                    <div class="mb-3" id="addRoleSection" style="display: none;">
+                        <label for="addInviteeRole" class="form-label">Invitee Type</label>
+                        <select class="form-select" id="addInviteeRole">
+                        </select>
+                        <div class="form-text">Select the type of invitee to create.</div>
                     </div>
                 </form>
             </div>
@@ -285,6 +303,11 @@
                             <option value="">Select country...</option>
                         </select>
                     </div>
+                    <div class="mb-3" id="editRoleSection" style="display: none;">
+                        <label for="editInviteeRole" class="form-label">Invitee Type</label>
+                        <select class="form-select" id="editInviteeRole">
+                        </select>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -305,6 +328,62 @@ let currentPage = 1;
 let currentFilters = {};
 const pageSize = 20;
 let countriesData = null;
+let inviteeSorter;
+let inviteeTypes = [];
+let hasMultipleRoles = false;
+
+function getRoleBadge(invitee) {
+    const label = invitee.role_name || 'Invitee';
+    return `<span class="badge badge-invitee">${escapeHtml(label)}</span>`;
+}
+
+// Load invitee type roles available to this sponsor
+async function loadInviteeTypes() {
+    try {
+        const response = await csrfFetch('/api/admin/roles/invitee-types');
+        if (!response.ok) return;
+        inviteeTypes = await response.json();
+        hasMultipleRoles = inviteeTypes.length > 1;
+
+        const roleSelect = document.getElementById('addInviteeRole');
+        const roleSection = document.getElementById('addRoleSection');
+
+        // Populate both add and edit role dropdowns
+        const editRoleSelect = document.getElementById('editInviteeRole');
+        const editRoleSection = document.getElementById('editRoleSection');
+        const roleOptions = inviteeTypes.map(r =>
+            `<option value="${r.id}">${r.name}</option>`
+        ).join('');
+
+        if (hasMultipleRoles) {
+            // Multiple types available — show dropdown and role column/filter
+            roleSelect.innerHTML = roleOptions;
+            roleSection.style.display = '';
+
+            editRoleSelect.innerHTML = roleOptions;
+            editRoleSection.style.display = '';
+
+            // Show role column in table
+            document.getElementById('roleColumnHeader').style.display = '';
+
+            // Show role filter and populate it
+            const filterSection = document.getElementById('roleFilterSection');
+            const filterSelect = document.getElementById('filterRole');
+            filterSelect.innerHTML = '<option value="">All Types</option>' +
+                inviteeTypes.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+            filterSection.style.display = '';
+        } else if (inviteeTypes.length === 1) {
+            // Only one type — hide dropdown, auto-select
+            roleSelect.innerHTML = `<option value="${inviteeTypes[0].id}">${inviteeTypes[0].name}</option>`;
+            roleSection.style.display = 'none';
+
+            editRoleSelect.innerHTML = `<option value="${inviteeTypes[0].id}">${inviteeTypes[0].name}</option>`;
+            editRoleSection.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Failed to load invitee types:', error);
+    }
+}
 
 // Load countries from API
 async function loadCountries() {
@@ -364,7 +443,14 @@ function getCountryFlag(countryValue) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
+    inviteeSorter = new SortableTable({
+        tableId: 'inviteesTable',
+        defaultSort: { column: 'created_at', order: 'desc' },
+        onSort: () => loadInvitees(1)
+    });
+
     loadCountries();
+    loadInviteeTypes();
     loadStats();
     loadInvitees();
 
@@ -406,11 +492,17 @@ async function loadInvitees(page = 1) {
             page_size: pageSize
         });
 
+        // Add sort
+        const { sortBy, sortOrder } = inviteeSorter.getSort();
+        params.append('sort_by', sortBy);
+        params.append('sort_order', sortOrder);
+
         // Add filters
         if (currentFilters.search) params.append('search', currentFilters.search);
         if (currentFilters.confirmed) params.append('confirmed', currentFilters.confirmed);
         if (currentFilters.has_vpn !== undefined) params.append('has_vpn', currentFilters.has_vpn);
         if (currentFilters.is_active !== undefined) params.append('is_active', currentFilters.is_active);
+        if (currentFilters.role_id) params.append('role_id', currentFilters.role_id);
 
         const response = await csrfFetch(`/api/sponsors/my-invitees?${params}`);
         if (!response.ok) throw new Error('Failed to load invitees');
@@ -424,7 +516,7 @@ async function loadInvitees(page = 1) {
         console.error('Error loading invitees:', error);
         showToast('Error loading invitees', 'error');
         document.getElementById('inviteesTableBody').innerHTML =
-            '<tr><td colspan="7" class="text-center text-danger">Error loading invitees</td></tr>';
+            '<tr><td colspan="8" class="text-center text-danger">Error loading invitees</td></tr>';
     } finally {
         showLoading(false);
     }
@@ -435,7 +527,8 @@ function renderTable(invitees) {
     const tbody = document.getElementById('inviteesTableBody');
 
     if (invitees.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No invitees found</td></tr>';
+        const colCount = hasMultipleRoles ? 9 : 8;
+        tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-muted">No invitees found</td></tr>`;
         return;
     }
 
@@ -444,14 +537,19 @@ function renderTable(invitees) {
             <td>${escapeHtml(invitee.first_name)} ${escapeHtml(invitee.last_name)}</td>
             <td>${escapeHtml(invitee.email)}</td>
             <td>${getCountryFlag(invitee.country)} ${escapeHtml(invitee.country)}</td>
-            <td>${renderStatusBadge(invitee.confirmed)}</td>
+            ${hasMultipleRoles ? `<td>${getRoleBadge(invitee)}</td>` : ''}
+            <td>${renderStatusBadge(invitee)}</td>
             <td>${invitee.has_vpn ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-secondary">No</span>'}</td>
+            <td>${invitee.keycloak_synced ? '<i data-feather="check-circle" class="text-success"></i>' : '<i data-feather="minus-circle" class="text-secondary"></i>'}</td>
             <td>${invitee.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
             <td>
                 <button class="btn btn-sm btn-primary btn-actions me-1" onclick="openEditInviteeModal(${invitee.id})" title="Edit">
                     <i data-feather="edit-2" class="feather-sm"></i>
                 </button>
-                ${invitee.confirmed === 'NO' ? `
+                ${(() => {
+                    const status = invitee.event_participation_status || invitee.confirmed;
+                    const isDeclined = status === 'NO' || status === 'declined';
+                    return isDeclined ? `
                     <span class="d-inline-block" tabindex="0" title="Actions not available for declined invitees">
                         <button class="btn btn-sm btn-secondary btn-actions" type="button" disabled style="pointer-events: none;">
                             <i data-feather="more-vertical" class="feather-sm"></i>
@@ -471,7 +569,8 @@ function renderTable(invitees) {
                             </a></li>
                         </ul>
                     </div>
-                `}
+                `;
+                })()}
             </td>
         </tr>
     `).join('');
@@ -521,11 +620,13 @@ function renderPagination(data) {
 
 // Apply filters
 function applyFilters() {
+    const roleFilterEl = document.getElementById('filterRole');
     currentFilters = {
         search: document.getElementById('searchInput').value.trim() || undefined,
         confirmed: document.getElementById('filterConfirmed').value || undefined,
         has_vpn: document.getElementById('filterVPN').value === '' ? undefined : document.getElementById('filterVPN').value === 'true',
-        is_active: document.getElementById('filterActive').value === '' ? undefined : document.getElementById('filterActive').value === 'true'
+        is_active: document.getElementById('filterActive').value === '' ? undefined : document.getElementById('filterActive').value === 'true',
+        role_id: roleFilterEl ? roleFilterEl.value || undefined : undefined
     };
 
     loadInvitees(1);
@@ -534,17 +635,26 @@ function applyFilters() {
 // Open Add Invitee Modal
 function openAddInviteeModal() {
     document.getElementById('addInviteeForm').reset();
+    // Hide any previous errors
+    document.getElementById('addInviteeError').classList.add('d-none');
     new bootstrap.Modal(document.getElementById('addInviteeModal')).show();
 }
 
 // Submit Add Invitee
 async function submitAddInvitee() {
+    const roleSelect = document.getElementById('addInviteeRole');
+    const selectedRoleId = roleSelect.value ? parseInt(roleSelect.value) : null;
+
     const data = {
         first_name: document.getElementById('addFirstName').value.trim(),
         last_name: document.getElementById('addLastName').value.trim(),
         email: document.getElementById('addEmail').value.trim(),
-        country: document.getElementById('addCountry').value || 'United States'
+        country: document.getElementById('addCountry').value || 'United States',
+        role_id: selectedRoleId || undefined
     };
+
+    // Hide any previous errors
+    document.getElementById('addInviteeError').classList.add('d-none');
 
     try {
         const response = await csrfFetch('/api/sponsors/my-invitees', {
@@ -554,7 +664,16 @@ async function submitAddInvitee() {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || 'Failed to create invitee');
+            const errorMessage = error.detail || 'Failed to create invitee';
+
+            // Show error in modal
+            document.getElementById('addInviteeErrorText').textContent = errorMessage;
+            document.getElementById('addInviteeError').classList.remove('d-none');
+
+            // Re-initialize feather icons for the alert icon
+            feather.replace();
+
+            throw new Error(errorMessage);
         }
 
         showToast('Invitee created successfully', 'success');
@@ -564,7 +683,7 @@ async function submitAddInvitee() {
 
     } catch (error) {
         console.error('Error creating invitee:', error);
-        showToast(error.message, 'error');
+        // Error is already displayed in the modal alert - no need for redundant toast
     }
 }
 
@@ -581,6 +700,9 @@ async function openEditInviteeModal(inviteeId) {
         document.getElementById('editLastName').value = invitee.last_name;
         document.getElementById('editEmail').value = invitee.email;
         document.getElementById('editCountry').value = invitee.country || '';
+        if (invitee.role_id) {
+            document.getElementById('editInviteeRole').value = invitee.role_id;
+        }
 
         new bootstrap.Modal(document.getElementById('editInviteeModal')).show();
 
@@ -593,11 +715,14 @@ async function openEditInviteeModal(inviteeId) {
 // Submit Edit Invitee
 async function submitEditInvitee() {
     const inviteeId = document.getElementById('editInviteeId').value;
+    const editRoleSelect = document.getElementById('editInviteeRole');
+    const editRoleId = editRoleSelect.value ? parseInt(editRoleSelect.value) : null;
     const data = {
         first_name: document.getElementById('editFirstName').value.trim(),
         last_name: document.getElementById('editLastName').value.trim(),
         email: document.getElementById('editEmail').value.trim(),
-        country: document.getElementById('editCountry').value || 'United States'
+        country: document.getElementById('editCountry').value || 'United States',
+        role_id: editRoleId || undefined
     };
 
     try {
@@ -624,7 +749,7 @@ async function submitEditInvitee() {
 
 // Reset Password
 async function resetPassword(inviteeId) {
-    if (!confirm('Reset password for this invitee? They will receive an email with their new credentials.')) {
+    if (!confirm('Send a password reset link to this invitee? They will receive an email to choose their own password.')) {
         return;
     }
 
@@ -678,13 +803,30 @@ function showLoading(show) {
     document.getElementById('tableContainer').style.display = show ? 'none' : 'block';
 }
 
-function renderStatusBadge(status) {
+function renderStatusBadge(invitee) {
+    // Prefer event_participation_status (new), fall back to confirmed (legacy)
+    const status = invitee.event_participation_status || invitee.confirmed;
+
+    // Map both new and legacy status values
+    const statusMap = {
+        'confirmed': 'YES',
+        'declined': 'NO',
+        'invited': 'UNKNOWN',
+        'no_response': 'UNKNOWN',
+        'YES': 'YES',
+        'NO': 'NO',
+        'UNKNOWN': 'UNKNOWN'
+    };
+
+    const mappedStatus = statusMap[status] || 'UNKNOWN';
+
     const badges = {
         'YES': '<span class="badge badge-confirmed">Confirmed</span>',
         'NO': '<span class="badge badge-declined">Declined</span>',
         'UNKNOWN': '<span class="badge badge-pending">Pending</span>'
     };
-    return badges[status] || '<span class="badge bg-secondary">Unknown</span>';
+
+    return badges[mappedStatus] || '<span class="badge bg-secondary">Unknown</span>';
 }
 
 function escapeHtml(text) {
@@ -694,8 +836,40 @@ function escapeHtml(text) {
 }
 
 function showToast(message, type = 'info') {
-    // Simple toast implementation - you can replace with your toast library
-    alert(message);
+    var iconMap = {
+        'success': '<i data-feather="check-circle" class="me-2 flex-shrink-0"></i>',
+        'danger': '<i data-feather="alert-circle" class="me-2 flex-shrink-0"></i>',
+        'warning': '<i data-feather="alert-triangle" class="me-2 flex-shrink-0"></i>',
+        'info': '<i data-feather="info" class="me-2 flex-shrink-0"></i>'
+    };
+    var icon = iconMap[type] || iconMap['info'];
+
+    var container = document.getElementById('toastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.className = 'position-fixed top-0 end-0 p-3';
+        container.style.zIndex = '9999';
+        document.body.appendChild(container);
+    }
+
+    var toastEl = document.createElement('div');
+    toastEl.className = 'toast align-items-center border-0 show text-bg-' + type;
+    toastEl.setAttribute('role', 'alert');
+    toastEl.setAttribute('data-bs-autohide', 'true');
+    toastEl.setAttribute('data-bs-delay', '5000');
+    toastEl.innerHTML =
+        '<div class="d-flex">' +
+            '<div class="toast-body d-flex align-items-center">' + icon + message + '</div>' +
+            '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>' +
+        '</div>';
+
+    container.appendChild(toastEl);
+    if (typeof feather !== 'undefined') feather.replace();
+
+    var bsToast = new bootstrap.Toast(toastEl);
+    bsToast.show();
+    toastEl.addEventListener('hidden.bs.toast', function() { toastEl.remove(); });
 }
 </script>
 {% endblock %}

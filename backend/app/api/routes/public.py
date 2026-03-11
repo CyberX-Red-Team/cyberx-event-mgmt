@@ -2,16 +2,21 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from app.models.user import User
 from app.services.audit_service import AuditService
 from app.services.workflow_service import WorkflowService
 from app.services.event_service import EventService
 from app.models.email_workflow import WorkflowTriggerEvent
 from app.dependencies import get_db
+from app.config import get_settings
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 import secrets
 import string
+import logging
 from passlib.context import CryptContext
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/public", tags=["Public"])
 
@@ -22,18 +27,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 async def generate_username(first_name: str, last_name: str, db: AsyncSession) -> str:
     """
     Generate a unique username in the format: first_initial + last_name.
-    If conflict exists, append incrementing numbers (2, 3, 4, etc.).
+    If conflict exists, append incrementing numbers (1, 2, 3, etc.).
 
-    Args:
-        first_name: User's first name
-        last_name: User's last name
-        db: Database session
-
-    Returns:
-        Unique username
+    Handles accented characters (é→e, ñ→n) and strips punctuation.
     """
-    # Generate base username: first initial + last name (lowercase, no spaces)
-    base_username = f"{first_name[0]}{last_name}".lower().replace(" ", "")
+    from app.utils.name_utils import sanitize_username
+    base_username = sanitize_username(first_name, last_name)
 
     # Check if base username is available
     result = await db.execute(
@@ -43,15 +42,21 @@ async def generate_username(first_name: str, last_name: str, db: AsyncSession) -
         return base_username
 
     # If conflict, try with incrementing numbers
-    counter = 2
+    counter = 1
     while True:
-        candidate = f"{base_username}{counter}"
+        suffix = str(counter)
+        max_base_len = 50 - len(suffix)
+        candidate = f"{base_username[:max_base_len]}{suffix}"
         result = await db.execute(
             select(User).where(User.pandas_username == candidate)
         )
         if not result.scalar_one_or_none():
             return candidate
         counter += 1
+        if counter > 999:
+            import time
+            timestamp = str(int(time.time()))[-6:]
+            return f"{base_username[:44]}{timestamp}"
 
 
 def generate_password(length: int = 12) -> str:
@@ -63,23 +68,27 @@ def generate_password(length: int = 12) -> str:
 
     Returns:
         Random password with mix of uppercase, lowercase, digits, and symbols
-    """
-    # Ensure at least one of each character type
-    chars = []
-    chars.append(secrets.choice(string.ascii_uppercase))
-    chars.append(secrets.choice(string.ascii_lowercase))
-    chars.append(secrets.choice(string.digits))
-    chars.append(secrets.choice("!@#$%^&*"))
 
-    # Fill the rest randomly
-    all_chars = string.ascii_letters + string.digits + "!@#$%^&*"
+    Uses a safe special character set that avoids mis-interpretation by:
+    - HTML/email clients: no &, <, >, ", '
+    - Handlebars templates: no { }
+    - Shells: no !, $, `, \\, |, ;
+    """
+    safe_specials = "@#%^*"
+    all_chars = string.ascii_letters + string.digits + safe_specials
+
+    # Ensure at least one of each character type
+    chars = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice(safe_specials),
+    ]
     chars.extend(secrets.choice(all_chars) for _ in range(length - 4))
 
     # Shuffle to avoid predictable patterns
-    password_list = list(chars)
-    secrets.SystemRandom().shuffle(password_list)
-
-    return ''.join(password_list)
+    secrets.SystemRandom().shuffle(chars)
+    return ''.join(chars)
 
 
 def generate_phonetic_password(password: str) -> str:
@@ -191,7 +200,9 @@ async def confirm_participation(
         raise bad_request("Confirmation code and terms required")
 
     result = await db.execute(
-        select(User).where(User.confirmation_code == code)
+        select(User)
+        .options(selectinload(User.role_obj))
+        .where(User.confirmation_code == code)
     )
     user = result.scalar_one_or_none()
 
@@ -211,6 +222,26 @@ async def confirm_participation(
     user.terms_accepted_at = now
     user.terms_version = terms_version
 
+    # Update EventParticipation status to confirmed
+    from app.models.event import EventParticipation, ParticipationStatus
+    event_service = EventService(db)
+    event = await event_service.get_current_event()
+
+    if event:
+        participation_result = await db.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == user.id,
+                EventParticipation.event_id == event.id
+            )
+        )
+        participation = participation_result.scalar_one_or_none()
+
+        if participation:
+            participation.status = ParticipationStatus.CONFIRMED.value
+            participation.confirmed_at = now
+            participation.terms_accepted_at = now
+            participation.terms_version_accepted = terms_version
+
     # Generate credentials if not already set
     # Username: Only generate if missing (returning participants keep their existing username)
     if not user.pandas_username:
@@ -220,24 +251,74 @@ async def confirm_participation(
     # - Invitees: Always generate new password each year (for security)
     # - Sponsors: Keep existing password across years (only generate if missing)
     should_generate_password = False
+    password_generation_reason = None
+
     if user.role == 'invitee':
         should_generate_password = True  # Always generate new password for invitees
+        password_generation_reason = "invitee role (always regenerate)"
     elif not user.pandas_password:
         should_generate_password = True  # Generate for sponsors only if missing
+        password_generation_reason = f"missing password (role: {user.role}, has_encrypted: {user._pandas_password_encrypted is not None})"
 
     if should_generate_password:
+        logger.info(
+            f"Generating password during confirmation for user {user.id} ({user.email}, role: {user.role}). "
+            f"Reason: {password_generation_reason}"
+        )
         password = generate_password(12)
         user.pandas_password = password  # Store plaintext for email (will be synced to Keycloak)
         user.password_hash = pwd_context.hash(password)  # Store hash for local auth
         user.password_phonetic = generate_phonetic_password(password)  # For easy communication
+        user.keycloak_synced = False  # Reset sync status on credential change
+
+        # Queue Keycloak sync
+        from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+        from app.utils.encryption import encrypt_field
+        queue_entry = PasswordSyncQueue(
+            user_id=user.id,
+            username=user.pandas_username,
+            encrypted_password=encrypt_field(password),
+            operation=SyncOperation.CREATE_USER.value
+        )
+        db.add(queue_entry)
+    else:
+        logger.info(
+            f"Keeping existing password for user {user.id} ({user.email}, role: {user.role}) "
+            f"during confirmation"
+        )
+        # Still sync existing credentials to Keycloak if not already synced
+        if not user.keycloak_synced and user.pandas_username and user.pandas_password:
+            from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+            from app.utils.encryption import encrypt_field
+            queue_entry = PasswordSyncQueue(
+                user_id=user.id,
+                username=user.pandas_username,
+                encrypted_password=encrypt_field(user.pandas_password),
+                operation=SyncOperation.CREATE_USER.value
+            )
+            db.add(queue_entry)
+
+    # Generate Discord invite if configured and user has discord.view permission
+    user_perms = user.get_effective_permissions()
+    if event and event.discord_channel_id and participation and "discord.view" in user_perms:
+        settings = get_settings()
+        if settings.DISCORD_INVITE_ENABLED and settings.DISCORD_BOT_TOKEN:
+            try:
+                from app.services.discord_invite_service import DiscordInviteService
+                discord_service = DiscordInviteService()
+                invite_code = await discord_service.generate_invite(event.discord_channel_id)
+                if invite_code:
+                    participation.discord_invite_code = invite_code
+                    participation.discord_invite_generated_at = now
+                    logger.info(f"Generated Discord invite for user {user.id}: {invite_code}")
+            except Exception as e:
+                logger.warning(f"Failed to generate Discord invite for user {user.id}: {e}")
 
     await db.commit()
     await db.refresh(user)
 
-    # Audit log
+    # Audit log (reuse event from above)
     audit_service = AuditService(db)
-    event_service = EventService(db)
-    event = await event_service.get_current_event()
 
     await audit_service.log_terms_acceptance(
         user_id=user.id,
@@ -248,18 +329,27 @@ async def confirm_participation(
     )
 
     # Trigger credentials email
+    # Sponsors/admins already received credentials at account creation — skip resend.
+    # Only send credentials on confirmation for invitees (or sponsors missing credentials).
     workflow_service = WorkflowService(db)
-    await workflow_service.trigger_workflow(
-        trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
-        user_id=user.id,
-        custom_vars={
-            "login_url": "https://portal.cyberxredteam.org/login",
-            "event_name": event.name if event else "CyberX 2026",
-            "pandas_username": user.pandas_username,
-            "pandas_password": user.pandas_password,
-            "password_phonetic": user.password_phonetic
-        }
-    )
+    if should_generate_password:
+        await workflow_service.trigger_workflow(
+            trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
+            user_id=user.id,
+            custom_vars={
+                "login_url": "https://portal.cyberxredteam.org/login",
+                "event_name": event.name if event else "CyberX 2026",
+                "pandas_username": user.pandas_username,
+                "pandas_password": user.pandas_password,
+                "password_phonetic": user.password_phonetic
+            },
+            force=True  # Bypass 24h dedup — user just confirmed, always send credentials
+        )
+    else:
+        logger.info(
+            f"Skipping credential email for {user.role} {user.id} on confirmation — "
+            f"credentials already sent at account creation"
+        )
 
     return {
         "success": True,
@@ -300,13 +390,30 @@ async def decline_participation(
     user.confirmed_at = now
     user.decline_reason = reason if reason else None
 
+    # Update EventParticipation record
+    event_service = EventService(db)
+    event = await event_service.get_current_event()
+
+    if event:
+        from app.models.event import EventParticipation, ParticipationStatus
+        ep_result = await db.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == user.id,
+                EventParticipation.event_id == event.id
+            )
+        )
+        participation = ep_result.scalar_one_or_none()
+        if participation:
+            participation.status = ParticipationStatus.DECLINED.value
+            participation.declined_at = now
+            participation.responded_at = now
+            participation.declined_reason = reason if reason else None
+
     await db.commit()
     await db.refresh(user)
 
     # Audit log
     audit_service = AuditService(db)
-    event_service = EventService(db)
-    event = await event_service.get_current_event()
 
     await audit_service.log(
         user_id=user.id,
@@ -320,6 +427,34 @@ async def decline_participation(
         },
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
+    )
+
+    # Trigger decline notification workflow (if configured)
+    workflow_service = WorkflowService(db)
+    sponsor_vars = {}
+    if user.sponsor_id:
+        sponsor_result = await db.execute(
+            select(User).where(User.id == user.sponsor_id)
+        )
+        sponsor = sponsor_result.scalar_one_or_none()
+        if sponsor:
+            last = sponsor.last_name or ""
+            sponsor_vars = {
+                "sponsor_first_name": sponsor.first_name or "",
+                "sponsor_last_name": last,
+                "sponsor_last_initial": f"{last[0]}." if last else "",
+                "sponsor_name": f"{sponsor.first_name or ''} {last}".strip(),
+                "sponsor_email": sponsor.email or "",
+            }
+
+    await workflow_service.trigger_workflow(
+        trigger_event=WorkflowTriggerEvent.USER_DECLINED,
+        user_id=user.id,
+        custom_vars={
+            "event_name": event.name if event else "CyberX Event",
+            "decline_reason": reason if reason else "No reason provided",
+            **sponsor_vars,
+        }
     )
 
     return {
