@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission
 from app.api.exceptions import not_found, bad_request, server_error
+from app.services.audit_service import AuditService
 from app.api.utils.dependencies import (
     get_openstack_service,
     get_digitalocean_service,
@@ -93,6 +94,7 @@ async def list_instances(
 @router.post("", response_model=InstanceResponse, status_code=201)
 async def create_instance(
     data: InstanceCreate,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.provision")),
     service: InstanceService = Depends(get_instance_service),
 ):
@@ -122,12 +124,25 @@ async def create_instance(
         logger.error("Failed to create instance: %s", e)
         raise server_error("Failed to create instance")
 
+    audit = AuditService(db)
+    await audit.log_instance_create(
+        user_id=current_user.id,
+        instance_id=instance.id,
+        details={
+            "name": instance.name,
+            "provider": data.provider,
+            "event_id": data.event_id,
+            "assigned_to_user_id": data.assigned_to_user_id,
+        },
+    )
+
     return InstanceResponse.model_validate(instance)
 
 
 @router.post("/bulk", response_model=BulkOperationResponse, status_code=201)
 async def bulk_create_instances(
     data: InstanceBulkCreate,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.provision")),
     service: OpenStackService = Depends(get_openstack_service),
 ):
@@ -148,6 +163,18 @@ async def bulk_create_instances(
         )
     except ValueError as e:
         raise bad_request(str(e))
+
+    audit = AuditService(db)
+    await audit.log_bulk_instance_create(
+        user_id=current_user.id,
+        details={
+            "count": data.count,
+            "success_count": success_count,
+            "name_prefix": data.name_prefix,
+            "provider": "openstack",
+            "event_id": data.event_id,
+        },
+    )
 
     return BulkOperationResponse(success_count=success_count, errors=errors)
 
@@ -278,29 +305,60 @@ async def update_instance(
     if not instance:
         raise not_found("Instance", instance_id)
 
+    changes = {}
     if "visibility" in data:
         if data["visibility"] not in ("private", "public"):
             raise bad_request("Visibility must be 'private' or 'public'")
+        changes["visibility"] = {"old": instance.visibility, "new": data["visibility"]}
         instance.visibility = data["visibility"]
 
     if "notes" in data:
+        changes["notes"] = True
         instance.notes = data["notes"]
 
     await db.commit()
     await db.refresh(instance)
+
+    if changes:
+        audit = AuditService(db)
+        await audit.log_instance_update(
+            user_id=current_user.id,
+            instance_id=instance_id,
+            changes=changes,
+        )
+
     return InstanceResponse.model_validate(instance)
 
 
 @router.delete("/{instance_id}")
 async def delete_instance(
     instance_id: int,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Delete (terminate) an instance from its cloud provider."""
+    # Fetch instance details before deletion for audit
+    instance = await service.get_tracked_instance(instance_id)
+    if not instance:
+        raise not_found("Instance", instance_id)
+
     ok = await service.delete_and_track_instance(instance_id)
     if not ok:
-        raise not_found("Instance", instance_id)
+        raise server_error("Failed to delete instance")
+
+    audit = AuditService(db)
+    await audit.log_instance_delete(
+        user_id=current_user.id,
+        instance_id=instance_id,
+        details={
+            "name": instance.name,
+            "provider": instance.provider,
+            "status": instance.status,
+            "assigned_to_email": instance.assigned_to_email,
+        },
+    )
+
     return {"success": True, "message": "Instance deleted"}
 
 
@@ -320,9 +378,21 @@ async def sync_instance(
 @router.post("/bulk-delete", response_model=BulkOperationResponse)
 async def bulk_delete_instances(
     data: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Bulk delete instances from their cloud providers."""
     success_count, errors = await service.bulk_delete_instances(data.instance_ids)
+
+    audit = AuditService(db)
+    await audit.log_bulk_instance_delete(
+        user_id=current_user.id,
+        details={
+            "instance_ids": data.instance_ids,
+            "count": len(data.instance_ids),
+            "success_count": success_count,
+        },
+    )
+
     return BulkOperationResponse(success_count=success_count, errors=errors)

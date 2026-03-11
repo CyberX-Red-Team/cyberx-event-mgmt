@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_db, get_current_active_user, require_permission
 from app.api.exceptions import not_found, bad_request, forbidden, server_error
+from app.services.audit_service import AuditService
 from app.models.user import User
 from app.models.event import Event
 from app.models.instance import Instance
@@ -145,6 +146,18 @@ async def provision_instance(
         logger.error("Failed to provision instance: %s", e)
         raise server_error("Failed to provision instance")
 
+    audit = AuditService(db)
+    await audit.log_instance_create(
+        user_id=current_user.id,
+        instance_id=instance.id,
+        details={
+            "name": instance.name,
+            "provider": instance.provider,
+            "template_id": data.template_id,
+            "source": "participant_self_service",
+        },
+    )
+
     return InstanceResponse.model_validate(instance)
 
 
@@ -247,10 +260,24 @@ async def delete_my_instance(
     if not is_creator:
         raise forbidden("You can only delete instances you created")
 
+    instance_name = instance.name
+    instance_provider = instance.provider
+
     # Delete
     ok = await service.delete_and_track_instance(instance_id)
     if not ok:
         raise server_error("Failed to delete instance")
+
+    audit = AuditService(service.session)
+    await audit.log_instance_delete(
+        user_id=current_user.id,
+        instance_id=instance_id,
+        details={
+            "name": instance_name,
+            "provider": instance_provider,
+            "source": "participant_self_service",
+        },
+    )
 
     return {"success": True, "message": "Instance deleted"}
 
@@ -279,18 +306,29 @@ async def update_my_instance(
         raise forbidden("You can only update instances you created")
 
     # Validate visibility if provided
+    changes = {}
     if visibility is not None:
         if visibility not in ["private", "public"]:
             raise bad_request("Invalid visibility. Must be private or public")
+        changes["visibility"] = {"old": instance.visibility, "new": visibility}
         instance.visibility = visibility
 
     # Update notes if provided
     if notes is not None:
+        changes["notes"] = True
         instance.notes = notes
 
     # Save changes
     await db.commit()
     await db.refresh(instance)
+
+    if changes:
+        audit = AuditService(db)
+        await audit.log_instance_update(
+            user_id=current_user.id,
+            instance_id=instance_id,
+            changes={**changes, "source": "participant_self_service"},
+        )
 
     return InstanceResponse.model_validate(instance)
 

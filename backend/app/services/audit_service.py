@@ -599,6 +599,97 @@ class AuditService:
             user_agent=user_agent
         )
 
+    async def log_instance_create(
+        self,
+        user_id: int,
+        instance_id: int,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log instance creation."""
+        return await self.log(
+            action="INSTANCE_CREATE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            resource_id=instance_id,
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_instance_delete(
+        self,
+        user_id: int,
+        instance_id: int,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log instance deletion."""
+        return await self.log(
+            action="INSTANCE_DELETE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            resource_id=instance_id,
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_instance_update(
+        self,
+        user_id: int,
+        instance_id: int,
+        changes: Dict[str, Any],
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log instance update."""
+        return await self.log(
+            action="INSTANCE_UPDATE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            resource_id=instance_id,
+            details={"changes": changes},
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_bulk_instance_create(
+        self,
+        user_id: int,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log bulk instance creation."""
+        return await self.log(
+            action="BULK_INSTANCE_CREATE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_bulk_instance_delete(
+        self,
+        user_id: int,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> AuditLog:
+        """Log bulk instance deletion."""
+        return await self.log(
+            action="BULK_INSTANCE_DELETE",
+            user_id=user_id,
+            resource_type="INSTANCE",
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
     async def log_reminder_sent(
         self,
         user_id: int,
