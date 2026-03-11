@@ -100,6 +100,38 @@ class CPECertificateService:
 
         return results
 
+    async def validate_can_issue(
+        self, user_id: int, event_id: int, skip_eligibility: bool = False,
+    ) -> None:
+        """Pre-validate that a certificate can be issued.
+
+        Runs the same checks as issue_certificate() but without creating
+        anything.  Call this before expensive operations like starting
+        Gotenberg so failures are fast.
+
+        Raises ValueError on any validation failure.
+        """
+        event = await self.session.get(Event, event_id)
+        if not event:
+            raise ValueError(f"Event {event_id} not found")
+
+        existing = await self._get_existing_certificate(user_id, event_id)
+        if existing and existing.status != CertificateStatus.REVOKED.value:
+            raise ValueError(
+                f"Certificate already exists: {existing.certificate_number} "
+                f"(status: {existing.status})"
+            )
+
+        if not skip_eligibility:
+            eligibility = await self.check_eligibility(user_id, event)
+            if not eligibility["eligible"]:
+                missing = [k for k, v in eligibility["criteria"].items() if not v]
+                raise ValueError(f"User {user_id} is ineligible. Missing: {', '.join(missing)}")
+
+        user = await self.session.get(User, user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+
     async def issue_certificate(
         self, user_id: int, event_id: int, issued_by_user_id: int,
         skip_eligibility: bool = False,
@@ -148,11 +180,21 @@ class CPECertificateService:
         # Generate certificate number
         cert_number = await self._generate_certificate_number(event.year)
 
+        # Snapshot user identity for audit trail (survives user deletion)
+        user_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
+        issued_by = await self.session.get(User, issued_by_user_id) if issued_by_user_id else None
+        issued_by_name = (
+            f"{issued_by.first_name or ''} {issued_by.last_name or ''}".strip() or None
+        ) if issued_by else None
+
         # Create certificate record
         certificate = CPECertificate(
             user_id=user_id,
+            user_email=user.email,
+            user_name=user_name,
             event_id=event_id,
             issued_by_user_id=issued_by_user_id,
+            issued_by_name=issued_by_name,
             certificate_number=cert_number,
             cpe_hours=self.settings.CPE_HOURS_DEFAULT,
             status=CertificateStatus.ISSUED.value,
@@ -245,9 +287,16 @@ class CPECertificateService:
         if cert.status == CertificateStatus.REVOKED.value:
             raise ValueError(f"Certificate {cert.certificate_number} is already revoked")
 
+        # Snapshot revoker identity
+        revoked_by = await self.session.get(User, revoked_by_user_id) if revoked_by_user_id else None
+        revoked_by_name = (
+            f"{revoked_by.first_name or ''} {revoked_by.last_name or ''}".strip() or None
+        ) if revoked_by else None
+
         cert.status = CertificateStatus.REVOKED.value
         cert.revoked_at = datetime.now(timezone.utc)
         cert.revoked_by_user_id = revoked_by_user_id
+        cert.revoked_by_name = revoked_by_name
         cert.revocation_reason = reason
 
         await self.session.flush()

@@ -29,8 +29,11 @@ class CPECertificate(Base):
 
     # References
     user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    user_email = Column(String(255), nullable=True)      # Snapshot: survives user deletion
+    user_name = Column(String(500), nullable=True)        # Snapshot: survives user deletion
     event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
     issued_by_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    issued_by_name = Column(String(500), nullable=True)   # Snapshot: survives user deletion
 
     # Certificate details
     certificate_number = Column(String(50), unique=True, nullable=False, index=True)  # e.g. "CX-2026-0042"
@@ -49,6 +52,7 @@ class CPECertificate(Base):
     # Revocation
     revoked_at = Column(TIMESTAMP(timezone=True), nullable=True)
     revoked_by_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    revoked_by_name = Column(String(500), nullable=True)  # Snapshot: survives user deletion
     revocation_reason = Column(Text, nullable=True)
 
     # Timestamps

@@ -83,6 +83,8 @@ class TLSCertificate(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    user_email = Column(String(255), nullable=True)      # Snapshot: survives user deletion
+    user_name = Column(String(500), nullable=True)        # Snapshot: survives user deletion
     event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
     ca_chain_id = Column(Integer, ForeignKey('ca_chains.id', ondelete='CASCADE'), nullable=False)
 

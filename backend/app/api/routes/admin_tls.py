@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -80,6 +80,7 @@ async def create_ca_chain(
     signing_cert: UploadFile = File(...),
     signing_key: UploadFile = File(...),
     ca_chain_file: UploadFile = File(...),
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tls.manage")),
 ):
@@ -173,7 +174,8 @@ async def create_ca_chain(
         user_id=current_user.id,
         action="ca_chain_create",
         resource_type="ca_chain",
-        details={"message": f"Created CA chain '{name}'", "ca_chain_id": ca_chain_record.id}
+        details={"message": f"Created CA chain '{name}'", "ca_chain_id": ca_chain_record.id},
+        ip_address=request.client.host if request and request.client else None,
     )
 
     return {
@@ -269,6 +271,7 @@ async def get_ca_chain(
 @router.delete("/ca-chains/{chain_id}")
 async def delete_ca_chain(
     chain_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tls.manage")),
 ):
@@ -313,7 +316,8 @@ async def delete_ca_chain(
         user_id=current_user.id,
         action="ca_chain_delete",
         resource_type="ca_chain",
-        details={"message": f"Deleted CA chain '{chain.name}'", "ca_chain_id": chain_id}
+        details={"message": f"Deleted CA chain '{chain.name}'", "ca_chain_id": chain_id},
+        ip_address=request.client.host if request.client else None,
     )
 
     return {"success": True, "message": f"CA chain '{chain.name}' deleted"}
@@ -326,6 +330,7 @@ async def delete_ca_chain(
 @router.post("/ca-chains/{chain_id}/initialize")
 async def initialize_ca_chain(
     chain_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tls.manage")),
 ):
@@ -374,7 +379,8 @@ async def initialize_ca_chain(
         user_id=current_user.id,
         action="ca_chain_initialize",
         resource_type="ca_chain",
-        details={"message": f"Initialized step-ca for '{chain.name}'", "ca_chain_id": chain_id}
+        details={"message": f"Initialized step-ca for '{chain.name}'", "ca_chain_id": chain_id},
+        ip_address=request.client.host if request.client else None,
     )
 
     return {
@@ -387,6 +393,7 @@ async def initialize_ca_chain(
 @router.post("/ca-chains/{chain_id}/start")
 async def start_ca_chain(
     chain_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tls.manage")),
 ):
@@ -413,7 +420,8 @@ async def start_ca_chain(
         user_id=current_user.id,
         action="ca_chain_start",
         resource_type="ca_chain",
-        details={"message": f"Started step-ca for '{chain.name}'"}
+        details={"message": f"Started step-ca for '{chain.name}'"},
+        ip_address=request.client.host if request.client else None,
     )
 
     return {"success": True, "message": f"step-ca for '{chain.name}' is now running"}
@@ -422,6 +430,7 @@ async def start_ca_chain(
 @router.post("/ca-chains/{chain_id}/stop")
 async def stop_ca_chain(
     chain_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tls.manage")),
 ):
@@ -448,7 +457,8 @@ async def stop_ca_chain(
         user_id=current_user.id,
         action="ca_chain_stop",
         resource_type="ca_chain",
-        details={"message": f"Stopped step-ca for '{chain.name}'"}
+        details={"message": f"Stopped step-ca for '{chain.name}'"},
+        ip_address=request.client.host if request.client else None,
     )
 
     return {"success": True, "message": f"step-ca for '{chain.name}' suspended"}
@@ -517,12 +527,17 @@ async def list_certificates(
 
     response = []
     for cert in certs:
+        # Prefer snapshot fields, fall back to live user lookup
         user = cert.user
+        user_email = cert.user_email or (user.email if user else "")
+        user_name = cert.user_name or (
+            f"{user.first_name or ''} {user.last_name or ''}".strip() if user else ""
+        )
         response.append({
             "id": cert.id,
             "user_id": cert.user_id,
-            "user_email": user.email if user else "",
-            "user_name": f"{user.first_name or ''} {user.last_name or ''}".strip() if user else "",
+            "user_email": user_email,
+            "user_name": user_name,
             "event_id": cert.event_id,
             "ca_chain_id": cert.ca_chain_id,
             "ca_chain_name": cert.ca_chain.name if cert.ca_chain else "",
@@ -552,6 +567,7 @@ class AdminCertificateRequest(BaseModel):
 @router.post("/certificates")
 async def admin_request_certificate(
     data: AdminCertificateRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tls.manage")),
 ):
@@ -669,9 +685,11 @@ async def admin_request_certificate(
             ca_chain_key = f"{r2_prefix}/{cn_safe}.ca-chain.crt"
             stepca_service.upload_to_r2(ca_chain_key, full_chain.encode())
 
-    # Create DB record
+    # Create DB record (snapshot user identity for audit trail)
     tls_cert = TLSCertificate(
         user_id=current_user.id,
+        user_email=current_user.email,
+        user_name=f"{current_user.first_name or ''} {current_user.last_name or ''}".strip() or None,
         event_id=event.id,
         ca_chain_id=ca_chain.id,
         common_name=common_name,
@@ -700,7 +718,8 @@ async def admin_request_certificate(
             "cert_id": tls_cert.id,
             "dns_validated": len(dns_warnings) == 0,
             "dns_warnings": dns_warnings,
-        }
+        },
+        ip_address=request.client.host if request.client else None,
     )
 
     response = {
@@ -725,6 +744,7 @@ class RevokeCertRequest(BaseModel):
 async def revoke_certificate(
     cert_id: int,
     data: RevokeCertRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tls.manage")),
 ):
@@ -765,7 +785,8 @@ async def revoke_certificate(
             "message": f"Revoked TLS cert for '{cert.common_name}'",
             "cert_id": cert_id,
             "reason": data.reason,
-        }
+        },
+        ip_address=request.client.host if request.client else None,
     )
 
     return {"success": True, "message": f"Certificate for '{cert.common_name}' revoked"}

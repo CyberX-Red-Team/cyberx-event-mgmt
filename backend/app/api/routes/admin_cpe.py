@@ -124,6 +124,16 @@ async def issue_certificate(
     service = CPECertificateService(db)
     audit = AuditService(db)
 
+    # Pre-validate before spending ~18s starting Gotenberg
+    try:
+        await service.validate_can_issue(
+            user_id=request_body.user_id,
+            event_id=request_body.event_id,
+            skip_eligibility=request_body.skip_eligibility,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     try:
         if render.enabled:
             ready = await render.start_gotenberg()
@@ -232,17 +242,31 @@ async def list_certificates(
     service = CPECertificateService(db)
     certificates = await service.get_certificates_for_event(event_id, status=status_filter)
 
-    # Enrich with user info
+    # Enrich with user info (prefer snapshots, fall back to live lookup)
     items = []
     for cert in certificates:
-        user = await db.get(User, cert.user_id)
+        email = cert.user_email
+        first_name = None
+        last_name = None
+        if cert.user_id:
+            user = await db.get(User, cert.user_id)
+            if user:
+                email = email or user.email
+                first_name = user.first_name
+                last_name = user.last_name
+        # If no live user, split snapshot name into first/last
+        if not first_name and cert.user_name:
+            parts = cert.user_name.split(" ", 1)
+            first_name = parts[0]
+            last_name = parts[1] if len(parts) > 1 else None
+
         items.append({
             "id": cert.id,
             "certificate_number": cert.certificate_number,
             "user_id": cert.user_id,
-            "email": user.email if user else None,
-            "first_name": user.first_name if user else None,
-            "last_name": user.last_name if user else None,
+            "email": email,
+            "first_name": first_name,
+            "last_name": last_name,
             "cpe_hours": cert.cpe_hours,
             "status": cert.status,
             "has_nextcloud_login": cert.has_nextcloud_login,

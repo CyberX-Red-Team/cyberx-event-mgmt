@@ -6,7 +6,7 @@ import zipfile
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -20,6 +20,7 @@ from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, T
 from app.dependencies import get_current_active_user, require_permission
 from app.services.stepca_service import StepCAService
 from app.services.powerdns_service import PowerDNSService
+from app.services.audit_service import AuditService
 from app.utils.encryption import encrypt_field, decrypt_field
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,7 @@ async def list_available_ca_chains(
 @router.post("/certificates")
 async def request_certificate(
     data: CertificateRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tls.request")),
 ):
@@ -208,9 +210,11 @@ async def request_certificate(
             ca_chain_key = f"{r2_prefix}/{cn_safe}.ca-chain.crt"
             stepca_service.upload_to_r2(ca_chain_key, full_chain.encode())
 
-    # Create DB record
+    # Create DB record (snapshot user identity for audit trail)
     tls_cert = TLSCertificate(
         user_id=current_user.id,
+        user_email=current_user.email,
+        user_name=f"{current_user.first_name or ''} {current_user.last_name or ''}".strip() or None,
         event_id=event.id,
         ca_chain_id=ca_chain.id,
         common_name=common_name,
@@ -227,6 +231,22 @@ async def request_certificate(
     db.add(tls_cert)
     await db.commit()
     await db.refresh(tls_cert)
+
+    # Audit log
+    audit = AuditService(db)
+    await audit.log(
+        user_id=current_user.id,
+        action="TLS_CERT_REQUEST",
+        resource_type="TLS_CERTIFICATE",
+        resource_id=tls_cert.id,
+        details={
+            "common_name": common_name,
+            "is_wildcard": data.is_wildcard,
+            "ca_chain_id": ca_chain.id,
+            "source": "participant_self_service",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
 
     return {
         "success": True,
@@ -280,6 +300,7 @@ async def list_my_certificates(
 @router.get("/certificates/{cert_id}/download")
 async def download_certificate(
     cert_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tls.download")),
 ):
@@ -334,6 +355,17 @@ async def download_certificate(
             zf.writestr("ca-chain.crt", ca_chain_bytes)
 
     zip_buffer.seek(0)
+
+    # Audit log
+    audit = AuditService(db)
+    await audit.log(
+        user_id=current_user.id,
+        action="TLS_CERT_DOWNLOAD",
+        resource_type="TLS_CERTIFICATE",
+        resource_id=cert.id,
+        details={"common_name": cert.common_name},
+        ip_address=request.client.host if request.client else None,
+    )
 
     return StreamingResponse(
         zip_buffer,
