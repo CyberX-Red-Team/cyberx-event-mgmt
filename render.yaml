@@ -144,7 +144,7 @@ services:
       - key: CPE_SIGNER_2_NAME
         sync: false
       - key: GOTENBERG_URL
-        value: http://cyberx-gotenberg:3000
+        value: http://cyberx-gotenberg-staging:3000
       # Render API (for sidecar lifecycle management)
       - key: RENDER_API_KEY
         sync: false
@@ -165,7 +165,7 @@ services:
 
   # Gotenberg - DOCX to PDF conversion for CPE certificates
   - type: pserv
-    name: cyberx-gotenberg
+    name: cyberx-gotenberg-staging
     runtime: docker
     region: virginia
     plan: standard
