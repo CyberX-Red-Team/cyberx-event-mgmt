@@ -15,8 +15,11 @@ jobs:
   deploy-staging:
     name: Deploy to Staging Environment
     runs-on: ubuntu-latest
-    # Only deploy if tests passed (or if manually triggered)
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # Only deploy if tests passed on staging branch (or if manually triggered)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'staging')
     environment:
       name: staging
       url: https://staging.events.cyberxredteam.org
