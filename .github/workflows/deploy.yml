@@ -1,14 +1,12 @@
-name: Deploy
+name: Deploy (legacy - disabled)
 
+# DISABLED: Replaced by deploy-staging.yml and deploy-production.yml
+# This was the old SSH-based deploy workflow. Keeping file for reference.
 on:
-  push:
-    branches: [ main ]
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy to'
+        description: 'DO NOT USE - Legacy workflow'
         required: true
         default: 'staging'
         type: choice
