@@ -114,6 +114,15 @@ class EventService:
         )
         return result.scalar_one_or_none()
 
+    async def get_active_event_by_year(self, year: int) -> Optional[Event]:
+        """Get a non-archived event by year. Returns None if only archived events exist."""
+        result = await self.session.execute(
+            select(Event).where(
+                and_(Event.year == year, Event.is_archived == False)
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_event_by_slug(self, slug: str) -> Optional[Event]:
         """Get an event by slug."""
         result = await self.session.execute(

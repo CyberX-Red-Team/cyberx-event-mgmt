@@ -139,7 +139,8 @@ async def get_active_event(
                     logger.warning(f"Failed to check Discord invite status: {e}")
                     discord_invite_link = f"https://discord.gg/{part.discord_invite_code}"
             else:
-                discord_invite_link = f"https://discord.gg/{part.discord_invite_code}"
+                # Discord disabled — don't expose invite links
+                discord_invite_link = None
 
         participation_data = {
             "discord_invite_link": discord_invite_link,
