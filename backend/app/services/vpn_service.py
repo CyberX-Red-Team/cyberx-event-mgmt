@@ -403,7 +403,6 @@ class VPNService:
             select(VPNCredential)
             .where(
                 VPNCredential.assigned_to_instance_id == instance_id,
-                VPNCredential.is_available == True,
             )
         )
         return result.scalar_one_or_none()
