@@ -404,6 +404,8 @@ class VPNService:
             .where(
                 VPNCredential.assigned_to_instance_id == instance_id,
             )
+            .order_by(VPNCredential.assigned_at.desc())
+            .limit(1)
         )
         return result.scalar_one_or_none()
 
