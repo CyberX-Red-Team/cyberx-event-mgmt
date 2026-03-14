@@ -104,6 +104,16 @@ class VerifyResponse(BaseModel):
     message: str
 
 
+class UserUpdateRequest(BaseModel):
+    discord_username: str | None = None
+
+
+class UserUpdateResponse(BaseModel):
+    updated: bool
+    user_id: int
+    message: str
+
+
 class UserRoleInfo(BaseModel):
     base_type: str  # admin/sponsor/invitee
     role_name: str | None = None  # dynamic role name (e.g., "Event Staff")
@@ -264,4 +274,46 @@ async def lookup_user_by_discord(
         discord_username=user.discord_username,
         role=role_info,
         participation=participation_info,
+    )
+
+
+@router.patch("/user/{discord_id}", response_model=UserUpdateResponse)
+async def update_user_by_discord(
+    discord_id: str,
+    body: UserUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: ServiceAPIKey | None = Depends(require_service_api_key),
+):
+    """Update a platform user's Discord-related fields.
+
+    Allows the bot to keep Discord usernames in sync when users change
+    their display name on Discord.
+    """
+    _check_scope(api_key, "bot.update")
+
+    result = await db.execute(
+        select(User).where(User.snowflake_id == discord_id)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No linked user found for this Discord ID",
+        )
+
+    if body.discord_username is not None:
+        user.discord_username = body.discord_username
+
+    await db.commit()
+
+    logger.info(
+        "Discord user updated: user_id=%s discord_id=%s",
+        user.id, discord_id,
+    )
+
+    return UserUpdateResponse(
+        updated=True,
+        user_id=user.id,
+        message="User updated successfully",
     )

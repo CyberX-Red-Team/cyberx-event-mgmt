@@ -149,6 +149,50 @@ Look up a platform user by their Discord snowflake ID. Returns their profile, dy
 
 ---
 
+### PATCH /api/bot/user/{discord_id}
+
+**Scope required:** `bot.update`
+
+Update a platform user's Discord-related fields. Useful for keeping Discord usernames in sync when users change their display name.
+
+#### Path Parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `discord_id` | string | Discord user snowflake ID (e.g., `"123456789012345678"`) |
+
+#### Request
+
+```json
+{
+    "discord_username": "new_username"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `discord_username` | string | no | Updated Discord username |
+
+All fields are optional — only provided fields are updated.
+
+#### Response `200 OK`
+
+```json
+{
+    "updated": true,
+    "user_id": 42,
+    "message": "User updated successfully"
+}
+```
+
+#### Errors
+
+| Status | Detail | Cause |
+|---|---|---|
+| `404` | `"No linked user found for this Discord ID"` | No user has this Discord ID linked |
+
+---
+
 ## Auto-Role Mapping Example
 
 The bot can use the lookup response to assign Discord roles:
