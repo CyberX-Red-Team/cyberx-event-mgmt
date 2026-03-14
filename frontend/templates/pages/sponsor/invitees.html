@@ -548,28 +548,35 @@ function renderTable(invitees) {
                 </button>
                 ${(() => {
                     const status = invitee.event_participation_status || invitee.confirmed;
+                    const isConfirmed = status === 'YES' || status === 'confirmed';
                     const isDeclined = status === 'NO' || status === 'declined';
-                    return isDeclined ? `
-                    <span class="d-inline-block" tabindex="0" title="Actions not available for declined invitees">
-                        <button class="btn btn-sm btn-secondary btn-actions" type="button" disabled style="pointer-events: none;">
-                            <i data-feather="more-vertical" class="feather-sm"></i>
-                        </button>
-                    </span>
-                ` : `
+                    const showDropdown = !isDeclined;  // Reset password / resend not useful for declined
+                    const showDelete = !isConfirmed;   // Cannot delete confirmed participants
+                    const dropdownItems = [];
+                    if (showDropdown) {
+                        dropdownItems.push(`<li><a class="dropdown-item" href="#" onclick="resetPassword(${invitee.id}); return false;">
+                            <i data-feather="key" class="feather-sm me-1"></i> Reset Password
+                        </a></li>`);
+                        dropdownItems.push(`<li><a class="dropdown-item" href="#" onclick="resendInvitation(${invitee.id}); return false;">
+                            <i data-feather="mail" class="feather-sm me-1"></i> Resend Invitation
+                        </a></li>`);
+                    }
+                    if (showDelete) {
+                        if (dropdownItems.length > 0) dropdownItems.push(`<li><hr class="dropdown-divider"></li>`);
+                        dropdownItems.push(`<li><a class="dropdown-item text-danger" href="#" onclick="deleteInvitee(${invitee.id}, '${escapeHtml(invitee.first_name)} ${escapeHtml(invitee.last_name)}'); return false;">
+                            <i data-feather="trash-2" class="feather-sm me-1"></i> Delete Invitee
+                        </a></li>`);
+                    }
+                    if (dropdownItems.length === 0) return '';
+                    return `
                     <div class="btn-group">
                         <button class="btn btn-sm btn-secondary btn-actions dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="true" data-bs-boundary="viewport" title="More actions">
                             <i data-feather="more-vertical" class="feather-sm"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="#" onclick="resetPassword(${invitee.id}); return false;">
-                                <i data-feather="key" class="feather-sm me-1"></i> Reset Password
-                            </a></li>
-                            <li><a class="dropdown-item" href="#" onclick="resendInvitation(${invitee.id}); return false;">
-                                <i data-feather="mail" class="feather-sm me-1"></i> Resend Invitation
-                            </a></li>
+                            ${dropdownItems.join('')}
                         </ul>
-                    </div>
-                `;
+                    </div>`;
                 })()}
             </td>
         </tr>
@@ -793,6 +800,33 @@ async function resendInvitation(inviteeId) {
 
     } catch (error) {
         console.error('Error resending invitation:', error);
+        showToast(error.message, 'error');
+    }
+}
+
+// Delete Invitee
+async function deleteInvitee(inviteeId, inviteeName) {
+    if (!confirm(`Are you sure you want to delete ${inviteeName}? This action cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        const response = await csrfFetch(`/api/sponsors/my-invitees/${inviteeId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to delete invitee');
+        }
+
+        const result = await response.json();
+        showToast(result.message, 'success');
+        loadStats();
+        loadInvitees(currentPage);
+
+    } catch (error) {
+        console.error('Error deleting invitee:', error);
         showToast(error.message, 'error');
     }
 }

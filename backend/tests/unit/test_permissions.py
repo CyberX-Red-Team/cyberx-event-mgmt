@@ -21,8 +21,8 @@ class TestPermissionConstants:
         assert ROLE_PERMISSIONS["admin"] == ALL_PERMISSIONS
 
     def test_sponsor_permission_count(self):
-        """Sponsor role should have 15 permissions."""
-        assert len(ROLE_PERMISSIONS["sponsor"]) == 15
+        """Sponsor role should have 16 permissions."""
+        assert len(ROLE_PERMISSIONS["sponsor"]) == 16
 
     def test_invitee_permission_count(self):
         """Invitee role should have 11 permissions."""

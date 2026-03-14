@@ -352,19 +352,67 @@ async def update_my_invitee(
 @router.delete("/my-invitees/{invitee_id}")
 async def delete_my_invitee(
     invitee_id: int,
-    current_user: User = Depends(require_permission("participants.view"))
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("participants.remove")),
+    service: ParticipantService = Depends(get_participant_service)
 ):
     """
-    Sponsors cannot delete invitees.
+    Delete an invitee.
 
-    This endpoint always returns 403 Forbidden.
-    Only administrators can delete users.
+    Sponsors can only delete their own invitees.
     """
-    logger.warning(
-        f"Sponsor {current_user.id} attempted to delete invitee {invitee_id} "
-        f"(not permitted)"
+    logger.info(f"Sponsor {current_user.id} deleting invitee {invitee_id}")
+
+    permissions = PermissionChecker()
+
+    # Get and verify ownership
+    invitee = await service.get_participant(invitee_id)
+    if not invitee or invitee.sponsor_id != current_user.id:
+        logger.warning(
+            f"Sponsor {current_user.id} attempted to delete invitee {invitee_id} "
+            f"(not their invitee)"
+        )
+        raise not_found("Invitee not found")
+
+    # Permission check (includes self-delete guard and ownership check)
+    permissions.can_delete_participant(current_user, invitee)
+
+    # Sponsors cannot delete invitees who have confirmed for the current event
+    participation = await invitee.get_current_event_participation(db)
+    if participation and participation.status in ("confirmed", "YES"):
+        raise forbidden(
+            "Cannot delete an invitee who has confirmed for the current event. "
+            "Please contact an administrator."
+        )
+
+    # Store details before deletion
+    deleted_user_email = invitee.email
+    deleted_user_name = f"{invitee.first_name} {invitee.last_name}"
+
+    success = await service.delete_participant(invitee_id)
+    if not success:
+        raise not_found("Invitee not found")
+
+    # Audit log
+    ip_address, user_agent = extract_client_metadata(request)
+    from app.services.audit_service import AuditService
+    audit_service = AuditService(db)
+    await audit_service.log_user_delete(
+        user_id=current_user.id,
+        deleted_user_id=invitee_id,
+        details={
+            "email": deleted_user_email,
+            "name": deleted_user_name,
+            "sponsor_id": current_user.id
+        },
+        ip_address=ip_address,
+        user_agent=user_agent
     )
-    raise forbidden("Sponsors cannot delete invitees. Please contact an administrator.")
+
+    logger.info(f"Sponsor {current_user.id} deleted invitee {invitee_id}")
+
+    return {"message": "Invitee deleted successfully"}
 
 
 @router.post("/my-invitees/{invitee_id}/reset-password")

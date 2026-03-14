@@ -52,6 +52,7 @@ class TestRequirePermission:
         assert sponsor_user.has_permission("participants.view")
         assert sponsor_user.has_permission("participants.create")
         assert sponsor_user.has_permission("participants.edit")
+        assert sponsor_user.has_permission("participants.remove")
         assert sponsor_user.has_permission("participants.invite")
 
     @pytest.mark.asyncio
@@ -159,12 +160,31 @@ class TestPermissionCheckerUpdated:
             self.checker.can_edit_participant(user, participant)
         assert exc_info.value.status_code == 403
 
-    def test_can_delete_with_permission(self):
-        """Users with participants.remove can delete."""
+    def test_can_delete_admin_any_participant(self):
+        """Admin-level users (with participants.view_all) can delete anyone."""
+        user = self._make_user({"participants.remove", "participants.view_all"}, user_id=1)
+        participant = MagicMock(spec=User)
+        participant.id = 2
+        participant.sponsor_id = 99
+        self.checker.can_delete_participant(user, participant)
+
+    def test_can_delete_sponsor_own_invitee(self):
+        """Sponsors can delete their own sponsored invitees."""
         user = self._make_user({"participants.remove"}, user_id=1)
         participant = MagicMock(spec=User)
         participant.id = 2
+        participant.sponsor_id = 1
         self.checker.can_delete_participant(user, participant)
+
+    def test_cannot_delete_other_sponsors_invitee(self):
+        """Sponsors cannot delete invitees sponsored by someone else."""
+        user = self._make_user({"participants.remove"}, user_id=1)
+        participant = MagicMock(spec=User)
+        participant.id = 2
+        participant.sponsor_id = 99
+        with pytest.raises(HTTPException) as exc_info:
+            self.checker.can_delete_participant(user, participant)
+        assert exc_info.value.status_code == 403
 
     def test_cannot_delete_without_permission(self):
         """Users without participants.remove cannot delete."""
@@ -177,7 +197,7 @@ class TestPermissionCheckerUpdated:
 
     def test_cannot_delete_self(self):
         """Users cannot delete themselves."""
-        user = self._make_user({"participants.remove"}, user_id=1)
+        user = self._make_user({"participants.remove", "participants.view_all"}, user_id=1)
         participant = MagicMock(spec=User)
         participant.id = 1
         with pytest.raises(HTTPException) as exc_info:

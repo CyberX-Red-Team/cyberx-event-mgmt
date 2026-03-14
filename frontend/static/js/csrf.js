@@ -114,6 +114,12 @@ async function csrfFetch(url, options = {}) {
     // Make the request
     const response = await fetch(url, mergedOptions);
 
+    // Session expired — redirect to login
+    if (response.status === 401) {
+        window.location.href = '/login';
+        return response;
+    }
+
     // Auto-refresh on CSRF 403: the 403 response includes a fresh cookie, so retry once
     if (requiresCSRF && response.status === 403) {
         try {
