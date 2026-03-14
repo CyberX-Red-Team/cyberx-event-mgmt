@@ -144,6 +144,7 @@ async def get_active_event(
 
         participation_data = {
             "discord_invite_link": discord_invite_link,
+            "discord_invite_code": part.discord_invite_code if not discord_joined else None,
             "discord_joined": discord_joined
         }
 

@@ -4,7 +4,8 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
@@ -16,6 +17,7 @@ from app.api.routes import settings as settings_routes
 from app.api.routes import admin_actions, participant_actions, admin_keycloak, admin_cpe, participant_cpe
 from app.api.routes import admin_tls, participant_tls, admin_roles
 from app.api.routes.agent import agent_router, participant_router as agent_participant_router, admin_router as agent_admin_router
+from app.api.routes import bot as bot_routes, admin_api_keys
 from app.tasks import start_scheduler, stop_scheduler
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
@@ -225,6 +227,7 @@ csrf_exempt_urls = [
     "/api/license/queue/acquire",  # VM-facing queue acquire (Bearer token auth)
     "/api/license/queue/release",  # VM-facing queue release (Bearer token auth)
     "/api/agent/*",                # Agent endpoints (Bearer token auth)
+    "/api/bot/*",                  # Bot endpoints (Bearer token auth)
 ]
 
 app.add_middleware(
@@ -274,6 +277,8 @@ app.include_router(participant_tls.router)  # Participant TLS certificate self-s
 app.include_router(agent_router)  # Agent-facing endpoints (Bearer token auth)
 app.include_router(agent_participant_router)  # Participant agent task management
 app.include_router(agent_admin_router)  # Admin agent task management
+app.include_router(bot_routes.router)  # External bot API (Discord verification)
+app.include_router(admin_api_keys.router)  # Admin API key management
 
 # Include view routes (HTML pages)
 app.include_router(views.router)
@@ -284,6 +289,21 @@ app.include_router(views.router)
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+# Redirect unauthenticated browser requests to login
+@app.exception_handler(FastAPIHTTPException)
+async def http_exception_handler(request, exc):
+    """Redirect browser 401s to login page; pass API errors through as JSON."""
+    if exc.status_code == 401:
+        accept = request.headers.get("accept", "")
+        is_browser = "text/html" in accept and not request.url.path.startswith("/api/")
+        if is_browser:
+            return RedirectResponse(url="/login", status_code=302)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
 
 
 # Global exception handler

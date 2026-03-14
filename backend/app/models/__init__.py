@@ -17,6 +17,7 @@ from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
 from app.models.cpe_certificate import CPECertificate, CertificateStatus
 from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, TLSCertificateStatus
 from app.models.agent_task import AgentTask
+from app.models.service_api_key import ServiceAPIKey
 
 __all__ = [
     "Role",
@@ -53,4 +54,5 @@ __all__ = [
     "TLSCertificate",
     "TLSCertificateStatus",
     "AgentTask",
+    "ServiceAPIKey",
 ]

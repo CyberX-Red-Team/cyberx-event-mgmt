@@ -926,11 +926,23 @@ async function loadEventInfo() {
                         </div>
                     `;
                 } else {
+                    let verifyHtml = '';
+                    if (data.participation.discord_invite_code) {
+                        verifyHtml = `
+                        <div class="mt-3 p-3 bg-light rounded">
+                            <div class="small text-muted mb-1">Link your Discord account by pasting this command in the server:</div>
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control font-monospace" value="/verify ${data.participation.discord_invite_code}" readonly id="discordVerifyCmd">
+                                <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('discordVerifyCmd').value).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},2000)})">Copy</button>
+                            </div>
+                        </div>`;
+                    }
                     discordContent.innerHTML = `
                         <p class="text-muted mb-3">Join the event Discord server using your unique invite link below. This link is single-use and tied to your account.</p>
                         <a href="${data.participation.discord_invite_link}" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
                             <i data-feather="external-link" class="me-2"></i>Join Discord Server
                         </a>
+                        ${verifyHtml}
                     `;
                 }
             }
