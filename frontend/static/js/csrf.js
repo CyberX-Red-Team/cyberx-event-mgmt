@@ -113,18 +113,16 @@ async function csrfFetch(url, options = {}) {
     // Make the request
     const response = await fetch(url, mergedOptions);
 
-    // Auto-refresh on CSRF 403: fetch a fresh token and retry once
+    // Auto-refresh on CSRF 403: the 403 response includes a fresh cookie, so retry once
     if (requiresCSRF && response.status === 403) {
         try {
             const errorBody = await response.clone().json();
             if (errorBody.detail && errorBody.detail.toLowerCase().includes('csrf')) {
                 console.warn('CSRF token expired, refreshing...');
 
-                // GET request to current page to get a fresh csrf_token cookie
-                await fetch(window.location.href, { credentials: 'include' });
-
+                // The 403 response carries a fresh csrf_token cookie
                 const freshToken = getCSRFToken();
-                if (freshToken) {
+                if (freshToken && freshToken !== csrfToken) {
                     mergedOptions.headers['X-CSRF-Token'] = freshToken;
                     return fetch(url, mergedOptions);
                 }
