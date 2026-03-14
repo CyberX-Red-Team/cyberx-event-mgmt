@@ -89,8 +89,9 @@ async function csrfFetch(url, options = {}) {
     const method = (mergedOptions.method || 'GET').toUpperCase();
     const requiresCSRF = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
 
+    let csrfToken = null;
     if (requiresCSRF) {
-        const csrfToken = getCSRFToken();
+        csrfToken = getCSRFToken();
         if (csrfToken) {
             mergedOptions.headers['X-CSRF-Token'] = csrfToken;
         } else {
