@@ -55,7 +55,7 @@ class APIKeyResponse(BaseModel):
 async def create_api_key(
     body: CreateAPIKeyRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("settings.manage")),
+    current_user: User = Depends(require_permission("admin.manage_settings")),
 ):
     """Create a new service API key. The plaintext key is returned once."""
     raw_key = generate_api_key()
@@ -91,7 +91,7 @@ async def create_api_key(
 @router.get("", response_model=list[APIKeyResponse])
 async def list_api_keys(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("settings.manage")),
+    current_user: User = Depends(require_permission("admin.manage_settings")),
 ):
     """List all service API keys (without secrets)."""
     result = await db.execute(
@@ -118,7 +118,7 @@ async def list_api_keys(
 async def revoke_api_key(
     key_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("settings.manage")),
+    current_user: User = Depends(require_permission("admin.manage_settings")),
 ):
     """Revoke (deactivate) a service API key."""
     result = await db.execute(
