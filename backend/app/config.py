@@ -72,6 +72,7 @@ class Settings(BaseSettings):
 
     # Session Configuration
     SESSION_EXPIRY_HOURS: int = 24
+    CSRF_TOKEN_MAX_AGE: int = 0  # seconds; 0 = match session lifetime
 
     # Email Job
     BULK_EMAIL_INTERVAL_MINUTES: int = 45

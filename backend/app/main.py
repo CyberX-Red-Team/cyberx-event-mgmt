@@ -236,7 +236,7 @@ app.add_middleware(
     cookie_samesite="lax",
     cookie_httponly=False,  # JavaScript needs to read this for AJAX requests
     header_name="X-CSRF-Token",
-    token_max_age=settings.SESSION_EXPIRY_HOURS * 3600,
+    token_max_age=settings.CSRF_TOKEN_MAX_AGE or settings.SESSION_EXPIRY_HOURS * 3600,
 )
 
 

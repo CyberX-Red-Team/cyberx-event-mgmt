@@ -66,6 +66,8 @@ services:
         value: staging.events.cyberxredteam.org
       - key: SESSION_EXPIRY_HOURS
         value: 24
+      - key: CSRF_TOKEN_MAX_AGE
+        value: 30
       - key: BULK_EMAIL_INTERVAL_MINUTES
         value: 45
       # Reminder configuration
