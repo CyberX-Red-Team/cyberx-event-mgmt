@@ -382,6 +382,26 @@ async def admin_link_discord(
     user.snowflake_id = body.discord_id
     if body.discord_username is not None:
         user.discord_username = body.discord_username
+
+    # Mark invite code as used on current event participation (if exists)
+    event_result = await db.execute(
+        select(Event)
+        .where(Event.is_active == True)
+        .order_by(Event.year.desc())
+        .limit(1)
+    )
+    active_event = event_result.scalar_one_or_none()
+    if active_event:
+        part_result = await db.execute(
+            select(EventParticipation).where(
+                EventParticipation.user_id == user.id,
+                EventParticipation.event_id == active_event.id,
+            )
+        )
+        participation = part_result.scalar_one_or_none()
+        if participation and not participation.discord_invite_used_at:
+            participation.discord_invite_used_at = datetime.now(timezone.utc)
+
     await db.commit()
 
     logger.info(
