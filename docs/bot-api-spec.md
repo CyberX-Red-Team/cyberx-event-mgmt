@@ -22,7 +22,7 @@ Keys use the format `cxk_<random>` (e.g., `cxk_Ab3xQ7...`).
 
 **Scope required:** `bot.verify`
 
-Link a Discord user to a platform user using their unique invite code. Participants find their invite code in the portal UI as a copyable `/verify <code>` command.
+Link a Discord user to a platform user using their unique invite code. Participants find their invite code in the portal UI as a copyable `!verify <code>` command, which they paste in the `#verify` channel.
 
 #### Request
 

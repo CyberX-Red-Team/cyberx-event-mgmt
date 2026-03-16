@@ -930,9 +930,9 @@ async function loadEventInfo() {
                     if (data.participation.discord_invite_code) {
                         verifyHtml = `
                         <div class="mt-3 p-3 bg-light rounded">
-                            <div class="small text-muted mb-1">Link your Discord account by pasting this command in the server:</div>
+                            <div class="small text-muted mb-2">After joining, paste this command in the <strong>#verify</strong> channel to link your account:</div>
                             <div class="input-group input-group-sm">
-                                <input type="text" class="form-control font-monospace" value="/verify ${data.participation.discord_invite_code}" readonly id="discordVerifyCmd">
+                                <input type="text" class="form-control font-monospace" value="!verify ${data.participation.discord_invite_code}" readonly id="discordVerifyCmd">
                                 <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('discordVerifyCmd').value).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},2000)})">Copy</button>
                             </div>
                         </div>`;
