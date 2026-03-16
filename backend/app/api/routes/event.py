@@ -142,10 +142,13 @@ async def get_active_event(
                 # Discord disabled — don't expose invite links
                 discord_invite_link = None
 
+        discord_verified = bool(part.discord_verified_at)
+
         participation_data = {
             "discord_invite_link": discord_invite_link,
-            "discord_invite_code": part.discord_invite_code if not discord_joined else None,
-            "discord_joined": discord_joined
+            "discord_invite_code": part.discord_invite_code if not discord_verified else None,
+            "discord_joined": discord_joined,
+            "discord_verified": discord_verified
         }
 
     return {

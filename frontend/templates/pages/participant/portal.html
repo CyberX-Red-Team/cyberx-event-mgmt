@@ -909,9 +909,10 @@ async function loadEventInfo() {
             // Show Discord card if user has an invite
             var discordCard = document.getElementById('discordCard');
             var discordContent = document.getElementById('discordContent');
-            if (data.participation && (data.participation.discord_invite_link || data.participation.discord_joined)) {
+            if (data.participation && (data.participation.discord_invite_link || data.participation.discord_joined || data.participation.discord_verified)) {
                 discordCard.style.display = 'block';
-                if (data.participation.discord_joined) {
+                if (data.participation.discord_verified) {
+                    // Fully linked — joined Discord and verified via bot
                     discordContent.innerHTML = `
                         <div class="d-flex align-items-center p-3 bg-light rounded">
                             <div class="flex-shrink-0">
@@ -920,12 +921,40 @@ async function loadEventInfo() {
                                 </div>
                             </div>
                             <div class="ms-3">
-                                <div class="fw-bold text-success">Joined Discord</div>
-                                <div class="small text-muted">Your invite has been used successfully</div>
+                                <div class="fw-bold text-success">Discord Linked</div>
+                                <div class="small text-muted">Your Discord account is linked to your profile</div>
                             </div>
                         </div>
                     `;
+                } else if (data.participation.discord_joined) {
+                    // Joined server but hasn't verified yet — show verify command
+                    let verifyHtml = '';
+                    if (data.participation.discord_invite_code) {
+                        verifyHtml = `
+                        <div class="mt-3 p-3 bg-light rounded">
+                            <div class="small text-muted mb-2">Paste this command in the <strong>#verify</strong> channel to link your account:</div>
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control font-monospace" value="!verify ${data.participation.discord_invite_code}" readonly id="discordVerifyCmd">
+                                <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('discordVerifyCmd').value).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},2000)})">Copy</button>
+                            </div>
+                        </div>`;
+                    }
+                    discordContent.innerHTML = `
+                        <div class="d-flex align-items-center p-3 bg-light rounded mb-3">
+                            <div class="flex-shrink-0">
+                                <div class="rounded-circle bg-warning bg-opacity-10 p-2">
+                                    <i data-feather="alert-circle" class="text-warning"></i>
+                                </div>
+                            </div>
+                            <div class="ms-3">
+                                <div class="fw-bold text-warning">Joined Discord — Verification Needed</div>
+                                <div class="small text-muted">Link your Discord account by running the verify command below</div>
+                            </div>
+                        </div>
+                        ${verifyHtml}
+                    `;
                 } else {
+                    // Not yet joined — show invite link and verify command
                     let verifyHtml = '';
                     if (data.participation.discord_invite_code) {
                         verifyHtml = `

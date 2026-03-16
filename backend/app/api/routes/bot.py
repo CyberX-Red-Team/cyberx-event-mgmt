@@ -208,11 +208,13 @@ async def verify_discord_user(
             detail="This account is already linked to a different Discord user",
         )
 
-    # Link the Discord identity and mark code as used
+    # Link the Discord identity and mark code as verified
     user.snowflake_id = body.discord_id
     if body.discord_username:
         user.discord_username = body.discord_username
-    participation.discord_invite_used_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    participation.discord_invite_used_at = now
+    participation.discord_verified_at = now
     await db.commit()
 
     logger.info(
@@ -399,8 +401,11 @@ async def admin_link_discord(
             )
         )
         participation = part_result.scalar_one_or_none()
-        if participation and not participation.discord_invite_used_at:
-            participation.discord_invite_used_at = datetime.now(timezone.utc)
+        if participation:
+            now = datetime.now(timezone.utc)
+            if not participation.discord_invite_used_at:
+                participation.discord_invite_used_at = now
+            participation.discord_verified_at = now
 
     await db.commit()
 
