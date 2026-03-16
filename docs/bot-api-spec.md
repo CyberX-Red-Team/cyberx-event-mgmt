@@ -194,6 +194,58 @@ All fields are optional — only provided fields are updated.
 
 ---
 
+### POST /api/bot/admin-link
+
+**Scope required:** `bot.admin_link`
+
+Admin override to link a Discord user to a platform user, bypassing the invite code flow. Looks up the user by email or user ID and directly sets their Discord identity. Overwrites any existing Discord link on the user.
+
+#### Request
+
+```json
+{
+    "email": "participant@example.com",
+    "discord_id": "123456789012345678",
+    "discord_username": "user"
+}
+```
+
+Either `email` or `user_id` must be provided (not both required):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `email` | string | one of email/user_id | Platform user's email address |
+| `user_id` | int | one of email/user_id | Platform user's ID |
+| `discord_id` | string | yes | Discord user snowflake ID |
+| `discord_username` | string | no | Discord username (for display) |
+
+#### Response `200 OK`
+
+```json
+{
+    "linked": true,
+    "user_id": 42,
+    "user_email": "participant@example.com",
+    "user_name": "John Doe",
+    "message": "Discord account linked successfully (admin override)"
+}
+```
+
+#### Errors
+
+| Status | Detail | Cause |
+|---|---|---|
+| `400` | `"Either 'email' or 'user_id' is required"` | Neither identifier was provided |
+| `404` | `"User not found"` | No user matches the email or user_id |
+
+#### Notes
+
+- This endpoint **overwrites** any existing Discord link on the user, unlike `/verify` which rejects conflicts.
+- Does **not** consume or require an invite code.
+- Intended for admin/staff use when a participant can't complete the normal `!verify` flow.
+
+---
+
 ## Auto-Role Mapping Example
 
 The bot can use the lookup response to assign Discord roles:

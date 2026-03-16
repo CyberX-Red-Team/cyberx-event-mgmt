@@ -104,6 +104,21 @@ class VerifyResponse(BaseModel):
     message: str
 
 
+class AdminLinkRequest(BaseModel):
+    email: str | None = None
+    user_id: int | None = None
+    discord_id: str
+    discord_username: str | None = None
+
+
+class AdminLinkResponse(BaseModel):
+    linked: bool
+    user_id: int
+    user_email: str
+    user_name: str
+    message: str
+
+
 class UserUpdateRequest(BaseModel):
     discord_username: str | None = None
 
@@ -324,4 +339,60 @@ async def update_user_by_discord(
         updated=True,
         user_id=user.id,
         message="User updated successfully",
+    )
+
+
+@router.post("/admin-link", response_model=AdminLinkResponse)
+async def admin_link_discord(
+    body: AdminLinkRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: ServiceAPIKey | None = Depends(require_service_api_key),
+):
+    """Admin override to link a Discord user to a platform user.
+
+    Bypasses the invite code flow — looks up the user by email or user_id
+    and directly sets their Discord identity.  Overwrites any existing link.
+    """
+    _check_scope(api_key, "bot.admin_link")
+
+    if not body.email and not body.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either 'email' or 'user_id' is required",
+        )
+
+    # Look up user
+    if body.user_id:
+        result = await db.execute(
+            select(User).where(User.id == body.user_id)
+        )
+    else:
+        result = await db.execute(
+            select(User).where(User.email_normalized == body.email.strip().lower())
+        )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Link (overwrite any existing Discord link)
+    user.snowflake_id = body.discord_id
+    if body.discord_username is not None:
+        user.discord_username = body.discord_username
+    await db.commit()
+
+    logger.info(
+        "Admin Discord link: user_id=%s discord_id=%s",
+        user.id, body.discord_id,
+    )
+
+    return AdminLinkResponse(
+        linked=True,
+        user_id=user.id,
+        user_email=user.email,
+        user_name=f"{user.first_name} {user.last_name}".strip(),
+        message="Discord account linked successfully (admin override)",
     )
