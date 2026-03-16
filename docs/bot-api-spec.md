@@ -58,10 +58,11 @@ Link a Discord user to a platform user using their unique invite code. Participa
 | `404` | `"Invalid invite code"` | No participation record matches the invite code |
 | `404` | `"User not found"` | Participation exists but user record is missing (data integrity issue) |
 | `409` | `"This account is already linked to a different Discord user"` | The platform user is already linked to a different Discord snowflake ID |
+| `410` | `"This invite code has already been used"` | The invite code is one-time use and has already been consumed |
 
 #### Notes
 
-- Calling verify with the same `discord_id` that's already linked is idempotent (returns success).
+- **Invite codes are one-time use.** Once verified, the code is marked as used and cannot be reused.
 - The invite code comes from `EventParticipation.discord_invite_code` — it is per-event, per-user.
 - The `discord_username` field is optional but recommended for admin display purposes.
 

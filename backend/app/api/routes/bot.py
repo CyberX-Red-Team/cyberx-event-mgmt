@@ -167,6 +167,13 @@ async def verify_discord_user(
             detail="Invalid invite code",
         )
 
+    # One-time use: reject if this code has already been used
+    if participation.discord_invite_used_at:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This invite code has already been used",
+        )
+
     # Load the user
     user_result = await db.execute(
         select(User).where(User.id == participation.user_id)
@@ -186,10 +193,11 @@ async def verify_discord_user(
             detail="This account is already linked to a different Discord user",
         )
 
-    # Link the Discord identity
+    # Link the Discord identity and mark code as used
     user.snowflake_id = body.discord_id
     if body.discord_username:
         user.discord_username = body.discord_username
+    participation.discord_invite_used_at = datetime.now(timezone.utc)
     await db.commit()
 
     logger.info(
