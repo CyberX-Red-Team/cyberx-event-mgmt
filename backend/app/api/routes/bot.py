@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy.orm import selectinload
 
+from app.api.utils.validation import normalize_email
 from app.config import get_settings
 from app.dependencies import get_db
 from app.models.event import Event, EventParticipation
@@ -370,7 +371,7 @@ async def admin_link_discord(
         )
     else:
         result = await db.execute(
-            select(User).where(User.email_normalized == body.email.strip().lower())
+            select(User).where(User.email_normalized == normalize_email(body.email))
         )
     user = result.scalar_one_or_none()
 
