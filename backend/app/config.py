@@ -72,6 +72,7 @@ class Settings(BaseSettings):
 
     # Session Configuration
     SESSION_EXPIRY_HOURS: int = 24
+    CSRF_TOKEN_MAX_AGE: int = 0  # seconds; 0 = match session lifetime
 
     # Email Job
     BULK_EMAIL_INTERVAL_MINUTES: int = 45
@@ -142,6 +143,7 @@ class Settings(BaseSettings):
     # Discord Integration (optional - for per-event invite links)
     DISCORD_BOT_TOKEN: str = ""  # Bot token for Discord API
     DISCORD_INVITE_ENABLED: bool = False  # Master toggle
+    BOT_API_KEY: str = ""  # Shared secret for external bot API access
 
     # Password Sync to Keycloak
     PASSWORD_SYNC_ENABLED: bool = False  # Master toggle for Keycloak sync job

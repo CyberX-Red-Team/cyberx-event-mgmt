@@ -320,6 +320,16 @@ class PermissionChecker:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot delete your own account"
             )
+        # Users with participants.view_all (admins) can delete anyone
+        if user.has_permission("participants.view_all"):
+            return
+        # Sponsors can only delete their sponsored participants
+        if participant.sponsor_id == user.id:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this participant"
+        )
 
     def can_send_bulk_email(self, user: User) -> None:
         """Check if user can send bulk emails to all participants."""

@@ -177,6 +177,7 @@ class EventParticipation(Base):
     discord_invite_code = Column(String(50), nullable=True)
     discord_invite_generated_at = Column(TIMESTAMP(timezone=True), nullable=True)
     discord_invite_used_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    discord_verified_at = Column(TIMESTAMP(timezone=True), nullable=True)  # When bot !verify succeeded
 
     # Timestamps
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

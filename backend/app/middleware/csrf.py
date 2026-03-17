@@ -93,14 +93,32 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         """Check if HTTP method requires CSRF validation."""
         return method.upper() in ["POST", "PUT", "DELETE", "PATCH"]
     
+    def _set_csrf_cookie(self, response: Response, token: str, needed: bool):
+        """Attach a fresh CSRF cookie to the response if one was generated."""
+        if not needed:
+            return
+        cookie_value = f"{self.cookie_name}={token}; Path={self.cookie_path}"
+        if self.cookie_secure:
+            cookie_value += "; Secure"
+        if self.cookie_samesite:
+            cookie_value += f"; SameSite={self.cookie_samesite}"
+        if self.cookie_httponly:
+            cookie_value += "; HttpOnly"
+        response.headers.append("Set-Cookie", cookie_value)
+
     async def dispatch(self, request: Request, call_next):
         """Process request with CSRF protection."""
-        # Get or create CSRF token
+        # Get or create CSRF token, regenerating if expired
         csrf_token = request.cookies.get(self.cookie_name)
-        
+        new_token_needed = False
+
         if not csrf_token:
-            # Generate new token if none exists
             csrf_token = self._generate_token()
+            new_token_needed = True
+        elif not self._validate_token(csrf_token):
+            # Token exists but is expired/invalid — regenerate
+            csrf_token = self._generate_token()
+            new_token_needed = True
         
         # Check if request requires CSRF validation
         if (
@@ -109,46 +127,34 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         ):
             # Get token from header or form data
             token_from_header = request.headers.get(self.header_name)
-            
+
             # Validate token
             if not token_from_header:
-                return JSONResponse(
+                resp = JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF token missing"}
                 )
-            
+                self._set_csrf_cookie(resp, csrf_token, new_token_needed)
+                return resp
+
             if not self._validate_token(token_from_header):
-                return JSONResponse(
+                resp = JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF token invalid or expired"}
                 )
-            
+                self._set_csrf_cookie(resp, csrf_token, new_token_needed)
+                return resp
+
             # Verify token matches cookie
             if token_from_header != csrf_token:
-                return JSONResponse(
+                resp = JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF token mismatch"}
                 )
-        
+                self._set_csrf_cookie(resp, csrf_token, new_token_needed)
+                return resp
+
         # Process request
         response = await call_next(request)
-        
-        # Set CSRF cookie on response
-        if not request.cookies.get(self.cookie_name):
-            # Build cookie value
-            cookie_value = f"{self.cookie_name}={csrf_token}; Path={self.cookie_path}"
-            
-            if self.cookie_secure:
-                cookie_value += "; Secure"
-            
-            if self.cookie_samesite:
-                cookie_value += f"; SameSite={self.cookie_samesite}"
-            
-            if self.cookie_httponly:
-                cookie_value += "; HttpOnly"
-            
-            # Add cookie to response
-            if isinstance(response, Response):
-                response.headers.append("Set-Cookie", cookie_value)
-        
+        self._set_csrf_cookie(response, csrf_token, new_token_needed)
         return response

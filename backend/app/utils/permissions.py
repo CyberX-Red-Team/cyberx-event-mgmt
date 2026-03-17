@@ -95,10 +95,11 @@ ROLE_PERMISSIONS: dict[str, Set[str]] = {
         "tls.download",
         "cpe.download",
         "discord.view",
-        # Sponsor management permissions (4)
+        # Sponsor management permissions (5)
         "participants.view",
         "participants.create",
         "participants.edit",
+        "participants.remove",
         "participants.invite",
     },
 
