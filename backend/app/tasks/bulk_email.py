@@ -82,7 +82,7 @@ async def discover_and_queue_emails():
                         trigger_event=WorkflowTriggerEvent.USER_CREATED,
                         user_id=user.id,
                         custom_vars={
-                            "login_url": "https://portal.cyberxredteam.org/login"
+                            "login_url": f"{settings.FRONTEND_URL}/login"
                         }
                     )
                     if triggered > 0:

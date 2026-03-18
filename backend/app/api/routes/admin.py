@@ -2770,7 +2770,6 @@ async def assign_participant_role(
     participant.permission_overrides = {}  # Reset overrides on role change
 
     await db.commit()
-    await db.refresh(participant)
 
     # Audit log
     ip_address, user_agent = extract_client_metadata(request)
@@ -2784,4 +2783,6 @@ async def assign_participant_role(
         user_agent=user_agent,
     )
 
-    return await build_participant_response(participant, db)
+    # Re-fetch participant with relationships loaded (refresh fails on service-loaded objects)
+    refreshed = await service.get_participant(participant_id)
+    return await build_participant_response(refreshed, db)
