@@ -67,16 +67,22 @@ services:
       - key: SESSION_EXPIRY_HOURS
         value: 24
       - key: BULK_EMAIL_INTERVAL_MINUTES
-        value: 45
+        value: 15
       # Reminder configuration
+      - key: REMINDER_1_ENABLED
+        value: "true"
       - key: REMINDER_1_DAYS_AFTER_INVITE
         value: 7
       - key: REMINDER_1_MIN_DAYS_BEFORE_EVENT
         value: 14
+      - key: REMINDER_2_ENABLED
+        value: "false"
       - key: REMINDER_2_DAYS_AFTER_INVITE
         value: 14
       - key: REMINDER_2_MIN_DAYS_BEFORE_EVENT
         value: 7
+      - key: REMINDER_3_ENABLED
+        value: "true"
       - key: REMINDER_3_DAYS_BEFORE_EVENT
         value: 3
       - key: REMINDER_CHECK_INTERVAL_HOURS
@@ -100,7 +106,7 @@ services:
       - key: DISCORD_BOT_TOKEN
         sync: false
       - key: DISCORD_INVITE_ENABLED
-        value: "false"
+        value: "true"
       # PowerDNS configuration
       - key: POWERDNS_API_URL
         sync: false

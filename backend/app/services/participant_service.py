@@ -14,6 +14,7 @@ from app.models.session import Session
 from app.models.event import EventParticipation
 from app.utils.security import hash_password
 from app.services.email_queue_service import EmailQueueService
+from fastapi import HTTPException
 from app.api.utils.validation import normalize_email
 
 logger = logging.getLogger(__name__)
@@ -508,6 +509,24 @@ class ParticipantService:
             participant.password_phonetic = generate_phonetic_password(new_password)
             # Remove from kwargs so we don't set it again in the loop below
             kwargs = {k: v for k, v in kwargs.items() if k != 'pandas_password'}
+
+        # Check for duplicate email if email is being changed
+        if 'email' in kwargs and kwargs['email'] is not None:
+            new_email = kwargs['email']
+            new_normalized = normalize_email(new_email)
+            if new_normalized != participant.email_normalized:
+                existing = await self.session.execute(
+                    select(User).where(
+                        User.email_normalized == new_normalized,
+                        User.id != participant_id
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"A user with email {new_email} already exists"
+                    )
+                kwargs['email_normalized'] = new_normalized
 
         # Update remaining fields (allow None values for nullable fields like sponsor_id)
         for key, value in kwargs.items():
