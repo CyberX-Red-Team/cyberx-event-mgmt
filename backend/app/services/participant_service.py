@@ -16,6 +16,7 @@ from app.utils.security import hash_password
 from app.services.email_queue_service import EmailQueueService
 from fastapi import HTTPException
 from app.api.utils.validation import normalize_email
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -350,7 +351,7 @@ class ParticipantService:
                                 "pandas_username": participant.pandas_username,
                                 "pandas_password": participant.pandas_password,
                                 "password_phonetic": participant.password_phonetic,
-                                "login_url": "https://portal.cyberxredteam.org/login"
+                                "login_url": f"{get_settings().FRONTEND_URL}/login"
                             }
                         )
                         logger.info(f"Triggered user_created workflow for pre-confirmed {role} {participant.id}")
@@ -413,7 +414,7 @@ class ParticipantService:
                                     "pandas_username": participant.pandas_username,
                                     "pandas_password": participant.pandas_password,
                                     "password_phonetic": participant.password_phonetic,
-                                    "login_url": "https://portal.cyberxredteam.org/login"
+                                    "login_url": f"{get_settings().FRONTEND_URL}/login"
                                 }
                             )
                             logger.info(f"Queued password email for pre-confirmed {role} {participant.id}")
@@ -467,7 +468,7 @@ class ParticipantService:
                             "pandas_username": participant.pandas_username,
                             "pandas_password": participant.pandas_password,
                             "password_phonetic": participant.password_phonetic,
-                            "login_url": "https://portal.cyberxredteam.org/login"
+                            "login_url": f"{get_settings().FRONTEND_URL}/login"
                         }
                     )
                     logger.info(
@@ -554,7 +555,7 @@ class ParticipantService:
                     trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
                     user_id=participant.id,
                     custom_vars={
-                        "login_url": "https://portal.cyberxredteam.org/login",
+                        "login_url": f"{get_settings().FRONTEND_URL}/login",
                         "event_name": "CyberX Red Team Exercise"
                     }
                 )

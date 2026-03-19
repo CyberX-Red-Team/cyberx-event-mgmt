@@ -337,7 +337,7 @@ async def confirm_participation(
             trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
             user_id=user.id,
             custom_vars={
-                "login_url": "https://portal.cyberxredteam.org/login",
+                "login_url": f"{get_settings().FRONTEND_URL}/login",
                 "event_name": event.name if event else "CyberX 2026",
                 "pandas_username": user.pandas_username,
                 "pandas_password": user.pandas_password,
