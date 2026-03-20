@@ -624,6 +624,7 @@ class VPNService:
         preshared_key = None
         mtu = None
         dns = None
+        dns_commented = False
         public_key = None
         allowed_ips = None
         persistent_keepalive = None
@@ -660,6 +661,11 @@ class VPNService:
                 match = re.match(r'DNS\s*=\s*(.+)', line)
                 if match:
                     dns = match.group(1).strip()
+            elif line.startswith('#') and 'DNS' in line:
+                match = re.match(r'#\s*DNS\s*=\s*(.+)', line)
+                if match:
+                    dns = match.group(1).strip()
+                    dns_commented = True
             elif line.startswith('PublicKey'):
                 match = re.match(r'PublicKey\s*=\s*(.+)', line)
                 if match:
@@ -739,6 +745,7 @@ class VPNService:
             # Optional fields from original config (NULL if not present)
             mtu=mtu,
             dns=dns,
+            dns_commented=dns_commented,
             public_key=public_key,
             allowed_ips=allowed_ips,
             persistent_keepalive=persistent_keepalive,
@@ -821,7 +828,12 @@ class VPNService:
         final_keepalive = vpn.persistent_keepalive if vpn.persistent_keepalive is not None else "25"
 
         # Build optional lines only if they were present in original config
-        dns_line = f"DNS = {final_dns}\n" if vpn.dns is not None else ""
+        if vpn.dns is not None and vpn.dns_commented:
+            dns_line = f"# DNS = {final_dns}\n"
+        elif vpn.dns is not None:
+            dns_line = f"DNS = {final_dns}\n"
+        else:
+            dns_line = ""
         mtu_line = f"MTU = {final_mtu}\n" if vpn.mtu is not None else ""
         table_line = f"Table = {vpn.table}\n" if vpn.table is not None else ""
         save_config_line = f"SaveConfig = {vpn.save_config}\n" if vpn.save_config is not None else ""
