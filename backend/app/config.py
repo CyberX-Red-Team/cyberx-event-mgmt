@@ -116,6 +116,7 @@ class Settings(BaseSettings):
     DOWNLOAD_BASE_URL: str = ""
     DOWNLOAD_LINK_MODE: str = "r2"     # "r2" or "nginx"
     DOWNLOAD_LINK_EXPIRY: int = 3600   # Default 1 hour
+    CLOUD_INIT_LINK_EXPIRY: int = 14400  # Default 4 hours (cloud-init may run late)
 
     # CPE Certificate Configuration
     CPE_TEMPLATE_R2_KEY: str = ""           # R2 object key for DOCX template (e.g. "templates/cpe_template.docx")

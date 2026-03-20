@@ -124,4 +124,5 @@ async def preview_template(
         raise not_found("Cloud-init template", template_id)
 
     rendered = service.render_template(template.content, data.variables)
+    rendered = service.resolve_r2_url_placeholders(rendered)
     return CloudInitPreviewResponse(rendered=rendered)

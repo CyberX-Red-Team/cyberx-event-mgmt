@@ -321,6 +321,10 @@ class InstanceService:
 
         # Render template
         user_data = cloud_init_svc.render_template(template.content, variables)
+
+        # Resolve {{r2_url:path}} placeholders into presigned download URLs
+        user_data = cloud_init_svc.resolve_r2_url_placeholders(user_data)
+
         logger.info("Rendered cloud-init template %d for instance %s", template_id, name)
 
         return user_data
