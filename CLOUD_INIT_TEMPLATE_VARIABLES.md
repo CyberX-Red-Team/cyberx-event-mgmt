@@ -34,6 +34,16 @@ These variables are available if configured in `.env` or environment:
 | `{{vpn_dns_servers}}` | `VPN_DNS_SERVERS` | VPN DNS servers (comma-separated) |
 | `{{vpn_allowed_ips}}` | `VPN_ALLOWED_IPS` | Allowed IPs for VPN routing |
 
+### Dynamic Download URLs
+Generate presigned URLs for any file in R2 at render time:
+
+| Variable | Config Settings | Description |
+|----------|----------------|-------------|
+| `{{r2_url:<object_key>}}` | `R2_*`, `CLOUD_INIT_LINK_EXPIRY` | Presigned download URL for the given R2 object key. Supports nested paths. |
+
+**Required config:** `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`
+**Optional config:** `R2_CUSTOM_DOMAIN`, `CLOUD_INIT_LINK_EXPIRY` (default: 14400s / 4 hours)
+
 ## Configuration
 
 ### Step 1: Set Environment Variables
@@ -48,6 +58,14 @@ FRONTEND_URL=https://dev.cyberxredteam.org
 
 # Download URLs
 DOWNLOAD_BASE_URL=https://files.example.com
+
+# Signed Download URLs (for {{r2_url:...}} in cloud-init templates)
+R2_ACCOUNT_ID=your-cloudflare-account-id
+R2_ACCESS_KEY_ID=your-r2-access-key
+R2_SECRET_ACCESS_KEY=your-r2-secret-key
+R2_BUCKET=your-bucket-name
+R2_CUSTOM_DOMAIN=                          # Optional
+CLOUD_INIT_LINK_EXPIRY=14400               # 4 hours (default)
 
 # VPN Configuration (if using WireGuard)
 VPN_SERVER_PUBLIC_KEY=your-wg-public-key
@@ -67,8 +85,10 @@ Example cloud-init template:
 ssh_authorized_keys:
   - {{ssh_public_key}}
 
-# License activation
+# License activation and file downloads
 runcmd:
+  - curl -o /tmp/agent.tar.gz "{{r2_url:packages/linux/agent.tar.gz}}"
+  - curl -o /tmp/setup.sh "{{r2_url:scripts/setup.sh}}"
   - |
     python3 /opt/hexio/hexio_setup.py \
       --license-url "{{license_server}}" \
@@ -101,10 +121,12 @@ The following will be implemented as part of the full OpenStack integration:
 - **Variable:** `{{license_token}}` is auto-generated using `secrets.token_urlsafe(32)`
 - **Future:** Will be enhanced with database tracking, expiry, and single-use validation via LicenseService
 
-### Signed Download URLs
-- **Current:** `DOWNLOAD_BASE_URL` is static
-- **Future:** Each instance will get unique signed URLs for file downloads (R2 or nginx secure_link)
-- **Variable:** `{{download_url}}` will be auto-generated (not yet implemented)
+### ✅ Signed Download URLs (IMPLEMENTED)
+- **Status:** ✅ Complete
+- **Syntax:** `{{r2_url:path/to/file}}` — generates a time-limited presigned URL for any file in the R2 bucket (or nginx signed URL depending on `DOWNLOAD_LINK_MODE`)
+- **Expiry:** Controlled by `CLOUD_INIT_LINK_EXPIRY` (default 4 hours / 14400 seconds)
+- **Nested paths:** Fully supported (e.g., `{{r2_url:events/cyberx-2026/tools/linux/agent.tar.gz}}`)
+- **Behavior:** Duplicate paths share one URL; if R2 is not configured, placeholders are left as-is with a warning logged
 
 ### Per-Instance VPN Config
 - **Current:** VPN settings are static (shared server config)

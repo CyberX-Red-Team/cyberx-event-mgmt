@@ -167,6 +167,65 @@ class CloudInitService:
         return rendered
 
     @staticmethod
+    def resolve_r2_url_placeholders(
+        content: str, expires_in: int | None = None
+    ) -> str:
+        """Replace {{r2_url:path/to/file}} placeholders with presigned download URLs.
+
+        Args:
+            content: Rendered template content (after render_template).
+            expires_in: Link lifetime in seconds. Defaults to CLOUD_INIT_LINK_EXPIRY.
+
+        Returns:
+            Content with R2 URL placeholders replaced.
+        """
+        from app.config import get_settings
+        from app.services.download_service import DownloadService
+
+        pattern = re.compile(r"\{\{r2_url:([^}]+)\}\}")
+        matches = pattern.findall(content)
+
+        if not matches:
+            return content
+
+        if expires_in is None:
+            expires_in = get_settings().CLOUD_INIT_LINK_EXPIRY
+
+        try:
+            download_svc = DownloadService()
+        except Exception as e:
+            logger.warning("Cannot resolve r2_url placeholders: %s", e)
+            return content
+
+        # Cache generated URLs so duplicate paths get the same URL
+        url_cache: dict[str, str] = {}
+
+        for object_key in matches:
+            if object_key in url_cache:
+                continue
+            try:
+                url = download_svc.generate_link(object_key, expires_in)
+                url_cache[object_key] = url
+            except ValueError as e:
+                logger.warning(
+                    "Failed to generate presigned URL for '%s': %s",
+                    object_key, e,
+                )
+
+        for object_key, url in url_cache.items():
+            content = content.replace(f"{{{{r2_url:{object_key}}}}}", url)
+
+        # Warn about any remaining unresolved r2_url placeholders
+        remaining = pattern.findall(content)
+        if remaining:
+            logger.warning(
+                "Unresolved r2_url placeholders in cloud-init template: %s",
+                ", ".join(remaining),
+            )
+
+        return content
+
+    @staticmethod
     def encode_user_data(rendered_content: str) -> str:
         """Base64-encode rendered cloud-init content for Nova API.
 
