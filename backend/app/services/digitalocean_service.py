@@ -211,7 +211,7 @@ class DigitalOceanService:
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(
-                    f"{self.api_url}/sizes",
+                    f"{self.api_url}/sizes?per_page=200",
                     headers=self._headers(),
                 )
                 resp.raise_for_status()
@@ -229,7 +229,7 @@ class DigitalOceanService:
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(
-                    f"{self.api_url}/images?type=distribution",
+                    f"{self.api_url}/images?type=distribution&per_page=200",
                     headers=self._headers(),
                 )
                 resp.raise_for_status()
@@ -247,7 +247,7 @@ class DigitalOceanService:
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(
-                    f"{self.api_url}/regions",
+                    f"{self.api_url}/regions?per_page=200",
                     headers=self._headers(),
                 )
                 resp.raise_for_status()
