@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """CyberX Instance Agent — polls for tasks and executes them.
 
-Zero external dependencies (stdlib only).
 Runs as a systemd service, logs to journald via stderr.
+
+DNS resolution is handled independently of the system resolver so that
+isolated-network DNS and C2 frameworks that hijack /etc/resolv.conf cannot
+prevent the agent from reaching the management API.
+
+Dependencies: dnspython, requests
 """
-import json
 import logging
 import os
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
+from urllib.parse import urlparse
+
+import dns.resolver
+import requests
+from requests.adapters import HTTPAdapter
 
 # ─── Configuration ──────────────────────────────────────────────────
 
@@ -29,6 +36,15 @@ WG_CONFIG_PATH = os.environ.get(
 
 MAX_BACKOFF = 300  # 5 minutes
 
+# External DNS servers to query directly, bypassing /etc/resolv.conf.
+# Comma-separated list via env var, defaults to Cloudflare + Google.
+DNS_SERVERS = os.environ.get(
+    "CYBERX_DNS_SERVERS", "1.1.1.1,8.8.8.8"
+).split(",")
+
+# How long (seconds) to cache a DNS result before re-resolving.
+DNS_CACHE_TTL = int(os.environ.get("CYBERX_DNS_CACHE_TTL", "300"))
+
 # ─── Logging ────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -38,7 +54,93 @@ logging.basicConfig(
 )
 log = logging.getLogger("cyberx-agent")
 
+# ─── Independent DNS resolver ──────────────────────────────────────
+
+_dns_cache: dict[str, tuple[str, float]] = {}
+
+
+def _resolve_host(hostname: str) -> str:
+    """Resolve *hostname* → IP using external DNS, bypassing the system resolver.
+
+    Results are cached for DNS_CACHE_TTL seconds.
+    """
+    now = time.monotonic()
+    cached = _dns_cache.get(hostname)
+    if cached and (now - cached[1]) < DNS_CACHE_TTL:
+        return cached[0]
+
+    resolver = dns.resolver.Resolver(configure=False)
+    resolver.nameservers = list(DNS_SERVERS)
+    resolver.lifetime = 10  # seconds total timeout
+
+    try:
+        answers = resolver.resolve(hostname, "A")
+        ip = str(answers[0])
+        _dns_cache[hostname] = (ip, now)
+        log.info("Resolved %s → %s (via %s)", hostname, ip, DNS_SERVERS[0])
+        return ip
+    except Exception as e:
+        log.error("DNS resolution failed for %s: %s", hostname, e)
+        raise
+
+# ─── HTTP session with custom DNS ──────────────────────────────────
+
+
+class _DirectDNSAdapter(HTTPAdapter):
+    """Requests adapter that resolves hostnames via our own DNS resolver
+    and connects to the resolved IP while preserving the original Host
+    header and TLS SNI."""
+
+    def send(self, request, stream=False, timeout=None,
+             verify=True, cert=None, proxies=None):
+        parsed = urlparse(request.url)
+        hostname = str(parsed.hostname or "")
+
+        # Resolve via our independent DNS
+        ip = _resolve_host(hostname)
+
+        # Rewrite the URL to use the resolved IP, keep everything else
+        port_suffix = f":{parsed.port}" if parsed.port else ""
+        request.url = request.url.replace(
+            f"{parsed.scheme}://{parsed.hostname}{port_suffix}",
+            f"{parsed.scheme}://{ip}{port_suffix}",
+            1,
+        )
+
+        # Ensure the original Host header is set (required for virtual hosts / TLS SNI)
+        request.headers.setdefault("Host", hostname)
+
+        # Store the real hostname so init_poolmanager can use it for TLS SNI
+        self._real_hostname = hostname
+
+        return super().send(request, stream=stream, timeout=timeout,
+                            verify=verify, cert=cert, proxies=proxies)
+
+    def init_poolmanager(self, *args, **kwargs):
+        # Use the real hostname for TLS certificate validation and SNI
+        hostname = getattr(self, "_real_hostname", None)
+        if hostname:
+            kwargs["assert_hostname"] = hostname
+            kwargs["server_hostname"] = hostname
+        super().init_poolmanager(*args, **kwargs)
+
+
+def _build_session(token: str) -> requests.Session:
+    """Create a requests.Session that uses our independent DNS resolver."""
+    session = requests.Session()
+    session.headers.update({
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    })
+    adapter = _DirectDNSAdapter()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
 # ─── HTTP helpers ───────────────────────────────────────────────────
+
+# Global session, initialised in main()
+_session: requests.Session | None = None
 
 
 def _read_token() -> str:
@@ -52,26 +154,21 @@ def _api_request(
 ) -> dict | None:
     """Make an authenticated API request. Returns parsed JSON or None."""
     url = f"{API_ENDPOINT}{path}"
-    data = json.dumps(body).encode() if body else None
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        body_text = ""
-        try:
-            body_text = e.read().decode()
-        except Exception:
-            pass
-        log.error("HTTP %d on %s %s: %s", e.code, method, path, body_text)
+        resp = _session.request(method, url, json=body, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.HTTPError as e:
+        body_text = e.response.text[:500] if e.response is not None else ""
+        log.error(
+            "HTTP %d on %s %s: %s",
+            e.response.status_code if e.response is not None else 0,
+            method, path, body_text,
+        )
         raise
-    except urllib.error.URLError as e:
-        log.error("Connection error on %s %s: %s", method, path, e.reason)
+    except requests.exceptions.ConnectionError as e:
+        log.error("Connection error on %s %s: %s", method, path, e)
         raise
 
 
@@ -171,7 +268,14 @@ def main():
         sys.exit(1)
 
     token = _read_token()
-    log.info("Agent started. Polling %s every %ds", API_ENDPOINT, POLL_INTERVAL)
+
+    global _session
+    _session = _build_session(token)
+
+    log.info(
+        "Agent started. Polling %s every %ds (DNS via %s)",
+        API_ENDPOINT, POLL_INTERVAL, ", ".join(DNS_SERVERS),
+    )
 
     backoff = POLL_INTERVAL
 
