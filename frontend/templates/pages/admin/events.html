@@ -629,7 +629,8 @@
         }
 
         // Download public key
-        const publicBlob = new Blob([publicKey], { type: 'text/plain' });
+        const pubText = publicKey.endsWith('\n') ? publicKey : publicKey + '\n';
+        const publicBlob = new Blob([pubText], { type: 'text/plain' });
         const publicUrl = URL.createObjectURL(publicBlob);
         const publicLink = document.createElement('a');
         publicLink.href = publicUrl;
@@ -639,7 +640,8 @@
 
         // Download private key
         setTimeout(() => {
-            const privateBlob = new Blob([privateKey], { type: 'text/plain' });
+            const privText = privateKey.endsWith('\n') ? privateKey : privateKey + '\n';
+            const privateBlob = new Blob([privText], { type: 'text/plain' });
             const privateUrl = URL.createObjectURL(privateBlob);
             const privateLink = document.createElement('a');
             privateLink.href = privateUrl;

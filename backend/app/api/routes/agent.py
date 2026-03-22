@@ -65,6 +65,17 @@ async def download_agent_service_unit():
     return PlainTextResponse(path.read_text(), media_type="text/plain")
 
 
+@agent_router.get(
+    "/install/requirements.txt", response_class=PlainTextResponse
+)
+async def download_agent_requirements():
+    """Serve the agent requirements.txt (unauthenticated)."""
+    path = _AGENT_DIR / "requirements.txt"
+    if not path.exists():
+        raise not_found("Agent requirements")
+    return PlainTextResponse(path.read_text(), media_type="text/plain")
+
+
 @agent_router.get("/tasks", response_model=AgentTaskListResponse)
 async def poll_tasks(
     instance: Instance = Depends(get_current_agent_instance),

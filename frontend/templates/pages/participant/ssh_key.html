@@ -170,7 +170,8 @@ function downloadPrivateKey() {
         return;
     }
 
-    const blob = new Blob([privateKeyData], { type: 'text/plain' });
+    const keyText = privateKeyData.endsWith('\n') ? privateKeyData : privateKeyData + '\n';
+    const blob = new Blob([keyText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

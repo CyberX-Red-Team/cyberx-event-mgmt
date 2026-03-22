@@ -1,4 +1,5 @@
 """VPN service for managing VPN credentials."""
+import logging
 import re
 import zipfile
 import io
@@ -13,6 +14,7 @@ from app.models.user import User
 from app.models.vpn import VPNCredential
 from app.config import get_settings
 
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -23,6 +25,65 @@ class VPNService:
     def __init__(self, session: AsyncSession):
         """Initialize VPN service."""
         self.session = session
+
+    # ─── R2 helpers ──────────────────────────────────────────────────
+
+    def _get_r2_client(self):
+        """Get an S3 client configured for Cloudflare R2."""
+        import boto3
+        from botocore.config import Config as BotoConfig
+        return boto3.client(
+            "s3",
+            endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+            region_name="auto",
+            config=BotoConfig(signature_version="s3v4"),
+        )
+
+    def _upload_to_r2(self, key: str, data: bytes) -> bool:
+        """Upload raw VPN config to R2."""
+        try:
+            s3 = self._get_r2_client()
+            s3.put_object(Bucket=settings.R2_BUCKET, Key=key, Body=data, ContentType="text/plain")
+            logger.info("Uploaded VPN config to R2: %s", key)
+            return True
+        except Exception as e:
+            logger.error("R2 upload failed for %s: %s", key, e)
+            return False
+
+    def _download_from_r2(self, key: str) -> Optional[bytes]:
+        """Download raw VPN config from R2."""
+        try:
+            s3 = self._get_r2_client()
+            response = s3.get_object(Bucket=settings.R2_BUCKET, Key=key)
+            return response["Body"].read()
+        except Exception as e:
+            logger.error("R2 download failed for %s: %s", key, e)
+            return None
+
+    def _delete_from_r2(self, key: str) -> bool:
+        """Delete a VPN config from R2."""
+        try:
+            s3 = self._get_r2_client()
+            s3.delete_object(Bucket=settings.R2_BUCKET, Key=key)
+            return True
+        except Exception as e:
+            logger.error("R2 delete failed for %s: %s", key, e)
+            return False
+
+    @staticmethod
+    def _make_r2_key(credential_id: int) -> str:
+        return f"vpn-configs/{credential_id}.conf"
+
+    async def get_raw_config(self, vpn: VPNCredential) -> str:
+        """Get raw config content from R2, falling back to generated config."""
+        if vpn.r2_key:
+            data = self._download_from_r2(vpn.r2_key)
+            if data:
+                return data.decode('utf-8')
+            logger.warning("R2 download failed for VPN %d, falling back to generation", vpn.id)
+        return await self.generate_wireguard_config(vpn)
 
     async def get_credential(self, vpn_id: int) -> Optional[VPNCredential]:
         """Get a VPN credential by ID."""
@@ -660,6 +721,10 @@ class VPNService:
                 match = re.match(r'DNS\s*=\s*(.+)', line)
                 if match:
                     dns = match.group(1).strip()
+            elif line.startswith('#') and 'DNS' in line:
+                match = re.match(r'#\s*DNS\s*=\s*(.+)', line)
+                if match:
+                    dns = match.group(1).strip()
             elif line.startswith('PublicKey'):
                 match = re.match(r'PublicKey\s*=\s*(.+)', line)
                 if match:
@@ -752,6 +817,18 @@ class VPNService:
         )
 
         self.session.add(vpn)
+        await self.session.flush()  # Get auto-generated ID for R2 key
+
+        # Upload raw config to R2
+        r2_key = self._make_r2_key(vpn.id)
+        if self._upload_to_r2(r2_key, config_content.encode('utf-8')):
+            vpn.r2_key = r2_key
+        else:
+            logger.warning(
+                "Failed to upload VPN %d config to R2, downloads will use fallback generation",
+                vpn.id,
+            )
+
         return vpn
 
     async def get_server_settings(self) -> dict:
@@ -821,7 +898,10 @@ class VPNService:
         final_keepalive = vpn.persistent_keepalive if vpn.persistent_keepalive is not None else "25"
 
         # Build optional lines only if they were present in original config
-        dns_line = f"DNS = {final_dns}\n" if vpn.dns is not None else ""
+        if vpn.dns is not None:
+            dns_line = f"DNS = {final_dns}\n"
+        else:
+            dns_line = ""
         mtu_line = f"MTU = {final_mtu}\n" if vpn.mtu is not None else ""
         table_line = f"Table = {vpn.table}\n" if vpn.table is not None else ""
         save_config_line = f"SaveConfig = {vpn.save_config}\n" if vpn.save_config is not None else ""
@@ -990,6 +1070,10 @@ PublicKey = {final_public_key}
                     failed_ids.append(vpn_id)
                     errors.append(f"VPN {vpn_id}: Not found")
                     continue
+
+                # Delete raw config from R2
+                if vpn.r2_key:
+                    self._delete_from_r2(vpn.r2_key)
 
                 # Delete the credential
                 await self.session.delete(vpn)

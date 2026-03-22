@@ -135,7 +135,7 @@ async def send_vpn_config_email(
         raise bad_request("Participant does not have a VPN assigned")
 
     # Generate config
-    config = await vpn_service.generate_wireguard_config(vpn)
+    config = await vpn_service.get_raw_config(vpn)
     filename = vpn_service.get_config_filename(participant, vpn)
 
     # Send email with attachment

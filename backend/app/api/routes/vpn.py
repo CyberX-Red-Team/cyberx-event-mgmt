@@ -432,7 +432,7 @@ async def download_participant_vpn_configs(
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for i, vpn in enumerate(credentials, 1):
-            config = await vpn_service.generate_wireguard_config(vpn)
+            config = await vpn_service.get_raw_config(vpn)
             filename = vpn_service.format_filename(naming_pattern, vpn, participant, i)
             zf.writestr(filename, config)
 
@@ -581,7 +581,7 @@ async def get_my_vpn_config(
     if not vpn:
         raise not_found("You do not have any VPN credentials")
 
-    config = await service.generate_wireguard_config(vpn)
+    config = await service.get_raw_config(vpn)
     filename = service.get_config_filename(current_user, vpn)
 
     return VPNConfigResponse(config=config, filename=filename)
@@ -617,7 +617,7 @@ async def download_my_vpn_config(
     setting = result.scalar_one_or_none()
     pattern = setting.value if setting else "simnet_{ipv4_address}.conf"
 
-    config = await service.generate_wireguard_config(vpn)
+    config = await service.get_raw_config(vpn)
     filename = service.format_filename(pattern, vpn, current_user)
 
     return PlainTextResponse(
@@ -649,7 +649,7 @@ async def download_all_my_vpn_configs(
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for i, vpn in enumerate(credentials, 1):
-            config = await service.generate_wireguard_config(vpn)
+            config = await service.get_raw_config(vpn)
             filename = service.format_filename(naming_pattern, vpn, current_user, i)
             zf.writestr(filename, config)
 
@@ -718,7 +718,7 @@ async def download_batch_configs(
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for i, vpn in enumerate(credentials, 1):
-            config = await service.generate_wireguard_config(vpn)
+            config = await service.get_raw_config(vpn)
             filename = service.format_filename(naming_pattern, vpn, current_user, i)
             zf.writestr(filename, config)
 

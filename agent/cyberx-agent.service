@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/cyberx-agent/cyberx-agent.py
+ExecStart=/opt/cyberx-agent/.venv/bin/python3 /opt/cyberx-agent/cyberx-agent.py
 Restart=on-failure
 RestartSec=10
 EnvironmentFile=-/etc/cyberx-agent/agent.env

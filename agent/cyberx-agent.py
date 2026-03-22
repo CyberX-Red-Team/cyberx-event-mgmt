@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """CyberX Instance Agent — polls for tasks and executes them.
 
-Zero external dependencies (stdlib only).
 Runs as a systemd service, logs to journald via stderr.
+
+DNS resolution is handled independently of the system resolver so that
+isolated-network DNS and C2 frameworks that hijack /etc/resolv.conf cannot
+prevent the agent from reaching the management API.
+
+Dependencies: dnspython, requests
 """
-import json
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
+
+import dns.resolver
+import requests
 
 # ─── Configuration ──────────────────────────────────────────────────
 
@@ -29,6 +35,15 @@ WG_CONFIG_PATH = os.environ.get(
 
 MAX_BACKOFF = 300  # 5 minutes
 
+# External DNS servers to query directly, bypassing /etc/resolv.conf.
+# Comma-separated list via env var, defaults to Cloudflare + Google.
+DNS_SERVERS = os.environ.get(
+    "CYBERX_DNS_SERVERS", "1.1.1.1,8.8.8.8"
+).split(",")
+
+# How long (seconds) to cache a DNS result before re-resolving.
+DNS_CACHE_TTL = int(os.environ.get("CYBERX_DNS_CACHE_TTL", "300"))
+
 # ─── Logging ────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -38,7 +53,74 @@ logging.basicConfig(
 )
 log = logging.getLogger("cyberx-agent")
 
+# ─── Independent DNS resolver ──────────────────────────────────────
+
+_dns_cache: dict[str, tuple[str, float]] = {}
+
+
+def _resolve_host(hostname: str) -> str:
+    """Resolve *hostname* → IP using external DNS, bypassing the system resolver.
+
+    Results are cached for DNS_CACHE_TTL seconds.
+    """
+    now = time.monotonic()
+    cached = _dns_cache.get(hostname)
+    if cached and (now - cached[1]) < DNS_CACHE_TTL:
+        return cached[0]
+
+    resolver = dns.resolver.Resolver(configure=False)
+    resolver.nameservers = list(DNS_SERVERS)
+    resolver.lifetime = 10  # seconds total timeout
+
+    try:
+        answers = resolver.resolve(hostname, "A")
+        ip = str(answers[0])
+        _dns_cache[hostname] = (ip, now)
+        log.info("Resolved %s → %s (via %s)", hostname, ip, DNS_SERVERS[0])
+        return ip
+    except Exception as e:
+        log.error("DNS resolution failed for %s: %s", hostname, e)
+        raise
+
+# ─── Patch socket DNS to use our resolver ─────────────────────────
+
+_original_getaddrinfo = socket.getaddrinfo
+
+
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    """Override socket.getaddrinfo to resolve via our external DNS.
+
+    This ensures that all libraries (requests, urllib3, ssl) see the IP we
+    resolved, while TLS/SNI still uses the original hostname automatically
+    because requests/urllib3 pass the hostname for SNI separately.
+    """
+    try:
+        ip = _resolve_host(host)
+        # Return a result pointing at our resolved IP
+        return _original_getaddrinfo(ip, port, family, type, proto, flags)
+    except Exception:
+        # Fall back to system resolver if our DNS fails
+        log.warning("Custom DNS failed for %s, falling back to system", host)
+        return _original_getaddrinfo(host, port, family, type, proto, flags)
+
+
+def _build_session(token: str) -> requests.Session:
+    """Create a requests.Session with auth headers pre-configured."""
+    # Patch socket-level DNS so all connections use our resolver.
+    # TLS SNI is unaffected — urllib3 passes the hostname for SNI separately.
+    socket.getaddrinfo = _patched_getaddrinfo
+
+    session = requests.Session()
+    session.headers.update({
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    })
+    return session
+
 # ─── HTTP helpers ───────────────────────────────────────────────────
+
+# Global session, initialised in main()
+_session: requests.Session | None = None
 
 
 def _read_token() -> str:
@@ -52,26 +134,21 @@ def _api_request(
 ) -> dict | None:
     """Make an authenticated API request. Returns parsed JSON or None."""
     url = f"{API_ENDPOINT}{path}"
-    data = json.dumps(body).encode() if body else None
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        body_text = ""
-        try:
-            body_text = e.read().decode()
-        except Exception:
-            pass
-        log.error("HTTP %d on %s %s: %s", e.code, method, path, body_text)
+        resp = _session.request(method, url, json=body, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.HTTPError as e:
+        body_text = e.response.text[:500] if e.response is not None else ""
+        log.error(
+            "HTTP %d on %s %s: %s",
+            e.response.status_code if e.response is not None else 0,
+            method, path, body_text,
+        )
         raise
-    except urllib.error.URLError as e:
-        log.error("Connection error on %s %s: %s", method, path, e.reason)
+    except requests.exceptions.ConnectionError as e:
+        log.error("Connection error on %s %s: %s", method, path, e)
         raise
 
 
@@ -171,7 +248,14 @@ def main():
         sys.exit(1)
 
     token = _read_token()
-    log.info("Agent started. Polling %s every %ds", API_ENDPOINT, POLL_INTERVAL)
+
+    global _session
+    _session = _build_session(token)
+
+    log.info(
+        "Agent started. Polling %s every %ds (DNS via %s)",
+        API_ENDPOINT, POLL_INTERVAL, ", ".join(DNS_SERVERS),
+    )
 
     backoff = POLL_INTERVAL
 

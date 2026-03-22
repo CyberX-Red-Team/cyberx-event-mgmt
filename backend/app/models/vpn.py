@@ -52,6 +52,7 @@ class VPNCredential(Base):
 
     # Tracking
     file_hash = Column(String(64), nullable=True)
+    r2_key = Column(String(500), nullable=True)  # R2 object key for raw config file
     file_id = Column(String(50), nullable=True)
     run_id = Column(String(100), nullable=True)
     request_batch_id = Column(String(50), nullable=True)  # Tracks which request batch this VPN was assigned in
