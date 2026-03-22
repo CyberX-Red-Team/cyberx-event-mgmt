@@ -11,14 +11,13 @@ Dependencies: dnspython, requests
 """
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
-from urllib.parse import urlparse
 
 import dns.resolver
 import requests
-from requests.adapters import HTTPAdapter
 
 # ─── Configuration ──────────────────────────────────────────────────
 
@@ -83,58 +82,39 @@ def _resolve_host(hostname: str) -> str:
         log.error("DNS resolution failed for %s: %s", hostname, e)
         raise
 
-# ─── HTTP session with custom DNS ──────────────────────────────────
+# ─── Patch socket DNS to use our resolver ─────────────────────────
+
+_original_getaddrinfo = socket.getaddrinfo
 
 
-class _DirectDNSAdapter(HTTPAdapter):
-    """Requests adapter that resolves hostnames via our own DNS resolver
-    and connects to the resolved IP while preserving the original Host
-    header and TLS SNI."""
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    """Override socket.getaddrinfo to resolve via our external DNS.
 
-    def send(self, request, stream=False, timeout=None,
-             verify=True, cert=None, proxies=None):
-        parsed = urlparse(request.url)
-        hostname = str(parsed.hostname or "")
-
-        # Resolve via our independent DNS
-        ip = _resolve_host(hostname)
-
-        # Rewrite the URL to use the resolved IP, keep everything else
-        port_suffix = f":{parsed.port}" if parsed.port else ""
-        request.url = request.url.replace(
-            f"{parsed.scheme}://{parsed.hostname}{port_suffix}",
-            f"{parsed.scheme}://{ip}{port_suffix}",
-            1,
-        )
-
-        # Ensure the original Host header is set (required for virtual hosts / TLS SNI)
-        request.headers.setdefault("Host", hostname)
-
-        # Store the real hostname so init_poolmanager can use it for TLS SNI
-        self._real_hostname = hostname
-
-        return super().send(request, stream=stream, timeout=timeout,
-                            verify=verify, cert=cert, proxies=proxies)
-
-    def init_poolmanager(self, *args, **kwargs):
-        # Use the real hostname for TLS certificate validation and SNI
-        hostname = getattr(self, "_real_hostname", None)
-        if hostname:
-            kwargs["assert_hostname"] = hostname
-            kwargs["server_hostname"] = hostname
-        super().init_poolmanager(*args, **kwargs)
+    This ensures that all libraries (requests, urllib3, ssl) see the IP we
+    resolved, while TLS/SNI still uses the original hostname automatically
+    because requests/urllib3 pass the hostname for SNI separately.
+    """
+    try:
+        ip = _resolve_host(host)
+        # Return a result pointing at our resolved IP
+        return _original_getaddrinfo(ip, port, family, type, proto, flags)
+    except Exception:
+        # Fall back to system resolver if our DNS fails
+        log.warning("Custom DNS failed for %s, falling back to system", host)
+        return _original_getaddrinfo(host, port, family, type, proto, flags)
 
 
 def _build_session(token: str) -> requests.Session:
-    """Create a requests.Session that uses our independent DNS resolver."""
+    """Create a requests.Session with auth headers pre-configured."""
+    # Patch socket-level DNS so all connections use our resolver.
+    # TLS SNI is unaffected — urllib3 passes the hostname for SNI separately.
+    socket.getaddrinfo = _patched_getaddrinfo
+
     session = requests.Session()
     session.headers.update({
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     })
-    adapter = _DirectDNSAdapter()
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
     return session
 
 # ─── HTTP helpers ───────────────────────────────────────────────────
