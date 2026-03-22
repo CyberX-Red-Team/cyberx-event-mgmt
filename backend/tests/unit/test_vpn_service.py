@@ -9,11 +9,21 @@ import pytest
 import zipfile
 import io
 from datetime import datetime, timezone
+from unittest.mock import patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.vpn_service import VPNService
 from app.models.user import User
 from app.models.vpn import VPNCredential
+
+
+@pytest.fixture(autouse=True)
+def mock_r2():
+    """Mock R2 operations for all VPN tests."""
+    with patch.object(VPNService, '_upload_to_r2', return_value=True), \
+         patch.object(VPNService, '_download_from_r2', return_value=None), \
+         patch.object(VPNService, '_delete_from_r2', return_value=True):
+        yield
 
 
 # Sample WireGuard configuration for testing

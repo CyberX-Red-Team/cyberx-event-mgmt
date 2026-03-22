@@ -154,7 +154,7 @@ class AgentService:
         await self.session.commit()
 
         # Generate WireGuard config
-        config = await vpn_svc.generate_wireguard_config(new_vpn)
+        config = await vpn_svc.get_raw_config(new_vpn)
 
         logger.info(
             "Cycled VPN for instance %d: old=%s new=%d (ip=%s)",

@@ -33,7 +33,6 @@ class VPNCredential(Base):
     # Optional fields from original config (NULL if not present - preserves exact structure)
     mtu = Column(String(10), nullable=True)  # MTU from original config
     dns = Column(Text, nullable=True)  # DNS servers from original config
-    dns_commented = Column(Boolean, default=False)  # Whether DNS line was commented out in original config
     public_key = Column(Text, nullable=True)  # Server public key from original config
     allowed_ips = Column(Text, nullable=True)  # AllowedIPs from original config
     persistent_keepalive = Column(String(10), nullable=True)  # PersistentKeepalive from original config
@@ -53,6 +52,7 @@ class VPNCredential(Base):
 
     # Tracking
     file_hash = Column(String(64), nullable=True)
+    r2_key = Column(String(500), nullable=True)  # R2 object key for raw config file
     file_id = Column(String(50), nullable=True)
     run_id = Column(String(100), nullable=True)
     request_batch_id = Column(String(50), nullable=True)  # Tracks which request batch this VPN was assigned in
