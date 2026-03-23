@@ -1,7 +1,7 @@
 """Add redirectors and stream_configs tables
 
 Revision ID: 20260323_000000
-Revises: f988d0d58b40
+Revises: 20260321_000000
 Create Date: 2026-03-23 00:00:00
 
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = '20260323_000000'
-down_revision: Union[str, None] = 'f988d0d58b40'
+down_revision: Union[str, None] = '20260321_000000'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
