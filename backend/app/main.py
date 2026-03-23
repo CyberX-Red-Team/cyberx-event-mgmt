@@ -18,6 +18,8 @@ from app.api.routes import admin_actions, participant_actions, admin_keycloak, a
 from app.api.routes import admin_tls, participant_tls, admin_roles
 from app.api.routes.agent import agent_router, participant_router as agent_participant_router, admin_router as agent_admin_router
 from app.api.routes import bot as bot_routes, admin_api_keys
+from app.api.routes import redirectors as redirectors_routes
+from app.api.routes import redirectors_pages
 from app.tasks import start_scheduler, stop_scheduler
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
@@ -228,6 +230,8 @@ csrf_exempt_urls = [
     "/api/license/queue/release",  # VM-facing queue release (Bearer token auth)
     "/api/agent/*",                # Agent endpoints (Bearer token auth)
     "/api/bot/*",                  # Bot endpoints (Bearer token auth)
+    "/api/redirectors",            # Redirector API (X-API-Key auth)
+    "/api/redirectors/*",          # Redirector API (X-API-Key auth)
 ]
 
 app.add_middleware(
@@ -279,6 +283,8 @@ app.include_router(agent_participant_router)  # Participant agent task managemen
 app.include_router(agent_admin_router)  # Admin agent task management
 app.include_router(bot_routes.router)  # External bot API (Discord verification)
 app.include_router(admin_api_keys.router)  # Admin API key management
+app.include_router(redirectors_routes.router)   # Redirector REST API
+app.include_router(redirectors_pages.router)    # Redirector web UI pages
 
 # Include view routes (HTML pages)
 app.include_router(views.router)

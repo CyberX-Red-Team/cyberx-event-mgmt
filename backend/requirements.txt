@@ -46,3 +46,6 @@ boto3==1.35.0
 
 # Environment
 python-dotenv==1.0.1
+
+# SSH/SFTP (nginx redirector management)
+paramiko>=3.4.0
