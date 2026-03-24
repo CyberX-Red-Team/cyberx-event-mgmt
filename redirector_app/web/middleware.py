@@ -81,6 +81,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         response.headers.append("Set-Cookie", cookie_value)
 
     async def dispatch(self, request: Request, call_next):
+        # Skip CSRF check if X-API-Key header is present (stateless API auth)
+        if request.headers.get("X-API-Key"):
+            response = await call_next(request)
+            return response
+
         csrf_token = request.cookies.get(self.cookie_name)
         new_token_needed = False
 

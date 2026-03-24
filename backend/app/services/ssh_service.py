@@ -24,7 +24,9 @@ Sudo requirement on each redirector (set up once by operator):
 import asyncio
 import io
 import logging
+import shlex
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Tuple
 
@@ -34,6 +36,10 @@ logger = logging.getLogger(__name__)
 
 # Bounded thread pool — all paramiko calls execute here
 _executor = ThreadPoolExecutor(max_workers=10)
+
+# Semaphore prevents queuing more requests than the pool can handle,
+# so a few offline redirectors can't exhaust all workers.
+_ssh_semaphore = asyncio.Semaphore(10)
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +142,8 @@ class SSHService:
         validate them on each connection.
         """
         client = paramiko.SSHClient()
+        # TODO: SECURITY — implement host key pinning (TOFU) by storing
+        # per-redirector fingerprints and verifying on each connection.
         client.set_missing_host_key_policy(paramiko.WarningPolicy())
         try:
             pkey = self._load_key()
@@ -397,10 +405,12 @@ class SSHService:
     def sync_deploy_all(self, stream_dir: str, streams: list) -> dict:
         """
         Sync all StreamConfigs for a redirector:
-          1. Write enabled streams
-          2. Delete disabled streams
-          3. Remove orphaned cyberx_*.conf files not in the current set
-          4. nginx -t → systemctl reload nginx
+          1. Snapshot existing config files (for rollback)
+          2. Write enabled streams
+          3. Delete disabled streams
+          4. Remove orphaned cyberx_*.conf files not in the current set
+          5. nginx -t → systemctl reload nginx
+          6. On nginx -t failure: restore all snapshots (rollback)
 
         Returns a dict compatible with DeployResult schema.
         """
@@ -416,6 +426,20 @@ class SSHService:
 
             known_filenames = {f"cyberx_{s.id}.conf" for s in streams}
 
+            # Snapshot existing files for rollback on nginx -t failure
+            # Key = remote_path, Value = bytes (existing content) or None (file was new)
+            backup: dict[str, Optional[bytes]] = {}
+
+            for stream in streams:
+                filename = f"cyberx_{stream.id}.conf"
+                remote_path = f"{stream_dir}/{filename}"
+                if stream.enabled:
+                    try:
+                        with sftp.open(remote_path, "rb") as f:
+                            backup[remote_path] = f.read()
+                    except FileNotFoundError:
+                        backup[remote_path] = None
+
             # Write enabled streams, delete disabled streams
             for stream in streams:
                 filename = f"cyberx_{stream.id}.conf"
@@ -428,6 +452,12 @@ class SSHService:
                     logger.debug("Wrote %s", remote_path)
                 else:
                     try:
+                        # Snapshot before deleting for rollback
+                        try:
+                            with sftp.open(remote_path, "rb") as f:
+                                backup[remote_path] = f.read()
+                        except FileNotFoundError:
+                            pass
                         sftp.remove(remote_path)
                         files_deleted.append(filename)
                         logger.debug("Removed disabled stream file %s", remote_path)
@@ -443,7 +473,13 @@ class SSHService:
                         and remote_file.endswith(".conf")
                         and remote_file not in known_filenames
                     ):
-                        sftp.remove(f"{stream_dir}/{remote_file}")
+                        orphan_path = f"{stream_dir}/{remote_file}"
+                        try:
+                            with sftp.open(orphan_path, "rb") as f:
+                                backup[orphan_path] = f.read()
+                        except FileNotFoundError:
+                            pass
+                        sftp.remove(orphan_path)
                         files_deleted.append(remote_file)
                         logger.info("Removed orphan file %s", remote_file)
             except Exception as list_err:
@@ -452,6 +488,19 @@ class SSHService:
             try:
                 test_out, reload_out = self._nginx_test_and_reload(client)
             except NginxTestError as e:
+                # Rollback: restore all files to their pre-deploy state
+                rollback_ok = True
+                for path, content in backup.items():
+                    try:
+                        if content is None:
+                            sftp.remove(path)
+                        else:
+                            sftp.putfo(io.BytesIO(content), path)
+                    except Exception as rb_err:
+                        rollback_ok = False
+                        logger.warning("Rollback failed for %s: %s", path, rb_err)
+                if rollback_ok:
+                    logger.info("Rolled back %d file(s) after nginx -t failure", len(backup))
                 return {
                     "success": False,
                     "nginx_test_output": str(e),
@@ -459,7 +508,9 @@ class SSHService:
                     "stream_module_present": True,
                     "files_written": files_written,
                     "files_deleted": files_deleted,
-                    "message": "nginx configuration test failed. Check nginx output.",
+                    "message": "nginx configuration test failed. Files rolled back."
+                    if rollback_ok
+                    else "nginx configuration test failed. Partial rollback — check server manually.",
                 }
 
             return {
@@ -533,15 +584,17 @@ class SSHService:
 
         Writes a temp script via SFTP and executes it with sudo.
         Requires sudoers entry:
-            <user> ALL=(ALL) NOPASSWD: /bin/bash /tmp/.cyberx_nginx_fix.sh
+            <user> ALL=(ALL) NOPASSWD: /bin/bash /tmp/.cyberx_nginx_fix_*.sh
         """
+        safe_dir = shlex.quote(stream_dir)
+        script_path = f"/tmp/.cyberx_nginx_fix_{uuid.uuid4().hex[:8]}.sh"
         script = (
             "#!/bin/bash\n"
             "set -e\n"
             "rm -f /etc/nginx/sites-enabled/default\n"
-            f"mkdir -p {stream_dir}\n"
+            f"mkdir -p {safe_dir}\n"
             "if ! grep -rq 'stream.d' /etc/nginx/ 2>/dev/null; then\n"
-            f"    printf '\\nstream {{\\n    include {stream_dir}/*.conf;\\n}}\\n'"
+            f"    printf '\\nstream {{\\n    include {safe_dir}/*.conf;\\n}}\\n'"
             " >> /etc/nginx/nginx.conf\n"
             "fi\n"
             "/usr/sbin/nginx -t\n"
@@ -550,13 +603,13 @@ class SSHService:
         client = self._connect()
         try:
             sftp = client.open_sftp()
-            sftp.putfo(io.BytesIO(script.encode()), "/tmp/.cyberx_nginx_fix.sh")
-            sftp.chmod("/tmp/.cyberx_nginx_fix.sh", 0o700)
+            sftp.putfo(io.BytesIO(script.encode()), script_path)
+            sftp.chmod(script_path, 0o700)
 
             _, stderr, code = self._exec(
-                client, "sudo /bin/bash /tmp/.cyberx_nginx_fix.sh 2>&1"
+                client, f"sudo /bin/bash {shlex.quote(script_path)} 2>&1"
             )
-            self._exec(client, "rm -f /tmp/.cyberx_nginx_fix.sh")
+            self._exec(client, f"rm -f {shlex.quote(script_path)}")
 
             if code != 0:
                 return {
@@ -671,6 +724,9 @@ class SSHService:
         Writes a temp script via SFTP and executes it with 'sudo /bin/bash'.
         Requires the SSH user to have NOPASSWD sudo (any command).
         """
+        safe_dir = shlex.quote(stream_dir)
+        safe_user = shlex.quote(self.username)
+        script_path = f"/tmp/.cyberx_prereq_fix_{uuid.uuid4().hex[:8]}.sh"
         script = (
             "#!/bin/bash\n"
             "set -e\n"
@@ -681,10 +737,10 @@ class SSHService:
             "    apt-get install -y nginx-full\n"
             "fi\n"
             f"# Create stream directory\n"
-            f"mkdir -p {stream_dir}\n"
+            f"mkdir -p {safe_dir}\n"
             "# Write sudoers file for CyberX\n"
-            f"cat > /etc/sudoers.d/cyberx <<'SUDOERS'\n"
-            f"{self.username} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /tmp/.cyberx_nginx_fix.sh, /bin/bash /tmp/.cyberx_prereq_fix.sh\n"
+            f"cat > /etc/sudoers.d/cyberx <<SUDOERS\n"
+            f"{safe_user} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /tmp/.cyberx_nginx_fix_*.sh, /bin/bash /tmp/.cyberx_prereq_fix_*.sh\n"
             "SUDOERS\n"
             "chmod 440 /etc/sudoers.d/cyberx\n"
             "visudo -c -f /etc/sudoers.d/cyberx\n"
@@ -692,14 +748,14 @@ class SSHService:
         client = self._connect()
         try:
             sftp = client.open_sftp()
-            sftp.putfo(io.BytesIO(script.encode()), "/tmp/.cyberx_prereq_fix.sh")
-            sftp.chmod("/tmp/.cyberx_prereq_fix.sh", 0o700)
+            sftp.putfo(io.BytesIO(script.encode()), script_path)
+            sftp.chmod(script_path, 0o700)
             sftp.close()
 
             out, stderr, code = self._exec(
-                client, "sudo /bin/bash /tmp/.cyberx_prereq_fix.sh 2>&1"
+                client, f"sudo /bin/bash {shlex.quote(script_path)} 2>&1"
             )
-            self._exec(client, "rm -f /tmp/.cyberx_prereq_fix.sh")
+            self._exec(client, f"rm -f {shlex.quote(script_path)}")
 
             if code != 0:
                 return {
@@ -720,54 +776,46 @@ class SSHService:
 # Async wrappers — use these from FastAPI route handlers
 # ---------------------------------------------------------------------------
 
+async def _run_ssh(fn, *args) -> dict:
+    """Run a synchronous SSH operation in the bounded thread pool with semaphore."""
+    async with _ssh_semaphore:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_executor, fn, *args)
+
+
 async def run_test_connection(ssh: SSHService) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_executor, ssh.sync_test_connection)
+    return await _run_ssh(ssh.sync_test_connection)
 
 
 async def run_check_prereqs(ssh: SSHService, stream_dir: str) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_executor, ssh.sync_check_prereqs, stream_dir)
+    return await _run_ssh(ssh.sync_check_prereqs, stream_dir)
 
 
 async def run_fix_prereqs(ssh: SSHService, stream_dir: str) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_executor, ssh.sync_fix_prereqs, stream_dir)
+    return await _run_ssh(ssh.sync_fix_prereqs, stream_dir)
 
 
 async def run_check_nginx_setup(ssh: SSHService) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_executor, ssh.sync_check_nginx_setup)
+    return await _run_ssh(ssh.sync_check_nginx_setup)
 
 
 async def run_fix_nginx_setup(ssh: SSHService, stream_dir: str) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_executor, ssh.sync_fix_nginx_setup, stream_dir)
+    return await _run_ssh(ssh.sync_fix_nginx_setup, stream_dir)
 
 
 async def run_check_port(ssh: SSHService, port: int, protocol: str) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_executor, ssh.sync_check_port, port, protocol)
+    return await _run_ssh(ssh.sync_check_port, port, protocol)
 
 
 async def run_deploy_single(ssh: SSHService, stream_dir: str, stream) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _executor, ssh.sync_deploy_single, stream_dir, stream
-    )
+    return await _run_ssh(ssh.sync_deploy_single, stream_dir, stream)
 
 
 async def run_remove_single(
     ssh: SSHService, stream_dir: str, stream_id: str, stream_name: str
 ) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _executor, ssh.sync_remove_single, stream_dir, stream_id, stream_name
-    )
+    return await _run_ssh(ssh.sync_remove_single, stream_dir, stream_id, stream_name)
 
 
 async def run_deploy_all(ssh: SSHService, stream_dir: str, streams: list) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _executor, ssh.sync_deploy_all, stream_dir, streams
-    )
+    return await _run_ssh(ssh.sync_deploy_all, stream_dir, streams)

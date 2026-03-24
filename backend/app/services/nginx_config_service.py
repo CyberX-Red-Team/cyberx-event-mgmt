@@ -16,6 +16,16 @@ if TYPE_CHECKING:
     from app.models.redirector import StreamConfig
 
 
+_UNSAFE_NGINX_CHARS = frozenset("\n\r;{}")
+
+
+def _safe_nginx_value(val: str, field_name: str) -> str:
+    """Defense-in-depth: reject values that could break out of an nginx directive."""
+    if any(c in _UNSAFE_NGINX_CHARS for c in val):
+        raise ValueError(f"Unsafe character in {field_name}: {val!r}")
+    return val
+
+
 def generate_stream_config(stream: "StreamConfig") -> str:
     """
     Generate the content of a single nginx stream .conf file for a StreamConfig.
@@ -33,8 +43,12 @@ def generate_stream_config(stream: "StreamConfig") -> str:
     is_dns = protocol == "dns"
     is_udp = protocol in ("udp", "dns")
 
+    # Defense-in-depth: validate all interpolated values
+    safe_name = _safe_nginx_value(stream.name, "name")
+    safe_cs_ip = _safe_nginx_value(stream.cs_ip, "cs_ip")
+
     lines: list[str] = [
-        f"# CyberX Managed - {stream.name}",
+        f"# CyberX Managed - {safe_name}",
         f"# Generated: {now_utc} - DO NOT EDIT MANUALLY",
         "",
         "server {",
@@ -49,7 +63,7 @@ def generate_stream_config(stream: "StreamConfig") -> str:
         lines.append(f"    listen {stream.listen_port};")
 
     # --- proxy_pass -------------------------------------------------------
-    lines.append(f"    proxy_pass {stream.cs_ip}:{stream.cs_port};")
+    lines.append(f"    proxy_pass {safe_cs_ip}:{stream.cs_port};")
 
     # --- timeouts ---------------------------------------------------------
     if is_udp:
@@ -64,17 +78,22 @@ def generate_stream_config(stream: "StreamConfig") -> str:
 
     # --- SSL block (TCP only) ---------------------------------------------
     if stream.ssl_enabled and not is_udp and stream.ssl_cert_path and stream.ssl_key_path:
-        lines.append(f"    ssl_certificate {stream.ssl_cert_path};")
-        lines.append(f"    ssl_certificate_key {stream.ssl_key_path};")
-        lines.append(f"    ssl_protocols {stream.ssl_protocols};")
-        lines.append(f"    ssl_ciphers {stream.ssl_ciphers};")
+        safe_cert = _safe_nginx_value(stream.ssl_cert_path, "ssl_cert_path")
+        safe_key = _safe_nginx_value(stream.ssl_key_path, "ssl_key_path")
+        safe_protocols = _safe_nginx_value(stream.ssl_protocols, "ssl_protocols")
+        safe_ciphers = _safe_nginx_value(stream.ssl_ciphers, "ssl_ciphers")
+        lines.append(f"    ssl_certificate {safe_cert};")
+        lines.append(f"    ssl_certificate_key {safe_key};")
+        lines.append(f"    ssl_protocols {safe_protocols};")
+        lines.append(f"    ssl_ciphers {safe_ciphers};")
         lines.append("    ssl_session_cache shared:SSL:10m;")
         lines.append("    ssl_session_timeout 10m;")
 
     # --- Access control ---------------------------------------------------
     if stream.access_control_enabled and stream.allowed_cidrs:
         for cidr in stream.allowed_cidrs:
-            lines.append(f"    allow {cidr.strip()};")
+            safe_cidr = _safe_nginx_value(cidr.strip(), "allowed_cidr")
+            lines.append(f"    allow {safe_cidr};")
         lines.append("    deny all;")
 
     lines.append("}")

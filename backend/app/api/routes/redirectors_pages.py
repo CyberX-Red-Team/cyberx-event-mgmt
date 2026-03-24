@@ -14,19 +14,15 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from app.dependencies import get_current_admin_user
 from app.models.user import User
 from app.services.redirector_service import RedirectorService
 from app.dependencies import get_db
+from app.api.routes.views import templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["Redirector Pages"])
-
-# Template path matches the main app's views.py template resolution
-_templates_path = Path(__file__).parent.parent.parent.parent.parent.parent / "frontend" / "templates"
-templates = Jinja2Templates(directory=str(_templates_path))
 
 
 @router.get("/admin/redirectors", response_class=HTMLResponse)

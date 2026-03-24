@@ -134,7 +134,8 @@ app.add_middleware(
         "/docs",
         "/redoc",
         "/openapi.json",
-        "/api/redirectors/*",   # X-API-Key consumers
+        "/api/web/login",       # Login exempt — no CSRF cookie on first visit
+        # X-API-Key bypass handled in middleware dispatch, not via exemption
     ],
     cookie_secure=_is_production,
 )

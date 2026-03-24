@@ -58,4 +58,8 @@ __all__ = [
     "TLSCertificateStatus",
     "AgentTask",
     "ServiceAPIKey",
+    "Redirector",
+    "StreamConfig",
+    "RedirectorStatus",
+    "StreamProtocol",
 ]

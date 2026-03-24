@@ -230,8 +230,7 @@ csrf_exempt_urls = [
     "/api/license/queue/release",  # VM-facing queue release (Bearer token auth)
     "/api/agent/*",                # Agent endpoints (Bearer token auth)
     "/api/bot/*",                  # Bot endpoints (Bearer token auth)
-    "/api/redirectors",            # Redirector API (X-API-Key auth)
-    "/api/redirectors/*",          # Redirector API (X-API-Key auth)
+    # Redirector API: CSRF bypass handled in middleware when X-API-Key header is present
 ]
 
 app.add_middleware(

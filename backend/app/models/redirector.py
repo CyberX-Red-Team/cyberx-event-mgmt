@@ -92,7 +92,10 @@ class StreamConfig(Base):
     Disabled StreamConfigs have their file deleted from the remote server.
     """
     __tablename__ = "stream_configs"
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = (
+        UniqueConstraint('redirector_id', 'listen_port', name='uq_stream_configs_redirector_port'),
+        {'extend_existing': True},
+    )
 
     id = Column(String(36), primary_key=True, default=_new_uuid)
     redirector_id = Column(

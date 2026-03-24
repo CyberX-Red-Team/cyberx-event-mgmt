@@ -12,6 +12,7 @@ Environment variables:
     API_KEY     Secret key for X-API-Key header auth (REQUIRED)
     SECRET_KEY  HS256 JWT signing secret (REQUIRED for web UI)
 """
+import hmac
 import os
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
@@ -56,7 +57,7 @@ async def get_current_admin_user(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="API_KEY environment variable is not configured.",
             )
-        if api_key == _API_KEY:
+        if hmac.compare_digest(api_key, _API_KEY):
             return _FakeAdminUser()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

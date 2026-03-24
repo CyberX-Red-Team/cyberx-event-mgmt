@@ -26,7 +26,7 @@ from app.models.redirector import Redirector, StreamConfig
 from app.schemas.redirector import (
     RedirectorCreate, RedirectorUpdate, RedirectorOut, RedirectorListOut,
     StreamConfigCreate, StreamConfigUpdate, StreamConfigOut,
-    DeployResult, TestConnectionResult, ConfigPreview,
+    DeployResult, TestConnectionResult, ConfigPreview, CheckPortRequest,
 )
 from app.services.redirector_service import RedirectorService
 from app.services.ssh_service import (
@@ -261,7 +261,7 @@ async def test_connection(
     except SSHAuthError as e:
         await svc.update_status(redirector, "offline")
         raise _ssh_auth_error(e)
-    except (NginxReloadError, SSHCommandError, Exception) as e:
+    except (NginxReloadError, SSHCommandError) as e:
         await svc.update_status(redirector, "offline")
         raise _ssh_command_error(e)
 
@@ -303,7 +303,7 @@ async def check_nginx_setup(
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
         raise _ssh_auth_error(e)
-    except Exception as e:
+    except (SSHCommandError, NginxReloadError) as e:
         raise _ssh_command_error(e)
 
 
@@ -329,7 +329,7 @@ async def fix_nginx_setup(
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
         raise _ssh_auth_error(e)
-    except Exception as e:
+    except (SSHCommandError, NginxReloadError) as e:
         raise _ssh_command_error(e)
 
 
@@ -349,7 +349,7 @@ async def check_prereqs(
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
         raise _ssh_auth_error(e)
-    except Exception as e:
+    except (SSHCommandError, NginxReloadError) as e:
         raise _ssh_command_error(e)
 
 
@@ -372,38 +372,32 @@ async def fix_prereqs(
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
         raise _ssh_auth_error(e)
-    except Exception as e:
+    except (SSHCommandError, NginxReloadError) as e:
         raise _ssh_command_error(e)
 
 
 @router.post("/{redirector_id}/check-port")
 async def check_port(
     redirector_id: str,
-    body: dict,
+    body: CheckPortRequest,
     current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     SSH into the redirector and check whether a port is already in use.
-    Body: {"port": int, "protocol": "tcp"|"udp"|"dns"}
     Returns: {"in_use": bool, "listeners": [...], "message": str}
     """
-    port = body.get("port")
-    protocol = body.get("protocol", "tcp")
-    if not isinstance(port, int) or not (1 <= port <= 65535):
-        raise HTTPException(status_code=422, detail="port must be an integer between 1 and 65535.")
-
     svc = RedirectorService(db)
     redirector = await _get_redirector_or_404(redirector_id, svc)
     ssh = _make_ssh_service(svc, redirector)
 
     try:
-        result = await run_check_port(ssh, port, protocol)
+        result = await run_check_port(ssh, body.port, body.protocol)
     except SSHConnectionError as e:
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
         raise _ssh_auth_error(e)
-    except Exception as e:
+    except (SSHCommandError, NginxReloadError) as e:
         raise _ssh_command_error(e)
 
     return result
@@ -432,7 +426,7 @@ async def deploy_all(
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
         raise _ssh_auth_error(e)
-    except (NginxReloadError, SSHCommandError, Exception) as e:
+    except (NginxReloadError, SSHCommandError) as e:
         raise _ssh_command_error(e)
 
     if result["success"]:
@@ -620,7 +614,7 @@ async def enable_stream(
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
         raise _ssh_auth_error(e)
-    except (NginxReloadError, SSHCommandError, Exception) as e:
+    except (NginxReloadError, SSHCommandError) as e:
         raise _ssh_command_error(e)
 
     if result["success"]:
@@ -673,7 +667,7 @@ async def deploy_stream(
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
         raise _ssh_auth_error(e)
-    except (NginxReloadError, SSHCommandError, Exception) as e:
+    except (NginxReloadError, SSHCommandError) as e:
         raise _ssh_command_error(e)
 
     if result["success"]:
@@ -720,7 +714,7 @@ async def remove_stream_file(
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
         raise _ssh_auth_error(e)
-    except (NginxReloadError, SSHCommandError, Exception) as e:
+    except (NginxReloadError, SSHCommandError) as e:
         raise _ssh_command_error(e)
 
     if result["success"]:

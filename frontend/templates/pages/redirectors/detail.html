@@ -391,7 +391,20 @@ async function loadStreams() {
     renderStreams(streams);
 }
 
+// Map of stream objects by ID — used by event-delegated edit button
+const _streamMap = new Map();
+
+// Event delegation for stream edit buttons — avoids inline JSON.stringify XSS
+document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-edit-stream-id]');
+    if (btn) {
+        const s = _streamMap.get(btn.dataset.editStreamId);
+        if (s) openEditStreamModal(s);
+    }
+});
+
 function renderStreams(streams) {
+    streams.forEach(s => _streamMap.set(s.id, s));
     const tbody = document.getElementById('streamsBody');
     if (!streams.length) {
         tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-5">
@@ -419,7 +432,7 @@ function renderStreams(streams) {
                 <button class="btn btn-sm btn-outline-warning me-1" title="Remove file from redirector"
                     onclick="removeStream('${s.id}', '${escHtml(s.name)}')"><i data-feather="minus-circle"></i></button>
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
-                    onclick="openEditStreamModal(${JSON.stringify(s)})"><i data-feather="edit-2"></i></button>
+                    data-edit-stream-id="${escHtml(s.id)}"><i data-feather="edit-2"></i></button>
                 <button class="btn btn-sm btn-outline-danger" title="Delete from DB"
                     onclick="openDeleteStreamModal('${s.id}', '${escHtml(s.name)}')"><i data-feather="trash-2"></i></button>
             </td>
@@ -442,7 +455,7 @@ async function testConnection() {
         const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/test-connection`, { method: 'POST' });
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Connection failed: ${data.detail}`, 'danger');
+            showToast(`Connection failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             updateStatusBadge('offline');
             return;
         }
@@ -464,7 +477,7 @@ async function deployAll() {
         const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/deploy-all`, { method: 'POST' });
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Deploy failed: ${data.detail}`, 'danger');
+            showToast(`Deploy failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             return;
         }
         showDeployResult('Deploy All', data);
@@ -498,7 +511,7 @@ async function deployStream(streamId, streamName) {
         );
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Deploy failed: ${data.detail}`, 'danger');
+            showToast(`Deploy failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             return;
         }
         showDeployResult(`Deploy: ${streamName}`, data);
@@ -516,7 +529,7 @@ async function removeStream(streamId, streamName) {
         );
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Remove failed: ${data.detail}`, 'danger');
+            showToast(`Remove failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             return;
         }
         showDeployResult(`Remove: ${streamName}`, data);

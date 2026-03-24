@@ -540,7 +540,7 @@ async function testConnection() {
         const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/test-connection`, { method: 'POST' });
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Connection failed: ${data.detail}`, 'danger');
+            showToast(`Connection failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             updateStatusBadge('offline');
             return;
         }
@@ -562,7 +562,7 @@ async function deployAll() {
         const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/deploy-all`, { method: 'POST' });
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Deploy failed: ${data.detail}`, 'danger');
+            showToast(`Deploy failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             return;
         }
         showDeployResult('Deploy All', data);
@@ -596,7 +596,7 @@ async function deployStream(streamId, streamName) {
         );
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Deploy failed: ${data.detail}`, 'danger');
+            showToast(`Deploy failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             return;
         }
         showDeployResult(`Deploy: ${streamName}`, data);
@@ -614,7 +614,7 @@ async function removeStream(streamId, streamName) {
         );
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Disable failed: ${data.detail}`, 'danger');
+            showToast(`Disable failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             return;
         }
         showDeployResult(`Disable: ${streamName}`, data);
@@ -633,7 +633,7 @@ async function enableStream(streamId, streamName) {
         );
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Enable failed: ${data.detail}`, 'danger');
+            showToast(`Enable failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             return;
         }
         showDeployResult(`Enable: ${streamName}`, data);

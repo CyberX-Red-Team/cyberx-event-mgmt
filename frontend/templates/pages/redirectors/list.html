@@ -250,6 +250,9 @@ async function loadRedirectors() {
     }
 }
 
+// Map of redirector objects by ID — used by event-delegated edit button
+const _redirectorMap = new Map();
+
 function renderTable(redirectors) {
     const tbody = document.getElementById('redirectorsBody');
     if (!redirectors.length) {
@@ -259,6 +262,7 @@ function renderTable(redirectors) {
         feather.replace();
         return;
     }
+    redirectors.forEach(r => _redirectorMap.set(r.id, r));
     tbody.innerHTML = redirectors.map(r => `
         <tr>
             <td>
@@ -273,7 +277,7 @@ function renderTable(redirectors) {
             <td class="text-muted small">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
             <td class="text-end">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
-                    onclick="openEditModal(${JSON.stringify(r)})">
+                    data-edit-id="${escHtml(r.id)}">
                     <i data-feather="edit-2"></i>
                 </button>
                 <button class="btn btn-sm btn-outline-danger" title="Delete"
@@ -285,6 +289,15 @@ function renderTable(redirectors) {
     `).join('');
     feather.replace();
 }
+
+// Event delegation for edit buttons — avoids inline JSON.stringify XSS
+document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-edit-id]');
+    if (btn) {
+        const r = _redirectorMap.get(btn.dataset.editId);
+        if (r) openEditModal(r);
+    }
+});
 
 function statusBadge(status) {
     const map = {
