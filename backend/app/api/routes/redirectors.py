@@ -1,6 +1,13 @@
 """REST API routes for Redirector and StreamConfig management.
 
-All endpoints require admin authentication via get_current_admin_user.
+Authentication uses the permission system:
+  - redirectors.view      — list/read own redirectors (or all if view_all)
+  - redirectors.manage    — create/edit/delete/deploy own redirectors
+  - redirectors.view_all  — see ALL redirectors (admin)
+
+Owner scoping: non-admin users only see redirectors where owner_id == user.id.
+Admins (with redirectors.view_all) see all redirectors.
+
 POST / PUT / DELETE operations require the X-CSRF-Token header (enforced
 by the global CSRFMiddleware — no per-route action needed).
 
@@ -20,7 +27,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_admin_user, get_db
+from app.dependencies import get_db, require_permission
 from app.models.user import User
 from app.models.redirector import Redirector, StreamConfig
 from app.schemas.redirector import (
@@ -66,6 +73,7 @@ def _build_redirector_out(redirector: Redirector) -> RedirectorOut:
         stream_count=redirector.stream_count,
         created_at=redirector.created_at,
         updated_at=redirector.updated_at,
+        owner_id=redirector.owner_id,
     )
 
 
@@ -110,6 +118,16 @@ async def _get_redirector_or_404(
     return redir
 
 
+async def _get_authorized_redirector(
+    redirector_id: str, current_user: User, svc: RedirectorService
+) -> Redirector:
+    """Fetch redirector and verify the user has access (owner or admin)."""
+    redir = await _get_authorized_redirector(redirector_id, current_user, svc)
+    if not current_user.has_permission("redirectors.view_all") and redir.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
+    return redir
+
+
 async def _get_stream_or_404(
     stream_id: str, redirector_id: str, svc: RedirectorService
 ) -> StreamConfig:
@@ -125,12 +143,15 @@ async def _get_stream_or_404(
 
 @router.get("/", response_model=RedirectorListOut)
 async def list_redirectors(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all redirectors."""
+    """List redirectors. Admins see all; others see only their own."""
     svc = RedirectorService(db)
-    redirectors = await svc.list_redirectors()
+    if current_user.has_permission("redirectors.view_all"):
+        redirectors = await svc.list_redirectors()
+    else:
+        redirectors = await svc.list_redirectors(owner_id=current_user.id)
     return RedirectorListOut(
         redirectors=[_build_redirector_out(r) for r in redirectors],
         total=len(redirectors),
@@ -141,7 +162,7 @@ async def list_redirectors(
 async def create_redirector(
     payload: RedirectorCreate,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new redirector. SSH private key is encrypted before storage."""
@@ -155,7 +176,7 @@ async def create_redirector(
             detail=f"A redirector named '{payload.name}' already exists.",
         )
 
-    redirector = await svc.create_redirector(payload.model_dump())
+    redirector = await svc.create_redirector({**payload.model_dump(), "owner_id": current_user.id})
 
     audit = AuditService(db)
     await audit.log(
@@ -172,12 +193,12 @@ async def create_redirector(
 @router.get("/{redirector_id}", response_model=RedirectorOut)
 async def get_redirector(
     redirector_id: str,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single redirector with its stream count."""
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     return _build_redirector_out(redirector)
 
 
@@ -186,7 +207,7 @@ async def update_redirector(
     redirector_id: str,
     payload: RedirectorUpdate,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -194,7 +215,7 @@ async def update_redirector(
     Send an empty string for ssh_key_passphrase to clear it.
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     redirector = await svc.update_redirector(
         redirector, payload.model_dump(exclude_unset=True)
     )
@@ -215,12 +236,12 @@ async def update_redirector(
 async def delete_redirector(
     redirector_id: str,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a redirector and all its stream configs (cascade). Does not remove remote files."""
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     name = redirector.name
     await svc.delete_redirector(redirector)
 
@@ -242,7 +263,7 @@ async def delete_redirector(
 async def test_connection(
     redirector_id: str,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -250,7 +271,7 @@ async def test_connection(
     Updates the redirector status (online/offline) and last_tested_at.
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     ssh = _make_ssh_service(svc, redirector)
 
     try:
@@ -287,7 +308,7 @@ async def test_connection(
 @router.post("/{redirector_id}/check-nginx-setup")
 async def check_nginx_setup(
     redirector_id: str,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -295,7 +316,7 @@ async def check_nginx_setup(
     default site active (port 80) and stream block presence.
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     ssh = _make_ssh_service(svc, redirector)
     try:
         return await run_check_nginx_setup(ssh)
@@ -310,7 +331,7 @@ async def check_nginx_setup(
 @router.post("/{redirector_id}/fix-nginx-setup")
 async def fix_nginx_setup(
     redirector_id: str,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -321,7 +342,7 @@ async def fix_nginx_setup(
         <user> ALL=(ALL) NOPASSWD: /bin/bash /tmp/.cyberx_nginx_fix.sh
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     ssh = _make_ssh_service(svc, redirector)
     try:
         return await run_fix_nginx_setup(ssh, redirector.nginx_stream_dir)
@@ -336,12 +357,12 @@ async def fix_nginx_setup(
 @router.post("/{redirector_id}/check-prereqs")
 async def check_prereqs(
     redirector_id: str,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Check that all CyberX prerequisites are met on the redirector."""
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     ssh = _make_ssh_service(svc, redirector)
     try:
         return await run_check_prereqs(ssh, redirector.nginx_stream_dir)
@@ -356,7 +377,7 @@ async def check_prereqs(
 @router.post("/{redirector_id}/fix-prereqs")
 async def fix_prereqs(
     redirector_id: str,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -364,7 +385,7 @@ async def fix_prereqs(
     Requires the SSH user to have sudo access (NOPASSWD preferred).
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     ssh = _make_ssh_service(svc, redirector)
     try:
         return await run_fix_prereqs(ssh, redirector.nginx_stream_dir)
@@ -380,7 +401,7 @@ async def fix_prereqs(
 async def check_port(
     redirector_id: str,
     body: CheckPortRequest,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -388,7 +409,7 @@ async def check_port(
     Returns: {"in_use": bool, "listeners": [...], "message": str}
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     ssh = _make_ssh_service(svc, redirector)
 
     try:
@@ -407,7 +428,7 @@ async def check_port(
 async def deploy_all(
     redirector_id: str,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -415,7 +436,7 @@ async def deploy_all(
     write enabled, delete disabled, remove orphans, reload nginx.
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     streams = await svc.list_streams(redirector_id)
     ssh = _make_ssh_service(svc, redirector)
 
@@ -457,12 +478,12 @@ async def deploy_all(
 @router.get("/{redirector_id}/streams", response_model=List[StreamConfigOut])
 async def list_streams(
     redirector_id: str,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """List all stream configs for a redirector."""
     svc = RedirectorService(db)
-    await _get_redirector_or_404(redirector_id, svc)
+    await _get_authorized_redirector(redirector_id, current_user, svc)
     streams = await svc.list_streams(redirector_id)
     return [StreamConfigOut.model_validate(s) for s in streams]
 
@@ -476,12 +497,12 @@ async def create_stream(
     redirector_id: str,
     payload: StreamConfigCreate,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a stream config for a redirector (does not deploy immediately)."""
     svc = RedirectorService(db)
-    await _get_redirector_or_404(redirector_id, svc)
+    await _get_authorized_redirector(redirector_id, current_user, svc)
     stream = await svc.create_stream(redirector_id, payload.model_dump())
 
     audit = AuditService(db)
@@ -505,7 +526,7 @@ async def create_stream(
 async def get_stream(
     redirector_id: str,
     stream_id: str,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single stream config."""
@@ -520,7 +541,7 @@ async def update_stream(
     stream_id: str,
     payload: StreamConfigUpdate,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a stream config (does not redeploy automatically)."""
@@ -548,7 +569,7 @@ async def delete_stream(
     redirector_id: str,
     stream_id: str,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a stream config from the database (does not remove remote file)."""
@@ -578,7 +599,7 @@ async def delete_stream(
 async def preview_stream(
     redirector_id: str,
     stream_id: str,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Return the generated nginx config text without performing any SSH operation."""
@@ -593,7 +614,7 @@ async def enable_stream(
     redirector_id: str,
     stream_id: str,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -602,7 +623,7 @@ async def enable_stream(
     so the operator can fix the config and retry.
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
 
     stream = await svc.update_stream(stream, {"enabled": True})
@@ -641,7 +662,7 @@ async def deploy_stream(
     redirector_id: str,
     stream_id: str,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -650,7 +671,7 @@ async def deploy_stream(
     Returns HTTP 200 with success=False if nginx test fails (operator sees output).
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
 
     if not stream.enabled:
@@ -694,7 +715,7 @@ async def remove_stream_file(
     redirector_id: str,
     stream_id: str,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -702,7 +723,7 @@ async def remove_stream_file(
     Does not delete the StreamConfig from the database — use DELETE for that.
     """
     svc = RedirectorService(db)
-    redirector = await _get_redirector_or_404(redirector_id, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     ssh = _make_ssh_service(svc, redirector)
 

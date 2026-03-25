@@ -107,6 +107,7 @@ class RedirectorOut(BaseModel):
     stream_count: int = 0
     created_at: datetime
     updated_at: Optional[datetime]
+    owner_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

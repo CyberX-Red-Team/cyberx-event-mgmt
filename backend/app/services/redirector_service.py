@@ -27,13 +27,19 @@ class RedirectorService:
     # Redirectors
     # -------------------------------------------------------------------------
 
-    async def list_redirectors(self) -> List[Redirector]:
-        """Return all redirectors ordered by name, with stream_configs eager-loaded."""
-        result = await self.session.execute(
+    async def list_redirectors(self, owner_id: int = None) -> List[Redirector]:
+        """Return redirectors ordered by name, with stream_configs eager-loaded.
+
+        If owner_id is provided, only return redirectors owned by that user.
+        """
+        query = (
             select(Redirector)
             .options(selectinload(Redirector.stream_configs))
             .order_by(Redirector.name)
         )
+        if owner_id is not None:
+            query = query.where(Redirector.owner_id == owner_id)
+        result = await self.session.execute(query)
         return list(result.scalars().all())
 
     async def get_redirector(self, redirector_id: str) -> Optional[Redirector]:
@@ -62,6 +68,7 @@ class RedirectorService:
             ssh_key_passphrase=encrypt_field(data.get("ssh_key_passphrase")) if data.get("ssh_key_passphrase") else None,
             nginx_stream_dir=data.get("nginx_stream_dir", "/etc/nginx/stream.d"),
             notes=data.get("notes"),
+            owner_id=data.get("owner_id"),
         )
         self.session.add(redirector)
         await self.session.commit()

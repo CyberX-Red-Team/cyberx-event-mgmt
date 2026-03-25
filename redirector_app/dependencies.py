@@ -23,7 +23,16 @@ _API_KEY = os.environ.get("API_KEY", "")
 
 
 class _FakeAdminUser:
-    """Minimal stand-in for the cyberx User model used in audit log calls."""
+    """Minimal stand-in for the cyberx User model.
+
+    In standalone mode, the single authenticated user has full admin permissions.
+    """
+
+    is_active = True
+    is_admin = True
+    is_admin_role = True
+    is_sponsor_role = True
+    role = "admin"
 
     def __init__(
         self,
@@ -35,6 +44,13 @@ class _FakeAdminUser:
         self.email = email
         self.first_name = first_name
         self.last_name = last_name
+
+    def get_effective_permissions(self):
+        from app.utils.permissions import ALL_PERMISSIONS
+        return ALL_PERMISSIONS.copy()
+
+    def has_permission(self, *perms):
+        return True
 
 
 async def get_current_admin_user(

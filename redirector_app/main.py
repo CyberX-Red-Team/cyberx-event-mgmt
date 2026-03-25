@@ -175,6 +175,7 @@ if _static_dir.exists():
 
 from app.api.routes import redirectors as redirectors_api
 from app.dependencies import get_current_admin_user as _main_get_admin
+from app.dependencies import get_current_active_user as _main_get_active
 from app.dependencies import get_db as _main_get_db
 from redirector_app.dependencies import get_current_admin_user as _sa_get_admin
 from redirector_app.database import get_db as _sa_get_db
@@ -184,8 +185,9 @@ import redirector_app.encryption as _sa_enc
 _main_enc.encrypt_field = _sa_enc.encrypt_field
 _main_enc.decrypt_field = _sa_enc.decrypt_field
 
-app.dependency_overrides[_main_get_admin] = _sa_get_admin
-app.dependency_overrides[_main_get_db]    = _sa_get_db
+app.dependency_overrides[_main_get_admin]  = _sa_get_admin
+app.dependency_overrides[_main_get_active] = _sa_get_admin  # require_permission uses this
+app.dependency_overrides[_main_get_db]     = _sa_get_db
 
 # ---------------------------------------------------------------------------
 # Routers

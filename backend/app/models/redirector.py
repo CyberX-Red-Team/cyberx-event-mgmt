@@ -57,6 +57,10 @@ class Redirector(Base):
 
     notes = Column(Text, nullable=True)
 
+    # Owner — participants own the redirectors they create; admins see all
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    owner = relationship("User", foreign_keys=[owner_id])
+
     # Updated by test-connection and deploy operations
     status = Column(String(20), nullable=False, default=RedirectorStatus.UNKNOWN.value)
     last_deployed_at = Column(TIMESTAMP(timezone=True), nullable=True)
