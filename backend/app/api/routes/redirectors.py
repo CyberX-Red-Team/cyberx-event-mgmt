@@ -179,14 +179,19 @@ async def create_redirector(
     owner_id = current_user.id if current_user.id else None
     redirector = await svc.create_redirector({**payload.model_dump(), "owner_id": owner_id})
 
-    # Auto-test connection to set initial status (online/offline)
+    # Auto-test connection to set initial status (online/offline).
+    # Best-effort: redirector is already saved, so any failure here just
+    # sets status to offline rather than crashing the create request.
     try:
         ssh = _make_ssh_service(svc, redirector)
         result = await run_test_connection(ssh)
         new_status = "online" if result["success"] else "offline"
         await svc.update_status(redirector, new_status)
-    except (SSHConnectionError, SSHAuthError, SSHCommandError, NginxReloadError):
-        await svc.update_status(redirector, "offline")
+    except Exception:
+        try:
+            await svc.update_status(redirector, "offline")
+        except Exception:
+            pass  # DB update failed too — status stays "unknown"
 
     audit = AuditService(db)
     await audit.log(
