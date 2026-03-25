@@ -237,11 +237,15 @@ class SSHService:
 
             rtt_ms = round((time.monotonic() - t0) * 1000, 1)
 
-            # nginx --with-stream presence check
+            # nginx stream module check (compiled-in or dynamic)
             stream_out, _, _ = self._exec(
                 client, f"{self._sudo_prefix}/usr/sbin/nginx -V 2>&1 | grep -- --with-stream"
             )
-            stream_module_present = "--with-stream" in stream_out
+            compiled_in = "--with-stream" in stream_out
+            _, _, mod_code = self._exec(
+                client, "test -f /usr/lib/nginx/modules/ngx_stream_module.so"
+            )
+            stream_module_present = compiled_in or mod_code == 0
 
             return {
                 "success": True,
