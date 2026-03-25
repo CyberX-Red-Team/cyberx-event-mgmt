@@ -237,15 +237,28 @@ class SSHService:
 
             rtt_ms = round((time.monotonic() - t0) * 1000, 1)
 
-            # nginx stream module check (compiled-in or dynamic)
+            # nginx stream module check (compiled-in, or dynamic AND loaded)
             stream_out, _, _ = self._exec(
                 client, f"{self._sudo_prefix}/usr/sbin/nginx -V 2>&1 | grep -- --with-stream"
             )
             compiled_in = "--with-stream" in stream_out
-            _, _, mod_code = self._exec(
-                client, "test -f /usr/lib/nginx/modules/ngx_stream_module.so"
-            )
-            stream_module_present = compiled_in or mod_code == 0
+            if not compiled_in:
+                _, _, mod_code = self._exec(
+                    client, "test -f /usr/lib/nginx/modules/ngx_stream_module.so"
+                )
+                if mod_code == 0:
+                    # .so exists — check if it's actually loaded
+                    loaded_out, _, _ = self._exec(
+                        client,
+                        "grep -rq 'ngx_stream_module' /etc/nginx/modules-enabled/ 2>/dev/null "
+                        "|| grep -q 'ngx_stream_module' /etc/nginx/nginx.conf 2>/dev/null "
+                        "&& echo loaded || echo not_loaded"
+                    )
+                    stream_module_present = "loaded" in loaded_out and "not_loaded" not in loaded_out
+                else:
+                    stream_module_present = False
+            else:
+                stream_module_present = True
 
             return {
                 "success": True,
@@ -678,24 +691,47 @@ class SSHService:
                           else "nginx not found — install with: apt-get install nginx-full",
             })
 
-            # 2. nginx stream module (compiled-in or dynamic)
+            # 2. nginx stream module (compiled-in or dynamic, AND actually loaded)
             if nginx_ok:
                 v_out, _, _ = self._exec(client, "nginx -V 2>&1")
                 compiled_in = "with-stream" in v_out
-                # Also check for dynamic stream module
-                mod_out, _, mod_code = self._exec(
+                # Check for dynamic stream module .so file
+                _, _, mod_code = self._exec(
                     client, "test -f /usr/lib/nginx/modules/ngx_stream_module.so 2>/dev/null"
                 )
                 dynamic_mod = mod_code == 0
-                stream_mod_ok = compiled_in or dynamic_mod
+                # Check if module is actually loaded (compiled-in, or load_module/modules-enabled present)
+                if compiled_in:
+                    stream_mod_ok = True
+                    stream_mod_detail = "Stream module compiled in."
+                elif dynamic_mod:
+                    # Check if it's loaded via modules-enabled or load_module directive
+                    loaded_out, _, _ = self._exec(
+                        client,
+                        "grep -rq 'ngx_stream_module' /etc/nginx/modules-enabled/ 2>/dev/null "
+                        "|| grep -q 'ngx_stream_module' /etc/nginx/nginx.conf 2>/dev/null "
+                        "&& echo loaded || echo not_loaded"
+                    )
+                    if "loaded" in loaded_out and "not_loaded" not in loaded_out:
+                        stream_mod_ok = True
+                        stream_mod_detail = "Stream module available (dynamic, loaded)."
+                    else:
+                        stream_mod_ok = False
+                        stream_mod_detail = (
+                            "Stream module .so exists but is not loaded — "
+                            "auto-fix will add load_module directive."
+                        )
+                else:
+                    stream_mod_ok = False
+                    stream_mod_detail = "Stream module absent — install nginx-full: apt-get install nginx-full"
             else:
                 stream_mod_ok = False
+                stream_mod_detail = "Cannot check — nginx not installed."
             checks.append({
                 "id": "nginx_stream",
                 "label": "nginx stream module",
                 "ok": stream_mod_ok,
-                "detail": "Stream module available." if stream_mod_ok
-                          else "Stream module absent — install nginx-full: apt-get install nginx-full",
+                "detail": stream_mod_detail,
             })
 
             # 3. Stream directory
@@ -707,6 +743,20 @@ class SSHService:
                 "ok": dir_ok,
                 "detail": "Directory exists." if dir_ok
                           else f"Directory missing — fix will create it.",
+            })
+
+            # 3b. Stream block in nginx.conf
+            stream_out, _, _ = self._exec(
+                client, "grep -r 'stream.d' /etc/nginx/ 2>/dev/null || true"
+            )
+            stream_block_ok = bool(stream_out.strip())
+            checks.append({
+                "id": "stream_block",
+                "label": "nginx stream block",
+                "ok": stream_block_ok,
+                "detail": "stream { include ... } block present in nginx config."
+                          if stream_block_ok
+                          else "No stream block in nginx config — auto-fix will add it.",
             })
 
             # 4. nginx -t (runs nginx config test — safe, read-only)
