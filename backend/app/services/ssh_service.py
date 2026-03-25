@@ -745,6 +745,30 @@ class SSHService:
                 "detail": systemctl_detail,
             })
 
+            # 6. Port 53 — systemd-resolved stub listener blocks DNS redirects
+            out53, _, _ = self._exec(
+                client, "ss -tulnp 2>/dev/null | grep ':53 ' || true"
+            )
+            stub_listener = "systemd-resolve" in out53 or "resolved" in out53
+            if stub_listener:
+                port53_ok = False
+                port53_detail = (
+                    "Port 53 is bound by systemd-resolved stub listener. "
+                    "Auto-fix will disable it and configure real DNS servers."
+                )
+            elif ":53 " in out53:
+                port53_ok = False
+                port53_detail = f"Port 53 in use by another process: {out53.strip()}"
+            else:
+                port53_ok = True
+                port53_detail = "Port 53 is free."
+            checks.append({
+                "id": "port53_free",
+                "label": "Port 53 (DNS) available",
+                "ok": port53_ok,
+                "detail": port53_detail,
+            })
+
             all_ok = all(c["ok"] for c in checks)
             return {"all_ok": all_ok, "checks": checks}
         finally:
@@ -792,6 +816,35 @@ class SSHService:
             "if ! grep -rq 'stream.d' /etc/nginx/ 2>/dev/null; then\n"
             f"    printf '\\nstream {{\\n    include {safe_dir}/*.conf;\\n}}\\n'"
             " >> /etc/nginx/nginx.conf\n"
+            "fi\n"
+            "# Disable systemd-resolved stub listener if it holds port 53\n"
+            "if ss -tulnp 2>/dev/null | grep ':53 ' | grep -q 'systemd-resolve\\|resolved'; then\n"
+            "    # Extract real DNS servers from netplan or resolv.conf\n"
+            "    DNS_SERVERS=''\n"
+            "    if command -v netplan &>/dev/null; then\n"
+            "        DNS_SERVERS=$(netplan get 2>/dev/null | grep -oP 'addresses:\\s*\\[\\K[^]]+' | tr ',' '\\n' | tr -d ' \"' | head -3)\n"
+            "    fi\n"
+            "    if [ -z \"$DNS_SERVERS\" ] && [ -f /run/systemd/resolve/resolv.conf ]; then\n"
+            "        DNS_SERVERS=$(grep '^nameserver' /run/systemd/resolve/resolv.conf | awk '{print $2}' | head -3)\n"
+            "    fi\n"
+            "    if [ -z \"$DNS_SERVERS\" ]; then\n"
+            "        DNS_SERVERS='1.1.1.1\\n8.8.8.8'\n"
+            "    fi\n"
+            "    # Disable stub listener\n"
+            "    mkdir -p /etc/systemd/resolved.conf.d\n"
+            "    cat > /etc/systemd/resolved.conf.d/no-stub.conf <<RESOLVED\n"
+            "[Resolve]\n"
+            "DNSStubListener=no\n"
+            "RESOLVED\n"
+            "    # Point resolv.conf to real file instead of stub\n"
+            "    rm -f /etc/resolv.conf\n"
+            "    printf '' > /etc/resolv.conf\n"
+            "    for ns in $DNS_SERVERS; do\n"
+            "        echo \"nameserver $ns\" >> /etc/resolv.conf\n"
+            "    done\n"
+            "    systemctl restart systemd-resolved 2>/dev/null || true\n"
+            "    # Wait for port 53 to be released\n"
+            "    sleep 1\n"
             "fi\n"
             "# Write sudoers file for CyberX\n"
             f"cat > /etc/sudoers.d/cyberx <<SUDOERS\n"
