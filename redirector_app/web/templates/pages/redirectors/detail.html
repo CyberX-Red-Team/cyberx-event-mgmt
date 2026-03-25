@@ -1071,17 +1071,40 @@ async function fixPrereqs() {
     statusEl.classList.add('d-none');
 
     try {
-        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/fix-prereqs`, { method: 'POST' });
-        const data = await resp.json();
-        if (resp.ok && data.success) {
-            showToast('Prerequisites installed successfully.', 'success');
-            await checkPrereqs();
-        } else {
-            statusEl.textContent = data.message || 'Fix failed — ensure the SSH user has sudo access.';
+        // 1. Run the fix script
+        const fixResp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/fix-prereqs`, { method: 'POST' });
+        const fixData = await fixResp.json();
+        if (!fixResp.ok || !fixData.success) {
+            const msg = fixData.message || 'Fix script failed — ensure the SSH user has sudo access.';
+            showToast(escHtml(msg), 'danger');
+            statusEl.textContent = msg;
             statusEl.className = 'mt-2 small text-danger';
             statusEl.classList.remove('d-none');
+            await checkPrereqs();
+            return;
         }
+
+        // 2. Re-check to verify which fixes actually took effect
+        const checkResp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/check-prereqs`, { method: 'POST' });
+        if (!checkResp.ok) {
+            showToast('Fixes applied but re-check failed.', 'warning');
+            await checkPrereqs();
+            return;
+        }
+        const checkData = await checkResp.json();
+        const failCount = checkData.checks.filter(c => !c.ok).length;
+
+        if (checkData.all_ok) {
+            showToast('All prerequisites fixed successfully.', 'success');
+        } else {
+            const failLabels = checkData.checks.filter(c => !c.ok).map(c => c.label).join(', ');
+            showToast(`${failCount} prerequisite${failCount > 1 ? 's' : ''} still failing: ${escHtml(failLabels)}`, 'warning');
+        }
+
+        // 3. Update the UI with the fresh check results
+        await checkPrereqs();
     } catch (err) {
+        showToast(`Fix failed: ${escHtml(err.message)}`, 'danger');
         statusEl.textContent = `Failed: ${err.message}`;
         statusEl.className = 'mt-2 small text-danger';
         statusEl.classList.remove('d-none');
