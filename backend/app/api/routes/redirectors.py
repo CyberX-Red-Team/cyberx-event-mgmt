@@ -454,6 +454,9 @@ async def deploy_all(
     if result["success"]:
         await svc.update_status(redirector, "online")
         await svc.update_deployed_at(redirector)
+        # Mark enabled streams as deployed, disabled as not deployed
+        for s in streams:
+            await svc.update_stream(s, {"deployed": s.enabled})
 
     audit = AuditService(db)
     await audit.log(
@@ -641,6 +644,7 @@ async def enable_stream(
 
     if result["success"]:
         await svc.update_deployed_at(redirector)
+        await svc.update_stream(stream, {"deployed": True})
 
     audit = AuditService(db)
     await audit.log(
@@ -694,6 +698,7 @@ async def deploy_stream(
 
     if result["success"]:
         await svc.update_deployed_at(redirector)
+        await svc.update_stream(stream, {"deployed": True})
 
     audit = AuditService(db)
     await audit.log(
@@ -740,7 +745,7 @@ async def remove_stream_file(
         raise _ssh_command_error(e)
 
     if result["success"]:
-        await svc.update_stream(stream, {"enabled": False})
+        await svc.update_stream(stream, {"enabled": False, "deployed": False})
 
     audit = AuditService(db)
     await audit.log(

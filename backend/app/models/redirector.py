@@ -128,6 +128,8 @@ class StreamConfig(Base):
 
     # If False, the .conf file is removed from the remote redirector
     enabled = Column(Boolean, nullable=False, default=True)
+    # True when the config file has been deployed to the remote redirector
+    deployed = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(

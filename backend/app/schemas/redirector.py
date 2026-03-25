@@ -280,6 +280,7 @@ class StreamConfigOut(BaseModel):
     ssl_protocols: str
     ssl_ciphers: str
     enabled: bool
+    deployed: bool
     filename: str
     created_at: datetime
     updated_at: Optional[datetime]
