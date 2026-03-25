@@ -696,15 +696,20 @@ class SSHService:
                 client, f"{sudo_n}/usr/sbin/nginx -t 2>&1"
             )
             sudo_nginx_ok = code == 0
+            if sudo_nginx_ok:
+                nginx_t_detail = "nginx -t succeeded."
+            elif self.username == "root":
+                nginx_t_detail = f"nginx -t failed — config error: {out4.strip()}"
+            else:
+                nginx_t_detail = (
+                    f"nginx -t failed — add sudoers entry: "
+                    f"{self.username} ALL=(ALL) NOPASSWD: /usr/sbin/nginx"
+                )
             checks.append({
                 "id": "sudo_nginx",
-                "label": "nginx -t allowed",
+                "label": "nginx -t",
                 "ok": sudo_nginx_ok,
-                "detail": "nginx -t succeeded." if sudo_nginx_ok
-                          else (
-                              f"nginx -t failed — add sudoers entry: "
-                              f"{self.username} ALL=(ALL) NOPASSWD: /usr/sbin/nginx"
-                          ),
+                "detail": nginx_t_detail,
             })
 
             # 5. systemctl reload nginx (check via is-active — read-only)
@@ -713,15 +718,20 @@ class SSHService:
             )
             # exit 0 = active, exit 3 = inactive — both mean the command works
             sudo_systemctl_ok = code in (0, 3)
+            if sudo_systemctl_ok:
+                systemctl_detail = "systemctl works."
+            elif self.username == "root":
+                systemctl_detail = "systemctl failed — nginx may not be running."
+            else:
+                systemctl_detail = (
+                    f"systemctl failed — add sudoers entry: "
+                    f"{self.username} ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx"
+                )
             checks.append({
                 "id": "sudo_systemctl",
-                "label": "systemctl nginx allowed",
+                "label": "systemctl nginx",
                 "ok": sudo_systemctl_ok,
-                "detail": "systemctl works." if sudo_systemctl_ok
-                          else (
-                              f"systemctl failed — add sudoers entry: "
-                              f"{self.username} ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx"
-                          ),
+                "detail": systemctl_detail,
             })
 
             all_ok = all(c["ok"] for c in checks)
