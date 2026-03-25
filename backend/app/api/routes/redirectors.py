@@ -176,7 +176,8 @@ async def create_redirector(
             detail=f"A redirector named '{payload.name}' already exists.",
         )
 
-    redirector = await svc.create_redirector({**payload.model_dump(), "owner_id": current_user.id})
+    owner_id = current_user.id if current_user.id else None
+    redirector = await svc.create_redirector({**payload.model_dump(), "owner_id": owner_id})
 
     audit = AuditService(db)
     await audit.log(
