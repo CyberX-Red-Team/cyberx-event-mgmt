@@ -83,6 +83,11 @@ class SSHService:
     AUTH_TIMEOUT = 15      # seconds for key exchange + auth
     COMMAND_TIMEOUT = 30   # per-command channel timeout
 
+    @property
+    def _sudo_prefix(self) -> str:
+        """Return 'sudo ' if not root, empty string if root."""
+        return "" if self.username == "root" else "sudo "
+
     def __init__(
         self,
         hostname: str,
@@ -197,14 +202,14 @@ class SSHService:
         Raises NginxReloadError if reload fails after a successful test.
         """
         # nginx -t writes its output to stderr
-        _, test_stderr, test_code = self._exec(client, "sudo /usr/sbin/nginx -t")
+        _, test_stderr, test_code = self._exec(client, f"{self._sudo_prefix}/usr/sbin/nginx -t")
         test_output = test_stderr.strip()
 
         if test_code != 0:
             raise NginxTestError(test_output)
 
         _, reload_stderr, reload_code = self._exec(
-            client, "sudo /bin/systemctl reload nginx"
+            client, f"{self._sudo_prefix}/bin/systemctl reload nginx"
         )
         reload_output = reload_stderr.strip()
 
@@ -234,7 +239,7 @@ class SSHService:
 
             # nginx --with-stream presence check
             stream_out, _, _ = self._exec(
-                client, "sudo /usr/sbin/nginx -V 2>&1 | grep -- --with-stream"
+                client, f"{self._sudo_prefix}/usr/sbin/nginx -V 2>&1 | grep -- --with-stream"
             )
             stream_module_present = "--with-stream" in stream_out
 
@@ -607,7 +612,7 @@ class SSHService:
             sftp.chmod(script_path, 0o700)
 
             _, stderr, code = self._exec(
-                client, f"sudo /bin/bash {shlex.quote(script_path)} 2>&1"
+                client, f"{self._sudo_prefix}/bin/bash {shlex.quote(script_path)} 2>&1"
             )
             self._exec(client, f"rm -f {shlex.quote(script_path)}")
 
@@ -675,35 +680,36 @@ class SSHService:
                           else f"Directory missing — fix will create it.",
             })
 
-            # 4. sudo nginx -t (runs nginx config test — safe, read-only)
+            # 4. nginx -t (runs nginx config test — safe, read-only)
+            sudo_n = "" if self.username == "root" else "sudo -n "
             out4, _, code = self._exec(
-                client, "sudo -n /usr/sbin/nginx -t 2>&1"
+                client, f"{sudo_n}/usr/sbin/nginx -t 2>&1"
             )
             sudo_nginx_ok = code == 0
             checks.append({
                 "id": "sudo_nginx",
-                "label": "sudo nginx -t allowed",
+                "label": "nginx -t allowed",
                 "ok": sudo_nginx_ok,
-                "detail": "sudo nginx -t succeeded." if sudo_nginx_ok
+                "detail": "nginx -t succeeded." if sudo_nginx_ok
                           else (
-                              f"sudo nginx -t failed — add sudoers entry: "
+                              f"nginx -t failed — add sudoers entry: "
                               f"{self.username} ALL=(ALL) NOPASSWD: /usr/sbin/nginx"
                           ),
             })
 
-            # 5. sudo systemctl reload nginx (check via is-active — read-only)
+            # 5. systemctl reload nginx (check via is-active — read-only)
             _, _, code = self._exec(
-                client, "sudo -n /bin/systemctl is-active nginx 2>/dev/null"
+                client, f"{sudo_n}/bin/systemctl is-active nginx 2>/dev/null"
             )
-            # exit 0 = active, exit 3 = inactive — both mean the sudo rule exists
+            # exit 0 = active, exit 3 = inactive — both mean the command works
             sudo_systemctl_ok = code in (0, 3)
             checks.append({
                 "id": "sudo_systemctl",
-                "label": "sudo systemctl nginx allowed",
+                "label": "systemctl nginx allowed",
                 "ok": sudo_systemctl_ok,
-                "detail": "sudo systemctl works." if sudo_systemctl_ok
+                "detail": "systemctl works." if sudo_systemctl_ok
                           else (
-                              f"sudo systemctl failed — add sudoers entry: "
+                              f"systemctl failed — add sudoers entry: "
                               f"{self.username} ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx"
                           ),
             })
@@ -757,7 +763,7 @@ class SSHService:
             sftp.close()
 
             out, stderr, code = self._exec(
-                client, f"sudo /bin/bash {shlex.quote(script_path)} 2>&1"
+                client, f"{self._sudo_prefix}/bin/bash {shlex.quote(script_path)} 2>&1"
             )
             self._exec(client, f"rm -f {shlex.quote(script_path)}")
 
