@@ -596,7 +596,10 @@ class SSHService:
             <user> ALL=(ALL) NOPASSWD: /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh
         """
         safe_dir = shlex.quote(stream_dir)
-        script_path = f"/var/lib/cyberx/scripts/.cyberx_nginx_fix_{uuid.uuid4().hex[:8]}.sh"
+        script_name = f".cyberx_nginx_fix_{uuid.uuid4().hex[:8]}.sh"
+        # Use secure dir if it exists, fall back to /tmp before prereqs have run
+        script_dir = "/var/lib/cyberx/scripts"
+        script_path = f"{script_dir}/{script_name}"
         script = (
             "#!/bin/bash\n"
             "set -e\n"
@@ -623,7 +626,12 @@ class SSHService:
         client = self._connect()
         try:
             sftp = client.open_sftp()
-            sftp.putfo(io.BytesIO(script.encode()), script_path)
+            try:
+                sftp.putfo(io.BytesIO(script.encode()), script_path)
+            except FileNotFoundError:
+                # /var/lib/cyberx/scripts/ doesn't exist yet — fall back to /tmp
+                script_path = f"/tmp/{script_name}"
+                sftp.putfo(io.BytesIO(script.encode()), script_path)
             sftp.chmod(script_path, 0o700)
 
             _, stderr, code = self._exec(

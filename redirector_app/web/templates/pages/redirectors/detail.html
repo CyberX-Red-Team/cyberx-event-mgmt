@@ -120,9 +120,9 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     <span id="fixNginxStatus" class="small d-none"></span>
                 </div>
                 <p class="mb-0 mt-2 small text-muted">
-                    The fix will: remove <code>sites-enabled/default</code>, add a stream block to
-                    <code>nginx.conf</code>, and reload nginx. Requires this sudoers entry:
-                    <code>{{ redirector.ssh_username }} ALL=(ALL) NOPASSWD: /bin/bash /tmp/.cyberx_nginx_fix.sh</code>
+                    The fix will: remove <code>sites-enabled/default</code>, load the stream module,
+                    add a stream block to <code>nginx.conf</code>, and reload nginx.
+                    {% if redirector.ssh_username != 'root' %}Requires sudoers access for the SSH user.{% endif %}
                 </p>
             </div>
         </div>
