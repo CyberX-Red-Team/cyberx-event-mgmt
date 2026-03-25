@@ -96,7 +96,7 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     <hr class="my-3">
                     <p class="small mb-2 fw-semibold">Manual setup reference:</p>
                     <div class="small text-muted mb-1">sudoers (<code>/etc/sudoers.d/cyberx</code>):</div>
-                    <pre class="bg-dark text-light rounded p-2 mb-2 small">{{ redirector.ssh_username }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /tmp/.cyberx_nginx_fix.sh, /bin/bash /tmp/.cyberx_prereq_fix.sh</pre>
+                    <pre class="bg-dark text-light rounded p-2 mb-2 small">{{ redirector.ssh_username }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh</pre>
                     <div class="small text-muted mb-1">nginx.conf stream block:</div>
                     <pre class="bg-dark text-light rounded p-2 mb-0 small">stream {
     include {{ redirector.nginx_stream_dir }}/*.conf;

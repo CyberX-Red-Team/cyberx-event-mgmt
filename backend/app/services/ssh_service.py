@@ -655,17 +655,23 @@ class SSHService:
                           else "nginx not found — install with: apt-get install nginx-full",
             })
 
-            # 2. nginx stream module
+            # 2. nginx stream module (compiled-in or dynamic)
             if nginx_ok:
                 v_out, _, _ = self._exec(client, "nginx -V 2>&1")
-                stream_mod_ok = "with-stream" in v_out
+                compiled_in = "with-stream" in v_out
+                # Also check for dynamic stream module
+                mod_out, _, mod_code = self._exec(
+                    client, "test -f /usr/lib/nginx/modules/ngx_stream_module.so 2>/dev/null"
+                )
+                dynamic_mod = mod_code == 0
+                stream_mod_ok = compiled_in or dynamic_mod
             else:
                 stream_mod_ok = False
             checks.append({
                 "id": "nginx_stream",
                 "label": "nginx stream module",
                 "ok": stream_mod_ok,
-                "detail": "Stream module compiled in." if stream_mod_ok
+                "detail": "Stream module available." if stream_mod_ok
                           else "Stream module absent — install nginx-full: apt-get install nginx-full",
             })
 
