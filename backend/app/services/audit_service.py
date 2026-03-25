@@ -39,6 +39,9 @@ class AuditService:
             Created AuditLog entry
         """
         # Snapshot user identity so it survives user deletion
+        # user_id=0 is the standalone _FakeAdminUser — not in the users table
+        if user_id == 0:
+            user_id = None
         user_email = None
         user_name = None
         if user_id:

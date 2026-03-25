@@ -122,7 +122,7 @@ async def _get_authorized_redirector(
     redirector_id: str, current_user: User, svc: RedirectorService
 ) -> Redirector:
     """Fetch redirector and verify the user has access (owner or admin)."""
-    redir = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redir = await _get_redirector_or_404(redirector_id, svc)
     if not current_user.has_permission("redirectors.view_all") and redir.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
     return redir
