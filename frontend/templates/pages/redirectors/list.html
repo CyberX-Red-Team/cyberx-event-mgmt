@@ -1,0 +1,461 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Redirectors{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+
+    <!-- Page Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-0 fw-bold">
+                <i data-feather="server" class="me-2" style="color:#d32f2f;"></i>Redirectors
+            </h1>
+            <p class="text-muted small mb-0 mt-1">
+                Manage nginx stream proxy configurations on remote redirector servers via SSH.
+            </p>
+        </div>
+        <button class="btn btn-danger" onclick="openAddModal()">
+            <i data-feather="plus" class="me-1"></i> Add Redirector
+        </button>
+    </div>
+
+    <!-- Redirectors Table -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="redirectorsTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Name</th>
+                            <th>IP Address</th>
+                            <th>SSH User:Port</th>
+                            <th>Status</th>
+                            <th>Streams</th>
+                            <th>Last Deployed</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="redirectorsBody">
+                        <tr id="loadingRow">
+                            <td colspan="7" class="text-center text-muted py-4">
+                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                Loading redirectors...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     Add Redirector Modal
+     ================================================================ -->
+<div class="modal fade" id="addRedirectorModal" tabindex="-1" aria-labelledby="addRedirectorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addRedirectorModalLabel">
+                    <i data-feather="plus-circle" class="me-2"></i>Add Redirector
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addRedirectorForm">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="add_name" placeholder="e.g. prod-redirector-01" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">IP Address <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="add_ip" placeholder="203.0.113.10" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">SSH Port</label>
+                            <input type="number" class="form-control" id="add_ssh_port" value="22" min="1" max="65535">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold">SSH Username <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="add_ssh_username" placeholder="debian" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">
+                                SSH Private Key (PEM) <span class="text-danger">*</span>
+                            </label>
+                            <textarea class="form-control font-monospace" id="add_ssh_key" rows="6"
+                                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
+                            <div class="form-text">Paste the full PEM private key. Stored encrypted at rest.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Key Passphrase <span class="text-muted small">(optional)</span></label>
+                            <input type="password" class="form-control" id="add_passphrase" placeholder="Leave blank if key has no passphrase">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">nginx Stream Directory</label>
+                            <input type="text" class="form-control" id="add_stream_dir" value="/etc/nginx/stream.d">
+                            <div class="form-text">Directory where <code>cyberx_*.conf</code> files are written. Must be included in nginx.conf.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Notes <span class="text-muted small">(optional)</span></label>
+                            <textarea class="form-control" id="add_notes" rows="2" placeholder="Optional notes about this redirector"></textarea>
+                        </div>
+                    </div>
+                </form>
+                <div id="addRedirectorError" class="alert alert-danger mt-3 d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="submitAddRedirector()">
+                    <i data-feather="save" class="me-1"></i>Save Redirector
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     Edit Redirector Modal
+     ================================================================ -->
+<div class="modal fade" id="editRedirectorModal" tabindex="-1" aria-labelledby="editRedirectorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editRedirectorModalLabel">
+                    <i data-feather="edit-2" class="me-2"></i>Edit Redirector
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit_redirector_id">
+                <form id="editRedirectorForm">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Name</label>
+                            <input type="text" class="form-control" id="edit_name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">IP Address</label>
+                            <input type="text" class="form-control" id="edit_ip" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">SSH Port</label>
+                            <input type="number" class="form-control" id="edit_ssh_port" min="1" max="65535">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold">SSH Username</label>
+                            <input type="text" class="form-control" id="edit_ssh_username">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">SSH Private Key (PEM)</label>
+                            <textarea class="form-control font-monospace" id="edit_ssh_key" rows="6"
+                                placeholder="Leave blank to keep existing key"></textarea>
+                            <div class="form-text">Leave blank to keep the current key. Paste new PEM to replace it.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Key Passphrase</label>
+                            <input type="password" class="form-control" id="edit_passphrase"
+                                placeholder="Leave blank to keep existing passphrase">
+                            <div class="form-text">Leave blank to keep existing. Send a space to clear the passphrase.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">nginx Stream Directory</label>
+                            <input type="text" class="form-control" id="edit_stream_dir">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Notes</label>
+                            <textarea class="form-control" id="edit_notes" rows="2"></textarea>
+                        </div>
+                    </div>
+                </form>
+                <div id="editRedirectorError" class="alert alert-danger mt-3 d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="submitEditRedirector()">
+                    <i data-feather="save" class="me-1"></i>Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     Delete Confirmation Modal
+     ================================================================ -->
+<div class="modal fade" id="deleteRedirectorModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header border-0">
+                <h5 class="modal-title text-danger">
+                    <i data-feather="trash-2" class="me-2"></i>Delete Redirector
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong id="deleteRedirectorName"></strong>?</p>
+                <p class="text-muted small mb-0">
+                    This removes the redirector and all stream configs from the database.
+                    Remote nginx config files are <strong>not</strong> automatically removed.
+                    Run "Remove" on each stream before deleting if needed.
+                </p>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="confirmDeleteRedirector()">
+                    <i data-feather="trash-2" class="me-1"></i>Delete
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ============================================================
+// State
+// ============================================================
+let _redirectors = [];
+let _deleteTargetId = null;
+
+const addModal  = new bootstrap.Modal(document.getElementById('addRedirectorModal'));
+const editModal = new bootstrap.Modal(document.getElementById('editRedirectorModal'));
+const delModal  = new bootstrap.Modal(document.getElementById('deleteRedirectorModal'));
+
+// ============================================================
+// Bootstrap: re-render feather icons after modal shows
+// ============================================================
+document.querySelectorAll('.modal').forEach(el => {
+    el.addEventListener('shown.bs.modal', () => feather.replace());
+});
+
+// ============================================================
+// Load redirectors on page load
+// ============================================================
+document.addEventListener('DOMContentLoaded', loadRedirectors);
+
+async function loadRedirectors() {
+    try {
+        const resp = await fetch('/api/redirectors/');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        _redirectors = data.redirectors || [];
+        renderTable(_redirectors);
+    } catch (err) {
+        document.getElementById('redirectorsBody').innerHTML =
+            `<tr><td colspan="7" class="text-center text-danger py-4">Failed to load redirectors: ${err.message}</td></tr>`;
+    }
+}
+
+// Map of redirector objects by ID — used by event-delegated edit button
+const _redirectorMap = new Map();
+
+function renderTable(redirectors) {
+    const tbody = document.getElementById('redirectorsBody');
+    if (!redirectors.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-5">
+            No redirectors yet. Click <strong>Add Redirector</strong> to get started.
+        </td></tr>`;
+        feather.replace();
+        return;
+    }
+    redirectors.forEach(r => _redirectorMap.set(r.id, r));
+    tbody.innerHTML = redirectors.map(r => `
+        <tr>
+            <td>
+                <a href="/admin/redirectors/${r.id}" class="fw-semibold text-decoration-none">
+                    ${escHtml(r.name)}
+                </a>
+            </td>
+            <td><code>${escHtml(r.current_ip)}</code></td>
+            <td class="text-muted small">${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td><span class="badge bg-secondary rounded-pill">${r.stream_count}</span></td>
+            <td class="text-muted small">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
+            <td class="text-end">
+                <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
+                    data-edit-id="${escHtml(r.id)}">
+                    <i data-feather="edit-2"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" title="Delete"
+                    onclick="openDeleteModal('${r.id}', '${escHtml(r.name)}')">
+                    <i data-feather="trash-2"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+    feather.replace();
+}
+
+// Event delegation for edit buttons — avoids inline JSON.stringify XSS
+document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-edit-id]');
+    if (btn) {
+        const r = _redirectorMap.get(btn.dataset.editId);
+        if (r) openEditModal(r);
+    }
+});
+
+function statusBadge(status) {
+    const map = {
+        online:  'bg-success',
+        offline: 'bg-danger',
+        unknown: 'bg-secondary',
+    };
+    const cls = map[status] || 'bg-secondary';
+    return `<span class="badge ${cls}">${status}</span>`;
+}
+
+// ============================================================
+// Add Modal
+// ============================================================
+function openAddModal() {
+    document.getElementById('addRedirectorForm').reset();
+    document.getElementById('addRedirectorError').classList.add('d-none');
+    addModal.show();
+}
+
+async function submitAddRedirector() {
+    const errEl = document.getElementById('addRedirectorError');
+    errEl.classList.add('d-none');
+
+    const payload = {
+        name:             document.getElementById('add_name').value.trim(),
+        current_ip:       document.getElementById('add_ip').value.trim(),
+        ssh_port:         parseInt(document.getElementById('add_ssh_port').value, 10),
+        ssh_username:     document.getElementById('add_ssh_username').value.trim(),
+        ssh_private_key:  document.getElementById('add_ssh_key').value.trim(),
+        ssh_key_passphrase: document.getElementById('add_passphrase').value || null,
+        nginx_stream_dir: document.getElementById('add_stream_dir').value.trim(),
+        notes:            document.getElementById('add_notes').value.trim() || null,
+    };
+
+    if (!payload.name || !payload.current_ip || !payload.ssh_username || !payload.ssh_private_key) {
+        errEl.textContent = 'Please fill in all required fields.';
+        errEl.classList.remove('d-none');
+        return;
+    }
+
+    try {
+        const resp = await csrfFetch('/api/redirectors/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            errEl.textContent = data.detail || 'Failed to create redirector.';
+            errEl.classList.remove('d-none');
+            return;
+        }
+        addModal.hide();
+        showToast(`Redirector <strong>${escHtml(data.name)}</strong> created.`, 'success');
+        loadRedirectors();
+    } catch (err) {
+        errEl.textContent = `Request failed: ${err.message}`;
+        errEl.classList.remove('d-none');
+    }
+}
+
+// ============================================================
+// Edit Modal
+// ============================================================
+function openEditModal(r) {
+    document.getElementById('edit_redirector_id').value = r.id;
+    document.getElementById('edit_name').value         = r.name;
+    document.getElementById('edit_ip').value           = r.current_ip;
+    document.getElementById('edit_ssh_port').value     = r.ssh_port;
+    document.getElementById('edit_ssh_username').value = r.ssh_username;
+    document.getElementById('edit_ssh_key').value      = '';   // always blank
+    document.getElementById('edit_passphrase').value   = '';
+    document.getElementById('edit_stream_dir').value   = r.nginx_stream_dir;
+    document.getElementById('edit_notes').value        = r.notes || '';
+    document.getElementById('editRedirectorError').classList.add('d-none');
+    editModal.show();
+}
+
+async function submitEditRedirector() {
+    const id    = document.getElementById('edit_redirector_id').value;
+    const errEl = document.getElementById('editRedirectorError');
+    errEl.classList.add('d-none');
+
+    const payload = {};
+    const name    = document.getElementById('edit_name').value.trim();
+    const ip      = document.getElementById('edit_ip').value.trim();
+    const port    = parseInt(document.getElementById('edit_ssh_port').value, 10);
+    const user    = document.getElementById('edit_ssh_username').value.trim();
+    const key     = document.getElementById('edit_ssh_key').value.trim();
+    const pass    = document.getElementById('edit_passphrase').value;
+    const dir     = document.getElementById('edit_stream_dir').value.trim();
+    const notes   = document.getElementById('edit_notes').value.trim();
+
+    if (name)  payload.name = name;
+    if (ip)    payload.current_ip = ip;
+    if (port)  payload.ssh_port = port;
+    if (user)  payload.ssh_username = user;
+    if (key)   payload.ssh_private_key = key;
+    if (pass)  payload.ssh_key_passphrase = pass;
+    if (dir)   payload.nginx_stream_dir = dir;
+    payload.notes = notes || null;
+
+    try {
+        const resp = await csrfFetch(`/api/redirectors/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            errEl.textContent = data.detail || 'Failed to update redirector.';
+            errEl.classList.remove('d-none');
+            return;
+        }
+        editModal.hide();
+        showToast(`Redirector <strong>${escHtml(data.name)}</strong> updated.`, 'success');
+        loadRedirectors();
+    } catch (err) {
+        errEl.textContent = `Request failed: ${err.message}`;
+        errEl.classList.remove('d-none');
+    }
+}
+
+// ============================================================
+// Delete
+// ============================================================
+function openDeleteModal(id, name) {
+    _deleteTargetId = id;
+    document.getElementById('deleteRedirectorName').textContent = name;
+    delModal.show();
+}
+
+async function confirmDeleteRedirector() {
+    if (!_deleteTargetId) return;
+    try {
+        const resp = await csrfFetch(`/api/redirectors/${_deleteTargetId}`, { method: 'DELETE' });
+        if (!resp.ok && resp.status !== 204) {
+            const data = await resp.json().catch(() => ({}));
+            showToast(data.detail || 'Delete failed.', 'danger');
+            return;
+        }
+        delModal.hide();
+        showToast('Redirector deleted.', 'success');
+        loadRedirectors();
+    } catch (err) {
+        showToast(`Delete failed: ${err.message}`, 'danger');
+    }
+    _deleteTargetId = null;
+}
+
+// ============================================================
+// Utility
+// ============================================================
+function escHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+              .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+</script>
+{% endblock %}

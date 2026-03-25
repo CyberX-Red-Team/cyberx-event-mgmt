@@ -1,0 +1,186 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Error Logs{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+
+    <!-- Page Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-0 fw-bold">
+                <i data-feather="terminal" class="me-2" style="color:#d32f2f;"></i>Error Logs
+            </h1>
+            <p class="text-muted small mb-0 mt-1">
+                Recent application log entries (last 500, newest first). Refreshes automatically every 5 seconds.
+            </p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <!-- Level filter -->
+            <select class="form-select form-select-sm" id="levelFilter" style="width:auto;" onchange="applyFilter()">
+                <option value="">All Levels</option>
+                <option value="DEBUG">DEBUG</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+                <option value="CRITICAL">CRITICAL</option>
+            </select>
+
+            <!-- Auto-refresh toggle -->
+            <div class="form-check form-switch mb-0 ms-2">
+                <input class="form-check-input" type="checkbox" id="autoRefresh" checked onchange="toggleAutoRefresh()">
+                <label class="form-check-label small" for="autoRefresh">Auto-refresh</label>
+            </div>
+
+            <!-- Download button -->
+            <button class="btn btn-sm btn-outline-secondary" onclick="downloadLogs()" title="Download visible logs as .txt">
+                <i data-feather="download" class="me-1"></i> Download
+            </button>
+
+            <!-- Manual refresh -->
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadLogs()" title="Refresh now">
+                <i data-feather="refresh-cw"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Log Table -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height: 75vh; overflow-y: auto;">
+                <table class="table table-hover table-sm mb-0 font-monospace" id="logsTable" style="font-size: 0.8rem;">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th style="width:160px;">Timestamp</th>
+                            <th style="width:80px;">Level</th>
+                            <th style="width:180px;">Logger</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsBody">
+                        <tr id="loadingRow">
+                            <td colspan="4" class="text-center text-muted py-4">
+                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                Loading logs...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center small text-muted">
+            <span id="logCount">—</span>
+            <span id="lastUpdated">—</span>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let _allLogs = [];
+let _autoRefreshInterval = null;
+
+// ── Load logs from API ──
+async function loadLogs() {
+    try {
+        const resp = await fetch('/api/internal/logs?n=500');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        _allLogs = data.logs || [];
+        applyFilter();
+        document.getElementById('lastUpdated').textContent =
+            'Updated: ' + new Date().toLocaleTimeString();
+    } catch (err) {
+        document.getElementById('logsBody').innerHTML =
+            `<tr><td colspan="4" class="text-center text-danger py-3">Failed to load logs: ${escHtml(err.message)}</td></tr>`;
+    }
+}
+
+// ── Apply level filter and render ──
+function applyFilter() {
+    const level = document.getElementById('levelFilter').value;
+    const filtered = level ? _allLogs.filter(e => e.level === level) : _allLogs;
+    renderLogs(filtered);
+    document.getElementById('logCount').textContent =
+        `Showing ${filtered.length} of ${_allLogs.length} entries`;
+}
+
+// ── Render log rows ──
+function renderLogs(logs) {
+    const tbody = document.getElementById('logsBody');
+    if (!logs.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">No log entries to display.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = logs.map(e => {
+        const levelClass = levelColor(e.level);
+        return `<tr>
+            <td class="text-muted text-nowrap">${escHtml(e.ts || '')}</td>
+            <td><span class="badge ${levelBadge(e.level)} rounded-1">${escHtml(e.level || '')}</span></td>
+            <td class="text-muted text-truncate" style="max-width:180px;" title="${escHtml(e.name || '')}">${escHtml(e.name || '')}</td>
+            <td class="${levelClass}">${escHtml(e.msg || '')}</td>
+        </tr>`;
+    }).join('');
+}
+
+function levelColor(level) {
+    switch (level) {
+        case 'ERROR':
+        case 'CRITICAL': return 'text-danger';
+        case 'WARNING':  return 'text-warning';
+        default: return '';
+    }
+}
+
+function levelBadge(level) {
+    switch (level) {
+        case 'ERROR':    return 'bg-danger';
+        case 'CRITICAL': return 'bg-danger';
+        case 'WARNING':  return 'bg-warning text-dark';
+        case 'INFO':     return 'bg-info text-dark';
+        case 'DEBUG':    return 'bg-secondary';
+        default: return 'bg-secondary';
+    }
+}
+
+// ── Auto-refresh toggle ──
+function toggleAutoRefresh() {
+    const enabled = document.getElementById('autoRefresh').checked;
+    if (enabled) {
+        _autoRefreshInterval = setInterval(loadLogs, 5000);
+    } else {
+        clearInterval(_autoRefreshInterval);
+        _autoRefreshInterval = null;
+    }
+}
+
+// ── Download visible logs ──
+function downloadLogs() {
+    const level = document.getElementById('levelFilter').value;
+    const filtered = level ? _allLogs.filter(e => e.level === level) : _allLogs;
+    const lines = filtered.map(e => `${e.ts || ''} [${e.level || ''}] ${e.name || ''}: ${e.msg || ''}`).join('\n');
+    const blob = new Blob([lines], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `cyberx-redir-logs-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+// ── Utility ──
+function escHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', function() {
+    loadLogs();
+    // Start auto-refresh
+    _autoRefreshInterval = setInterval(loadLogs, 5000);
+});
+</script>
+{% endblock %}

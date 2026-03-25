@@ -19,6 +19,7 @@ from app.database import Base
 from app.models import (
     User, VPNCredential, Session, AuditLog, EmailEvent, VPNRequest,
     CloudInitTemplate, Instance, LicenseProduct, LicenseToken, LicenseSlot,
+    Redirector, StreamConfig,
 )
 
 # this is the Alembic Config object, which provides

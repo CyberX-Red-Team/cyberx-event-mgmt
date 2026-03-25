@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="120.2645mm"
+   height="119.82453mm"
+   viewBox="0 0 120.2645 119.82453"
+   version="1.1"
+   id="svg8"
+   inkscape:version="1.0.1 (c497b03c, 2020-09-10)"
+   sodipodi:docname="cyberx-red-team.svg"
+   inkscape:export-filename="/Users/wes/projects/cyberx/branding/cybex-red-team-logo-nobg-280x280.png"
+   inkscape:export-xdpi="59.139999"
+   inkscape:export-ydpi="59.139999">
+  <defs
+     id="defs2" />
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="1"
+     inkscape:cx="255.84375"
+     inkscape:cy="252.75123"
+     inkscape:document-units="mm"
+     inkscape:current-layer="layer1"
+     inkscape:document-rotation="0"
+     showgrid="false"
+     inkscape:window-width="2048"
+     inkscape:window-height="1158"
+     inkscape:window-x="0"
+     inkscape:window-y="25"
+     inkscape:window-maximized="0" />
+  <metadata
+     id="metadata5">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-38.141341,-81.292903)">
+    <path
+       id="path10"
+       style="fill:#ff0000;stroke:#ff0000;stroke-width:0.999999"
+       d="m 399.77344,307.86523 15.76562,29.7168 a 200.31496,200.31496 0 0 1 122.23633,84.47852 l 33.64063,3.88476 A 226.77165,226.77165 0 0 0 399.77344,307.86523 Z m -70.93164,2.25586 A 226.77165,226.77165 0 0 0 165.60352,437.66602 l 32.20898,-5.64844 a 200.31496,200.31496 0 0 1 117.11719,-91.49805 z m 266.14258,184.68946 -24.20118,25.01172 a 200.31496,200.31496 0 0 1 0.42578,13.03515 200.31496,200.31496 0 0 1 -41.26953,121.78125 l 6.75977,33.49414 a 226.77165,226.77165 0 0 0 61.5,-155.27539 226.77165,226.77165 0 0 0 -3.21484,-38.04687 z m -449.05469,14.04297 a 226.77165,226.77165 0 0 0 -1.27344,24.0039 226.77165,226.77165 0 0 0 69.95703,163.8125 l 4.65625,-32.90625 a 200.31496,200.31496 0 0 1 -48.69141,-130.90625 200.31496,200.31496 0 0 1 0.006,-1.3418 z m 298.48047,210.33984 a 200.31496,200.31496 0 0 1 -73.51563,13.97852 200.31496,200.31496 0 0 1 -62.4707,-9.99024 l -29.5918,16.67969 a 226.77165,226.77165 0 0 0 92.5957,19.76758 226.77165,226.77165 0 0 0 104.01563,-25.26368 z"
+       transform="scale(0.26458333)" />
+  </g>
+  <g
+     inkscape:groupmode="layer"
+     id="layer2"
+     inkscape:label="Layer 2"
+     transform="translate(-38.141341,-81.292903)" />
+  <g
+     inkscape:groupmode="layer"
+     id="layer3"
+     inkscape:label="Layer 3"
+     transform="translate(-38.141341,-81.292903)">
+    <path
+       sodipodi:type="star"
+       style="fill:#ff0000;stroke:#ff0000;stroke-width:0.264583"
+       id="path18"
+       sodipodi:sides="5"
+       sodipodi:cx="99.747917"
+       sodipodi:cy="142.34583"
+       sodipodi:r1="59.437595"
+       sodipodi:r2="21.991911"
+       sodipodi:arg1="1.0471976"
+       sodipodi:arg2="1.6755161"
+       inkscape:flatsided="false"
+       inkscape:rounded="3.46945e-18"
+       inkscape:randomized="0"
+       d="m 129.46671,193.82029 -32.017574,-29.60303 -37.472735,22.2993 18.260181,-39.59836 -32.787609,-28.74783 43.302989,5.1299 17.208878,-40.066435 8.50254,42.768815 43.42328,3.98541 -38.04813,21.30268 z"
+       inkscape:transform-center-x="0.71557854"
+       inkscape:transform-center-y="-6.8707532"
+       transform="rotate(-7.6773182,95.010913,153.91103)" />
+  </g>
+</svg>

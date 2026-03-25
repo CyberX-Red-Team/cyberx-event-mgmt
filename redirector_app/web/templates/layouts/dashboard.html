@@ -1,0 +1,92 @@
+{% extends "layouts/base.html" %}
+
+{% block body_class %}nav-fixed{% endblock %}
+
+{% block body %}
+<!-- Top Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top shadow-sm" style="background-color: var(--navbar-bg, #ffffff);">
+    <div class="container-fluid px-4">
+        <a class="navbar-brand fw-bold" href="/redirectors" style="color: #d32f2f;">
+            <img src="/static/img/cyberx-star-logo.svg" alt="CyberX" style="width: 28px; height: 28px; vertical-align: middle;" class="me-2">CyberX Redirector Manager
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="https://github.com/CyberX-Red-Team/nginx-redir-mgmt/issues" target="_blank" rel="noopener noreferrer" title="Report an issue">
+                        <i data-feather="alert-circle" class="me-1"></i>
+                        <span class="d-none d-md-inline">Report Issue</span>
+                    </a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                        <i data-feather="user" class="me-1"></i>
+                        {{ current_user.first_name }}
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <button class="dropdown-item" id="themeToggle" onclick="toggleTheme()" type="button">
+                                <i data-feather="moon" class="me-2" id="themeIcon"></i>
+                                <span id="themeLabel">Dark Mode</span>
+                            </button>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="logout()"><i data-feather="log-out" class="me-2"></i>Logout</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div id="layoutSidenav">
+    <!-- Sidebar -->
+    <div id="layoutSidenav_nav">
+        <nav class="sidenav sidenav-light">
+            <div class="sidenav-menu">
+                <div class="nav pt-3">
+                    <div class="sidenav-menu-heading px-3 py-2">Infrastructure</div>
+                    <a class="nav-link {% if active_page == 'redirectors' %}active{% endif %}" href="/redirectors">
+                        <i data-feather="server"></i>
+                        <span>Redirectors</span>
+                    </a>
+
+                    <div class="sidenav-menu-heading px-3 py-2 mt-2">System</div>
+                    <a class="nav-link {% if active_page == 'logs' %}active{% endif %}" href="/logs">
+                        <i data-feather="terminal"></i>
+                        <span>Error Logs</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Sidebar Footer -->
+            <div class="sidenav-footer p-3 border-top">
+                <div class="sidenav-footer-content">
+                    <div class="sidenav-footer-subtitle fw-bold text-truncate small">
+                        <i data-feather="user" class="me-1" style="width:14px;height:14px;"></i>
+                        {{ current_user.email }}
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div id="layoutSidenav_content">
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+        <footer class="footer mt-auto py-3">
+            <div class="container-fluid px-4">
+                <div class="d-flex align-items-center justify-content-between small">
+                    <div class="text-muted">Copyright &copy; CyberX Red Team {{ now.year if now else '2026' }}</div>
+                    <div class="text-muted">v{{ app_version | default('1.0.0') }}</div>
+                </div>
+            </div>
+        </footer>
+    </div>
+</div>
+{% endblock %}
