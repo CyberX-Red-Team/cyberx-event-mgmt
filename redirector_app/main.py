@@ -89,10 +89,12 @@ async def lifespan(app: FastAPI):
     from redirector_app.web.log_buffer import install_memory_handler
     install_memory_handler()
 
-    # 2. Initialize field encryption
+    # 2. Initialize field encryption (both standalone and backend encryptors)
     fernet_key = os.environ["FERNET_KEY"]
     from redirector_app.encryption import init_encryptor
     init_encryptor(fernet_key)
+    from app.utils.encryption import init_encryptor as backend_init_encryptor
+    backend_init_encryptor(fernet_key)
     logger.info("Field encryption initialized.")
 
     # 3. Create DB tables (idempotent)
