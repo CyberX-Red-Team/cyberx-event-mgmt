@@ -19,7 +19,7 @@ is deleted via SFTP before returning, leaving the remote in its prior state.
 
 Sudo requirement on each redirector (set up once by operator):
     # /etc/sudoers.d/cyberx
-    <ssh_user> ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx
+    <ssh_user> ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx
 """
 import asyncio
 import io
@@ -208,13 +208,22 @@ class SSHService:
         if test_code != 0:
             raise NginxTestError(test_output)
 
+        # Try reload first; if nginx isn't running, start it instead
         _, reload_stderr, reload_code = self._exec(
-            client, f"{self._sudo_prefix}/bin/systemctl reload nginx"
+            client, f"{self._sudo_prefix}/bin/systemctl reload nginx, /bin/systemctl restart nginx"
         )
         reload_output = reload_stderr.strip()
 
         if reload_code != 0:
-            raise NginxReloadError(f"nginx reload failed: {reload_output}")
+            # reload fails when nginx is stopped — try restart
+            _, restart_stderr, restart_code = self._exec(
+                client, f"{self._sudo_prefix}/bin/systemctl restart nginx"
+            )
+            if restart_code != 0:
+                raise NginxReloadError(
+                    f"nginx reload/restart failed: {reload_output} | {restart_stderr.strip()}"
+                )
+            reload_output = restart_stderr.strip()
 
         return test_output, reload_output
 
@@ -634,7 +643,7 @@ class SSHService:
             " >> /etc/nginx/nginx.conf\n"
             "fi\n"
             "/usr/sbin/nginx -t\n"
-            "systemctl reload nginx\n"
+            "systemctl reload nginx 2>/dev/null || systemctl restart nginx\n"
         )
         client = self._connect()
         try:
@@ -794,7 +803,7 @@ class SSHService:
             else:
                 systemctl_detail = (
                     f"systemctl failed — add sudoers entry: "
-                    f"{self.username} ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx"
+                    f"{self.username} ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx, /bin/systemctl restart nginx"
                 )
             checks.append({
                 "id": "sudo_systemctl",
@@ -906,7 +915,7 @@ class SSHService:
             "fi\n"
             "# Write sudoers file for CyberX\n"
             f"cat > /etc/sudoers.d/cyberx <<SUDOERS\n"
-            f"{safe_user} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh\n"
+            f"{safe_user} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh\n"
             "SUDOERS\n"
             "chmod 440 /etc/sudoers.d/cyberx\n"
             "visudo -c -f /etc/sudoers.d/cyberx\n"
