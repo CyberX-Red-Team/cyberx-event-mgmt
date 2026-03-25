@@ -1,14 +1,8 @@
-"""Create redirectors and stream_configs tables (SQLite-compatible)
+"""Create redirectors and stream_configs tables
 
 Revision ID: 001
 Revises:
 Create Date: 2026-03-21 00:00:00
-
-SQLite notes:
-  - Uses JSON (not JSONB) for allowed_cidrs
-  - Uses String(36) (not UUID type) for primary/foreign keys
-  - Boolean server defaults written as integer literals (0/1)
-  - No ENUM types (stored as VARCHAR)
 """
 from alembic import op
 import sqlalchemy as sa

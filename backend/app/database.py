@@ -13,27 +13,21 @@ def _on_connect(dbapi_connection, connection_record):
     pass  # The setting is applied via connect_args below
 
 
-# Create async engine — use PostgreSQL-specific pool/connection settings only for PostgreSQL
-_db_url = settings.async_database_url
-_is_sqlite = _db_url.startswith("sqlite")
-
-if _is_sqlite:
-    engine = create_async_engine(_db_url, echo=False)
-else:
-    engine = create_async_engine(
-        _db_url,
-        echo=False,  # Disable SQL query logging (too verbose)
-        pool_size=20,
-        max_overflow=50,
-        pool_pre_ping=True,
-        # Disable prepared statement caching for pgbouncer compatibility
-        connect_args={
-            "server_settings": {
-                "jit": "off",  # Disable JIT compilation which can interfere
-            },
-            "prepared_statement_cache_size": 0,  # Disable prepared statement cache
+# Create async engine with pgbouncer-compatible settings
+engine = create_async_engine(
+    settings.async_database_url,
+    echo=False,  # Disable SQL query logging (too verbose)
+    pool_size=20,
+    max_overflow=50,
+    pool_pre_ping=True,
+    # Disable prepared statement caching for pgbouncer compatibility
+    connect_args={
+        "server_settings": {
+            "jit": "off",  # Disable JIT compilation which can interfere
         },
-    )
+        "prepared_statement_cache_size": 0,  # Disable prepared statement cache
+    },
+)
 
 # Create session factory
 AsyncSessionLocal = async_sessionmaker(

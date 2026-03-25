@@ -11,6 +11,7 @@ TLS: handled by nginx reverse proxy (see nginx/nginx.conf).
      For local dev without nginx, run with --ssl-keyfile/--ssl-certfile.
 
 Setup:
+    docker compose up -d postgres
     cp redirector_app/.env.example redirector_app/.env
     # Edit .env — fill in all required secrets (see .env.example for commands)
     pip install -r redirector_app/requirements.txt
@@ -24,9 +25,9 @@ Environment variables (see redirector_app/.env.example for full list):
     SECRET_KEY              JWT signing secret (REQUIRED)
     CSRF_SECRET_KEY         CSRF token signing secret (default: SECRET_KEY)
     SESSION_EXPIRY_MINUTES  JWT lifetime in minutes (default: 480)
-    DATABASE_URL            SQLAlchemy async URL (default: SQLite)
+    DATABASE_URL            PostgreSQL async URL (REQUIRED)
     APP_ENV                 "production" enables Secure cookie flag
-    CORS_ORIGINS            Comma-separated allowed origins (default: empty)
+    CORS_ORIGINS            JSON array of allowed origins (default: [])
 """
 import logging
 import os
