@@ -732,7 +732,8 @@ class SSHService:
         """
         safe_dir = shlex.quote(stream_dir)
         safe_user = shlex.quote(self.username)
-        script_path = f"/var/lib/cyberx/scripts/.cyberx_prereq_fix_{uuid.uuid4().hex[:8]}.sh"
+        # Bootstrap script uses /tmp because /var/lib/cyberx/scripts/ doesn't exist yet
+        script_path = f"/tmp/.cyberx_prereq_fix_{uuid.uuid4().hex[:8]}.sh"
         script = (
             "#!/bin/bash\n"
             "set -e\n"
@@ -750,7 +751,7 @@ class SSHService:
             "chmod 750 /var/lib/cyberx/scripts\n"
             "# Write sudoers file for CyberX\n"
             f"cat > /etc/sudoers.d/cyberx <<SUDOERS\n"
-            f"{safe_user} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh, /bin/bash /var/lib/cyberx/scripts/.cyberx_prereq_fix_*.sh\n"
+            f"{safe_user} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh\n"
             "SUDOERS\n"
             "chmod 440 /etc/sudoers.d/cyberx\n"
             "visudo -c -f /etc/sudoers.d/cyberx\n"
