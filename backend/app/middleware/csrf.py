@@ -108,11 +108,6 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         """Process request with CSRF protection."""
-        # Skip CSRF check if X-API-Key header is present (stateless API auth)
-        if request.headers.get("X-API-Key"):
-            response = await call_next(request)
-            return response
-
         # Get or create CSRF token, regenerating if expired
         csrf_token = request.cookies.get(self.cookie_name)
         new_token_needed = False

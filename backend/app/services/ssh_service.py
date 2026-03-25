@@ -584,10 +584,10 @@ class SSHService:
 
         Writes a temp script via SFTP and executes it with sudo.
         Requires sudoers entry:
-            <user> ALL=(ALL) NOPASSWD: /bin/bash /tmp/.cyberx_nginx_fix_*.sh
+            <user> ALL=(ALL) NOPASSWD: /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh
         """
         safe_dir = shlex.quote(stream_dir)
-        script_path = f"/tmp/.cyberx_nginx_fix_{uuid.uuid4().hex[:8]}.sh"
+        script_path = f"/var/lib/cyberx/scripts/.cyberx_nginx_fix_{uuid.uuid4().hex[:8]}.sh"
         script = (
             "#!/bin/bash\n"
             "set -e\n"
@@ -726,7 +726,7 @@ class SSHService:
         """
         safe_dir = shlex.quote(stream_dir)
         safe_user = shlex.quote(self.username)
-        script_path = f"/tmp/.cyberx_prereq_fix_{uuid.uuid4().hex[:8]}.sh"
+        script_path = f"/var/lib/cyberx/scripts/.cyberx_prereq_fix_{uuid.uuid4().hex[:8]}.sh"
         script = (
             "#!/bin/bash\n"
             "set -e\n"
@@ -738,9 +738,13 @@ class SSHService:
             "fi\n"
             f"# Create stream directory\n"
             f"mkdir -p {safe_dir}\n"
+            "# Create script staging directory (not world-writable, unlike /tmp)\n"
+            "mkdir -p /var/lib/cyberx/scripts\n"
+            f"chown {safe_user}:{safe_user} /var/lib/cyberx/scripts\n"
+            "chmod 750 /var/lib/cyberx/scripts\n"
             "# Write sudoers file for CyberX\n"
             f"cat > /etc/sudoers.d/cyberx <<SUDOERS\n"
-            f"{safe_user} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /tmp/.cyberx_nginx_fix_*.sh, /bin/bash /tmp/.cyberx_prereq_fix_*.sh\n"
+            f"{safe_user} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh, /bin/bash /var/lib/cyberx/scripts/.cyberx_prereq_fix_*.sh\n"
             "SUDOERS\n"
             "chmod 440 /etc/sudoers.d/cyberx\n"
             "visudo -c -f /etc/sudoers.d/cyberx\n"

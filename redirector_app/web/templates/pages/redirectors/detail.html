@@ -547,7 +547,7 @@ async function testConnection() {
         updateStatusBadge(data.status);
         const rtt = data.rtt_ms ? ` (${data.rtt_ms}ms)` : '';
         const streamWarn = data.stream_module_present ? '' : ' ⚠️ Stream module not found!';
-        showToast(`${data.message}${rtt}${streamWarn}`, data.success ? 'success' : 'warning');
+        showToast(`${escHtml(data.message || '')}${rtt}${streamWarn}`, data.success ? 'success' : 'warning');
     } catch (err) {
         showToast(`Request failed: ${err.message}`, 'danger');
     }
@@ -798,7 +798,7 @@ async function confirmDeleteStream() {
         );
         if (!resp.ok && resp.status !== 204) {
             const d = await resp.json().catch(() => ({}));
-            showToast(d.detail || 'Delete failed.', 'danger');
+            showToast(escHtml(d.detail || 'Delete failed.'), 'danger');
             return;
         }
         delStreamModal.hide();

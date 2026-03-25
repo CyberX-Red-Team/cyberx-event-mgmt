@@ -31,6 +31,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         cookie_httponly: bool = False,
         cookie_path: str = "/",
         token_max_age: int = 3600,  # 1 hour
+        api_key_validator=None,
     ):
         super().__init__(app)
         self.secret_key = secret_key
@@ -43,6 +44,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         self.cookie_path = cookie_path
         self.token_max_age = token_max_age
         self.serializer = URLSafeTimedSerializer(secret_key)
+        self.api_key_validator = api_key_validator
 
     def _generate_token(self) -> str:
         random_value = secrets.token_urlsafe(32)
@@ -81,10 +83,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         response.headers.append("Set-Cookie", cookie_value)
 
     async def dispatch(self, request: Request, call_next):
-        # Skip CSRF check if X-API-Key header is present (stateless API auth)
-        if request.headers.get("X-API-Key"):
-            response = await call_next(request)
-            return response
+        # Skip CSRF only if X-API-Key is present AND valid (prevents bypass with garbage key)
+        if self.api_key_validator:
+            api_key = request.headers.get("X-API-Key")
+            if api_key and self.api_key_validator(api_key):
+                response = await call_next(request)
+                return response
 
         csrf_token = request.cookies.get(self.cookie_name)
         new_token_needed = False

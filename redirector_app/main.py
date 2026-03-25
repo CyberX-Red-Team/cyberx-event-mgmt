@@ -61,6 +61,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_is_production = os.environ.get("APP_ENV", "").lower() == "production"
+
 
 # ---------------------------------------------------------------------------
 # Security headers middleware (defense-in-depth; nginx also sets these)
@@ -113,8 +115,8 @@ app = FastAPI(
         "via SSH. Authenticate via the web UI or X-API-Key header."
     ),
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
     lifespan=lifespan,
 )
 
@@ -123,7 +125,14 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 # CSRF protection — exempt API key endpoints and read-only paths
 _csrf_secret = os.environ.get("CSRF_SECRET_KEY", "").strip() or os.environ["SECRET_KEY"]
-_is_production = os.environ.get("APP_ENV", "").lower() == "production"
+
+
+def _validate_api_key(key: str) -> bool:
+    """Return True only if the key matches the configured API_KEY (timing-safe)."""
+    import hmac
+    configured_key = os.environ.get("API_KEY", "")
+    return bool(configured_key) and hmac.compare_digest(key, configured_key)
+
 
 from redirector_app.web.middleware import CSRFMiddleware
 app.add_middleware(
@@ -135,9 +144,9 @@ app.add_middleware(
         "/redoc",
         "/openapi.json",
         "/api/web/login",       # Login exempt — no CSRF cookie on first visit
-        # X-API-Key bypass handled in middleware dispatch, not via exemption
     ],
     cookie_secure=_is_production,
+    api_key_validator=_validate_api_key,
 )
 
 # CORS — restrict to explicitly configured origins
