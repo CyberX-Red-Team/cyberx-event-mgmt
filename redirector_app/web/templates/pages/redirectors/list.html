@@ -2,6 +2,15 @@
 
 {% block title %}Redirectors{% endblock %}
 
+{% block extra_css %}
+<style>
+[data-theme="dark"] .table-hover > tbody > tr:hover > td {
+    background-color: rgba(255,255,255,0.05) !important;
+    --bs-table-hover-bg: rgba(255,255,255,0.05);
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid px-4 py-4">
 
@@ -266,7 +275,7 @@ function renderTable(redirectors) {
                     ${escHtml(r.name)}
                 </a>
             </td>
-            <td><code>${escHtml(r.current_ip)}</code></td>
+            <td>${escHtml(r.current_ip)}</td>
             <td class="text-muted small">${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}</td>
             <td>${statusBadge(r.status)}</td>
             <td><span class="badge bg-secondary rounded-pill">${r.stream_count}</span></td>
