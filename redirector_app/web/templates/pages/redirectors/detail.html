@@ -403,12 +403,12 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header border-0">
-                <h5 class="modal-title text-danger"><i data-feather="trash-2" class="me-2"></i>Delete Stream</h5>
+                <h5 class="modal-title text-danger"><i data-feather="trash-2" class="me-2"></i>Remove Stream</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Delete stream <strong id="deleteStreamName"></strong>?</p>
-                <p class="text-muted small">This removes it from the database only. Use <em>Remove</em> first to clean up the remote file.</p>
+                <p>Remove stream <strong id="deleteStreamName"></strong>?</p>
+                <p class="text-muted small">This removes the stream config from the redirector and deletes it from the database.</p>
             </div>
             <div class="modal-footer border-0">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -534,7 +534,7 @@ function renderStreams(streams) {
                 }
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
                     onclick="openEditStreamModal('${s.id}')"><i data-feather="edit-2"></i></button>
-                <button class="btn btn-sm btn-outline-danger" title="Delete from DB"
+                <button class="btn btn-sm btn-outline-danger" title="Remove Stream"
                     onclick="openDeleteStreamModal('${s.id}', '${escHtml(s.name)}')"><i data-feather="trash-2"></i></button>
             </td>
         </tr>
@@ -820,7 +820,7 @@ async function confirmDeleteStream() {
             return;
         }
         delStreamModal.hide();
-        showToast(`Stream <strong>${escHtml(_deleteStreamName)}</strong> deleted.`, 'success');
+        showToast(`Stream <strong>${escHtml(_deleteStreamName)}</strong> removed.`, 'success');
         loadStreams();
     } catch (err) {
         showToast(`Delete failed: ${err.message}`, 'danger');
