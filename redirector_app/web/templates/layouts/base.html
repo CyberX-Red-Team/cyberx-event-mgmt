@@ -442,6 +442,12 @@
             div.className = `alert alert-${bsColor} alert-dismissible fade show`;
             div.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:9999;min-width:320px;max-width:600px;box-shadow:0 4px 12px rgba(0,0,0,0.15);';
             div.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+            div.style.pointerEvents = 'auto';
+            div.style.cursor = 'pointer';
+            div.addEventListener('click', function() {
+                div.classList.remove('show');
+                setTimeout(function() { div.remove(); }, 300);
+            });
             document.body.appendChild(div);
             setTimeout(function() {
                 div.classList.remove('show');
