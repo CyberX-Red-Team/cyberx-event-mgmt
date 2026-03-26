@@ -837,15 +837,20 @@ class SSHService:
                 client, "ss -tulnp 2>/dev/null | grep ':53 ' || true"
             )
             stub_listener = "systemd-resolve" in out53 or "resolved" in out53
+            # nginx on port 53 is expected — it means a DNS stream is deployed
+            nginx_on_53 = "nginx" in out53
             if stub_listener:
                 port53_ok = False
                 port53_detail = (
                     "Port 53 is bound by systemd-resolved stub listener. "
                     "Auto-fix will disable it and configure real DNS servers."
                 )
-            elif ":53 " in out53:
+            elif ":53 " in out53 and not nginx_on_53:
                 port53_ok = False
                 port53_detail = f"Port 53 in use by another process: {out53.strip()}"
+            elif nginx_on_53:
+                port53_ok = True
+                port53_detail = "Port 53 bound by nginx (DNS stream deployed)."
             else:
                 port53_ok = True
                 port53_detail = "Port 53 is free."

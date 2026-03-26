@@ -562,6 +562,8 @@ async function testConnection() {
         const rtt = data.rtt_ms ? ` (${data.rtt_ms}ms)` : '';
         const streamWarn = data.stream_module_present ? '' : ' ⚠️ Stream module not found!';
         showToast(`${escHtml(data.message || '')}${rtt}${streamWarn}`, data.success ? 'success' : 'warning');
+        // Reload page after short delay to refresh OS info and other server-rendered data
+        setTimeout(() => location.reload(), 1500);
     } catch (err) {
         showToast(`Request failed: ${err.message}`, 'danger');
     }
