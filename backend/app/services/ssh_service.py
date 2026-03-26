@@ -269,10 +269,28 @@ class SSHService:
             else:
                 stream_module_present = True
 
+            # Collect OS info in a single command for efficiency
+            os_raw, _, _ = self._exec(
+                client,
+                "echo \"OS=$(. /etc/os-release 2>/dev/null && echo $PRETTY_NAME || uname -s)\";"
+                "echo \"ARCH=$(uname -m)\";"
+                "echo \"KERNEL=$(uname -r)\";"
+                "echo \"HOSTNAME=$(hostname -f 2>/dev/null || hostname)\";"
+                "echo \"UPTIME=$(uptime -p 2>/dev/null || uptime | sed 's/.*up/up/')\";"
+                "echo \"CPU=$(nproc 2>/dev/null || echo unknown) cores\";"
+                "echo \"MEM=$(free -h 2>/dev/null | awk '/^Mem:/{print $2}' || echo unknown)\";"
+            )
+            os_info = {}
+            for line in os_raw.strip().splitlines():
+                if "=" in line:
+                    key, _, val = line.partition("=")
+                    os_info[key.strip().lower()] = val.strip()
+
             return {
                 "success": True,
                 "status": "online",
                 "stream_module_present": stream_module_present,
+                "os_info": os_info,
                 "rtt_ms": rtt_ms,
                 "message": "Connection successful."
                 + ("" if stream_module_present else " WARNING: nginx stream module not detected."),

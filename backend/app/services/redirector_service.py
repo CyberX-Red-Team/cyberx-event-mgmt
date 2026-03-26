@@ -124,10 +124,12 @@ class RedirectorService:
             return None
         return decrypt_field(redirector.ssh_key_passphrase)
 
-    async def update_status(self, redirector: Redirector, status: str) -> None:
-        """Update connectivity status and last_tested_at timestamp."""
+    async def update_status(self, redirector: Redirector, status: str, *, os_info: dict | None = None) -> None:
+        """Update connectivity status, last_tested_at, and optionally OS info."""
         redirector.status = status
         redirector.last_tested_at = datetime.now(timezone.utc)
+        if os_info is not None:
+            redirector.os_info = os_info
         await self.session.commit()
 
     async def update_deployed_at(self, redirector: Redirector) -> None:

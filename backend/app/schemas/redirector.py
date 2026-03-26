@@ -102,6 +102,7 @@ class RedirectorOut(BaseModel):
     nginx_stream_dir: str
     notes: Optional[str]
     status: str
+    os_info: Optional[dict] = None
     last_deployed_at: Optional[datetime]
     last_tested_at: Optional[datetime]
     stream_count: int = 0

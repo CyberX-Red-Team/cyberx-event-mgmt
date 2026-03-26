@@ -63,6 +63,7 @@ class Redirector(Base):
 
     # Updated by test-connection and deploy operations
     status = Column(String(20), nullable=False, default=RedirectorStatus.UNKNOWN.value)
+    os_info = Column(JSON, nullable=True)  # Populated by test-connection: {os, arch, kernel, uptime, ...}
     last_deployed_at = Column(TIMESTAMP(timezone=True), nullable=True)
     last_tested_at = Column(TIMESTAMP(timezone=True), nullable=True)
 

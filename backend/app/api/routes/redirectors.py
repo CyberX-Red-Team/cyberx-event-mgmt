@@ -186,7 +186,7 @@ async def create_redirector(
         ssh = _make_ssh_service(svc, redirector)
         result = await run_test_connection(ssh)
         new_status = "online" if result["success"] else "offline"
-        await svc.update_status(redirector, new_status)
+        await svc.update_status(redirector, new_status, os_info=result.get("os_info"))
     except Exception:
         try:
             await svc.update_status(redirector, "offline")
@@ -302,7 +302,7 @@ async def test_connection(
         raise _ssh_command_error(e)
 
     new_status = "online" if result["success"] else "offline"
-    await svc.update_status(redirector, new_status)
+    await svc.update_status(redirector, new_status, os_info=result.get("os_info"))
 
     audit = AuditService(db)
     await audit.log(

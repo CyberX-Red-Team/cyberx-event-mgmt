@@ -37,6 +37,16 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                             {{ redirector.status }}
                         </span>
                     </div>
+                    {% if redirector.os_info %}
+                    <div class="text-muted small mb-1">
+                        {% if redirector.os_info.os %}{{ redirector.os_info.os }}{% endif %}
+                        {% if redirector.os_info.arch %}&nbsp;·&nbsp;{{ redirector.os_info.arch }}{% endif %}
+                        {% if redirector.os_info.kernel %}&nbsp;·&nbsp;{{ redirector.os_info.kernel }}{% endif %}
+                        {% if redirector.os_info.cpu %}&nbsp;·&nbsp;{{ redirector.os_info.cpu }}{% endif %}
+                        {% if redirector.os_info.mem %}&nbsp;·&nbsp;{{ redirector.os_info.mem }} RAM{% endif %}
+                        {% if redirector.os_info.uptime %}&nbsp;·&nbsp;{{ redirector.os_info.uptime }}{% endif %}
+                    </div>
+                    {% endif %}
                     <div class="text-muted small">
                         <code>{{ redirector.ssh_username }}@{{ redirector.current_ip }}:{{ redirector.ssh_port }}</code>
                         &nbsp;·&nbsp;
