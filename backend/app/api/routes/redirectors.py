@@ -609,10 +609,19 @@ async def delete_stream(
     current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a stream config from the database (does not remove remote file)."""
+    """Delete a stream config from the database and remove the config file from the redirector."""
     svc = RedirectorService(db)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     name = stream.name
+
+    # Remove the config file from the redirector (best-effort — delete from DB even if SSH fails)
+    try:
+        ssh = _make_ssh_service(svc, redirector)
+        await run_remove_single(ssh, redirector.nginx_stream_dir, stream_id, name)
+    except Exception as e:
+        logger.warning("Failed to remove stream file from redirector during delete: %s", e)
+
     await svc.delete_stream(stream)
 
     audit = AuditService(db)
