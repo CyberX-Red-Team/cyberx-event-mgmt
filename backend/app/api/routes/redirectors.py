@@ -100,20 +100,23 @@ def _make_ssh_service(svc: RedirectorService, redirector: Redirector) -> SSHServ
 
 
 def _ssh_connection_error(exc: SSHConnectionError) -> HTTPException:
+    logger.error("SSH connection error: %s", exc)
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail=f"Could not connect to redirector: {exc}",
+        detail="Could not connect to redirector. Check the IP, port, and that the host is reachable.",
     )
 
 
 def _ssh_auth_error(exc: SSHAuthError) -> HTTPException:
+    logger.error("SSH auth error: %s", exc)
     return HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        detail=f"SSH authentication failed: {exc}",
+        detail="SSH authentication failed. Check the private key and passphrase.",
     )
 
 
 def _ssh_command_error(exc: Exception) -> HTTPException:
+    logger.error("SSH command error: %s", exc)
     return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail=f"SSH command error: {exc}",

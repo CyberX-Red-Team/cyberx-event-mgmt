@@ -9,6 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
 import secrets
+import hmac
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 
 
@@ -122,7 +123,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 self._set_csrf_cookie(resp, csrf_token, new_token_needed)
                 return resp
 
-            if token_from_header != csrf_token:
+            if not hmac.compare_digest(token_from_header, csrf_token):
                 resp = JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF token mismatch"},

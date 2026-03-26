@@ -35,7 +35,7 @@ class RedirectorCreate(BaseModel):
     ssh_private_key: str = Field(..., min_length=1)   # Full PEM content
     ssh_key_passphrase: Optional[str] = None
     nginx_stream_dir: str = Field(default="/etc/nginx/stream.d", max_length=500)
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=2000)
 
     @field_validator("current_ip")
     @classmethod
@@ -67,7 +67,7 @@ class RedirectorUpdate(BaseModel):
     ssh_private_key: Optional[str] = None
     ssh_key_passphrase: Optional[str] = None
     nginx_stream_dir: Optional[str] = Field(None, max_length=500)
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=2000)
 
     @field_validator("current_ip")
     @classmethod

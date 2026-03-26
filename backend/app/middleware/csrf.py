@@ -4,6 +4,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
 from starlette.datastructures import MutableHeaders
+import hmac
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 import secrets
 
@@ -146,7 +147,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 return resp
 
             # Verify token matches cookie
-            if token_from_header != csrf_token:
+            if not hmac.compare_digest(token_from_header, csrf_token):
                 resp = JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF token mismatch"}

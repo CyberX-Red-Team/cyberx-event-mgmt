@@ -30,9 +30,14 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Tuple
 
+import re
+
 import paramiko
 
 logger = logging.getLogger(__name__)
+
+# Validates that stream/redirector IDs are safe for use in filenames
+_SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # Bounded thread pool — all paramiko calls execute here
 _executor = ThreadPoolExecutor(max_workers=10)
@@ -210,7 +215,7 @@ class SSHService:
 
         # Try reload first; if nginx isn't running, start it instead
         _, reload_stderr, reload_code = self._exec(
-            client, f"{self._sudo_prefix}/bin/systemctl reload nginx, /bin/systemctl restart nginx"
+            client, f"{self._sudo_prefix}/bin/systemctl reload nginx"
         )
         reload_output = reload_stderr.strip()
 
@@ -361,6 +366,8 @@ class SSHService:
         """
         from app.services.nginx_config_service import generate_stream_config
 
+        if not _SAFE_ID_RE.match(stream.id):
+            raise SSHCommandError(f"Invalid stream ID format: {stream.id!r}")
         filename = f"cyberx_{stream.id}.conf"
         remote_path = f"{stream_dir}/{filename}"
         config_text = generate_stream_config(stream)
@@ -423,6 +430,8 @@ class SSHService:
         Missing file is not an error (idempotent).
         Returns a dict compatible with DeployResult schema.
         """
+        if not _SAFE_ID_RE.match(stream_id):
+            raise SSHCommandError(f"Invalid stream ID format: {stream_id!r}")
         filename = f"cyberx_{stream_id}.conf"
         remote_path = f"{stream_dir}/{filename}"
 
@@ -480,6 +489,11 @@ class SSHService:
         Returns a dict compatible with DeployResult schema.
         """
         from app.services.nginx_config_service import generate_stream_config
+
+        # Validate all stream IDs before any file operations
+        for s in streams:
+            if not _SAFE_ID_RE.match(s.id):
+                raise SSHCommandError(f"Invalid stream ID format: {s.id!r}")
 
         files_written: list[str] = []
         files_deleted: list[str] = []
