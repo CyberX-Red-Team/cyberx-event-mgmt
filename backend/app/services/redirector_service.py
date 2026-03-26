@@ -199,6 +199,8 @@ class RedirectorService:
             stream.allowed_cidrs = data["allowed_cidrs"]
         if "enabled" in data and data["enabled"] is not None:
             stream.enabled = data["enabled"]
+        if "deployed" in data and data["deployed"] is not None:
+            stream.deployed = data["deployed"]
 
         await self.session.commit()
         await self.session.refresh(stream)
