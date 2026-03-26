@@ -276,10 +276,10 @@ function renderTable(redirectors) {
                 </a>
             </td>
             <td>${escHtml(r.current_ip)}</td>
-            <td class="text-muted small">${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}</td>
+            <td class="text-muted">${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}</td>
             <td>${statusBadge(r.status)}</td>
             <td><span class="badge bg-secondary rounded-pill">${r.stream_count}</span></td>
-            <td class="text-muted small">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
+            <td class="text-muted">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
             <td class="text-end">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
                     onclick="openEditModal('${r.id}')">
