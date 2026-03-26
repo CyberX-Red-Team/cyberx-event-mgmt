@@ -367,6 +367,11 @@ async def fix_nginx_setup(
         raise _ssh_auth_error(e)
     except (SSHCommandError, NginxReloadError) as e:
         raise _ssh_command_error(e)
+    except (FileNotFoundError, OSError) as e:
+        return {
+            "success": False,
+            "message": f"Fix script failed: {e}. Ensure the SSH user has sudo permissions.",
+        }
 
 
 @router.post("/{redirector_id}/check-prereqs")

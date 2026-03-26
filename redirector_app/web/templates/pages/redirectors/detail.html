@@ -1166,8 +1166,13 @@ async function fixNginxSetup() {
         if (resp.ok && data.success) {
             showToast('nginx configuration fixed successfully.', 'success');
             await checkNginxSetup();
+            await checkPrereqs();
         } else {
-            status.textContent = data.message || 'Fix failed — check sudoers permissions.';
+            const msg = data.message || data.detail || 'Fix failed.';
+            const hint = msg.toLowerCase().includes('sudo') || msg.toLowerCase().includes('permission')
+                ? '\nEnsure the SSH user has passwordless sudo access. Run auto-fix in Prerequisites first to configure sudoers.'
+                : '';
+            status.textContent = msg + hint;
             status.className = 'small text-danger';
             status.classList.remove('d-none');
         }
