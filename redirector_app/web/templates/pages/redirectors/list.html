@@ -271,7 +271,7 @@ function renderTable(redirectors) {
     tbody.innerHTML = redirectors.map(r => `
         <tr>
             <td>
-                <a href="/redirectors/${r.id}" class="fw-semibold text-decoration-none">
+                <a href="/redirectors/${r.id}" class="fw-semibold text-decoration-none" style="color:#dc3545">
                     ${escHtml(r.name)}
                 </a>
             </td>
