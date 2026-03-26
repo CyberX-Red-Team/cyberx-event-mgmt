@@ -55,8 +55,18 @@ router = APIRouter(prefix="/api/redirectors", tags=["Redirectors"])
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_redirector_out(redirector: Redirector) -> RedirectorOut:
-    """Build RedirectorOut from ORM object, always redacting key fields."""
+def _build_redirector_out(redirector: Redirector, stream_count: int | None = None) -> RedirectorOut:
+    """Build RedirectorOut from ORM object, always redacting key fields.
+
+    stream_count can be passed explicitly to avoid lazy-loading the
+    stream_configs relationship (which fails outside a greenlet context
+    after session commits have expired the ORM object).
+    """
+    if stream_count is None:
+        try:
+            stream_count = redirector.stream_count
+        except Exception:
+            stream_count = 0
     return RedirectorOut(
         id=redirector.id,
         name=redirector.name,
@@ -68,9 +78,10 @@ def _build_redirector_out(redirector: Redirector) -> RedirectorOut:
         nginx_stream_dir=redirector.nginx_stream_dir,
         notes=redirector.notes,
         status=redirector.status,
+        os_info=redirector.os_info,
         last_deployed_at=redirector.last_deployed_at,
         last_tested_at=redirector.last_tested_at,
-        stream_count=redirector.stream_count,
+        stream_count=stream_count,
         created_at=redirector.created_at,
         updated_at=redirector.updated_at,
         owner_id=redirector.owner_id,
@@ -202,9 +213,10 @@ async def create_redirector(
         ip_address=request.client.host if request.client else None,
     )
 
-    # Refresh to reload attributes expired by prior commits (update_status, audit)
+    # Refresh scalar attributes expired by prior commits (update_status, audit).
+    # Pass stream_count=0 to avoid lazy-loading the relationship.
     await db.refresh(redirector)
-    return _build_redirector_out(redirector)
+    return _build_redirector_out(redirector, stream_count=0)
 
 
 @router.get("/{redirector_id}", response_model=RedirectorOut)
