@@ -513,8 +513,8 @@ function renderStreams(streams) {
                 <div class="d-flex align-items-center">${escHtml(s.name)}${conflictIcon}</div>
             </td>
             <td>${protoBadge(s.protocol)}</td>
-            <td><code>${s.listen_port}</code></td>
-            <td class="small text-muted"><code>${escHtml(s.cs_ip)}:${s.cs_port}</code></td>
+            <td>${s.listen_port}</td>
+            <td class="small text-muted">${escHtml(s.cs_ip)}:${s.cs_port}</td>
             <td class="text-center">${s.ssl_enabled ? '<i data-feather="lock" class="text-success" title="SSL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
             <td class="text-center">${s.access_control_enabled ? '<i data-feather="shield" class="text-warning" title="ACL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
             <td class="text-center">
