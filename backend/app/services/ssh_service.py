@@ -365,18 +365,29 @@ class SSHService:
         remote_path = f"{stream_dir}/{filename}"
         config_text = generate_stream_config(stream)
 
+        use_sudo = self.username != "root"
         client = self._connect()
         try:
             sftp = client.open_sftp()
-            self._ensure_remote_dir(sftp, stream_dir)
-            sftp.putfo(io.BytesIO(config_text.encode("utf-8")), remote_path)
+            if use_sudo:
+                self._exec(client, f"{self._sudo_prefix}mkdir -p {shlex.quote(stream_dir)}")
+                tmp_path = f"/tmp/.cyberx_single_{uuid.uuid4().hex[:8]}.conf"
+                sftp.putfo(io.BytesIO(config_text.encode("utf-8")), tmp_path)
+                self._exec(client, f"{self._sudo_prefix}cp {shlex.quote(tmp_path)} {shlex.quote(remote_path)}")
+                self._exec(client, f"rm -f {tmp_path}")
+            else:
+                self._ensure_remote_dir(sftp, stream_dir)
+                sftp.putfo(io.BytesIO(config_text.encode("utf-8")), remote_path)
 
             try:
                 test_out, reload_out = self._nginx_test_and_reload(client)
             except NginxTestError as e:
                 # Rollback: remove the file we just wrote
                 try:
-                    sftp.remove(remote_path)
+                    if use_sudo:
+                        self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(remote_path)}")
+                    else:
+                        sftp.remove(remote_path)
                     logger.info("Rolled back %s after nginx -t failure", remote_path)
                 except Exception as rm_err:
                     logger.warning("Rollback failed for %s: %s", remote_path, rm_err)
@@ -415,12 +426,17 @@ class SSHService:
         filename = f"cyberx_{stream_id}.conf"
         remote_path = f"{stream_dir}/{filename}"
 
+        use_sudo = self.username != "root"
         client = self._connect()
         try:
             sftp = client.open_sftp()
             try:
-                sftp.remove(remote_path)
-                files_deleted = [filename]
+                if use_sudo:
+                    _, _, code = self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(remote_path)}")
+                    files_deleted = [filename] if code == 0 else []
+                else:
+                    sftp.remove(remote_path)
+                    files_deleted = [filename]
                 logger.info("Removed %s from redirector", remote_path)
             except FileNotFoundError:
                 files_deleted = []
@@ -467,11 +483,22 @@ class SSHService:
 
         files_written: list[str] = []
         files_deleted: list[str] = []
+        use_sudo = self.username != "root"
 
         client = self._connect()
         try:
             sftp = client.open_sftp()
-            self._ensure_remote_dir(sftp, stream_dir)
+
+            # Ensure stream dir exists (use sudo for non-root)
+            if use_sudo:
+                self._exec(client, f"{self._sudo_prefix}mkdir -p {shlex.quote(stream_dir)}")
+            else:
+                self._ensure_remote_dir(sftp, stream_dir)
+
+            # For non-root users, stage files in a temp dir then sudo cp
+            staging_dir = f"/tmp/.cyberx_deploy_{uuid.uuid4().hex[:8]}"
+            if use_sudo:
+                self._exec(client, f"mkdir -p {staging_dir}")
 
             known_filenames = {f"cyberx_{s.id}.conf" for s in streams}
 
@@ -484,8 +511,14 @@ class SSHService:
                 remote_path = f"{stream_dir}/{filename}"
                 if stream.enabled:
                     try:
-                        with sftp.open(remote_path, "rb") as f:
-                            backup[remote_path] = f.read()
+                        if use_sudo:
+                            out, _, code = self._exec(
+                                client, f"{self._sudo_prefix}cat {shlex.quote(remote_path)} 2>/dev/null"
+                            )
+                            backup[remote_path] = out.encode() if code == 0 else None
+                        else:
+                            with sftp.open(remote_path, "rb") as f:
+                                backup[remote_path] = f.read()
                     except FileNotFoundError:
                         backup[remote_path] = None
 
@@ -496,18 +529,32 @@ class SSHService:
 
                 if stream.enabled:
                     config_text = generate_stream_config(stream)
-                    sftp.putfo(io.BytesIO(config_text.encode("utf-8")), remote_path)
+                    if use_sudo:
+                        # Write to staging dir, then sudo cp
+                        staged_path = f"{staging_dir}/{filename}"
+                        sftp.putfo(io.BytesIO(config_text.encode("utf-8")), staged_path)
+                        self._exec(client, f"{self._sudo_prefix}cp {shlex.quote(staged_path)} {shlex.quote(remote_path)}")
+                    else:
+                        sftp.putfo(io.BytesIO(config_text.encode("utf-8")), remote_path)
                     files_written.append(filename)
                     logger.debug("Wrote %s", remote_path)
                 else:
                     try:
                         # Snapshot before deleting for rollback
-                        try:
-                            with sftp.open(remote_path, "rb") as f:
-                                backup[remote_path] = f.read()
-                        except FileNotFoundError:
-                            pass
-                        sftp.remove(remote_path)
+                        if use_sudo:
+                            out, _, code = self._exec(
+                                client, f"{self._sudo_prefix}cat {shlex.quote(remote_path)} 2>/dev/null"
+                            )
+                            if code == 0:
+                                backup[remote_path] = out.encode()
+                            self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(remote_path)}")
+                        else:
+                            try:
+                                with sftp.open(remote_path, "rb") as f:
+                                    backup[remote_path] = f.read()
+                            except FileNotFoundError:
+                                pass
+                            sftp.remove(remote_path)
                         files_deleted.append(filename)
                         logger.debug("Removed disabled stream file %s", remote_path)
                     except FileNotFoundError:
@@ -515,7 +562,11 @@ class SSHService:
 
             # Orphan cleanup: remove cyberx_*.conf files that are no longer in the DB
             try:
-                remote_listing = sftp.listdir(stream_dir)
+                if use_sudo:
+                    ls_out, _, _ = self._exec(client, f"{self._sudo_prefix}ls {shlex.quote(stream_dir)} 2>/dev/null")
+                    remote_listing = ls_out.strip().split() if ls_out.strip() else []
+                else:
+                    remote_listing = sftp.listdir(stream_dir)
                 for remote_file in remote_listing:
                     if (
                         remote_file.startswith("cyberx_")
@@ -523,16 +574,28 @@ class SSHService:
                         and remote_file not in known_filenames
                     ):
                         orphan_path = f"{stream_dir}/{remote_file}"
-                        try:
-                            with sftp.open(orphan_path, "rb") as f:
-                                backup[orphan_path] = f.read()
-                        except FileNotFoundError:
-                            pass
-                        sftp.remove(orphan_path)
+                        if use_sudo:
+                            out, _, code = self._exec(
+                                client, f"{self._sudo_prefix}cat {shlex.quote(orphan_path)} 2>/dev/null"
+                            )
+                            if code == 0:
+                                backup[orphan_path] = out.encode()
+                            self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(orphan_path)}")
+                        else:
+                            try:
+                                with sftp.open(orphan_path, "rb") as f:
+                                    backup[orphan_path] = f.read()
+                            except FileNotFoundError:
+                                pass
+                            sftp.remove(orphan_path)
                         files_deleted.append(remote_file)
                         logger.info("Removed orphan file %s", remote_file)
             except Exception as list_err:
                 logger.warning("Orphan cleanup failed: %s", list_err)
+
+            # Clean up staging dir
+            if use_sudo:
+                self._exec(client, f"rm -rf {staging_dir}")
 
             try:
                 test_out, reload_out = self._nginx_test_and_reload(client)
@@ -542,9 +605,18 @@ class SSHService:
                 for path, content in backup.items():
                     try:
                         if content is None:
-                            sftp.remove(path)
+                            if use_sudo:
+                                self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(path)}")
+                            else:
+                                sftp.remove(path)
                         else:
-                            sftp.putfo(io.BytesIO(content), path)
+                            if use_sudo:
+                                rb_tmp = f"/tmp/.cyberx_rb_{uuid.uuid4().hex[:8]}"
+                                sftp.putfo(io.BytesIO(content), rb_tmp)
+                                self._exec(client, f"{self._sudo_prefix}cp {shlex.quote(rb_tmp)} {shlex.quote(path)}")
+                                self._exec(client, f"rm -f {rb_tmp}")
+                            else:
+                                sftp.putfo(io.BytesIO(content), path)
                     except Exception as rb_err:
                         rollback_ok = False
                         logger.warning("Rollback failed for %s: %s", path, rb_err)
