@@ -800,8 +800,8 @@ class SSHService:
                 nginx_t_detail = f"nginx -t failed — config error: {out4.strip()}"
             else:
                 nginx_t_detail = (
-                    f"nginx -t failed — to fix, add this to the bottom of /etc/sudoers: "
-                    f"{self.username}    ALL=(ALL:ALL) NOPASSWD: ALL"
+                    f"nginx -t failed — to fix, run this on the redirector: "
+                    f'echo "{self.username}    ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee -a /etc/sudoers'
                 )
             checks.append({
                 "id": "sudo_nginx",
@@ -822,8 +822,8 @@ class SSHService:
                 systemctl_detail = "systemctl failed — nginx may not be running."
             else:
                 systemctl_detail = (
-                    f"systemctl failed — to fix, add this to the bottom of /etc/sudoers: "
-                    f"{self.username}    ALL=(ALL:ALL) NOPASSWD: ALL"
+                    f"systemctl failed — to fix, run this on the redirector: "
+                    f'echo "{self.username}    ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee -a /etc/sudoers'
                 )
             checks.append({
                 "id": "sudo_systemctl",

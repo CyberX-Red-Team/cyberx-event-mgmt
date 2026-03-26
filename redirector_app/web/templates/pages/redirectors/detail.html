@@ -1115,6 +1115,7 @@ async function fixPrereqs() {
 
         // 3. Update the UI with the fresh check results
         await checkPrereqs();
+        await checkNginxSetup();
     } catch (err) {
         showToast(`Fix failed: ${escHtml(err.message)}`, 'danger');
         statusEl.textContent = `Failed: ${err.message}`;
