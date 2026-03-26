@@ -202,6 +202,8 @@ async def create_redirector(
         ip_address=request.client.host if request.client else None,
     )
 
+    # Refresh to reload attributes expired by prior commits (update_status, audit)
+    await db.refresh(redirector)
     return _build_redirector_out(redirector)
 
 
