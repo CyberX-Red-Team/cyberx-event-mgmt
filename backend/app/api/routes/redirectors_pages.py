@@ -97,4 +97,4 @@ async def internal_logs(
     n: int = Query(default=200, ge=1, le=500),
 ):
     """Return recent application log entries as JSON."""
-    return JSONResponse(content=get_recent_logs(n))
+    return JSONResponse(content={"logs": get_recent_logs(n)})

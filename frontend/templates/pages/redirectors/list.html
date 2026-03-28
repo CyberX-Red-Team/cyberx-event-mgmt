@@ -284,11 +284,11 @@ function renderTable(redirectors) {
             <td class="text-muted">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
             <td class="text-end">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
-                    onclick="openEditModal('${r.id}')">
+                    onclick="openEditModal('${escHtml(r.id)}')">
                     <i data-feather="edit-2"></i>
                 </button>
                 <button class="btn btn-sm btn-outline-danger" title="Delete"
-                    onclick="openDeleteModal('${r.id}', '${escHtml(r.name)}')">
+                    onclick="openDeleteModal('${escHtml(r.id)}', '${escHtml(r.name)}')">
                     <i data-feather="trash-2"></i>
                 </button>
             </td>
@@ -437,7 +437,7 @@ async function confirmDeleteRedirector() {
         const resp = await csrfFetch(`/api/redirectors/${_deleteTargetId}`, { method: 'DELETE' });
         if (!resp.ok && resp.status !== 204) {
             const data = await resp.json().catch(() => ({}));
-            showToast(data.detail || 'Delete failed.', 'danger');
+            showToast(escHtml(data.detail || 'Delete failed.'), 'danger');
             return;
         }
         delModal.hide();
