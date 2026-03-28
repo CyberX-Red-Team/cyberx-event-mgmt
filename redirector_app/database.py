@@ -1,26 +1,21 @@
 """Async SQLAlchemy engine and session factory for the standalone app.
 
-Defaults to SQLite via aiosqlite. Override with DATABASE_URL env var for PostgreSQL.
+Requires PostgreSQL via asyncpg. Set DATABASE_URL in redirector_app/.env.
 
 Usage:
-    DATABASE_URL=sqlite+aiosqlite:///./redirectors.db     (default)
-    DATABASE_URL=postgresql+asyncpg://user:pass@host/db   (production)
+    DATABASE_URL=postgresql+asyncpg://cyberx:changeme@localhost:5432/cyberx_events
 """
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
 DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "sqlite+aiosqlite:///./redirectors.db"
+    "DATABASE_URL", "postgresql+asyncpg://cyberx:changeme@localhost:5432/cyberx_events"
 )
-
-# SQLite needs check_same_thread=False; asyncpg needs no special args
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    connect_args=connect_args,
 )
 
 AsyncSessionLocal = async_sessionmaker(

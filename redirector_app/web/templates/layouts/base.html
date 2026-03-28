@@ -240,11 +240,12 @@
         [data-theme="dark"] .card { background-color: var(--bg-card) !important; border-color: var(--border-color) !important; color: var(--text-primary) !important; }
         [data-theme="dark"] .card-header, [data-theme="dark"] .card-footer { background-color: var(--bg-secondary) !important; border-color: var(--border-color) !important; color: var(--text-primary) !important; }
         [data-theme="dark"] .card-body { background-color: var(--bg-card) !important; color: var(--text-primary) !important; }
-        [data-theme="dark"] .table { color: var(--text-primary) !important; background-color: transparent !important; }
+        [data-theme="dark"] .table { --bs-table-bg: transparent; --bs-table-color: var(--text-primary); --bs-table-border-color: var(--border-color); --bs-table-hover-bg: var(--hover-bg); --bs-table-hover-color: var(--text-primary); --bs-table-striped-bg: rgba(255,255,255,0.03); color: var(--text-primary) !important; background-color: transparent !important; }
+        [data-theme="dark"] .table thead, [data-theme="dark"] .table-light, [data-theme="dark"] thead.table-light { --bs-table-bg: var(--bg-secondary) !important; }
         [data-theme="dark"] .table thead th { background-color: var(--bg-secondary) !important; color: var(--text-primary) !important; border-color: var(--border-color) !important; }
         [data-theme="dark"] .table tbody tr { background-color: var(--bg-card) !important; border-color: var(--border-color) !important; }
         [data-theme="dark"] .table tbody tr:hover { background-color: var(--hover-bg) !important; }
-        [data-theme="dark"] .table td, [data-theme="dark"] .table th { border-color: var(--border-color) !important; color: var(--text-primary) !important; }
+        [data-theme="dark"] .table td, [data-theme="dark"] .table th { background-color: inherit !important; border-color: var(--border-color) !important; color: var(--text-primary) !important; }
         [data-theme="dark"] .form-control, [data-theme="dark"] .form-select { background-color: var(--input-bg) !important; border-color: var(--input-border) !important; color: var(--text-primary) !important; }
         [data-theme="dark"] .form-control:focus, [data-theme="dark"] .form-select:focus { background-color: var(--input-bg) !important; border-color: var(--primary-color) !important; color: var(--text-primary) !important; box-shadow: 0 0 0 0.25rem rgba(0,207,213,0.25) !important; }
         [data-theme="dark"] .form-label { color: var(--text-primary) !important; }
@@ -254,6 +255,11 @@
         [data-theme="dark"] .dropdown-item { color: var(--text-primary); }
         [data-theme="dark"] .dropdown-item:hover, [data-theme="dark"] .dropdown-item:focus { background-color: var(--hover-bg); color: var(--text-primary); }
         [data-theme="dark"] .dropdown-divider { border-color: var(--border-color); }
+        [data-theme="dark"] .accordion-item { background-color: var(--bg-card) !important; border-color: var(--border-color) !important; color: var(--text-primary) !important; }
+        [data-theme="dark"] .accordion-button { background-color: var(--bg-secondary) !important; color: var(--text-primary) !important; border-color: var(--border-color) !important; }
+        [data-theme="dark"] .accordion-button:not(.collapsed) { background-color: var(--bg-secondary) !important; color: var(--primary-color) !important; }
+        [data-theme="dark"] .accordion-button::after { filter: invert(1); }
+        [data-theme="dark"] .accordion-body { background-color: var(--bg-card) !important; color: var(--text-primary) !important; }
         [data-theme="dark"] .navbar.navbar-light { background-color: var(--navbar-bg) !important; }
         [data-theme="dark"] .navbar.navbar-light .nav-link, [data-theme="dark"] .navbar.navbar-light .navbar-text { color: var(--text-primary) !important; }
         [data-theme="dark"] .sidenav, [data-theme="dark"] .sidenav-light { background-color: var(--sidebar-bg) !important; }
@@ -436,6 +442,12 @@
             div.className = `alert alert-${bsColor} alert-dismissible fade show`;
             div.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:9999;min-width:320px;max-width:600px;box-shadow:0 4px 12px rgba(0,0,0,0.15);';
             div.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+            div.style.pointerEvents = 'auto';
+            div.style.cursor = 'pointer';
+            div.addEventListener('click', function() {
+                div.classList.remove('show');
+                setTimeout(function() { div.remove(); }, 300);
+            });
             document.body.appendChild(div);
             setTimeout(function() {
                 div.classList.remove('show');

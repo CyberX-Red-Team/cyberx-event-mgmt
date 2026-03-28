@@ -27,13 +27,19 @@ class RedirectorService:
     # Redirectors
     # -------------------------------------------------------------------------
 
-    async def list_redirectors(self) -> List[Redirector]:
-        """Return all redirectors ordered by name, with stream_configs eager-loaded."""
-        result = await self.session.execute(
+    async def list_redirectors(self, owner_id: int = None) -> List[Redirector]:
+        """Return redirectors ordered by name, with stream_configs eager-loaded.
+
+        If owner_id is provided, only return redirectors owned by that user.
+        """
+        query = (
             select(Redirector)
             .options(selectinload(Redirector.stream_configs))
             .order_by(Redirector.name)
         )
+        if owner_id is not None:
+            query = query.where(Redirector.owner_id == owner_id)
+        result = await self.session.execute(query)
         return list(result.scalars().all())
 
     async def get_redirector(self, redirector_id: str) -> Optional[Redirector]:
@@ -62,6 +68,7 @@ class RedirectorService:
             ssh_key_passphrase=encrypt_field(data.get("ssh_key_passphrase")) if data.get("ssh_key_passphrase") else None,
             nginx_stream_dir=data.get("nginx_stream_dir", "/etc/nginx/stream.d"),
             notes=data.get("notes"),
+            owner_id=data.get("owner_id"),
         )
         self.session.add(redirector)
         await self.session.commit()
@@ -117,10 +124,12 @@ class RedirectorService:
             return None
         return decrypt_field(redirector.ssh_key_passphrase)
 
-    async def update_status(self, redirector: Redirector, status: str) -> None:
-        """Update connectivity status and last_tested_at timestamp."""
+    async def update_status(self, redirector: Redirector, status: str, *, os_info: dict | None = None) -> None:
+        """Update connectivity status, last_tested_at, and optionally OS info."""
         redirector.status = status
         redirector.last_tested_at = datetime.now(timezone.utc)
+        if os_info is not None:
+            redirector.os_info = os_info
         await self.session.commit()
 
     async def update_deployed_at(self, redirector: Redirector) -> None:
@@ -190,6 +199,8 @@ class RedirectorService:
             stream.allowed_cidrs = data["allowed_cidrs"]
         if "enabled" in data and data["enabled"] is not None:
             stream.enabled = data["enabled"]
+        if "deployed" in data and data["deployed"] is not None:
+            stream.deployed = data["deployed"]
 
         await self.session.commit()
         await self.session.refresh(stream)

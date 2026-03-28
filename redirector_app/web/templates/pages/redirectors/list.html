@@ -2,6 +2,17 @@
 
 {% block title %}Redirectors{% endblock %}
 
+{% block extra_css %}
+<style>
+[data-theme="dark"] .table-hover > tbody > tr:hover > td {
+    background-color: rgba(255,255,255,0.05) !important;
+    --bs-table-hover-bg: rgba(255,255,255,0.05);
+}
+.redir-name-link { color: var(--bs-danger, #dc3545); }
+.redir-name-link:hover { color: var(--bs-danger, #dc3545); opacity: 0.8; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid px-4 py-4">
 
@@ -25,7 +36,7 @@
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0" id="redirectorsTable">
-                    <thead class="table-light">
+                    <thead>
                         <tr>
                             <th>Name</th>
                             <th>IP Address</th>
@@ -262,15 +273,15 @@ function renderTable(redirectors) {
     tbody.innerHTML = redirectors.map(r => `
         <tr>
             <td>
-                <a href="/redirectors/${r.id}" class="fw-semibold text-decoration-none">
+                <a href="/redirectors/${r.id}" class="fw-semibold text-decoration-none redir-name-link">
                     ${escHtml(r.name)}
                 </a>
             </td>
-            <td><code>${escHtml(r.current_ip)}</code></td>
-            <td class="text-muted small">${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}</td>
+            <td>${escHtml(r.current_ip)}</td>
+            <td class="text-muted">${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}</td>
             <td>${statusBadge(r.status)}</td>
             <td><span class="badge bg-secondary rounded-pill">${r.stream_count}</span></td>
-            <td class="text-muted small">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
+            <td class="text-muted">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
             <td class="text-end">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
                     onclick="openEditModal('${r.id}')">

@@ -57,8 +57,13 @@ class Redirector(Base):
 
     notes = Column(Text, nullable=True)
 
+    # Owner — participants own the redirectors they create; admins see all
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    owner = relationship("User", foreign_keys=[owner_id])
+
     # Updated by test-connection and deploy operations
     status = Column(String(20), nullable=False, default=RedirectorStatus.UNKNOWN.value)
+    os_info = Column(JSON, nullable=True)  # Populated by test-connection: {os, arch, kernel, uptime, ...}
     last_deployed_at = Column(TIMESTAMP(timezone=True), nullable=True)
     last_tested_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
@@ -124,6 +129,8 @@ class StreamConfig(Base):
 
     # If False, the .conf file is removed from the remote redirector
     enabled = Column(Boolean, nullable=False, default=True)
+    # True when the config file has been deployed to the remote redirector
+    deployed = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(

@@ -6,6 +6,8 @@
 <style>
 tr.stream-conflict > td { background-color: rgba(220,53,69,0.15) !important; }
 tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !important; }
+[data-theme="dark"] tr.stream-conflict > td { background-color: rgba(220,53,69,0.25) !important; }
+[data-theme="dark"] tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.35) !important; }
 </style>
 {% endblock %}
 
@@ -37,6 +39,16 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                             {{ redirector.status }}
                         </span>
                     </div>
+                    {% if redirector.os_info %}
+                    <div class="text-muted small mb-1">
+                        {% if redirector.os_info.os %}{{ redirector.os_info.os }}{% endif %}
+                        {% if redirector.os_info.arch %}&nbsp;·&nbsp;{{ redirector.os_info.arch }}{% endif %}
+                        {% if redirector.os_info.kernel %}&nbsp;·&nbsp;{{ redirector.os_info.kernel }}{% endif %}
+                        {% if redirector.os_info.cpu %}&nbsp;·&nbsp;{{ redirector.os_info.cpu }}{% endif %}
+                        {% if redirector.os_info.mem %}&nbsp;·&nbsp;{{ redirector.os_info.mem }} RAM{% endif %}
+                        {% if redirector.os_info.uptime %}&nbsp;·&nbsp;{{ redirector.os_info.uptime }}{% endif %}
+                    </div>
+                    {% endif %}
                     <div class="text-muted small">
                         <code>{{ redirector.ssh_username }}@{{ redirector.current_ip }}:{{ redirector.ssh_port }}</code>
                         &nbsp;·&nbsp;
@@ -96,7 +108,7 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     <hr class="my-3">
                     <p class="small mb-2 fw-semibold">Manual setup reference:</p>
                     <div class="small text-muted mb-1">sudoers (<code>/etc/sudoers.d/cyberx</code>):</div>
-                    <pre class="bg-dark text-light rounded p-2 mb-2 small">{{ redirector.ssh_username }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/bash /tmp/.cyberx_nginx_fix.sh, /bin/bash /tmp/.cyberx_prereq_fix.sh</pre>
+                    <pre class="bg-dark text-light rounded p-2 mb-2 small">{{ redirector.ssh_username }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh</pre>
                     <div class="small text-muted mb-1">nginx.conf stream block:</div>
                     <pre class="bg-dark text-light rounded p-2 mb-0 small">stream {
     include {{ redirector.nginx_stream_dir }}/*.conf;
@@ -120,9 +132,9 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     <span id="fixNginxStatus" class="small d-none"></span>
                 </div>
                 <p class="mb-0 mt-2 small text-muted">
-                    The fix will: remove <code>sites-enabled/default</code>, add a stream block to
-                    <code>nginx.conf</code>, and reload nginx. Requires this sudoers entry:
-                    <code>{{ redirector.ssh_username }} ALL=(ALL) NOPASSWD: /bin/bash /tmp/.cyberx_nginx_fix.sh</code>
+                    The fix will: remove <code>sites-enabled/default</code>, load the stream module,
+                    add a stream block to <code>nginx.conf</code>, and reload nginx.
+                    {% if redirector.ssh_username != 'root' %}Requires sudoers access for the SSH user.{% endif %}
                 </p>
             </div>
         </div>
@@ -139,7 +151,7 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0" id="streamsTable">
-                    <thead class="table-light">
+                    <thead>
                         <tr>
                             <th>Name</th>
                             <th>Protocol</th>
@@ -148,12 +160,13 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                             <th class="text-center">SSL</th>
                             <th class="text-center">ACL</th>
                             <th class="text-center">Enabled</th>
+                            <th class="text-center">Deployed</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="streamsBody">
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-4">
+                            <td colspan="9" class="text-center text-muted py-4">
                                 <div class="spinner-border spinner-border-sm me-2" role="status"></div>
                                 Loading streams...
                             </td>
@@ -179,11 +192,11 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">Name</label>
-                        <input type="text" class="form-control" id="er_name" value="{{ redirector.name }}">
+                        <input type="text" class="form-control" id="er_name" value="{{ redirector.name | e }}">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">IP Address</label>
-                        <input type="text" class="form-control" id="er_ip" value="{{ redirector.current_ip }}">
+                        <input type="text" class="form-control" id="er_ip" value="{{ redirector.current_ip | e }}">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-semibold">SSH Port</label>
@@ -191,7 +204,7 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     </div>
                     <div class="col-md-8">
                         <label class="form-label fw-semibold">SSH Username</label>
-                        <input type="text" class="form-control" id="er_user" value="{{ redirector.ssh_username }}">
+                        <input type="text" class="form-control" id="er_user" value="{{ redirector.ssh_username | e }}">
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">SSH Private Key (PEM)</label>
@@ -205,11 +218,11 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">nginx Stream Directory</label>
-                        <input type="text" class="form-control" id="er_dir" value="{{ redirector.nginx_stream_dir }}">
+                        <input type="text" class="form-control" id="er_dir" value="{{ redirector.nginx_stream_dir | e }}">
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">Notes</label>
-                        <textarea class="form-control" id="er_notes" rows="2">{{ redirector.notes or '' }}</textarea>
+                        <textarea class="form-control" id="er_notes" rows="2">{{ (redirector.notes or '') | e }}</textarea>
                     </div>
                 </div>
                 <div id="editRedirectorError" class="alert alert-danger mt-3 d-none"></div>
@@ -390,12 +403,12 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header border-0">
-                <h5 class="modal-title text-danger"><i data-feather="trash-2" class="me-2"></i>Delete Stream</h5>
+                <h5 class="modal-title text-danger"><i data-feather="trash-2" class="me-2"></i>Remove Stream</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Delete stream <strong id="deleteStreamName"></strong>?</p>
-                <p class="text-muted small">This removes it from the database only. Use <em>Remove</em> first to clean up the remote file.</p>
+                <p>Remove stream <strong id="deleteStreamName"></strong>?</p>
+                <p class="text-muted small">This removes the stream config from the redirector and deletes it from the database.</p>
             </div>
             <div class="modal-footer border-0">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -479,7 +492,7 @@ function renderStreams(streams) {
     _streams = streams;
     const tbody = document.getElementById('streamsBody');
     if (!streams.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-5">
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-5">
             No stream configs yet. Click <strong>Add Stream</strong> to create one.
         </td></tr>`;
         refreshUI();
@@ -496,18 +509,21 @@ function renderStreams(streams) {
             : '';
         return `
         <tr${rowClass}>
-            <td class="fw-semibold">
+            <td class="fw-semibold align-middle">
                 <div class="d-flex align-items-center">${escHtml(s.name)}${conflictIcon}</div>
             </td>
-            <td>${protoBadge(s.protocol)}</td>
-            <td><code>${s.listen_port}</code></td>
-            <td class="small text-muted"><code>${escHtml(s.cs_ip)}:${s.cs_port}</code></td>
-            <td class="text-center">${s.ssl_enabled ? '<i data-feather="lock" class="text-success" title="SSL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
-            <td class="text-center">${s.access_control_enabled ? '<i data-feather="shield" class="text-warning" title="ACL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
-            <td class="text-center">
+            <td class="align-middle">${protoBadge(s.protocol)}</td>
+            <td class="align-middle">${s.listen_port}</td>
+            <td class="align-middle">${escHtml(s.cs_ip)}:${s.cs_port}</td>
+            <td class="text-center align-middle">${s.ssl_enabled ? '<i data-feather="lock" class="text-success" title="SSL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
+            <td class="text-center align-middle">${s.access_control_enabled ? '<i data-feather="shield" class="text-warning" title="ACL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
+            <td class="text-center align-middle">
                 <span class="badge ${s.enabled ? 'bg-success' : 'bg-danger'}">${s.enabled ? 'Yes' : 'No'}</span>
             </td>
-            <td class="text-end">
+            <td class="text-center align-middle">
+                <span class="badge ${s.deployed ? 'bg-success' : 'bg-danger'}">${s.deployed ? 'Yes' : 'No'}</span>
+            </td>
+            <td class="text-end align-middle">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Preview config"
                     onclick="previewStream('${s.id}')"><i data-feather="eye"></i></button>
                 <button class="btn btn-sm btn-outline-primary me-1" title="Deploy this stream"
@@ -518,7 +534,7 @@ function renderStreams(streams) {
                 }
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
                     onclick="openEditStreamModal('${s.id}')"><i data-feather="edit-2"></i></button>
-                <button class="btn btn-sm btn-outline-danger" title="Delete from DB"
+                <button class="btn btn-sm btn-outline-danger" title="Remove Stream"
                     onclick="openDeleteStreamModal('${s.id}', '${escHtml(s.name)}')"><i data-feather="trash-2"></i></button>
             </td>
         </tr>
@@ -548,6 +564,8 @@ async function testConnection() {
         const rtt = data.rtt_ms ? ` (${data.rtt_ms}ms)` : '';
         const streamWarn = data.stream_module_present ? '' : ' ⚠️ Stream module not found!';
         showToast(`${escHtml(data.message || '')}${rtt}${streamWarn}`, data.success ? 'success' : 'warning');
+        // Reload page after short delay to refresh OS info and other server-rendered data
+        setTimeout(() => location.reload(), 1500);
     } catch (err) {
         showToast(`Request failed: ${err.message}`, 'danger');
     }
@@ -802,7 +820,7 @@ async function confirmDeleteStream() {
             return;
         }
         delStreamModal.hide();
-        showToast(`Stream <strong>${escHtml(_deleteStreamName)}</strong> deleted.`, 'success');
+        showToast(`Stream <strong>${escHtml(_deleteStreamName)}</strong> removed.`, 'success');
         loadStreams();
     } catch (err) {
         showToast(`Delete failed: ${err.message}`, 'danger');
@@ -1067,17 +1085,41 @@ async function fixPrereqs() {
     statusEl.classList.add('d-none');
 
     try {
-        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/fix-prereqs`, { method: 'POST' });
-        const data = await resp.json();
-        if (resp.ok && data.success) {
-            showToast('Prerequisites installed successfully.', 'success');
-            await checkPrereqs();
-        } else {
-            statusEl.textContent = data.message || 'Fix failed — ensure the SSH user has sudo access.';
+        // 1. Run the fix script
+        const fixResp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/fix-prereqs`, { method: 'POST' });
+        const fixData = await fixResp.json();
+        if (!fixResp.ok || !fixData.success) {
+            const msg = fixData.message || 'Fix script failed — ensure the SSH user has sudo access.';
+            showToast(escHtml(msg), 'danger');
+            statusEl.textContent = msg;
             statusEl.className = 'mt-2 small text-danger';
             statusEl.classList.remove('d-none');
+            await checkPrereqs();
+            return;
         }
+
+        // 2. Re-check to verify which fixes actually took effect
+        const checkResp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/check-prereqs`, { method: 'POST' });
+        if (!checkResp.ok) {
+            showToast('Fixes applied but re-check failed.', 'warning');
+            await checkPrereqs();
+            return;
+        }
+        const checkData = await checkResp.json();
+        const failCount = checkData.checks.filter(c => !c.ok).length;
+
+        if (checkData.all_ok) {
+            showToast('All prerequisites fixed successfully.', 'success');
+        } else {
+            const failLabels = checkData.checks.filter(c => !c.ok).map(c => c.label).join(', ');
+            showToast(`${failCount} prerequisite${failCount > 1 ? 's' : ''} still failing: ${escHtml(failLabels)}`, 'warning');
+        }
+
+        // 3. Update the UI with the fresh check results
+        await checkPrereqs();
+        await checkNginxSetup();
     } catch (err) {
+        showToast(`Fix failed: ${escHtml(err.message)}`, 'danger');
         statusEl.textContent = `Failed: ${err.message}`;
         statusEl.className = 'mt-2 small text-danger';
         statusEl.classList.remove('d-none');
@@ -1127,8 +1169,13 @@ async function fixNginxSetup() {
         if (resp.ok && data.success) {
             showToast('nginx configuration fixed successfully.', 'success');
             await checkNginxSetup();
+            await checkPrereqs();
         } else {
-            status.textContent = data.message || 'Fix failed — check sudoers permissions.';
+            const msg = data.message || data.detail || 'Fix failed.';
+            const hint = msg.toLowerCase().includes('sudo') || msg.toLowerCase().includes('permission')
+                ? '\nEnsure the SSH user has passwordless sudo access. Run auto-fix in Prerequisites first to configure sudoers.'
+                : '';
+            status.textContent = msg + hint;
             status.className = 'small text-danger';
             status.classList.remove('d-none');
         }

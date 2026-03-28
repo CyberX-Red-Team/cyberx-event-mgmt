@@ -11,6 +11,7 @@ TLS: handled by nginx reverse proxy (see nginx/nginx.conf).
      For local dev without nginx, run with --ssl-keyfile/--ssl-certfile.
 
 Setup:
+    docker compose up -d postgres
     cp redirector_app/.env.example redirector_app/.env
     # Edit .env — fill in all required secrets (see .env.example for commands)
     pip install -r redirector_app/requirements.txt
@@ -24,9 +25,9 @@ Environment variables (see redirector_app/.env.example for full list):
     SECRET_KEY              JWT signing secret (REQUIRED)
     CSRF_SECRET_KEY         CSRF token signing secret (default: SECRET_KEY)
     SESSION_EXPIRY_MINUTES  JWT lifetime in minutes (default: 480)
-    DATABASE_URL            SQLAlchemy async URL (default: SQLite)
+    DATABASE_URL            PostgreSQL async URL (REQUIRED)
     APP_ENV                 "production" enables Secure cookie flag
-    CORS_ORIGINS            Comma-separated allowed origins (default: empty)
+    CORS_ORIGINS            JSON array of allowed origins (default: [])
 """
 import logging
 import os
@@ -88,10 +89,12 @@ async def lifespan(app: FastAPI):
     from redirector_app.web.log_buffer import install_memory_handler
     install_memory_handler()
 
-    # 2. Initialize field encryption
+    # 2. Initialize field encryption (both standalone and backend encryptors)
     fernet_key = os.environ["FERNET_KEY"]
     from redirector_app.encryption import init_encryptor
     init_encryptor(fernet_key)
+    from app.utils.encryption import init_encryptor as backend_init_encryptor
+    backend_init_encryptor(fernet_key)
     logger.info("Field encryption initialized.")
 
     # 3. Create DB tables (idempotent)
@@ -175,6 +178,7 @@ if _static_dir.exists():
 
 from app.api.routes import redirectors as redirectors_api
 from app.dependencies import get_current_admin_user as _main_get_admin
+from app.dependencies import get_current_active_user as _main_get_active
 from app.dependencies import get_db as _main_get_db
 from redirector_app.dependencies import get_current_admin_user as _sa_get_admin
 from redirector_app.database import get_db as _sa_get_db
@@ -184,8 +188,9 @@ import redirector_app.encryption as _sa_enc
 _main_enc.encrypt_field = _sa_enc.encrypt_field
 _main_enc.decrypt_field = _sa_enc.decrypt_field
 
-app.dependency_overrides[_main_get_admin] = _sa_get_admin
-app.dependency_overrides[_main_get_db]    = _sa_get_db
+app.dependency_overrides[_main_get_admin]  = _sa_get_admin
+app.dependency_overrides[_main_get_active] = _sa_get_admin  # require_permission uses this
+app.dependency_overrides[_main_get_db]     = _sa_get_db
 
 # ---------------------------------------------------------------------------
 # Routers

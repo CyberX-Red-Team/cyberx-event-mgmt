@@ -160,12 +160,12 @@
                         <span>License Products</span>
                     </a>
                     {% endif %}
-                    {% if current_user.is_admin_role %}
+                    {% endif %}
+                    {% if 'redirectors.view' in perms %}
                     <a class="nav-link {% if active_page == 'redirectors' %}active{% endif %}" href="/admin/redirectors">
                         <i data-feather="shuffle"></i>
                         <span>Redirectors</span>
                     </a>
-                    {% endif %}
                     {% endif %}
 
                     <!-- Certificates -->

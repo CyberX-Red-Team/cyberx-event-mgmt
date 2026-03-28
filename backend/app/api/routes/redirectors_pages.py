@@ -12,13 +12,12 @@ Integration in main.py:
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from app.dependencies import get_current_admin_user
+from app.dependencies import get_db, require_permission
 from app.models.user import User
 from app.services.redirector_service import RedirectorService
-from app.dependencies import get_db
 from app.api.routes.views import templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +27,7 @@ router = APIRouter(tags=["Redirector Pages"])
 @router.get("/admin/redirectors", response_class=HTMLResponse)
 async def redirectors_list_page(
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.view")),
 ):
     """Render the redirectors list page."""
     return templates.TemplateResponse(
@@ -46,15 +45,17 @@ async def redirectors_list_page(
 async def redirector_detail_page(
     redirector_id: str,
     request: Request,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Render the redirector detail page with stream configs."""
     svc = RedirectorService(db)
     redirector = await svc.get_redirector(redirector_id)
     if not redirector:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Redirector not found.")
+    # Owner check: non-admins can only view their own redirectors
+    if not current_user.has_permission("redirectors.view_all") and redirector.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
 
     return templates.TemplateResponse(
         "pages/redirectors/detail.html",

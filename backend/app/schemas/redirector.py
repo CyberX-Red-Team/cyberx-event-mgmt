@@ -35,7 +35,7 @@ class RedirectorCreate(BaseModel):
     ssh_private_key: str = Field(..., min_length=1)   # Full PEM content
     ssh_key_passphrase: Optional[str] = None
     nginx_stream_dir: str = Field(default="/etc/nginx/stream.d", max_length=500)
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=2000)
 
     @field_validator("current_ip")
     @classmethod
@@ -67,7 +67,7 @@ class RedirectorUpdate(BaseModel):
     ssh_private_key: Optional[str] = None
     ssh_key_passphrase: Optional[str] = None
     nginx_stream_dir: Optional[str] = Field(None, max_length=500)
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=2000)
 
     @field_validator("current_ip")
     @classmethod
@@ -102,11 +102,13 @@ class RedirectorOut(BaseModel):
     nginx_stream_dir: str
     notes: Optional[str]
     status: str
+    os_info: Optional[dict] = None
     last_deployed_at: Optional[datetime]
     last_tested_at: Optional[datetime]
     stream_count: int = 0
     created_at: datetime
     updated_at: Optional[datetime]
+    owner_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
@@ -279,6 +281,7 @@ class StreamConfigOut(BaseModel):
     ssl_protocols: str
     ssl_ciphers: str
     enabled: bool
+    deployed: bool
     filename: str
     created_at: datetime
     updated_at: Optional[datetime]
