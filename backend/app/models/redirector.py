@@ -49,8 +49,10 @@ class Redirector(Base):
     ssh_username = Column(String(255), nullable=False)
 
     # Fernet-encrypted at rest. Decrypted only in route handler scope, never logged.
-    ssh_private_key = Column(Text, nullable=False)
-    ssh_key_passphrase = Column(Text, nullable=True)   # nullable — passphrase is optional
+    ssh_private_key = Column(Text, nullable=False)          # Primary key for operations
+    ssh_key_passphrase = Column(Text, nullable=True)        # nullable — passphrase is optional
+    ssh_backup_key = Column(Text, nullable=True)            # User's original key (Fernet-encrypted)
+    use_infrastructure_key = Column(Boolean, nullable=False, default=False)  # Using event infra key
 
     # Directory where individual .conf files are written (must exist on redirector)
     nginx_stream_dir = Column(String(500), nullable=False, default="/etc/nginx/stream.d")

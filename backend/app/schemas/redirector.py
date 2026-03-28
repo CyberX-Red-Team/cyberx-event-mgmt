@@ -103,12 +103,14 @@ class RedirectorOut(BaseModel):
     notes: Optional[str]
     status: str
     os_info: Optional[dict] = None
+    use_infrastructure_key: bool = False
     last_deployed_at: Optional[datetime]
     last_tested_at: Optional[datetime]
     stream_count: int = 0
     created_at: datetime
     updated_at: Optional[datetime]
     owner_id: Optional[int] = None
+    infra_key_message: Optional[str] = None  # Set on create when infra key is deployed
 
     model_config = {"from_attributes": True}
 

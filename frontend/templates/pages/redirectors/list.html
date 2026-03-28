@@ -387,6 +387,9 @@ async function submitAddRedirector() {
         }
         addModal.hide();
         showToast(`Redirector <strong>${escHtml(data.name)}</strong> created.`, 'success');
+        if (data.infra_key_message) {
+            setTimeout(() => showToast(escHtml(data.infra_key_message), 'info'), 1500);
+        }
         loadRedirectors();
     } catch (err) {
         errEl.textContent = `Request failed: ${err.message}`;

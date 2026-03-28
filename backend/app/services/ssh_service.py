@@ -303,6 +303,41 @@ class SSHService:
         finally:
             client.close()
 
+    def sync_deploy_infra_key(self, infra_public_key: str) -> dict:
+        """
+        Check if the infrastructure public key is already in authorized_keys.
+        If not, append it. Returns whether the key was already present or newly added.
+        """
+        safe_key = shlex.quote(infra_public_key.strip())
+        client = self._connect()
+        try:
+            # Check if key already exists
+            _, _, code = self._exec(
+                client,
+                f"{self._sudo_prefix}grep -qF {safe_key} "
+                f"/home/{self.username}/.ssh/authorized_keys 2>/dev/null "
+                f"|| {self._sudo_prefix}grep -qF {safe_key} /root/.ssh/authorized_keys 2>/dev/null"
+            )
+            if code == 0:
+                return {"already_present": True, "deployed": False}
+
+            # Deploy the key — try user home first, then root
+            target_user = self.username
+            auth_keys_dir = f"/home/{target_user}/.ssh" if target_user != "root" else "/root/.ssh"
+            auth_keys_path = f"{auth_keys_dir}/authorized_keys"
+
+            self._exec(client, f"{self._sudo_prefix}mkdir -p {auth_keys_dir}")
+            self._exec(client, f"{self._sudo_prefix}chmod 700 {auth_keys_dir}")
+            self._exec(
+                client,
+                f"echo {safe_key} | {self._sudo_prefix}tee -a {auth_keys_path} > /dev/null"
+            )
+            self._exec(client, f"{self._sudo_prefix}chmod 600 {auth_keys_path}")
+            logger.info("Deployed infrastructure public key to %s on %s", auth_keys_path, self.hostname)
+            return {"already_present": False, "deployed": True}
+        finally:
+            client.close()
+
     def sync_check_port(self, port: int, protocol: str) -> dict:
         """
         Check whether anything is already listening on the given port.
@@ -1094,6 +1129,10 @@ async def _run_ssh(fn, *args) -> dict:
 
 async def run_test_connection(ssh: SSHService) -> dict:
     return await _run_ssh(ssh.sync_test_connection)
+
+
+async def run_deploy_infra_key(ssh: SSHService, infra_public_key: str) -> dict:
+    return await _run_ssh(ssh.sync_deploy_infra_key, infra_public_key)
 
 
 async def run_check_prereqs(ssh: SSHService, stream_dir: str) -> dict:
