@@ -413,6 +413,11 @@ window.showToast = function(message, type = 'info') {
     toast.style.minWidth = '300px';
     toast.setAttribute('role', 'alert');
     toast.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+    toast.style.cursor = 'pointer';
+    toast.addEventListener('click', function() {
+        toast.classList.remove('show');
+        setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 150);
+    });
 
     document.body.appendChild(toast);
 
