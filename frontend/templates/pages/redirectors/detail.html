@@ -210,6 +210,12 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                         <label class="form-label fw-semibold">SSH Private Key (PEM)</label>
                         <textarea class="form-control font-monospace" id="er_key" rows="5"
                             placeholder="Leave blank to keep existing key"></textarea>
+                        <div class="form-text">
+                            Leave blank to keep the current key.
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="useInfraKeyDetail()">
+                                <i data-feather="key" style="width:14px;height:14px;"></i> Use Infrastructure Key
+                            </button>
+                        </div>
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">Key Passphrase</label>
@@ -829,6 +835,28 @@ async function confirmDeleteStream() {
 }
 
 // ============================================================
+// Infrastructure Key (for edit modal)
+// ============================================================
+async function useInfraKeyDetail() {
+    try {
+        const resp = await csrfFetch('/api/redirectors/infrastructure-key');
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            showToast(escHtml(data.detail || 'No infrastructure key available.'), 'warning');
+            return;
+        }
+        const data = await resp.json();
+        document.getElementById('er_key').value = data.ssh_private_key;
+        const userInput = document.getElementById('er_user');
+        if (!userInput.value.trim()) {
+            userInput.value = data.ssh_username || 'root';
+        }
+        showToast(`Infrastructure key loaded from event: ${escHtml(data.event_name)}`, 'success');
+    } catch (err) {
+        showToast(`Failed to load infrastructure key: ${escHtml(err.message)}`, 'danger');
+    }
+}
+
 // Edit Redirector
 // ============================================================
 function openEditRedirectorModal() { editRedirModal.show(); }

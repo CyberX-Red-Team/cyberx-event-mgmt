@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db, require_permission
 from app.models.user import User
 from app.models.redirector import Redirector, StreamConfig
+from app.services.event_service import EventService
 from app.schemas.redirector import (
     RedirectorCreate, RedirectorUpdate, RedirectorOut, RedirectorListOut,
     StreamConfigCreate, StreamConfigUpdate, StreamConfigOut,
@@ -221,6 +222,30 @@ async def create_redirector(
     # Pass stream_count=0 to avoid lazy-loading the relationship.
     await db.refresh(redirector)
     return _build_redirector_out(redirector, stream_count=0)
+
+
+@router.get("/infrastructure-key")
+async def get_infrastructure_key(
+    current_user: User = Depends(require_permission("redirectors.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the active event's SSH private key for use as the default redirector key.
+
+    This allows operators to use the same key that was deployed to redirector
+    hosts via cloud-init, instead of pasting it manually.
+    """
+    event_svc = EventService(db)
+    event = await event_svc.get_active_event()
+    if not event or not event.ssh_private_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active event with an SSH key configured.",
+        )
+    return {
+        "event_name": event.name,
+        "ssh_private_key": event.ssh_private_key,
+        "ssh_username": "root",
+    }
 
 
 @router.get("/{redirector_id}", response_model=RedirectorOut)

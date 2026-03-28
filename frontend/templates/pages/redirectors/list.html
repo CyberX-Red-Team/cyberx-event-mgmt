@@ -98,7 +98,12 @@
                             </label>
                             <textarea class="form-control font-monospace" id="add_ssh_key" rows="6"
                                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
-                            <div class="form-text">Paste the full PEM private key. Stored encrypted at rest.</div>
+                            <div class="form-text">
+                                Paste the full PEM private key. Stored encrypted at rest.
+                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="useInfraKey('add')">
+                                    <i data-feather="key" style="width:14px;height:14px;"></i> Use Infrastructure Key
+                                </button>
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">Key Passphrase <span class="text-muted small">(optional)</span></label>
@@ -163,7 +168,12 @@
                             <label class="form-label fw-semibold">SSH Private Key (PEM)</label>
                             <textarea class="form-control font-monospace" id="edit_ssh_key" rows="6"
                                 placeholder="Leave blank to keep existing key"></textarea>
-                            <div class="form-text">Leave blank to keep the current key. Paste new PEM to replace it.</div>
+                            <div class="form-text">
+                                Leave blank to keep the current key. Paste new PEM to replace it.
+                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="useInfraKey('edit')">
+                                    <i data-feather="key" style="width:14px;height:14px;"></i> Use Infrastructure Key
+                                </button>
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">Key Passphrase</label>
@@ -305,6 +315,32 @@ function statusBadge(status) {
     };
     const cls = map[status] || 'bg-secondary';
     return `<span class="badge ${cls}">${status}</span>`;
+}
+
+// ============================================================
+// Infrastructure Key
+// ============================================================
+async function useInfraKey(mode) {
+    try {
+        const resp = await csrfFetch('/api/redirectors/infrastructure-key');
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            showToast(escHtml(data.detail || 'No infrastructure key available.'), 'warning');
+            return;
+        }
+        const data = await resp.json();
+        const keyField = mode === 'edit' ? 'edit_ssh_key' : 'add_ssh_key';
+        const userField = mode === 'edit' ? 'edit_ssh_username' : 'add_ssh_username';
+        document.getElementById(keyField).value = data.ssh_private_key;
+        // Pre-fill username if empty
+        const userInput = document.getElementById(userField);
+        if (!userInput.value.trim()) {
+            userInput.value = data.ssh_username || 'root';
+        }
+        showToast(`Infrastructure key loaded from event: ${escHtml(data.event_name)}`, 'success');
+    } catch (err) {
+        showToast(`Failed to load infrastructure key: ${escHtml(err.message)}`, 'danger');
+    }
 }
 
 // ============================================================
