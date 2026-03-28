@@ -201,11 +201,12 @@ async def create_redirector(
         result = await run_test_connection(ssh)
         new_status = "online" if result["success"] else "offline"
         await svc.update_status(redirector, new_status, os_info=result.get("os_info"))
-    except Exception:
+    except Exception as test_err:
+        logger.warning("Auto-test connection failed for new redirector %s: %s", redirector.id, test_err)
         try:
             await svc.update_status(redirector, "offline")
-        except Exception:
-            pass  # DB update failed too — status stays "unknown"
+        except Exception as inner:
+            logger.warning("Failed to set offline status after test error: %s", inner)
 
     audit = AuditService(db)
     await audit.log(

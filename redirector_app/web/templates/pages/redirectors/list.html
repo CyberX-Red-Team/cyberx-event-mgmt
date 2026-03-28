@@ -8,6 +8,8 @@
     background-color: rgba(255,255,255,0.05) !important;
     --bs-table-hover-bg: rgba(255,255,255,0.05);
 }
+.redir-name-link { color: var(--bs-danger, #dc3545); }
+.redir-name-link:hover { color: var(--bs-danger, #dc3545); opacity: 0.8; }
 </style>
 {% endblock %}
 
@@ -271,7 +273,7 @@ function renderTable(redirectors) {
     tbody.innerHTML = redirectors.map(r => `
         <tr>
             <td>
-                <a href="/redirectors/${r.id}" class="fw-semibold text-decoration-none" style="color:#dc3545">
+                <a href="/redirectors/${r.id}" class="fw-semibold text-decoration-none redir-name-link">
                     ${escHtml(r.name)}
                 </a>
             </td>
