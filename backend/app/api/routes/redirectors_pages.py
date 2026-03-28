@@ -12,12 +12,13 @@ Integration in main.py:
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.dependencies import get_db, require_permission
 from app.models.user import User
 from app.services.redirector_service import RedirectorService
+from app.services.log_buffer import get_recent_logs
 from app.api.routes.views import templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,3 +68,33 @@ async def redirector_detail_page(
             "now": datetime.now(),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Error Log Viewer
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/logs", response_class=HTMLResponse)
+async def logs_page(
+    request: Request,
+    current_user: User = Depends(require_permission("admin.manage")),
+):
+    """Render the application error log viewer page."""
+    return templates.TemplateResponse(
+        "pages/admin/logs.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "active_page": "logs",
+            "now": datetime.now(),
+        },
+    )
+
+
+@router.get("/api/internal/logs")
+async def internal_logs(
+    current_user: User = Depends(require_permission("admin.manage")),
+    n: int = Query(default=200, ge=1, le=500),
+):
+    """Return recent application log entries as JSON."""
+    return JSONResponse(content=get_recent_logs(n))

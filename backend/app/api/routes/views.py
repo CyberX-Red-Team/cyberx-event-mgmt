@@ -31,6 +31,7 @@ templates.env.globals["app_version"] = get_version()
 _settings = get_settings()
 templates.env.globals["app_environment"] = _settings.ENVIRONMENT
 templates.env.globals["sendgrid_sandbox_mode"] = _settings.SENDGRID_SANDBOX_MODE
+templates.env.globals["url_prefix"] = "/admin"
 
 
 # Authentication pages

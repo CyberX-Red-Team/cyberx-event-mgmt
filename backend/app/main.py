@@ -49,6 +49,10 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown events."""
+    # Install memory log handler first — captures all startup messages for the log viewer
+    from app.services.log_buffer import install_memory_handler
+    install_memory_handler()
+
     # Startup
     logger.info("CyberX Event Management API starting...")
     logger.info("  Environment: %s", settings.ENVIRONMENT.upper())
@@ -206,6 +210,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+# Security headers (defense-in-depth alongside nginx)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # CORS configuration
 app.add_middleware(

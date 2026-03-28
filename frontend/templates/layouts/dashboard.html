@@ -168,6 +168,15 @@
                     </a>
                     {% endif %}
 
+                    <!-- System -->
+                    {% if 'admin.manage' in perms %}
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">System</div>
+                    <a class="nav-link {% if active_page == 'logs' %}active{% endif %}" href="/admin/logs">
+                        <i data-feather="file-text"></i>
+                        <span>Error Logs</span>
+                    </a>
+                    {% endif %}
+
                     <!-- Certificates -->
                     {% if 'cpe.manage' in perms or 'tls.manage' in perms %}
                     <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">Certificates</div>
