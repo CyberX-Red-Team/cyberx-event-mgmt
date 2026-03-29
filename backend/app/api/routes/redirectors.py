@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db, require_permission
 from app.models.user import User
 from app.models.redirector import Redirector, StreamConfig
+from app.services.event_service import EventService
 from app.schemas.redirector import (
     RedirectorCreate, RedirectorUpdate, RedirectorOut, RedirectorListOut,
     StreamConfigCreate, StreamConfigUpdate, StreamConfigOut,
@@ -41,7 +42,7 @@ from app.services.ssh_service import (
     SSHConnectionError, SSHAuthError, NginxReloadError, SSHCommandError,
     run_test_connection, run_deploy_single, run_remove_single, run_deploy_all,
     run_check_port, run_check_nginx_setup, run_fix_nginx_setup,
-    run_check_prereqs, run_fix_prereqs,
+    run_check_prereqs, run_fix_prereqs, run_deploy_infra_key,
 )
 from app.services.nginx_config_service import generate_stream_config_preview
 from app.services.audit_service import AuditService
@@ -55,7 +56,10 @@ router = APIRouter(prefix="/api/redirectors", tags=["Redirectors"])
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_redirector_out(redirector: Redirector, stream_count: int | None = None) -> RedirectorOut:
+def _build_redirector_out(
+    redirector: Redirector,
+    stream_count: int | None = None,
+) -> RedirectorOut:
     """Build RedirectorOut from ORM object, always redacting key fields.
 
     stream_count can be passed explicitly to avoid lazy-loading the
@@ -119,7 +123,7 @@ def _ssh_command_error(exc: Exception) -> HTTPException:
     logger.error("SSH command error: %s", exc)
     return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=f"SSH command error: {exc}",
+        detail="An SSH command failed on the redirector. Check server logs for details.",
     )
 
 
@@ -201,6 +205,28 @@ async def create_redirector(
         result = await run_test_connection(ssh)
         new_status = "online" if result["success"] else "offline"
         await svc.update_status(redirector, new_status, os_info=result.get("os_info"))
+
+        # If connection succeeded, deploy infrastructure public key if available
+        if result["success"]:
+            try:
+                event_svc = EventService(db)
+                event = await event_svc.get_active_event()
+                if event and event.ssh_public_key:
+                    deploy_result = await run_deploy_infra_key(ssh, event.ssh_public_key)
+                    if deploy_result.get("deployed"):
+                        infra_audit = AuditService(db)
+                        await infra_audit.log(
+                            action="INFRA_KEY_DEPLOYED",
+                            user_id=current_user.id,
+                            resource_type="REDIRECTOR",
+                            details={
+                                "redirector_id": redirector.id,
+                                "event_name": event.name,
+                            },
+                            ip_address=request.client.host if request.client else None,
+                        )
+            except Exception as infra_err:
+                logger.warning("Failed to deploy infrastructure key: %s", infra_err)
     except Exception as test_err:
         logger.warning("Auto-test connection failed for new redirector %s: %s", redirector.id, test_err)
         try:

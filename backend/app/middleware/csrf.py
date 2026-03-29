@@ -98,7 +98,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         """Attach a fresh CSRF cookie to the response if one was generated."""
         if not needed:
             return
-        cookie_value = f"{self.cookie_name}={token}; Path={self.cookie_path}"
+        cookie_value = f"{self.cookie_name}={token}; Path={self.cookie_path}; Max-Age={self.token_max_age}"
         if self.cookie_secure:
             cookie_value += "; Secure"
         if self.cookie_samesite:

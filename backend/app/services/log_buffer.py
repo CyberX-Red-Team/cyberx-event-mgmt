@@ -33,7 +33,7 @@ class MemoryLogHandler(logging.Handler):
                 else record.asctime,
                 "level": record.levelname,
                 "name": record.name,
-                "msg": self.format(record) if self.formatter else record.getMessage(),
+                "msg": (self.format(record) if self.formatter else record.getMessage())[:4096],
             }
             with _buffer_lock:
                 _log_buffer.appendleft(entry)

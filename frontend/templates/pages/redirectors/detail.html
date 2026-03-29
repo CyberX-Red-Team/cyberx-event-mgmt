@@ -2,13 +2,22 @@
 
 {% block title %}{{ redirector.name }} — Redirector{% endblock %}
 
+{% block extra_css %}
+<style>
+tr.stream-conflict > td { background-color: rgba(220,53,69,0.15) !important; }
+tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !important; }
+[data-theme="dark"] tr.stream-conflict > td { background-color: rgba(220,53,69,0.25) !important; }
+[data-theme="dark"] tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.35) !important; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid px-4 py-4">
 
     <!-- Breadcrumb -->
     <nav aria-label="breadcrumb" class="mb-3">
         <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="/admin/redirectors">Redirectors</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_prefix }}/redirectors">Redirectors</a></li>
             <li class="breadcrumb-item active">{{ redirector.name }}</li>
         </ol>
     </nav>
@@ -30,6 +39,16 @@
                             {{ redirector.status }}
                         </span>
                     </div>
+                    {% if redirector.os_info %}
+                    <div class="text-muted small mb-1">
+                        {% if redirector.os_info.os %}{{ redirector.os_info.os | e }}{% endif %}
+                        {% if redirector.os_info.arch %}&nbsp;·&nbsp;{{ redirector.os_info.arch | e }}{% endif %}
+                        {% if redirector.os_info.kernel %}&nbsp;·&nbsp;{{ redirector.os_info.kernel | e }}{% endif %}
+                        {% if redirector.os_info.cpu %}&nbsp;·&nbsp;{{ redirector.os_info.cpu | e }}{% endif %}
+                        {% if redirector.os_info.mem %}&nbsp;·&nbsp;{{ redirector.os_info.mem | e }} RAM{% endif %}
+                        {% if redirector.os_info.uptime %}&nbsp;·&nbsp;{{ redirector.os_info.uptime | e }}{% endif %}
+                    </div>
+                    {% endif %}
                     <div class="text-muted small">
                         <code>{{ redirector.ssh_username }}@{{ redirector.current_ip }}:{{ redirector.ssh_port }}</code>
                         &nbsp;·&nbsp;
@@ -40,7 +59,7 @@
                         {% endif %}
                     </div>
                     {% if redirector.notes %}
-                    <p class="mt-2 mb-0 text-muted small">{{ redirector.notes }}</p>
+                    <p class="mt-2 mb-0 text-muted small">{{ redirector.notes | e }}</p>
                     {% endif %}
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
@@ -58,25 +77,65 @@
         </div>
     </div>
 
-    <!-- Setup Guide (collapsible) -->
+    <!-- Prerequisites (collapsible) -->
     <div class="accordion mb-4" id="setupGuide">
         <div class="accordion-item border">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed fw-semibold" type="button"
                     data-bs-toggle="collapse" data-bs-target="#setupGuideBody">
-                    <i data-feather="info" class="me-2"></i>Prerequisites on this redirector
+                    <i data-feather="check-square" class="me-2"></i>Prerequisites
+                    <span id="prereqBadge" class="badge bg-secondary ms-2 d-none">?</span>
                 </button>
             </h2>
             <div id="setupGuideBody" class="accordion-collapse collapse">
-                <div class="accordion-body small">
-                    <p class="mb-2"><strong>1. nginx.conf must include the stream block:</strong></p>
-                    <pre class="bg-dark text-light rounded p-3 mb-3">stream {
-    include {{ redirector.nginx_stream_dir }}/*.conf;
+                <div class="accordion-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="small text-muted">Required on <code>{{ redirector.current_ip }}</code> for CyberX to operate.</span>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-secondary" onclick="checkPrereqs()">
+                                <i data-feather="refresh-cw" class="me-1"></i>Re-check
+                            </button>
+                            <button class="btn btn-sm btn-warning d-none" id="fixPrereqsBtn" onclick="fixPrereqs()">
+                                <i data-feather="tool" class="me-1"></i>Auto-fix
+                            </button>
+                        </div>
+                    </div>
+                    <div id="prereqResults">
+                        <!-- populated by checkPrereqs() -->
+                        <div class="text-muted small fst-italic">Click "Re-check" or expand to run live check.</div>
+                    </div>
+                    <div id="fixPrereqStatus" class="mt-2 small d-none"></div>
+                    <hr class="my-3">
+                    <p class="small mb-2 fw-semibold">Manual setup reference:</p>
+                    <div class="small text-muted mb-1">sudoers (<code>/etc/sudoers.d/cyberx</code>):</div>
+                    <pre class="bg-dark text-light rounded p-2 mb-2 small">{{ redirector.ssh_username | e }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh</pre>
+                    <div class="small text-muted mb-1">nginx.conf stream block:</div>
+                    <pre class="bg-dark text-light rounded p-2 mb-0 small">stream {
+    include {{ redirector.nginx_stream_dir | e }}/*.conf;
 }</pre>
-                    <p class="mb-2"><strong>2. Sudo permissions for nginx management:</strong></p>
-                    <pre class="bg-dark text-light rounded p-3 mb-0"># /etc/sudoers.d/cyberx
-{{ redirector.ssh_username }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx</pre>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- nginx Setup Warning Banner (shown when setup issues detected) -->
+    <div id="nginxSetupBanner" class="alert alert-warning d-none mb-4" role="alert">
+        <div class="d-flex align-items-start gap-3">
+            <i data-feather="alert-triangle" style="flex-shrink:0;margin-top:2px;width:20px;height:20px;"></i>
+            <div class="flex-grow-1">
+                <strong>nginx Configuration Issues Detected</strong>
+                <ul id="nginxSetupIssues" class="mb-2 mt-1 ps-3 small"></ul>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-warning" id="fixNginxBtn" onclick="fixNginxSetup()">
+                        <i data-feather="tool" class="me-1"></i>Fix nginx.conf
+                    </button>
+                    <span id="fixNginxStatus" class="small d-none"></span>
+                </div>
+                <p class="mb-0 mt-2 small text-muted">
+                    The fix will: remove <code>sites-enabled/default</code>, load the stream module,
+                    add a stream block to <code>nginx.conf</code>, and reload nginx.
+                    {% if redirector.ssh_username != 'root' %}Requires sudoers access for the SSH user.{% endif %}
+                </p>
             </div>
         </div>
     </div>
@@ -92,21 +151,22 @@
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0" id="streamsTable">
-                    <thead class="table-light">
+                    <thead>
                         <tr>
                             <th>Name</th>
                             <th>Protocol</th>
                             <th>Listen</th>
-                            <th>CS Target</th>
+                            <th>Redirect To</th>
                             <th class="text-center">SSL</th>
                             <th class="text-center">ACL</th>
                             <th class="text-center">Enabled</th>
+                            <th class="text-center">Deployed</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="streamsBody">
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-4">
+                            <td colspan="9" class="text-center text-muted py-4">
                                 <div class="spinner-border spinner-border-sm me-2" role="status"></div>
                                 Loading streams...
                             </td>
@@ -132,11 +192,11 @@
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">Name</label>
-                        <input type="text" class="form-control" id="er_name" value="{{ redirector.name }}">
+                        <input type="text" class="form-control" id="er_name" value="{{ redirector.name | e }}">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">IP Address</label>
-                        <input type="text" class="form-control" id="er_ip" value="{{ redirector.current_ip }}">
+                        <input type="text" class="form-control" id="er_ip" value="{{ redirector.current_ip | e }}">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-semibold">SSH Port</label>
@@ -144,12 +204,15 @@
                     </div>
                     <div class="col-md-8">
                         <label class="form-label fw-semibold">SSH Username</label>
-                        <input type="text" class="form-control" id="er_user" value="{{ redirector.ssh_username }}">
+                        <input type="text" class="form-control" id="er_user" value="{{ redirector.ssh_username | e }}">
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">SSH Private Key (PEM)</label>
                         <textarea class="form-control font-monospace" id="er_key" rows="5"
                             placeholder="Leave blank to keep existing key"></textarea>
+                        <div class="form-text">
+                            Leave blank to keep the current key.
+                        </div>
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">Key Passphrase</label>
@@ -158,11 +221,11 @@
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">nginx Stream Directory</label>
-                        <input type="text" class="form-control" id="er_dir" value="{{ redirector.nginx_stream_dir }}">
+                        <input type="text" class="form-control" id="er_dir" value="{{ redirector.nginx_stream_dir | e }}">
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">Notes</label>
-                        <textarea class="form-control" id="er_notes" rows="2">{{ redirector.notes or '' }}</textarea>
+                        <textarea class="form-control" id="er_notes" rows="2">{{ (redirector.notes or '') | e }}</textarea>
                     </div>
                 </div>
                 <div id="editRedirectorError" class="alert alert-danger mt-3 d-none"></div>
@@ -206,14 +269,21 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label fw-semibold">Listen Port <span class="text-danger">*</span></label>
-                        <input type="number" class="form-control" id="sm_listen_port" min="1" max="65535" placeholder="443">
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="sm_listen_port" min="1" max="65535" placeholder="443"
+                                oninput="clearPortCheck()">
+                            <button class="btn btn-outline-secondary" type="button" onclick="checkPort()" title="Check if port is in use on redirector">
+                                <i data-feather="activity"></i>
+                            </button>
+                        </div>
+                        <div id="portCheckResult" class="form-text mt-1 d-none"></div>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label fw-semibold">CS Teamserver IP <span class="text-danger">*</span></label>
+                        <label class="form-label fw-semibold">Redirect to IP <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" id="sm_cs_ip" placeholder="10.10.0.1">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label fw-semibold">CS Port <span class="text-danger">*</span></label>
+                        <label class="form-label fw-semibold">Redirect to Port <span class="text-danger">*</span></label>
                         <input type="number" class="form-control" id="sm_cs_port" min="1" max="65535" placeholder="443">
                     </div>
                     <div class="col-md-3 d-flex align-items-end">
@@ -336,12 +406,12 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header border-0">
-                <h5 class="modal-title text-danger"><i data-feather="trash-2" class="me-2"></i>Delete Stream</h5>
+                <h5 class="modal-title text-danger"><i data-feather="trash-2" class="me-2"></i>Remove Stream</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Delete stream <strong id="deleteStreamName"></strong>?</p>
-                <p class="text-muted small">This removes it from the database only. Use <em>Remove</em> first to clean up the remote file.</p>
+                <p>Remove stream <strong id="deleteStreamName"></strong>?</p>
+                <p class="text-muted small">This removes the stream config from the redirector and deletes it from the database.</p>
             </div>
             <div class="modal-footer border-0">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -350,24 +420,49 @@
         </div>
     </div>
 </div>
+<!-- Port Conflict Info Modal -->
+<div class="modal fade" id="portConflictModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content border-danger">
+            <div class="modal-header border-0 pb-0">
+                <h6 class="modal-title text-danger">
+                    <i data-feather="alert-circle" class="me-2"></i>Port Status
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body pt-2">
+                <p id="portConflictMessage" class="mb-0 small"></p>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-{{ super() }}
 <script>
 // ============================================================
 // Constants
 // ============================================================
-const REDIRECTOR_ID = '{{ redirector.id }}';
+const REDIRECTOR_ID = {{ redirector.id | tojson }};
+let _streams          = [];
+let _portConflicts    = {};   // stream_id → conflict message
 let _deleteStreamId   = null;
 let _deleteStreamName = null;
 
 // Bootstrap modals
-const editRedirModal   = new bootstrap.Modal(document.getElementById('editRedirectorModal'));
-const streamModal      = new bootstrap.Modal(document.getElementById('streamModal'));
-const previewModal     = new bootstrap.Modal(document.getElementById('previewModal'));
+const editRedirModal    = new bootstrap.Modal(document.getElementById('editRedirectorModal'));
+const streamModal       = new bootstrap.Modal(document.getElementById('streamModal'));
+const previewModal      = new bootstrap.Modal(document.getElementById('previewModal'));
 const deployResultModal = new bootstrap.Modal(document.getElementById('deployResultModal'));
-const delStreamModal   = new bootstrap.Modal(document.getElementById('deleteStreamModal'));
+const delStreamModal    = new bootstrap.Modal(document.getElementById('deleteStreamModal'));
+const portConflictModal = new bootstrap.Modal(document.getElementById('portConflictModal'));
+
+function refreshUI() {
+    feather.replace();
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
+        bootstrap.Popover.getOrCreateInstance(el);
+    });
+}
 
 // Re-render feather icons after each modal shows
 document.querySelectorAll('.modal').forEach(el => {
@@ -379,7 +474,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.js-dt').forEach(el => {
         el.textContent = formatDateTime(el.textContent);
     });
-    loadStreams();
+    loadStreams().then(startPolling);
+    checkNginxSetup();
+    checkPrereqs();
 });
 
 // ============================================================
@@ -390,56 +487,62 @@ async function loadStreams() {
     if (!resp.ok) { renderStreams([]); return; }
     const streams = await resp.json();
     renderStreams(streams);
+    // Run port checks in the background — updates row shading when done
+    if (streams.length) runPortChecks(streams);
 }
 
-// Map of stream objects by ID — used by event-delegated edit button
-const _streamMap = new Map();
-
-// Event delegation for stream edit buttons — avoids inline JSON.stringify XSS
-document.addEventListener('click', e => {
-    const btn = e.target.closest('[data-edit-stream-id]');
-    if (btn) {
-        const s = _streamMap.get(btn.dataset.editStreamId);
-        if (s) openEditStreamModal(s);
-    }
-});
-
 function renderStreams(streams) {
-    streams.forEach(s => _streamMap.set(s.id, s));
+    _streams = streams;
     const tbody = document.getElementById('streamsBody');
     if (!streams.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-5">
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-5">
             No stream configs yet. Click <strong>Add Stream</strong> to create one.
         </td></tr>`;
-        feather.replace();
+        refreshUI();
         return;
     }
-    tbody.innerHTML = streams.map(s => `
-        <tr>
-            <td class="fw-semibold">${escHtml(s.name)}</td>
-            <td>${protoBadge(s.protocol)}</td>
-            <td><code>${s.listen_port}</code></td>
-            <td class="small text-muted"><code>${escHtml(s.cs_ip)}:${s.cs_port}</code></td>
-            <td class="text-center">${s.ssl_enabled ? '<i data-feather="lock" class="text-success" title="SSL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
-            <td class="text-center">${s.access_control_enabled ? '<i data-feather="shield" class="text-warning" title="ACL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
-            <td class="text-center">
-                <span class="badge ${s.enabled ? 'bg-success' : 'bg-secondary'}">${s.enabled ? 'Yes' : 'No'}</span>
+    tbody.innerHTML = streams.map(s => {
+        const conflict = _portConflicts[s.id];
+        const rowClass = conflict ? ' class="stream-conflict"' : '';
+        const conflictIcon = conflict
+            ? ` <i data-feather="alert-circle" class="text-danger ms-2"
+                  style="width:20px;height:20px;vertical-align:middle;flex-shrink:0;cursor:help;"
+                  data-bs-toggle="popover" data-bs-trigger="hover focus"
+                  data-bs-placement="right" data-bs-content="${escHtml(conflict)}"></i>`
+            : '';
+        return `
+        <tr${rowClass}>
+            <td class="fw-semibold align-middle">
+                <div class="d-flex align-items-center">${escHtml(s.name)}${conflictIcon}</div>
             </td>
-            <td class="text-end">
+            <td class="align-middle">${protoBadge(s.protocol)}</td>
+            <td class="align-middle">${s.listen_port}</td>
+            <td class="align-middle">${escHtml(s.cs_ip)}:${s.cs_port}</td>
+            <td class="text-center align-middle">${s.ssl_enabled ? '<i data-feather="lock" class="text-success" title="SSL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
+            <td class="text-center align-middle">${s.access_control_enabled ? '<i data-feather="shield" class="text-warning" title="ACL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
+            <td class="text-center align-middle">
+                <span class="badge ${s.enabled ? 'bg-success' : 'bg-danger'}">${s.enabled ? 'Yes' : 'No'}</span>
+            </td>
+            <td class="text-center align-middle">
+                <span class="badge ${s.deployed ? 'bg-success' : 'bg-danger'}">${s.deployed ? 'Yes' : 'No'}</span>
+            </td>
+            <td class="text-end align-middle">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Preview config"
                     onclick="previewStream('${s.id}')"><i data-feather="eye"></i></button>
                 <button class="btn btn-sm btn-outline-primary me-1" title="Deploy this stream"
                     onclick="deployStream('${s.id}', '${escHtml(s.name)}')"><i data-feather="upload"></i></button>
-                <button class="btn btn-sm btn-outline-warning me-1" title="Remove file from redirector"
-                    onclick="removeStream('${s.id}', '${escHtml(s.name)}')"><i data-feather="minus-circle"></i></button>
+                ${s.enabled
+                    ? `<button class="btn btn-sm btn-outline-warning me-1" title="Disable stream" onclick="removeStream('${s.id}', '${escHtml(s.name)}')"><i data-feather="x-circle"></i></button>`
+                    : `<button class="btn btn-sm btn-outline-success me-1" title="Enable stream" onclick="enableStream('${s.id}', '${escHtml(s.name)}')"><i data-feather="play-circle"></i></button>`
+                }
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
-                    data-edit-stream-id="${escHtml(s.id)}"><i data-feather="edit-2"></i></button>
-                <button class="btn btn-sm btn-outline-danger" title="Delete from DB"
+                    onclick="openEditStreamModal('${s.id}')"><i data-feather="edit-2"></i></button>
+                <button class="btn btn-sm btn-outline-danger" title="Remove Stream"
                     onclick="openDeleteStreamModal('${s.id}', '${escHtml(s.name)}')"><i data-feather="trash-2"></i></button>
             </td>
         </tr>
-    `).join('');
-    feather.replace();
+    `; }).join('');
+    refreshUI();
 }
 
 function protoBadge(proto) {
@@ -463,9 +566,11 @@ async function testConnection() {
         updateStatusBadge(data.status);
         const rtt = data.rtt_ms ? ` (${data.rtt_ms}ms)` : '';
         const streamWarn = data.stream_module_present ? '' : ' ⚠️ Stream module not found!';
-        showToast(`${data.message}${rtt}${streamWarn}`, data.success ? 'success' : 'warning');
+        showToast(`${escHtml(data.message || '')}${rtt}${streamWarn}`, data.success ? 'success' : 'warning');
+        // Reload page after short delay to refresh OS info and other server-rendered data
+        setTimeout(() => location.reload(), 3000);
     } catch (err) {
-        showToast(`Request failed: ${err.message}`, 'danger');
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -484,7 +589,7 @@ async function deployAll() {
         showDeployResult('Deploy All', data);
         if (data.success) loadStreams();
     } catch (err) {
-        showToast(`Request failed: ${err.message}`, 'danger');
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -499,7 +604,7 @@ async function previewStream(streamId) {
         document.getElementById('previewContent').value = data.content;
         previewModal.show();
     } catch (err) {
-        showToast(`Preview failed: ${err.message}`, 'danger');
+        showToast(`Preview failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -517,12 +622,12 @@ async function deployStream(streamId, streamName) {
         }
         showDeployResult(`Deploy: ${streamName}`, data);
     } catch (err) {
-        showToast(`Request failed: ${err.message}`, 'danger');
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
 async function removeStream(streamId, streamName) {
-    if (!confirm(`Remove file for stream "${streamName}" from the redirector?\n\nThis reloads nginx. The stream config is kept in the database.`)) return;
+    if (!confirm(`Disable stream "${streamName}"?\n\nThis removes the config file from the redirector and marks the stream as disabled. The config is kept in the database and can be re-deployed.`)) return;
     try {
         const resp = await csrfFetch(
             `/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}/remove`,
@@ -530,12 +635,32 @@ async function removeStream(streamId, streamName) {
         );
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Remove failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
+            showToast(`Disable failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             return;
         }
-        showDeployResult(`Remove: ${streamName}`, data);
+        showDeployResult(`Disable: ${streamName}`, data);
+        await loadStreams();
     } catch (err) {
-        showToast(`Request failed: ${err.message}`, 'danger');
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
+    }
+}
+
+async function enableStream(streamId, streamName) {
+    if (!confirm(`Enable stream "${streamName}"?\n\nThis will deploy the config file to the redirector and mark the stream as enabled.`)) return;
+    try {
+        const resp = await csrfFetch(
+            `/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}/enable`,
+            { method: 'POST' }
+        );
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast(`Enable failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
+            return;
+        }
+        showDeployResult(`Enable: ${streamName}`, data);
+        await loadStreams();
+    } catch (err) {
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -548,6 +673,7 @@ function openAddStreamModal() {
     document.getElementById('sm_name').value = '';
     document.getElementById('sm_protocol').value = 'tcp';
     document.getElementById('sm_listen_port').value = '';
+    clearPortCheck();
     document.getElementById('sm_cs_ip').value = '';
     document.getElementById('sm_cs_port').value = '';
     document.getElementById('sm_enabled').checked = true;
@@ -565,7 +691,9 @@ function openAddStreamModal() {
     streamModal.show();
 }
 
-function openEditStreamModal(s) {
+function openEditStreamModal(id) {
+    const s = _streams.find(x => x.id === id);
+    if (!s) return;
     document.getElementById('sm_stream_id').value = s.id;
     document.getElementById('streamModalTitle').innerHTML = '<i data-feather="edit-2" class="me-2"></i>Edit Stream Config';
     document.getElementById('sm_name').value = s.name;
@@ -623,6 +751,14 @@ async function submitStream() {
         : `/api/redirectors/${REDIRECTOR_ID}/streams`;
     const method = streamId ? 'PUT' : 'POST';
 
+    // Detect ACL changes before saving (compare against current state in _streams)
+    const original = _streams.find(s => s.id === streamId);
+    const aclChanged = streamId && original && (
+        payload.access_control_enabled !== original.access_control_enabled ||
+        JSON.stringify((payload.allowed_cidrs || []).slice().sort()) !==
+        JSON.stringify((original.allowed_cidrs || []).slice().sort())
+    );
+
     try {
         const resp = await csrfFetch(url, {
             method,
@@ -636,8 +772,28 @@ async function submitStream() {
             return;
         }
         streamModal.hide();
-        showToast(`Stream <strong>${escHtml(data.name)}</strong> ${streamId ? 'updated' : 'created'}.`, 'success');
-        loadStreams();
+
+        // Auto-deploy when ACL settings changed and stream is enabled
+        if (aclChanged && data.enabled) {
+            showToast(`Stream <strong>${escHtml(data.name)}</strong> updated — deploying ACL changes…`, 'info');
+            const deployResp = await csrfFetch(
+                `/api/redirectors/${REDIRECTOR_ID}/streams/${data.id}/deploy`,
+                { method: 'POST' }
+            );
+            const deployData = await deployResp.json();
+            if (deployResp.ok && deployData.success) {
+                showToast(`Stream <strong>${escHtml(data.name)}</strong> ACL deployed successfully.`, 'success');
+            } else {
+                showToast(`ACL saved but deploy failed: ${escHtml(deployData.message || deployData.detail || 'unknown error')}`, 'warning');
+            }
+        } else {
+            showToast(`Stream <strong>${escHtml(data.name)}</strong> ${streamId ? 'updated' : 'created'}.`, 'success');
+        }
+
+        await loadStreams();
+        // Immediately check only the saved stream's port so the operator gets
+        // conflict feedback without waiting for a full re-check of all streams
+        runPortChecks([data]);
     } catch (err) {
         errEl.textContent = `Request failed: ${err.message}`;
         errEl.classList.remove('d-none');
@@ -663,19 +819,18 @@ async function confirmDeleteStream() {
         );
         if (!resp.ok && resp.status !== 204) {
             const d = await resp.json().catch(() => ({}));
-            showToast(d.detail || 'Delete failed.', 'danger');
+            showToast(escHtml(d.detail || 'Delete failed.'), 'danger');
             return;
         }
         delStreamModal.hide();
-        showToast(`Stream <strong>${escHtml(_deleteStreamName)}</strong> deleted.`, 'success');
+        showToast(`Stream <strong>${escHtml(_deleteStreamName)}</strong> removed.`, 'success');
         loadStreams();
     } catch (err) {
-        showToast(`Delete failed: ${err.message}`, 'danger');
+        showToast(`Delete failed: ${escHtml(err.message)}`, 'danger');
     }
     _deleteStreamId = null;
 }
 
-// ============================================================
 // Edit Redirector
 // ============================================================
 function openEditRedirectorModal() { editRedirModal.show(); }
@@ -769,6 +924,271 @@ function updateProtocolHelp() {
     // Auto-fill port for DNS
     if (proto === 'dns' && !document.getElementById('sm_listen_port').value) {
         document.getElementById('sm_listen_port').value = '53';
+    }
+}
+
+// ============================================================
+// Port conflict check (modal button)
+// ============================================================
+function clearPortCheck() {
+    const el = document.getElementById('portCheckResult');
+    el.classList.add('d-none');
+    el.textContent = '';
+}
+
+async function checkPort() {
+    const portVal = parseInt(document.getElementById('sm_listen_port').value, 10);
+    const protocol = document.getElementById('sm_protocol').value;
+    const el = document.getElementById('portCheckResult');
+
+    if (!portVal || portVal < 1 || portVal > 65535) {
+        el.textContent = 'Enter a valid port number first.';
+        el.className = 'form-text mt-1 text-warning';
+        el.classList.remove('d-none');
+        return;
+    }
+
+    el.textContent = 'Checking…';
+    el.className = 'form-text mt-1 text-muted';
+    el.classList.remove('d-none');
+
+    try {
+        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/check-port`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ port: portVal, protocol }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            el.textContent = `Check failed: ${data.detail || resp.status}`;
+            el.className = 'form-text mt-1 text-danger';
+        } else if (data.in_use) {
+            el.textContent = `⚠ ${data.message}`;
+            el.className = 'form-text mt-1 text-warning fw-semibold';
+        } else {
+            el.textContent = `✓ ${data.message}`;
+            el.className = 'form-text mt-1 text-success';
+        }
+    } catch (err) {
+        el.textContent = `Check failed: ${err.message}`;
+        el.className = 'form-text mt-1 text-danger';
+    }
+    refreshUI();
+}
+
+// ============================================================
+// Background port checks + polling
+// ============================================================
+async function runPortChecks(streams) {
+    await Promise.allSettled(streams.map(async s => {
+        try {
+            const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/check-port`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ port: s.listen_port, protocol: s.protocol }),
+            });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (data.status === 'conflict') {
+                _portConflicts[s.id] = data.message;
+            } else {
+                delete _portConflicts[s.id];
+            }
+        } catch (_) { /* SSH unreachable — skip silently */ }
+    }));
+    renderStreams(_streams);
+}
+
+let _pollTimer = null;
+let _pollTick  = 0;
+
+function startPolling() {
+    if (_pollTimer) clearInterval(_pollTimer);
+    _pollTick = 0;
+    _pollTimer = setInterval(() => {
+        _pollTick++;
+        if (!_streams.length) return;
+        // Every 30 s: re-check only streams that have a known conflict
+        const conflicted = _streams.filter(s => _portConflicts[s.id]);
+        if (conflicted.length) runPortChecks(conflicted);
+        // Every 5 min (10th tick): full sweep of all streams
+        if (_pollTick % 10 === 0) runPortChecks(_streams);
+    }, 30000);
+}
+
+function stopPolling() {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+}
+
+window.addEventListener('beforeunload', stopPolling);
+
+// ============================================================
+// Prerequisites check + fix
+// ============================================================
+async function checkPrereqs() {
+    const resultsEl = document.getElementById('prereqResults');
+    const badge = document.getElementById('prereqBadge');
+    const fixBtn = document.getElementById('fixPrereqsBtn');
+    resultsEl.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Checking prerequisites…</div>';
+    badge.className = 'badge bg-secondary ms-2';
+    badge.textContent = '…';
+    badge.classList.remove('d-none');
+    fixBtn.classList.add('d-none');
+
+    try {
+        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/check-prereqs`, { method: 'POST' });
+        if (!resp.ok) {
+            let detail = `HTTP ${resp.status}`;
+            try { const d = await resp.json(); detail = d.detail || detail; } catch (_) {}
+            resultsEl.innerHTML = `<div class="text-danger small"><strong>Check failed:</strong> ${escHtml(detail)}</div>`;
+            badge.className = 'badge bg-danger ms-2';
+            badge.textContent = '!';
+            return;
+        }
+        const data = await resp.json();
+
+        if (data.all_ok) {
+            resultsEl.innerHTML =
+                '<div class="d-flex align-items-center gap-2 text-success small fw-semibold">' +
+                '<span style="font-size:1.1rem;line-height:1;">&#10003;</span>' +
+                'All prerequisites met — this redirector is ready.' +
+                '</div>';
+            badge.className = 'badge bg-success ms-2';
+            badge.textContent = '✓';
+            return;
+        }
+
+        const rows = data.checks.map(c =>
+            '<div class="d-flex align-items-start gap-2 mb-2">' +
+            `<span class="${c.ok ? 'text-success' : 'text-danger'} flex-shrink-0 fw-bold" style="font-size:1rem;line-height:1.4;">${c.ok ? '&#10003;' : '&#10007;'}</span>` +
+            '<div>' +
+            `<span class="small fw-semibold">${escHtml(c.label)}</span>` +
+            `<div class="small text-muted">${escHtml(c.detail)}</div>` +
+            '</div></div>'
+        ).join('');
+        resultsEl.innerHTML = rows;
+
+        const failCount = data.checks.filter(c => !c.ok).length;
+        badge.className = 'badge bg-danger ms-2';
+        badge.textContent = failCount;
+        fixBtn.classList.remove('d-none');
+    } catch (err) {
+        resultsEl.innerHTML = `<div class="text-danger small"><strong>Error:</strong> ${escHtml(err.message)}</div>`;
+        badge.className = 'badge bg-danger ms-2';
+        badge.textContent = '!';
+    }
+}
+
+async function fixPrereqs() {
+    const btn = document.getElementById('fixPrereqsBtn');
+    const statusEl = document.getElementById('fixPrereqStatus');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Fixing…';
+    statusEl.classList.add('d-none');
+
+    try {
+        // 1. Run the fix script
+        const fixResp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/fix-prereqs`, { method: 'POST' });
+        const fixData = await fixResp.json();
+        if (!fixResp.ok || !fixData.success) {
+            const msg = fixData.message || 'Fix script failed — ensure the SSH user has sudo access.';
+            showToast(escHtml(msg), 'danger');
+            statusEl.textContent = msg;
+            statusEl.className = 'mt-2 small text-danger';
+            statusEl.classList.remove('d-none');
+            await checkPrereqs();
+            return;
+        }
+
+        // 2. Re-check to verify which fixes actually took effect
+        const checkResp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/check-prereqs`, { method: 'POST' });
+        if (!checkResp.ok) {
+            showToast('Fixes applied but re-check failed.', 'warning');
+            await checkPrereqs();
+            return;
+        }
+        const checkData = await checkResp.json();
+        const failCount = checkData.checks.filter(c => !c.ok).length;
+
+        if (checkData.all_ok) {
+            showToast('All prerequisites fixed successfully.', 'success');
+        } else {
+            const failLabels = checkData.checks.filter(c => !c.ok).map(c => c.label).join(', ');
+            showToast(`${failCount} prerequisite${failCount > 1 ? 's' : ''} still failing: ${escHtml(failLabels)}`, 'warning');
+        }
+
+        // 3. Update the UI with the fresh check results
+        await checkPrereqs();
+        await checkNginxSetup();
+    } catch (err) {
+        showToast(`Fix failed: ${escHtml(err.message)}`, 'danger');
+        statusEl.textContent = `Failed: ${err.message}`;
+        statusEl.className = 'mt-2 small text-danger';
+        statusEl.classList.remove('d-none');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-feather="tool" class="me-1"></i>Auto-fix';
+        refreshUI();
+    }
+}
+
+// ============================================================
+// nginx setup check + fix
+// ============================================================
+async function checkNginxSetup() {
+    try {
+        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/check-nginx-setup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const banner = document.getElementById('nginxSetupBanner');
+        if (data.nginx_conf_ok) {
+            banner.classList.add('d-none');
+        } else {
+            document.getElementById('nginxSetupIssues').innerHTML =
+                data.issues.map(i => `<li>${escHtml(i)}</li>`).join('');
+            banner.classList.remove('d-none');
+            refreshUI();
+        }
+    } catch (_) { /* SSH unreachable — skip silently */ }
+}
+
+async function fixNginxSetup() {
+    const btn = document.getElementById('fixNginxBtn');
+    const status = document.getElementById('fixNginxStatus');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Fixing…';
+    status.classList.add('d-none');
+
+    try {
+        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/fix-nginx-setup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            showToast('nginx configuration fixed successfully.', 'success');
+            await checkNginxSetup();
+            await checkPrereqs();
+        } else {
+            const msg = data.message || data.detail || 'Fix failed.';
+            const hint = msg.toLowerCase().includes('sudo') || msg.toLowerCase().includes('permission')
+                ? '\nEnsure the SSH user has passwordless sudo access. Run auto-fix in Prerequisites first to configure sudoers.'
+                : '';
+            status.textContent = msg + hint;
+            status.className = 'small text-danger';
+            status.classList.remove('d-none');
+        }
+    } catch (err) {
+        status.textContent = `Failed: ${err.message}`;
+        status.className = 'small text-danger';
+        status.classList.remove('d-none');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-feather="tool" class="me-1"></i>Fix nginx.conf';
+        refreshUI();
     }
 }
 

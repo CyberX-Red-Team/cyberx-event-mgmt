@@ -2,6 +2,17 @@
 
 {% block title %}Redirectors{% endblock %}
 
+{% block extra_css %}
+<style>
+[data-theme="dark"] .table-hover > tbody > tr:hover > td {
+    background-color: rgba(255,255,255,0.05) !important;
+    --bs-table-hover-bg: rgba(255,255,255,0.05);
+}
+.redir-name-link { color: var(--bs-danger, #dc3545); }
+.redir-name-link:hover { color: var(--bs-danger, #dc3545); opacity: 0.8; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid px-4 py-4">
 
@@ -25,7 +36,7 @@
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0" id="redirectorsTable">
-                    <thead class="table-light">
+                    <thead>
                         <tr>
                             <th>Name</th>
                             <th>IP Address</th>
@@ -87,7 +98,9 @@
                             </label>
                             <textarea class="form-control font-monospace" id="add_ssh_key" rows="6"
                                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
-                            <div class="form-text">Paste the full PEM private key. Stored encrypted at rest.</div>
+                            <div class="form-text">
+                                Paste the full PEM private key. Stored encrypted at rest.
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">Key Passphrase <span class="text-muted small">(optional)</span></label>
@@ -152,7 +165,9 @@
                             <label class="form-label fw-semibold">SSH Private Key (PEM)</label>
                             <textarea class="form-control font-monospace" id="edit_ssh_key" rows="6"
                                 placeholder="Leave blank to keep existing key"></textarea>
-                            <div class="form-text">Leave blank to keep the current key. Paste new PEM to replace it.</div>
+                            <div class="form-text">
+                                Leave blank to keep the current key. Paste new PEM to replace it.
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">Key Passphrase</label>
@@ -214,7 +229,6 @@
 {% endblock %}
 
 {% block extra_js %}
-{{ super() }}
 <script>
 // ============================================================
 // State
@@ -247,12 +261,9 @@ async function loadRedirectors() {
         renderTable(_redirectors);
     } catch (err) {
         document.getElementById('redirectorsBody').innerHTML =
-            `<tr><td colspan="7" class="text-center text-danger py-4">Failed to load redirectors: ${err.message}</td></tr>`;
+            `<tr><td colspan="7" class="text-center text-danger py-4">Failed to load redirectors: ${escHtml(err.message)}</td></tr>`;
     }
 }
-
-// Map of redirector objects by ID — used by event-delegated edit button
-const _redirectorMap = new Map();
 
 function renderTable(redirectors) {
     const tbody = document.getElementById('redirectorsBody');
@@ -263,26 +274,25 @@ function renderTable(redirectors) {
         feather.replace();
         return;
     }
-    redirectors.forEach(r => _redirectorMap.set(r.id, r));
     tbody.innerHTML = redirectors.map(r => `
         <tr>
             <td>
-                <a href="/admin/redirectors/${r.id}" class="fw-semibold text-decoration-none">
+                <a href="{{ url_prefix }}/redirectors/${r.id}" class="fw-semibold text-decoration-none redir-name-link">
                     ${escHtml(r.name)}
                 </a>
             </td>
-            <td><code>${escHtml(r.current_ip)}</code></td>
-            <td class="text-muted small">${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}</td>
+            <td>${escHtml(r.current_ip)}</td>
+            <td class="text-muted">${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}</td>
             <td>${statusBadge(r.status)}</td>
             <td><span class="badge bg-secondary rounded-pill">${r.stream_count}</span></td>
-            <td class="text-muted small">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
+            <td class="text-muted">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
             <td class="text-end">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
-                    data-edit-id="${escHtml(r.id)}">
+                    onclick="openEditModal('${escHtml(r.id)}')">
                     <i data-feather="edit-2"></i>
                 </button>
                 <button class="btn btn-sm btn-outline-danger" title="Delete"
-                    onclick="openDeleteModal('${r.id}', '${escHtml(r.name)}')">
+                    onclick="openDeleteModal('${escHtml(r.id)}', '${escHtml(r.name)}')">
                     <i data-feather="trash-2"></i>
                 </button>
             </td>
@@ -290,15 +300,6 @@ function renderTable(redirectors) {
     `).join('');
     feather.replace();
 }
-
-// Event delegation for edit buttons — avoids inline JSON.stringify XSS
-document.addEventListener('click', e => {
-    const btn = e.target.closest('[data-edit-id]');
-    if (btn) {
-        const r = _redirectorMap.get(btn.dataset.editId);
-        if (r) openEditModal(r);
-    }
-});
 
 function statusBadge(status) {
     const map = {
@@ -364,7 +365,9 @@ async function submitAddRedirector() {
 // ============================================================
 // Edit Modal
 // ============================================================
-function openEditModal(r) {
+function openEditModal(id) {
+    const r = _redirectors.find(x => x.id === id);
+    if (!r) return;
     document.getElementById('edit_redirector_id').value = r.id;
     document.getElementById('edit_name').value         = r.name;
     document.getElementById('edit_ip').value           = r.current_ip;
@@ -438,14 +441,14 @@ async function confirmDeleteRedirector() {
         const resp = await csrfFetch(`/api/redirectors/${_deleteTargetId}`, { method: 'DELETE' });
         if (!resp.ok && resp.status !== 204) {
             const data = await resp.json().catch(() => ({}));
-            showToast(data.detail || 'Delete failed.', 'danger');
+            showToast(escHtml(data.detail || 'Delete failed.'), 'danger');
             return;
         }
         delModal.hide();
         showToast('Redirector deleted.', 'success');
         loadRedirectors();
     } catch (err) {
-        showToast(`Delete failed: ${err.message}`, 'danger');
+        showToast(`Delete failed: ${escHtml(err.message)}`, 'danger');
     }
     _deleteTargetId = null;
 }

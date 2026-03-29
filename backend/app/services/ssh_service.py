@@ -303,6 +303,58 @@ class SSHService:
         finally:
             client.close()
 
+    def sync_deploy_infra_key(self, infra_public_key: str) -> dict:
+        """
+        Check if the infrastructure public key is already in authorized_keys.
+        If not, append it using SFTP-to-tmp-then-sudo-cp.
+        Returns whether the key was already present or newly added.
+        """
+        key_line = infra_public_key.strip()
+        safe_key = shlex.quote(key_line)
+        client = self._connect()
+        try:
+            # Check if key already exists
+            _, _, code = self._exec(
+                client,
+                f"{self._sudo_prefix}grep -qF {safe_key} "
+                f"/home/{self.username}/.ssh/authorized_keys 2>/dev/null "
+                f"|| {self._sudo_prefix}grep -qF {safe_key} /root/.ssh/authorized_keys 2>/dev/null"
+            )
+            if code == 0:
+                return {"already_present": True, "deployed": False}
+
+            # Deploy the key using SFTP-to-tmp-then-sudo-cp pattern
+            use_sudo = self.username != "root"
+            auth_keys_dir = f"/home/{self.username}/.ssh" if use_sudo else "/root/.ssh"
+            auth_keys_path = f"{auth_keys_dir}/authorized_keys"
+            tmp_path = f"/tmp/.cyberx_authkey_{uuid.uuid4().hex[:8]}"
+
+            self._exec(client, f"{self._sudo_prefix}mkdir -p {shlex.quote(auth_keys_dir)}")
+            self._exec(client, f"{self._sudo_prefix}chmod 700 {shlex.quote(auth_keys_dir)}")
+
+            # Read existing authorized_keys content (may not exist yet)
+            existing, _, _ = self._exec(
+                client,
+                f"{self._sudo_prefix}cat {shlex.quote(auth_keys_path)} 2>/dev/null || true"
+            )
+            existing_text = existing.strip()
+            new_content = f"{existing_text}\n{key_line}\n" if existing_text else f"{key_line}\n"
+
+            # Write via SFTP to tmp, then sudo cp to target
+            sftp = client.open_sftp()
+            sftp.putfo(io.BytesIO(new_content.encode("utf-8")), tmp_path)
+            if use_sudo:
+                self._exec(client, f"sudo cp {shlex.quote(tmp_path)} {shlex.quote(auth_keys_path)}")
+            else:
+                self._exec(client, f"cp {shlex.quote(tmp_path)} {shlex.quote(auth_keys_path)}")
+            self._exec(client, f"rm -f {shlex.quote(tmp_path)}")
+            self._exec(client, f"{self._sudo_prefix}chmod 600 {shlex.quote(auth_keys_path)}")
+
+            logger.info("Deployed infrastructure public key to %s on %s", auth_keys_path, self.hostname)
+            return {"already_present": False, "deployed": True}
+        finally:
+            client.close()
+
     def sync_check_port(self, port: int, protocol: str) -> dict:
         """
         Check whether anything is already listening on the given port.
@@ -850,7 +902,7 @@ class SSHService:
             })
 
             # 3. Stream directory
-            _, _, code = self._exec(client, f"test -d {stream_dir}")
+            _, _, code = self._exec(client, f"test -d {shlex.quote(stream_dir)}")
             dir_ok = code == 0
             checks.append({
                 "id": "stream_dir",
@@ -1094,6 +1146,10 @@ async def _run_ssh(fn, *args) -> dict:
 
 async def run_test_connection(ssh: SSHService) -> dict:
     return await _run_ssh(ssh.sync_test_connection)
+
+
+async def run_deploy_infra_key(ssh: SSHService, infra_public_key: str) -> dict:
+    return await _run_ssh(ssh.sync_deploy_infra_key, infra_public_key)
 
 
 async def run_check_prereqs(ssh: SSHService, stream_dir: str) -> dict:
