@@ -8,7 +8,7 @@ import ipaddress
 import re
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -32,10 +32,23 @@ class RedirectorCreate(BaseModel):
     current_ip: str = Field(..., max_length=45)
     ssh_port: int = Field(default=22, ge=1, le=65535)
     ssh_username: str = Field(..., max_length=255)
-    ssh_private_key: str = Field(..., min_length=1)   # Full PEM content
+    use_infrastructure_key: bool = False
+    ssh_private_key: Optional[str] = None   # Required for BYOD; omit when using infra key
     ssh_key_passphrase: Optional[str] = None
     nginx_stream_dir: str = Field(default="/etc/nginx/stream.d", max_length=500)
     notes: Optional[str] = Field(None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_key_source(self):
+        if self.use_infrastructure_key and self.ssh_private_key:
+            raise ValueError(
+                "Cannot provide ssh_private_key when use_infrastructure_key is True."
+            )
+        if not self.use_infrastructure_key and not self.ssh_private_key:
+            raise ValueError(
+                "ssh_private_key is required when use_infrastructure_key is False."
+            )
+        return self
 
     @field_validator("current_ip")
     @classmethod
@@ -63,11 +76,20 @@ class RedirectorUpdate(BaseModel):
     current_ip: Optional[str] = Field(None, max_length=45)
     ssh_port: Optional[int] = Field(None, ge=1, le=65535)
     ssh_username: Optional[str] = Field(None, max_length=255)
+    use_infrastructure_key: Optional[bool] = None
     # Empty string or None → keep existing key; non-empty string → update key
     ssh_private_key: Optional[str] = None
     ssh_key_passphrase: Optional[str] = None
     nginx_stream_dir: Optional[str] = Field(None, max_length=500)
     notes: Optional[str] = Field(None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_key_source(self):
+        if self.use_infrastructure_key is True and self.ssh_private_key:
+            raise ValueError(
+                "Cannot provide ssh_private_key when switching to infrastructure key."
+            )
+        return self
 
     @field_validator("current_ip")
     @classmethod
@@ -97,6 +119,7 @@ class RedirectorOut(BaseModel):
     current_ip: str
     ssh_port: int
     ssh_username: str
+    use_infrastructure_key: bool = False
     ssh_private_key: str = "**REDACTED**"
     ssh_key_passphrase: Optional[str] = None  # populated as "**REDACTED**" or None
     nginx_stream_dir: str

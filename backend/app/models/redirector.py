@@ -48,8 +48,13 @@ class Redirector(Base):
     ssh_port = Column(Integer, nullable=False, default=22)
     ssh_username = Column(String(255), nullable=False)
 
+    # When True, SSH operations use the active event's infrastructure key pair
+    # instead of a per-redirector BYOD key (ssh_private_key will be NULL).
+    use_infrastructure_key = Column(Boolean, nullable=False, default=False)
+
     # Fernet-encrypted at rest. Decrypted only in route handler scope, never logged.
-    ssh_private_key = Column(Text, nullable=False)          # Primary key for operations
+    # NULL when use_infrastructure_key=True (event's key is used instead).
+    ssh_private_key = Column(Text, nullable=True)
     ssh_key_passphrase = Column(Text, nullable=True)        # nullable — passphrase is optional
 
     # Directory where individual .conf files are written (must exist on redirector)

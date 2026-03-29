@@ -93,18 +93,32 @@
                             <input type="text" class="form-control" id="add_ssh_username" placeholder="debian" required>
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-semibold">
-                                SSH Private Key (PEM) <span class="text-danger">*</span>
-                            </label>
-                            <textarea class="form-control font-monospace" id="add_ssh_key" rows="6"
-                                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
-                            <div class="form-text">
-                                Paste the full PEM private key. Stored encrypted at rest.
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="add_use_infra_key"
+                                       onchange="toggleInfraKeyMode('add')">
+                                <label class="form-check-label fw-semibold" for="add_use_infra_key">
+                                    Use infrastructure key
+                                </label>
+                                <div class="form-text mt-0">
+                                    Enable for CyberX-provided redirectors where the infrastructure key is pre-loaded.
+                                </div>
                             </div>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label fw-semibold">Key Passphrase <span class="text-muted small">(optional)</span></label>
-                            <input type="password" class="form-control" id="add_passphrase" placeholder="Leave blank if key has no passphrase">
+                        <div id="add_byod_key_section">
+                            <div class="col-12 mt-3">
+                                <label class="form-label fw-semibold">
+                                    SSH Private Key (PEM) <span class="text-danger">*</span>
+                                </label>
+                                <textarea class="form-control font-monospace" id="add_ssh_key" rows="6"
+                                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
+                                <div class="form-text">
+                                    Paste the full PEM private key. Stored encrypted at rest.
+                                </div>
+                            </div>
+                            <div class="col-12 mt-3">
+                                <label class="form-label fw-semibold">Key Passphrase <span class="text-muted small">(optional)</span></label>
+                                <input type="password" class="form-control" id="add_passphrase" placeholder="Leave blank if key has no passphrase">
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">nginx Stream Directory</label>
@@ -162,18 +176,32 @@
                             <input type="text" class="form-control" id="edit_ssh_username">
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-semibold">SSH Private Key (PEM)</label>
-                            <textarea class="form-control font-monospace" id="edit_ssh_key" rows="6"
-                                placeholder="Leave blank to keep existing key"></textarea>
-                            <div class="form-text">
-                                Leave blank to keep the current key. Paste new PEM to replace it.
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="edit_use_infra_key"
+                                       onchange="toggleInfraKeyMode('edit')">
+                                <label class="form-check-label fw-semibold" for="edit_use_infra_key">
+                                    Use infrastructure key
+                                </label>
+                                <div class="form-text mt-0">
+                                    Enable for CyberX-provided redirectors where the infrastructure key is pre-loaded.
+                                </div>
                             </div>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label fw-semibold">Key Passphrase</label>
-                            <input type="password" class="form-control" id="edit_passphrase"
-                                placeholder="Leave blank to keep existing passphrase">
-                            <div class="form-text">Leave blank to keep existing. Send a space to clear the passphrase.</div>
+                        <div id="edit_byod_key_section">
+                            <div class="col-12 mt-3">
+                                <label class="form-label fw-semibold">SSH Private Key (PEM)</label>
+                                <textarea class="form-control font-monospace" id="edit_ssh_key" rows="6"
+                                    placeholder="Leave blank to keep existing key"></textarea>
+                                <div class="form-text">
+                                    Leave blank to keep the current key. Paste new PEM to replace it.
+                                </div>
+                            </div>
+                            <div class="col-12 mt-3">
+                                <label class="form-label fw-semibold">Key Passphrase</label>
+                                <input type="password" class="form-control" id="edit_passphrase"
+                                    placeholder="Leave blank to keep existing passphrase">
+                                <div class="form-text">Leave blank to keep existing. Send a space to clear the passphrase.</div>
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">nginx Stream Directory</label>
@@ -282,7 +310,10 @@ function renderTable(redirectors) {
                 </a>
             </td>
             <td>${escHtml(r.current_ip)}</td>
-            <td class="text-muted">${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}</td>
+            <td class="text-muted">
+                ${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}
+                ${r.use_infrastructure_key ? '<span class="badge bg-info ms-1" title="Using infrastructure key">infra</span>' : ''}
+            </td>
             <td>${statusBadge(r.status)}</td>
             <td><span class="badge bg-secondary rounded-pill">${r.stream_count}</span></td>
             <td class="text-muted">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
@@ -308,7 +339,7 @@ function statusBadge(status) {
         unknown: 'bg-secondary',
     };
     const cls = map[status] || 'bg-secondary';
-    return `<span class="badge ${cls}">${status}</span>`;
+    return `<span class="badge ${cls}">${escHtml(status)}</span>`;
 }
 
 // ============================================================
@@ -316,6 +347,8 @@ function statusBadge(status) {
 // ============================================================
 function openAddModal() {
     document.getElementById('addRedirectorForm').reset();
+    document.getElementById('add_use_infra_key').checked = false;
+    toggleInfraKeyMode('add');
     document.getElementById('addRedirectorError').classList.add('d-none');
     addModal.show();
 }
@@ -324,19 +357,29 @@ async function submitAddRedirector() {
     const errEl = document.getElementById('addRedirectorError');
     errEl.classList.add('d-none');
 
+    const useInfraKey = document.getElementById('add_use_infra_key').checked;
     const payload = {
-        name:             document.getElementById('add_name').value.trim(),
-        current_ip:       document.getElementById('add_ip').value.trim(),
-        ssh_port:         parseInt(document.getElementById('add_ssh_port').value, 10),
-        ssh_username:     document.getElementById('add_ssh_username').value.trim(),
-        ssh_private_key:  document.getElementById('add_ssh_key').value.trim(),
-        ssh_key_passphrase: document.getElementById('add_passphrase').value || null,
-        nginx_stream_dir: document.getElementById('add_stream_dir').value.trim(),
-        notes:            document.getElementById('add_notes').value.trim() || null,
+        name:                   document.getElementById('add_name').value.trim(),
+        current_ip:             document.getElementById('add_ip').value.trim(),
+        ssh_port:               parseInt(document.getElementById('add_ssh_port').value, 10),
+        ssh_username:           document.getElementById('add_ssh_username').value.trim(),
+        use_infrastructure_key: useInfraKey,
+        nginx_stream_dir:       document.getElementById('add_stream_dir').value.trim(),
+        notes:                  document.getElementById('add_notes').value.trim() || null,
     };
 
-    if (!payload.name || !payload.current_ip || !payload.ssh_username || !payload.ssh_private_key) {
+    if (!useInfraKey) {
+        payload.ssh_private_key    = document.getElementById('add_ssh_key').value.trim();
+        payload.ssh_key_passphrase = document.getElementById('add_passphrase').value || null;
+    }
+
+    if (!payload.name || !payload.current_ip || !payload.ssh_username) {
         errEl.textContent = 'Please fill in all required fields.';
+        errEl.classList.remove('d-none');
+        return;
+    }
+    if (!useInfraKey && !payload.ssh_private_key) {
+        errEl.textContent = 'SSH private key is required for BYOD redirectors.';
         errEl.classList.remove('d-none');
         return;
     }
@@ -373,6 +416,8 @@ function openEditModal(id) {
     document.getElementById('edit_ip').value           = r.current_ip;
     document.getElementById('edit_ssh_port').value     = r.ssh_port;
     document.getElementById('edit_ssh_username').value = r.ssh_username;
+    document.getElementById('edit_use_infra_key').checked = r.use_infrastructure_key || false;
+    toggleInfraKeyMode('edit');
     document.getElementById('edit_ssh_key').value      = '';   // always blank
     document.getElementById('edit_passphrase').value   = '';
     document.getElementById('edit_stream_dir').value   = r.nginx_stream_dir;
@@ -386,13 +431,12 @@ async function submitEditRedirector() {
     const errEl = document.getElementById('editRedirectorError');
     errEl.classList.add('d-none');
 
+    const useInfraKey = document.getElementById('edit_use_infra_key').checked;
     const payload = {};
     const name    = document.getElementById('edit_name').value.trim();
     const ip      = document.getElementById('edit_ip').value.trim();
     const port    = parseInt(document.getElementById('edit_ssh_port').value, 10);
     const user    = document.getElementById('edit_ssh_username').value.trim();
-    const key     = document.getElementById('edit_ssh_key').value.trim();
-    const pass    = document.getElementById('edit_passphrase').value;
     const dir     = document.getElementById('edit_stream_dir').value.trim();
     const notes   = document.getElementById('edit_notes').value.trim();
 
@@ -400,10 +444,21 @@ async function submitEditRedirector() {
     if (ip)    payload.current_ip = ip;
     if (port)  payload.ssh_port = port;
     if (user)  payload.ssh_username = user;
-    if (key)   payload.ssh_private_key = key;
-    if (pass)  payload.ssh_key_passphrase = pass;
     if (dir)   payload.nginx_stream_dir = dir;
     payload.notes = notes || null;
+
+    // Always send use_infrastructure_key so the backend knows the intended mode
+    const r = _redirectors.find(x => x.id === id);
+    if (r && useInfraKey !== (r.use_infrastructure_key || false)) {
+        payload.use_infrastructure_key = useInfraKey;
+    }
+
+    if (!useInfraKey) {
+        const key  = document.getElementById('edit_ssh_key').value.trim();
+        const pass = document.getElementById('edit_passphrase').value;
+        if (key)  payload.ssh_private_key = key;
+        if (pass) payload.ssh_key_passphrase = pass;
+    }
 
     try {
         const resp = await csrfFetch(`/api/redirectors/${id}`, {
@@ -451,6 +506,22 @@ async function confirmDeleteRedirector() {
         showToast(`Delete failed: ${escHtml(err.message)}`, 'danger');
     }
     _deleteTargetId = null;
+}
+
+// ============================================================
+// Infrastructure Key Toggle
+// ============================================================
+function toggleInfraKeyMode(prefix) {
+    const checked = document.getElementById(`${prefix}_use_infra_key`).checked;
+    const section = document.getElementById(`${prefix}_byod_key_section`);
+    const keyField = document.getElementById(`${prefix}_ssh_key`);
+    if (checked) {
+        section.classList.add('d-none');
+        if (keyField) keyField.removeAttribute('required');
+    } else {
+        section.classList.remove('d-none');
+        if (keyField && prefix === 'add') keyField.setAttribute('required', '');
+    }
 }
 
 // ============================================================

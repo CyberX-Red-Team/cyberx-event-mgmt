@@ -58,13 +58,15 @@ class RedirectorService:
         return result.scalar_one_or_none()
 
     async def create_redirector(self, data: dict) -> Redirector:
+        use_infra = data.get("use_infrastructure_key", False)
         redirector = Redirector(
             id=str(uuid.uuid4()),
             name=data["name"],
             current_ip=data["current_ip"],
             ssh_port=data.get("ssh_port", 22),
             ssh_username=data["ssh_username"],
-            ssh_private_key=encrypt_field(data["ssh_private_key"]),
+            use_infrastructure_key=use_infra,
+            ssh_private_key=encrypt_field(data["ssh_private_key"]) if data.get("ssh_private_key") else None,
             ssh_key_passphrase=encrypt_field(data.get("ssh_key_passphrase")) if data.get("ssh_key_passphrase") else None,
             nginx_stream_dir=data.get("nginx_stream_dir", "/etc/nginx/stream.d"),
             notes=data.get("notes"),
@@ -86,6 +88,14 @@ class RedirectorService:
         for field in simple_fields:
             if field in data and data[field] is not None:
                 setattr(redirector, field, data[field])
+
+        # Handle use_infrastructure_key toggle
+        if "use_infrastructure_key" in data and data["use_infrastructure_key"] is not None:
+            redirector.use_infrastructure_key = data["use_infrastructure_key"]
+            if data["use_infrastructure_key"]:
+                # Switching to infra key: clear BYOD key material
+                redirector.ssh_private_key = None
+                redirector.ssh_key_passphrase = None
 
         # Update SSH key only when a non-empty value is provided
         if data.get("ssh_private_key"):

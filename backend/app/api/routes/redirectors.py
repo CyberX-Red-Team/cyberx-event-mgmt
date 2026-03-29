@@ -77,6 +77,7 @@ def _build_redirector_out(
         current_ip=redirector.current_ip,
         ssh_port=redirector.ssh_port,
         ssh_username=redirector.ssh_username,
+        use_infrastructure_key=redirector.use_infrastructure_key,
         ssh_private_key="**REDACTED**",
         ssh_key_passphrase="**REDACTED**" if redirector.ssh_key_passphrase else None,
         nginx_stream_dir=redirector.nginx_stream_dir,
@@ -92,14 +93,38 @@ def _build_redirector_out(
     )
 
 
-def _make_ssh_service(svc: RedirectorService, redirector: Redirector) -> SSHService:
-    """Decrypt SSH credentials and return an SSHService instance."""
+async def _make_ssh_service(
+    svc: RedirectorService,
+    redirector: Redirector,
+    db: AsyncSession,
+) -> SSHService:
+    """Decrypt SSH credentials and return an SSHService instance.
+
+    Uses the active event's infrastructure key when use_infrastructure_key=True,
+    otherwise decrypts the redirector's Fernet-encrypted BYOD key.
+    """
+    if redirector.use_infrastructure_key:
+        event_svc = EventService(db)
+        event = await event_svc.get_active_event()
+        if not event or not event.ssh_private_key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="This redirector uses the infrastructure key, but the active event "
+                       "has no SSH key pair. Generate one in Event settings or switch "
+                       "to a BYOD key.",
+            )
+        private_key_pem = event.ssh_private_key
+        passphrase = None
+    else:
+        private_key_pem = svc.get_decrypted_key(redirector)
+        passphrase = svc.get_decrypted_passphrase(redirector)
+
     return SSHService(
         hostname=redirector.current_ip,
         port=redirector.ssh_port,
         username=redirector.ssh_username,
-        private_key_pem=svc.get_decrypted_key(redirector),
-        passphrase=svc.get_decrypted_passphrase(redirector),
+        private_key_pem=private_key_pem,
+        passphrase=passphrase,
     )
 
 
@@ -186,6 +211,16 @@ async def create_redirector(
     """Create a new redirector. SSH private key is encrypted before storage."""
     svc = RedirectorService(db)
 
+    # Validate infrastructure key availability before creating
+    if payload.use_infrastructure_key:
+        event_svc = EventService(db)
+        event = await event_svc.get_active_event()
+        if not event or not event.ssh_private_key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot use infrastructure key: the active event has no SSH key pair.",
+            )
+
     # Uniqueness check
     existing = await svc.get_redirector_by_name(payload.name)
     if existing:
@@ -201,13 +236,15 @@ async def create_redirector(
     # Best-effort: redirector is already saved, so any failure here just
     # sets status to offline rather than crashing the create request.
     try:
-        ssh = _make_ssh_service(svc, redirector)
+        ssh = await _make_ssh_service(svc, redirector, db)
         result = await run_test_connection(ssh)
         new_status = "online" if result["success"] else "offline"
         await svc.update_status(redirector, new_status, os_info=result.get("os_info"))
 
-        # If connection succeeded, deploy infrastructure public key if available
-        if result["success"]:
+        # If connection succeeded and NOT using infrastructure key, deploy
+        # infrastructure public key if available (infra-key redirectors
+        # already have it pre-loaded).
+        if result["success"] and not payload.use_infrastructure_key:
             try:
                 event_svc = EventService(db)
                 event = await event_svc.get_active_event()
@@ -275,6 +312,17 @@ async def update_redirector(
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+
+    # Validate infrastructure key availability when switching to infra mode
+    if payload.use_infrastructure_key is True and not redirector.use_infrastructure_key:
+        event_svc = EventService(db)
+        event = await event_svc.get_active_event()
+        if not event or not event.ssh_private_key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot switch to infrastructure key: the active event has no SSH key pair.",
+            )
+
     redirector = await svc.update_redirector(
         redirector, payload.model_dump(exclude_unset=True)
     )
@@ -331,7 +379,7 @@ async def test_connection(
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
         result = await run_test_connection(ssh)
@@ -376,7 +424,7 @@ async def check_nginx_setup(
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_check_nginx_setup(ssh)
     except SSHConnectionError as e:
@@ -402,7 +450,7 @@ async def fix_nginx_setup(
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_fix_nginx_setup(ssh, redirector.nginx_stream_dir)
     except SSHConnectionError as e:
@@ -427,7 +475,7 @@ async def check_prereqs(
     """Check that all CyberX prerequisites are met on the redirector."""
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_check_prereqs(ssh, redirector.nginx_stream_dir)
     except SSHConnectionError as e:
@@ -450,7 +498,7 @@ async def fix_prereqs(
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_fix_prereqs(ssh, redirector.nginx_stream_dir)
     except SSHConnectionError as e:
@@ -474,7 +522,7 @@ async def check_port(
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
         result = await run_check_port(ssh, body.port, body.protocol)
@@ -502,7 +550,7 @@ async def deploy_all(
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     streams = await svc.list_streams(redirector_id)
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
         result = await run_deploy_all(ssh, redirector.nginx_stream_dir, streams)
@@ -647,7 +695,7 @@ async def delete_stream(
 
     # Remove the config file from the redirector (best-effort — delete from DB even if SSH fails)
     try:
-        ssh = _make_ssh_service(svc, redirector)
+        ssh = await _make_ssh_service(svc, redirector, db)
         await run_remove_single(ssh, redirector.nginx_stream_dir, stream_id, name)
     except Exception as e:
         logger.warning("Failed to remove stream file from redirector during delete: %s", e)
@@ -703,7 +751,7 @@ async def enable_stream(
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
 
     stream = await svc.update_stream(stream, {"enabled": True})
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
         result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
@@ -757,7 +805,7 @@ async def deploy_stream(
             detail="Stream is disabled. Enable it before deploying.",
         )
 
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
         result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
@@ -803,7 +851,7 @@ async def remove_stream_file(
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
-    ssh = _make_ssh_service(svc, redirector)
+    ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
         result = await run_remove_single(
