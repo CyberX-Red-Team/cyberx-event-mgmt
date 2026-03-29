@@ -100,9 +100,6 @@
                                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
                             <div class="form-text">
                                 Paste the full PEM private key. Stored encrypted at rest.
-                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="useInfraKey('add')">
-                                    <i data-feather="key" style="width:14px;height:14px;"></i> Use Infrastructure Key
-                                </button>
                             </div>
                         </div>
                         <div class="col-12">
@@ -170,9 +167,6 @@
                                 placeholder="Leave blank to keep existing key"></textarea>
                             <div class="form-text">
                                 Leave blank to keep the current key. Paste new PEM to replace it.
-                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="useInfraKey('edit')">
-                                    <i data-feather="key" style="width:14px;height:14px;"></i> Use Infrastructure Key
-                                </button>
                             </div>
                         </div>
                         <div class="col-12">
@@ -267,7 +261,7 @@ async function loadRedirectors() {
         renderTable(_redirectors);
     } catch (err) {
         document.getElementById('redirectorsBody').innerHTML =
-            `<tr><td colspan="7" class="text-center text-danger py-4">Failed to load redirectors: ${err.message}</td></tr>`;
+            `<tr><td colspan="7" class="text-center text-danger py-4">Failed to load redirectors: ${escHtml(err.message)}</td></tr>`;
     }
 }
 
@@ -318,32 +312,6 @@ function statusBadge(status) {
 }
 
 // ============================================================
-// Infrastructure Key
-// ============================================================
-async function useInfraKey(mode) {
-    try {
-        const resp = await csrfFetch('/api/redirectors/infrastructure-key');
-        if (!resp.ok) {
-            const data = await resp.json().catch(() => ({}));
-            showToast(escHtml(data.detail || 'No infrastructure key available.'), 'warning');
-            return;
-        }
-        const data = await resp.json();
-        const keyField = mode === 'edit' ? 'edit_ssh_key' : 'add_ssh_key';
-        const userField = mode === 'edit' ? 'edit_ssh_username' : 'add_ssh_username';
-        document.getElementById(keyField).value = data.ssh_private_key;
-        // Pre-fill username if empty
-        const userInput = document.getElementById(userField);
-        if (!userInput.value.trim()) {
-            userInput.value = data.ssh_username || 'root';
-        }
-        showToast(`Infrastructure key loaded from event: ${escHtml(data.event_name)}`, 'success');
-    } catch (err) {
-        showToast(`Failed to load infrastructure key: ${escHtml(err.message)}`, 'danger');
-    }
-}
-
-// ============================================================
 // Add Modal
 // ============================================================
 function openAddModal() {
@@ -387,9 +355,6 @@ async function submitAddRedirector() {
         }
         addModal.hide();
         showToast(`Redirector <strong>${escHtml(data.name)}</strong> created.`, 'success');
-        if (data.infra_key_message) {
-            setTimeout(() => showToast(escHtml(data.infra_key_message), 'info'), 1500);
-        }
         loadRedirectors();
     } catch (err) {
         errEl.textContent = `Request failed: ${err.message}`;
@@ -483,7 +448,7 @@ async function confirmDeleteRedirector() {
         showToast('Redirector deleted.', 'success');
         loadRedirectors();
     } catch (err) {
-        showToast(`Delete failed: ${err.message}`, 'danger');
+        showToast(`Delete failed: ${escHtml(err.message)}`, 'danger');
     }
     _deleteTargetId = null;
 }

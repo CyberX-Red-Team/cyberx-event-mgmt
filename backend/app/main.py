@@ -20,6 +20,7 @@ from app.api.routes.agent import agent_router, participant_router as agent_parti
 from app.api.routes import bot as bot_routes, admin_api_keys
 from app.api.routes import redirectors as redirectors_routes
 from app.api.routes import redirectors_pages
+from app.api.routes import admin_pages
 from app.tasks import start_scheduler, stop_scheduler
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
@@ -219,7 +220,7 @@ from starlette.responses import Response
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next) -> Response:
         response = await call_next(request)
-        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
@@ -305,6 +306,7 @@ app.include_router(bot_routes.router)  # External bot API (Discord verification)
 app.include_router(admin_api_keys.router)  # Admin API key management
 app.include_router(redirectors_routes.router)   # Redirector REST API
 app.include_router(redirectors_pages.router)    # Redirector web UI pages
+app.include_router(admin_pages.router)           # Admin pages (logs, etc.)
 
 # Include view routes (HTML pages)
 app.include_router(views.router)

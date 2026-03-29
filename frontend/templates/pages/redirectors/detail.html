@@ -41,12 +41,12 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     </div>
                     {% if redirector.os_info %}
                     <div class="text-muted small mb-1">
-                        {% if redirector.os_info.os %}{{ redirector.os_info.os }}{% endif %}
-                        {% if redirector.os_info.arch %}&nbsp;·&nbsp;{{ redirector.os_info.arch }}{% endif %}
-                        {% if redirector.os_info.kernel %}&nbsp;·&nbsp;{{ redirector.os_info.kernel }}{% endif %}
-                        {% if redirector.os_info.cpu %}&nbsp;·&nbsp;{{ redirector.os_info.cpu }}{% endif %}
-                        {% if redirector.os_info.mem %}&nbsp;·&nbsp;{{ redirector.os_info.mem }} RAM{% endif %}
-                        {% if redirector.os_info.uptime %}&nbsp;·&nbsp;{{ redirector.os_info.uptime }}{% endif %}
+                        {% if redirector.os_info.os %}{{ redirector.os_info.os | e }}{% endif %}
+                        {% if redirector.os_info.arch %}&nbsp;·&nbsp;{{ redirector.os_info.arch | e }}{% endif %}
+                        {% if redirector.os_info.kernel %}&nbsp;·&nbsp;{{ redirector.os_info.kernel | e }}{% endif %}
+                        {% if redirector.os_info.cpu %}&nbsp;·&nbsp;{{ redirector.os_info.cpu | e }}{% endif %}
+                        {% if redirector.os_info.mem %}&nbsp;·&nbsp;{{ redirector.os_info.mem | e }} RAM{% endif %}
+                        {% if redirector.os_info.uptime %}&nbsp;·&nbsp;{{ redirector.os_info.uptime | e }}{% endif %}
                     </div>
                     {% endif %}
                     <div class="text-muted small">
@@ -59,7 +59,7 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                         {% endif %}
                     </div>
                     {% if redirector.notes %}
-                    <p class="mt-2 mb-0 text-muted small">{{ redirector.notes }}</p>
+                    <p class="mt-2 mb-0 text-muted small">{{ redirector.notes | e }}</p>
                     {% endif %}
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
@@ -108,10 +108,10 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     <hr class="my-3">
                     <p class="small mb-2 fw-semibold">Manual setup reference:</p>
                     <div class="small text-muted mb-1">sudoers (<code>/etc/sudoers.d/cyberx</code>):</div>
-                    <pre class="bg-dark text-light rounded p-2 mb-2 small">{{ redirector.ssh_username }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh</pre>
+                    <pre class="bg-dark text-light rounded p-2 mb-2 small">{{ redirector.ssh_username | e }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh</pre>
                     <div class="small text-muted mb-1">nginx.conf stream block:</div>
                     <pre class="bg-dark text-light rounded p-2 mb-0 small">stream {
-    include {{ redirector.nginx_stream_dir }}/*.conf;
+    include {{ redirector.nginx_stream_dir | e }}/*.conf;
 }</pre>
                 </div>
             </div>
@@ -212,9 +212,6 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                             placeholder="Leave blank to keep existing key"></textarea>
                         <div class="form-text">
                             Leave blank to keep the current key.
-                            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="useInfraKeyDetail()">
-                                <i data-feather="key" style="width:14px;height:14px;"></i> Use Infrastructure Key
-                            </button>
                         </div>
                     </div>
                     <div class="col-12">
@@ -571,9 +568,9 @@ async function testConnection() {
         const streamWarn = data.stream_module_present ? '' : ' ⚠️ Stream module not found!';
         showToast(`${escHtml(data.message || '')}${rtt}${streamWarn}`, data.success ? 'success' : 'warning');
         // Reload page after short delay to refresh OS info and other server-rendered data
-        setTimeout(() => location.reload(), 1500);
+        setTimeout(() => location.reload(), 3000);
     } catch (err) {
-        showToast(`Request failed: ${err.message}`, 'danger');
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -592,7 +589,7 @@ async function deployAll() {
         showDeployResult('Deploy All', data);
         if (data.success) loadStreams();
     } catch (err) {
-        showToast(`Request failed: ${err.message}`, 'danger');
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -607,7 +604,7 @@ async function previewStream(streamId) {
         document.getElementById('previewContent').value = data.content;
         previewModal.show();
     } catch (err) {
-        showToast(`Preview failed: ${err.message}`, 'danger');
+        showToast(`Preview failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -625,7 +622,7 @@ async function deployStream(streamId, streamName) {
         }
         showDeployResult(`Deploy: ${streamName}`, data);
     } catch (err) {
-        showToast(`Request failed: ${err.message}`, 'danger');
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -644,7 +641,7 @@ async function removeStream(streamId, streamName) {
         showDeployResult(`Disable: ${streamName}`, data);
         await loadStreams();
     } catch (err) {
-        showToast(`Request failed: ${err.message}`, 'danger');
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -663,7 +660,7 @@ async function enableStream(streamId, streamName) {
         showDeployResult(`Enable: ${streamName}`, data);
         await loadStreams();
     } catch (err) {
-        showToast(`Request failed: ${err.message}`, 'danger');
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -829,32 +826,9 @@ async function confirmDeleteStream() {
         showToast(`Stream <strong>${escHtml(_deleteStreamName)}</strong> removed.`, 'success');
         loadStreams();
     } catch (err) {
-        showToast(`Delete failed: ${err.message}`, 'danger');
+        showToast(`Delete failed: ${escHtml(err.message)}`, 'danger');
     }
     _deleteStreamId = null;
-}
-
-// ============================================================
-// Infrastructure Key (for edit modal)
-// ============================================================
-async function useInfraKeyDetail() {
-    try {
-        const resp = await csrfFetch('/api/redirectors/infrastructure-key');
-        if (!resp.ok) {
-            const data = await resp.json().catch(() => ({}));
-            showToast(escHtml(data.detail || 'No infrastructure key available.'), 'warning');
-            return;
-        }
-        const data = await resp.json();
-        document.getElementById('er_key').value = data.ssh_private_key;
-        const userInput = document.getElementById('er_user');
-        if (!userInput.value.trim()) {
-            userInput.value = data.ssh_username || 'root';
-        }
-        showToast(`Infrastructure key loaded from event: ${escHtml(data.event_name)}`, 'success');
-    } catch (err) {
-        showToast(`Failed to load infrastructure key: ${escHtml(err.message)}`, 'danger');
-    }
 }
 
 // Edit Redirector
@@ -1034,12 +1008,12 @@ function startPolling() {
     _pollTimer = setInterval(() => {
         _pollTick++;
         if (!_streams.length) return;
-        // Every 5 s: re-check only streams that have a known conflict
+        // Every 30 s: re-check only streams that have a known conflict
         const conflicted = _streams.filter(s => _portConflicts[s.id]);
         if (conflicted.length) runPortChecks(conflicted);
-        // Every 60 s (12th tick): full sweep of all streams
-        if (_pollTick % 12 === 0) runPortChecks(_streams);
-    }, 5000);
+        // Every 5 min (10th tick): full sweep of all streams
+        if (_pollTick % 10 === 0) runPortChecks(_streams);
+    }, 30000);
 }
 
 function stopPolling() {

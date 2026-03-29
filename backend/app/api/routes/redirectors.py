@@ -59,7 +59,6 @@ router = APIRouter(prefix="/api/redirectors", tags=["Redirectors"])
 def _build_redirector_out(
     redirector: Redirector,
     stream_count: int | None = None,
-    infra_key_message: str | None = None,
 ) -> RedirectorOut:
     """Build RedirectorOut from ORM object, always redacting key fields.
 
@@ -84,14 +83,12 @@ def _build_redirector_out(
         notes=redirector.notes,
         status=redirector.status,
         os_info=redirector.os_info,
-        use_infrastructure_key=redirector.use_infrastructure_key,
         last_deployed_at=redirector.last_deployed_at,
         last_tested_at=redirector.last_tested_at,
         stream_count=stream_count,
         created_at=redirector.created_at,
         updated_at=redirector.updated_at,
         owner_id=redirector.owner_id,
-        infra_key_message=infra_key_message,
     )
 
 
@@ -126,7 +123,7 @@ def _ssh_command_error(exc: Exception) -> HTTPException:
     logger.error("SSH command error: %s", exc)
     return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=f"SSH command error: {exc}",
+        detail="An SSH command failed on the redirector. Check server logs for details.",
     )
 
 
@@ -200,9 +197,6 @@ async def create_redirector(
     owner_id = current_user.id if current_user.id else None
     redirector = await svc.create_redirector({**payload.model_dump(), "owner_id": owner_id})
 
-    infra_key_deployed = False
-    infra_key_message = None
-
     # Auto-test connection to set initial status (online/offline).
     # Best-effort: redirector is already saved, so any failure here just
     # sets status to offline rather than crashing the create request.
@@ -212,35 +206,14 @@ async def create_redirector(
         new_status = "online" if result["success"] else "offline"
         await svc.update_status(redirector, new_status, os_info=result.get("os_info"))
 
-        # If connection succeeded, deploy infrastructure key if available
+        # If connection succeeded, deploy infrastructure public key if available
         if result["success"]:
             try:
                 event_svc = EventService(db)
                 event = await event_svc.get_active_event()
-                if event and event.ssh_public_key and event.ssh_private_key:
+                if event and event.ssh_public_key:
                     deploy_result = await run_deploy_infra_key(ssh, event.ssh_public_key)
-                    if deploy_result.get("deployed") or deploy_result.get("already_present"):
-                        # Swap to infrastructure key as primary, save user key as backup
-                        from app.utils.encryption import encrypt_field
-                        user_key_encrypted = redirector.ssh_private_key  # Already encrypted
-                        infra_key_encrypted = encrypt_field(event.ssh_private_key)
-                        redirector.ssh_private_key = infra_key_encrypted
-                        redirector.ssh_backup_key = user_key_encrypted
-                        redirector.ssh_key_passphrase = None  # Infra key has no passphrase
-                        redirector.use_infrastructure_key = True
-                        await db.commit()
-                        infra_key_deployed = True
-                        if deploy_result.get("deployed"):
-                            infra_key_message = (
-                                f"Infrastructure key from event '{event.name}' deployed to redirector "
-                                f"and set as primary. Your key is saved as backup."
-                            )
-                        else:
-                            infra_key_message = (
-                                f"Infrastructure key from event '{event.name}' already present. "
-                                f"Set as primary key. Your key is saved as backup."
-                            )
-                        # Audit: distinct entry for infrastructure key deployment
+                    if deploy_result.get("deployed"):
                         infra_audit = AuditService(db)
                         await infra_audit.log(
                             action="INFRA_KEY_DEPLOYED",
@@ -249,7 +222,6 @@ async def create_redirector(
                             details={
                                 "redirector_id": redirector.id,
                                 "event_name": event.name,
-                                "key_was_new": deploy_result.get("deployed", False),
                             },
                             ip_address=request.client.host if request.client else None,
                         )
@@ -274,43 +246,7 @@ async def create_redirector(
     # Refresh scalar attributes expired by prior commits (update_status, audit).
     # Pass stream_count=0 to avoid lazy-loading the relationship.
     await db.refresh(redirector)
-    return _build_redirector_out(redirector, stream_count=0, infra_key_message=infra_key_message)
-
-
-@router.get("/infrastructure-key")
-async def get_infrastructure_key(
-    request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Return the active event's SSH private key for use as the default redirector key.
-
-    This allows operators to use the same key that was deployed to redirector
-    hosts via cloud-init, instead of pasting it manually.
-    """
-    event_svc = EventService(db)
-    event = await event_svc.get_active_event()
-    if not event or not event.ssh_private_key:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active event with an SSH key configured.",
-        )
-
-    # Audit: track every access to the shared infrastructure key
-    audit = AuditService(db)
-    await audit.log(
-        action="INFRA_KEY_ACCESSED",
-        user_id=current_user.id,
-        resource_type="EVENT",
-        details={"event_id": event.id, "event_name": event.name},
-        ip_address=request.client.host if request.client else None,
-    )
-
-    return {
-        "event_name": event.name,
-        "ssh_private_key": event.ssh_private_key,
-        "ssh_username": "root",
-    }
+    return _build_redirector_out(redirector, stream_count=0)
 
 
 @router.get("/{redirector_id}", response_model=RedirectorOut)
