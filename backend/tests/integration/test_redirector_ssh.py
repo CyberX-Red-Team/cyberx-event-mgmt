@@ -40,6 +40,10 @@ def _make_service():
 
 @pytest.mark.integration
 @pytest.mark.ssh
+@pytest.mark.skipif(
+    not os.path.exists(os.environ.get("TEST_SSH_KEY_PATH", "/tmp/test_ssh_key")),
+    reason="Mock-redirector SSH key not found (run tests/docker/run_tests.sh first)",
+)
 class TestRealSSHConnection:
     """Tests that require a running mock-redirector Docker container."""
 
