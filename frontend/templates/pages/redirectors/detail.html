@@ -439,6 +439,7 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
 {% endblock %}
 
 {% block extra_js %}
+{{ super() }}
 <script>
 // ============================================================
 // Constants
@@ -621,6 +622,7 @@ async function deployStream(streamId, streamName) {
             return;
         }
         showDeployResult(`Deploy: ${streamName}`, data);
+        if (data.success) loadStreams();
     } catch (err) {
         showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
