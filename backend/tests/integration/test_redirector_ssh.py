@@ -22,6 +22,11 @@ SSH_PORT = int(os.environ.get("TEST_SSH_PORT", "2222"))
 SSH_USER = os.environ.get("TEST_SSH_USER", "cyberx")
 
 
+_skip_reason = None
+if not os.path.isfile(SSH_KEY_PATH):
+    _skip_reason = f"SSH key not found at {SSH_KEY_PATH} — mock redirector not set up"
+
+
 def _read_key():
     """Read the test SSH private key from disk."""
     with open(SSH_KEY_PATH, "r") as f:
@@ -40,6 +45,7 @@ def _make_service():
 
 @pytest.mark.integration
 @pytest.mark.ssh
+@pytest.mark.skipif(_skip_reason is not None, reason=_skip_reason or "")
 class TestRealSSHConnection:
     """Tests that require a running mock-redirector Docker container."""
 

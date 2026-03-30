@@ -115,6 +115,8 @@ class RedirectorService:
         return redirector
 
     async def delete_redirector(self, redirector: Redirector) -> None:
+        # Ensure stream_configs are loaded so ORM cascade="all, delete-orphan" works
+        await self.session.refresh(redirector, attribute_names=["stream_configs"])
         await self.session.delete(redirector)
         await self.session.commit()
 
