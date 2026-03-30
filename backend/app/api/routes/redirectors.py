@@ -544,12 +544,17 @@ async def deploy_all(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Sync all stream configs for this redirector:
-    write enabled, delete disabled, remove orphans, reload nginx.
+    Enable and deploy all stream configs for this redirector:
+    mark all as enabled, write configs, remove orphans, reload nginx.
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     streams = await svc.list_streams(redirector_id)
+
+    # Mark all streams as enabled before deploying
+    for s in streams:
+        await svc.update_stream(s, {"enabled": True})
+
     ssh = await _make_ssh_service(svc, redirector, db)
 
     try:

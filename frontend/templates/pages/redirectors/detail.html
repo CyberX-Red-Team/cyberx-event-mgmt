@@ -288,7 +288,7 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                         <label class="form-label fw-semibold">Redirect to Port <span class="text-danger">*</span></label>
                         <input type="number" class="form-control" id="sm_cs_port" min="1" max="65535" placeholder="443">
                     </div>
-                    <div class="col-md-3 d-flex align-items-end">
+                    <div class="col-md-3 align-items-end d-none" id="sm_enabled_wrapper">
                         <div class="form-check mb-1">
                             <input class="form-check-input" type="checkbox" id="sm_enabled">
                             <label class="form-check-label fw-semibold" for="sm_enabled">Enabled</label>
@@ -677,6 +677,8 @@ function openAddStreamModal() {
     document.getElementById('sm_cs_ip').value = '';
     document.getElementById('sm_cs_port').value = '';
     document.getElementById('sm_enabled').checked = false;
+    document.getElementById('sm_enabled_wrapper').classList.add('d-none');
+    document.getElementById('sm_enabled_wrapper').classList.remove('d-flex');
     document.getElementById('sm_acl_enabled').checked = false;
     document.getElementById('sm_cidrs').value = '';
     document.getElementById('sm_ssl_enabled').checked = false;
@@ -702,6 +704,8 @@ function openEditStreamModal(id) {
     document.getElementById('sm_cs_ip').value = s.cs_ip;
     document.getElementById('sm_cs_port').value = s.cs_port;
     document.getElementById('sm_enabled').checked = s.enabled;
+    document.getElementById('sm_enabled_wrapper').classList.remove('d-none');
+    document.getElementById('sm_enabled_wrapper').classList.add('d-flex');
     document.getElementById('sm_acl_enabled').checked = s.access_control_enabled;
     document.getElementById('sm_cidrs').value = (s.allowed_cidrs || []).join(', ');
     document.getElementById('sm_ssl_enabled').checked = s.ssl_enabled;
@@ -730,7 +734,7 @@ async function submitStream() {
         listen_port: parseInt(document.getElementById('sm_listen_port').value, 10),
         cs_ip: document.getElementById('sm_cs_ip').value.trim(),
         cs_port: parseInt(document.getElementById('sm_cs_port').value, 10),
-        enabled: document.getElementById('sm_enabled').checked,
+        enabled: streamId ? document.getElementById('sm_enabled').checked : false,
         access_control_enabled: document.getElementById('sm_acl_enabled').checked,
         allowed_cidrs: cidrs,
         ssl_enabled: document.getElementById('sm_ssl_enabled').checked,
