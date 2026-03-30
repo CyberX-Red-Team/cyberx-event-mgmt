@@ -287,7 +287,7 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     </div>
                     <div class="col-md-3 d-flex align-items-end">
                         <div class="form-check mb-1">
-                            <input class="form-check-input" type="checkbox" id="sm_enabled" checked>
+                            <input class="form-check-input" type="checkbox" id="sm_enabled">
                             <label class="form-check-label fw-semibold" for="sm_enabled">Enabled</label>
                         </div>
                     </div>
@@ -653,7 +653,7 @@ function openAddStreamModal() {
     clearPortCheck();
     document.getElementById('sm_cs_ip').value = '';
     document.getElementById('sm_cs_port').value = '';
-    document.getElementById('sm_enabled').checked = true;
+    document.getElementById('sm_enabled').checked = false;
     document.getElementById('sm_acl_enabled').checked = false;
     document.getElementById('sm_cidrs').value = '';
     document.getElementById('sm_ssl_enabled').checked = false;
