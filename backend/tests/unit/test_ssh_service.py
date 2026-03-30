@@ -73,6 +73,9 @@ class TestSSHServiceConnect:
             private_key_pem=VALID_ED25519_PEM,
         )
 
+        # Mock _load_key so that the fake PEM is not parsed by paramiko
+        svc._load_key = MagicMock(return_value=MagicMock())
+
         # _connect calls paramiko.SSHClient().connect(...)
         client = svc._connect()
         assert mock_client.connect.called
@@ -106,6 +109,9 @@ class TestSSHServiceConnect:
             username="debian",
             private_key_pem=VALID_ED25519_PEM,
         )
+
+        # Mock _load_key so that the fake PEM is not parsed by paramiko
+        svc._load_key = MagicMock(return_value=MagicMock())
 
         with pytest.raises(SSHConnectionError):
             svc._connect()
