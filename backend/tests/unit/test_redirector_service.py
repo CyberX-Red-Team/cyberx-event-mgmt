@@ -147,7 +147,8 @@ class TestRedirectorServiceUpdate:
         assert svc.get_decrypted_key(redir) == VALID_PEM
 
     @pytest.mark.asyncio
-    async def test_switch_to_infra_key(self, db_session: AsyncSession):
+    async def test_clear_byod_key(self, db_session: AsyncSession):
+        """clear_byod_key removes BYOD credentials and switches to infra key."""
         svc = RedirectorService(db_session)
         redir = await svc.create_redirector({
             "name": "switch-redir",
@@ -158,30 +159,45 @@ class TestRedirectorServiceUpdate:
         })
 
         assert redir.use_infrastructure_key is False
-        await svc.update_redirector(redir, {"use_infrastructure_key": True})
+        assert redir.ssh_private_key is not None
+
+        redir = await svc.clear_byod_key(redir)
 
         assert redir.use_infrastructure_key is True
         assert redir.ssh_private_key is None
         assert redir.ssh_key_passphrase is None
 
     @pytest.mark.asyncio
-    async def test_switch_to_byod_key(self, db_session: AsyncSession):
+    async def test_create_with_instance_id(self, db_session: AsyncSession):
+        """CyberX redirector with instance_id auto-sets use_infrastructure_key."""
         svc = RedirectorService(db_session)
         redir = await svc.create_redirector({
-            "name": "switch-byod",
+            "name": "cx-redir",
             "current_ip": "10.0.0.15",
-            "ssh_username": "debian",
-            "use_infrastructure_key": True,
+            "ssh_username": "root",
+            "instance_id": 999,
         })
 
         assert redir.use_infrastructure_key is True
-        await svc.update_redirector(redir, {
-            "use_infrastructure_key": False,
-            "ssh_private_key": VALID_PEM,
+        assert redir.instance_id == 999
+        assert redir.ssh_private_key is None
+
+    @pytest.mark.asyncio
+    async def test_get_redirector_by_instance_id(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await svc.create_redirector({
+            "name": "cx-redir-lookup",
+            "current_ip": "10.0.0.16",
+            "ssh_username": "root",
+            "instance_id": 888,
         })
 
-        assert redir.use_infrastructure_key is False
-        assert svc.get_decrypted_key(redir) == VALID_PEM
+        found = await svc.get_redirector_by_instance_id(888)
+        assert found is not None
+        assert found.id == redir.id
+
+        not_found = await svc.get_redirector_by_instance_id(777)
+        assert not_found is None
 
 
 @pytest.mark.unit

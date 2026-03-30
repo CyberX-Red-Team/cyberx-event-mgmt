@@ -62,6 +62,16 @@ class Redirector(Base):
 
     notes = Column(Text, nullable=True)
 
+    # Link to a CyberX-provisioned cloud instance (NULL for BYOD redirectors)
+    instance_id = Column(
+        Integer,
+        ForeignKey("instances.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    instance = relationship("Instance", foreign_keys=[instance_id], lazy="noload")
+
     # Owner — participants own the redirectors they create; admins see all
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     owner = relationship("User", foreign_keys=[owner_id])

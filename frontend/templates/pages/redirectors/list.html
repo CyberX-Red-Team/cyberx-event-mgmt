@@ -26,9 +26,19 @@
                 Manage nginx stream proxy configurations on remote redirector servers via SSH.
             </p>
         </div>
-        <button class="btn btn-danger" onclick="openAddModal()">
-            <i data-feather="plus" class="me-1"></i> Add Redirector
-        </button>
+        <div class="btn-group">
+            <button class="btn btn-danger dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                <i data-feather="plus" class="me-1"></i> Add Redirector
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="#" onclick="openAddBYOD(); return false;">
+                    <i data-feather="upload" class="me-1" style="width:16px;height:16px;"></i> Add BYOD Redirector
+                </a></li>
+                <li><a class="dropdown-item" href="#" onclick="openAddCyberX(); return false;">
+                    <i data-feather="cloud" class="me-1" style="width:16px;height:16px;"></i> Add CyberX Redirector
+                </a></li>
+            </ul>
+        </div>
     </div>
 
     <!-- Redirectors Table -->
@@ -62,19 +72,23 @@
 </div>
 
 <!-- ================================================================
-     Add Redirector Modal
+     Add BYOD Redirector Modal
      ================================================================ -->
-<div class="modal fade" id="addRedirectorModal" tabindex="-1" aria-labelledby="addRedirectorModalLabel" aria-hidden="true">
+<div class="modal fade" id="addBYODModal" tabindex="-1" aria-labelledby="addBYODModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="addRedirectorModalLabel">
-                    <i data-feather="plus-circle" class="me-2"></i>Add Redirector
+                <h5 class="modal-title" id="addBYODModalLabel">
+                    <i data-feather="upload" class="me-2"></i>Add BYOD Redirector
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="addRedirectorForm">
+                <div class="alert alert-info small mb-3">
+                    <i data-feather="info" class="me-1" style="width:14px;height:14px;"></i>
+                    Your SSH key will be used once to bootstrap the CyberX infrastructure key, then removed from storage.
+                </div>
+                <form id="addBYODForm">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
@@ -93,32 +107,18 @@
                             <input type="text" class="form-control" id="add_ssh_username" placeholder="debian" required>
                         </div>
                         <div class="col-12">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="add_use_infra_key"
-                                       onchange="toggleInfraKeyMode('add')">
-                                <label class="form-check-label fw-semibold" for="add_use_infra_key">
-                                    Use infrastructure key
-                                </label>
-                                <div class="form-text mt-0">
-                                    Enable for CyberX-provided redirectors where the infrastructure key is pre-loaded.
-                                </div>
+                            <label class="form-label fw-semibold">
+                                SSH Private Key (PEM) <span class="text-danger">*</span>
+                            </label>
+                            <textarea class="form-control font-monospace" id="add_ssh_key" rows="6"
+                                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
+                            <div class="form-text">
+                                Paste the full PEM private key. Used once for bootstrapping, then securely deleted.
                             </div>
                         </div>
-                        <div id="add_byod_key_section">
-                            <div class="col-12 mt-3">
-                                <label class="form-label fw-semibold">
-                                    SSH Private Key (PEM) <span class="text-danger">*</span>
-                                </label>
-                                <textarea class="form-control font-monospace" id="add_ssh_key" rows="6"
-                                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
-                                <div class="form-text">
-                                    Paste the full PEM private key. Stored encrypted at rest.
-                                </div>
-                            </div>
-                            <div class="col-12 mt-3">
-                                <label class="form-label fw-semibold">Key Passphrase <span class="text-muted small">(optional)</span></label>
-                                <input type="password" class="form-control" id="add_passphrase" placeholder="Leave blank if key has no passphrase">
-                            </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Key Passphrase <span class="text-muted small">(optional)</span></label>
+                            <input type="password" class="form-control" id="add_passphrase" placeholder="Leave blank if key has no passphrase">
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">nginx Stream Directory</label>
@@ -131,12 +131,123 @@
                         </div>
                     </div>
                 </form>
-                <div id="addRedirectorError" class="alert alert-danger mt-3 d-none"></div>
+                <div id="addBYODError" class="alert alert-danger mt-3 d-none"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" onclick="submitAddRedirector()">
-                    <i data-feather="save" class="me-1"></i>Save Redirector
+                <button type="button" class="btn btn-danger" onclick="submitAddBYOD()">
+                    <i data-feather="save" class="me-1"></i>Add Redirector
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     Add CyberX Redirector Modal (two-step wizard)
+     ================================================================ -->
+<div class="modal fade" id="addCyberXModal" tabindex="-1" aria-labelledby="addCyberXModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addCyberXModalLabel">
+                    <i data-feather="cloud" class="me-2"></i>Add CyberX Redirector
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Step 1: Select or Provision -->
+                <div id="cx_step1">
+                    <p class="text-muted small mb-3">Select an existing redirector instance or provision a new one.</p>
+                    <div id="cx_loading" class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                        Loading available instances...
+                    </div>
+                    <div id="cx_instance_list" class="d-none">
+                        <div id="cx_instances_container"></div>
+                        <hr class="my-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="cx_choice" id="cx_provision_new" value="new">
+                            <label class="form-check-label fw-semibold" for="cx_provision_new">
+                                <i data-feather="plus-circle" class="me-1" style="width:14px;height:14px;"></i>
+                                Provision New Redirector
+                            </label>
+                        </div>
+                        <div id="cx_provision_section" class="d-none mt-3 ms-4">
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Template</label>
+                                    <select class="form-select form-select-sm" id="cx_template_id"></select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Instance Name</label>
+                                    <input type="text" class="form-control form-control-sm" id="cx_instance_name"
+                                           placeholder="e.g. redir-01">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="cx_no_instances" class="d-none">
+                        <p class="text-muted mb-3">No available redirector instances. Provision one below.</p>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold">Template</label>
+                                <select class="form-select form-select-sm" id="cx_template_id_alt"></select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold">Instance Name</label>
+                                <input type="text" class="form-control form-control-sm" id="cx_instance_name_alt"
+                                       placeholder="e.g. redir-01">
+                            </div>
+                        </div>
+                        <div id="cx_no_templates" class="alert alert-warning small mt-3 d-none">
+                            No redirector templates configured for this event. Ask an admin to create one.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Confirm & Create -->
+                <div id="cx_step2" class="d-none">
+                    <div id="cx_provisioning" class="text-center py-4 d-none">
+                        <div class="spinner-border text-danger me-2" role="status"></div>
+                        <p class="mt-2 mb-0 text-muted">Provisioning instance... This may take a few minutes.</p>
+                        <p class="mt-1 mb-0 small text-muted" id="cx_provision_status">Status: BUILDING</p>
+                    </div>
+                    <div id="cx_confirm_form" class="d-none">
+                        <div class="alert alert-success small mb-3">
+                            <i data-feather="check-circle" class="me-1" style="width:14px;height:14px;"></i>
+                            Instance is active. Confirm details to add as a managed redirector.
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Redirector Name</label>
+                                <input type="text" class="form-control" id="cx_redir_name">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">IP Address</label>
+                                <input type="text" class="form-control" id="cx_redir_ip" readonly>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">nginx Stream Directory</label>
+                                <input type="text" class="form-control" id="cx_stream_dir" value="/etc/nginx/stream.d">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Notes <span class="text-muted small">(optional)</span></label>
+                                <textarea class="form-control" id="cx_notes" rows="2"></textarea>
+                            </div>
+                        </div>
+                        <input type="hidden" id="cx_selected_instance_id">
+                    </div>
+                </div>
+
+                <div id="addCyberXError" class="alert alert-danger mt-3 d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary d-none" id="cx_back_btn" onclick="cyberXBack()">Back</button>
+                <button type="button" class="btn btn-danger" id="cx_next_btn" onclick="cyberXNext()">Next</button>
+                <button type="button" class="btn btn-danger d-none" id="cx_submit_btn" onclick="submitCyberX()">
+                    <i data-feather="save" class="me-1"></i>Add Redirector
                 </button>
             </div>
         </div>
@@ -157,6 +268,7 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="edit_redirector_id">
+                <input type="hidden" id="edit_is_cyberx">
                 <form id="editRedirectorForm">
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -174,18 +286,6 @@
                         <div class="col-md-8">
                             <label class="form-label fw-semibold">SSH Username</label>
                             <input type="text" class="form-control" id="edit_ssh_username">
-                        </div>
-                        <div class="col-12">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="edit_use_infra_key"
-                                       onchange="toggleInfraKeyMode('edit')">
-                                <label class="form-check-label fw-semibold" for="edit_use_infra_key">
-                                    Use infrastructure key
-                                </label>
-                                <div class="form-text mt-0">
-                                    Enable for CyberX-provided redirectors where the infrastructure key is pre-loaded.
-                                </div>
-                            </div>
                         </div>
                         <div id="edit_byod_key_section">
                             <div class="col-12 mt-3">
@@ -264,16 +364,23 @@
 // ============================================================
 let _redirectors = [];
 let _deleteTargetId = null;
+let _cxPollTimer = null;
+let _cxSelectedInstanceId = null;
 
-const addModal  = new bootstrap.Modal(document.getElementById('addRedirectorModal'));
-const editModal = new bootstrap.Modal(document.getElementById('editRedirectorModal'));
-const delModal  = new bootstrap.Modal(document.getElementById('deleteRedirectorModal'));
+const byodModal   = new bootstrap.Modal(document.getElementById('addBYODModal'));
+const cyberXModal = new bootstrap.Modal(document.getElementById('addCyberXModal'));
+const editModal   = new bootstrap.Modal(document.getElementById('editRedirectorModal'));
+const delModal    = new bootstrap.Modal(document.getElementById('deleteRedirectorModal'));
 
 // ============================================================
 // Bootstrap: re-render feather icons after modal shows
 // ============================================================
 document.querySelectorAll('.modal').forEach(el => {
     el.addEventListener('shown.bs.modal', () => feather.replace());
+});
+// Clean up polling timer when CyberX modal is closed
+document.getElementById('addCyberXModal').addEventListener('hidden.bs.modal', () => {
+    if (_cxPollTimer) { clearInterval(_cxPollTimer); _cxPollTimer = null; }
 });
 
 // ============================================================
@@ -303,17 +410,21 @@ function renderTable(redirectors) {
         feather.replace();
         return;
     }
-    tbody.innerHTML = redirectors.map(r => `
+    tbody.innerHTML = redirectors.map(r => {
+        const typeBadge = r.instance_id
+            ? '<span class="badge bg-info ms-1" title="CyberX provisioned">CyberX</span>'
+            : '<span class="badge bg-secondary ms-1" title="Bring Your Own Device">BYOD</span>';
+        return `
         <tr>
             <td>
                 <a href="{{ url_prefix }}/redirectors/${r.id}" class="fw-semibold text-decoration-none redir-name-link">
                     ${escHtml(r.name)}
                 </a>
+                ${typeBadge}
             </td>
             <td>${escHtml(r.current_ip)}</td>
             <td class="text-muted">
                 ${escHtml(r.ssh_username)}@${r.current_ip}:${r.ssh_port}
-                ${r.use_infrastructure_key ? '<span class="badge bg-info ms-1" title="Using infrastructure key">infra</span>' : ''}
             </td>
             <td>${statusBadge(r.status)}</td>
             <td><span class="badge bg-secondary rounded-pill">${r.stream_count}</span></td>
@@ -328,59 +439,49 @@ function renderTable(redirectors) {
                     <i data-feather="trash-2"></i>
                 </button>
             </td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
     feather.replace();
 }
 
 function statusBadge(status) {
-    const map = {
-        online:  'bg-success',
-        offline: 'bg-danger',
-        unknown: 'bg-secondary',
-    };
+    const map = { online: 'bg-success', offline: 'bg-danger', unknown: 'bg-secondary' };
     const cls = map[status] || 'bg-secondary';
     return `<span class="badge ${cls}">${escHtml(status)}</span>`;
 }
 
 // ============================================================
-// Add Modal
+// Add BYOD Redirector
 // ============================================================
-function openAddModal() {
-    document.getElementById('addRedirectorForm').reset();
-    document.getElementById('add_use_infra_key').checked = false;
-    toggleInfraKeyMode('add');
-    document.getElementById('addRedirectorError').classList.add('d-none');
-    addModal.show();
+function openAddBYOD() {
+    document.getElementById('addBYODForm').reset();
+    document.getElementById('add_stream_dir').value = '/etc/nginx/stream.d';
+    document.getElementById('addBYODError').classList.add('d-none');
+    byodModal.show();
 }
 
-async function submitAddRedirector() {
-    const errEl = document.getElementById('addRedirectorError');
+async function submitAddBYOD() {
+    const errEl = document.getElementById('addBYODError');
     errEl.classList.add('d-none');
 
-    const useInfraKey = document.getElementById('add_use_infra_key').checked;
     const payload = {
-        name:                   document.getElementById('add_name').value.trim(),
-        current_ip:             document.getElementById('add_ip').value.trim(),
-        ssh_port:               parseInt(document.getElementById('add_ssh_port').value, 10),
-        ssh_username:           document.getElementById('add_ssh_username').value.trim(),
-        use_infrastructure_key: useInfraKey,
-        nginx_stream_dir:       document.getElementById('add_stream_dir').value.trim(),
-        notes:                  document.getElementById('add_notes').value.trim() || null,
+        name:               document.getElementById('add_name').value.trim(),
+        current_ip:         document.getElementById('add_ip').value.trim(),
+        ssh_port:           parseInt(document.getElementById('add_ssh_port').value, 10),
+        ssh_username:       document.getElementById('add_ssh_username').value.trim(),
+        ssh_private_key:    document.getElementById('add_ssh_key').value.trim(),
+        ssh_key_passphrase: document.getElementById('add_passphrase').value || null,
+        nginx_stream_dir:   document.getElementById('add_stream_dir').value.trim(),
+        notes:              document.getElementById('add_notes').value.trim() || null,
     };
-
-    if (!useInfraKey) {
-        payload.ssh_private_key    = document.getElementById('add_ssh_key').value.trim();
-        payload.ssh_key_passphrase = document.getElementById('add_passphrase').value || null;
-    }
 
     if (!payload.name || !payload.current_ip || !payload.ssh_username) {
         errEl.textContent = 'Please fill in all required fields.';
         errEl.classList.remove('d-none');
         return;
     }
-    if (!useInfraKey && !payload.ssh_private_key) {
-        errEl.textContent = 'SSH private key is required for BYOD redirectors.';
+    if (!payload.ssh_private_key) {
+        errEl.textContent = 'SSH private key is required.';
         errEl.classList.remove('d-none');
         return;
     }
@@ -397,8 +498,240 @@ async function submitAddRedirector() {
             errEl.classList.remove('d-none');
             return;
         }
-        addModal.hide();
+        byodModal.hide();
         showToast(`Redirector <strong>${escHtml(data.name)}</strong> created.`, 'success');
+        loadRedirectors();
+    } catch (err) {
+        errEl.textContent = `Request failed: ${err.message}`;
+        errEl.classList.remove('d-none');
+    }
+}
+
+// ============================================================
+// Add CyberX Redirector — Step 1: Load instances & templates
+// ============================================================
+async function openAddCyberX() {
+    // Reset wizard state
+    document.getElementById('cx_step1').classList.remove('d-none');
+    document.getElementById('cx_step2').classList.add('d-none');
+    document.getElementById('cx_loading').classList.remove('d-none');
+    document.getElementById('cx_instance_list').classList.add('d-none');
+    document.getElementById('cx_no_instances').classList.add('d-none');
+    document.getElementById('cx_next_btn').classList.remove('d-none');
+    document.getElementById('cx_submit_btn').classList.add('d-none');
+    document.getElementById('cx_back_btn').classList.add('d-none');
+    document.getElementById('addCyberXError').classList.add('d-none');
+    _cxSelectedInstanceId = null;
+
+    cyberXModal.show();
+
+    try {
+        const [instResp, tmplResp] = await Promise.all([
+            fetch('/api/redirectors/available-instances'),
+            fetch('/api/redirectors/redirector-templates'),
+        ]);
+        const instances = instResp.ok ? await instResp.json() : [];
+        const templates = tmplResp.ok ? await tmplResp.json() : [];
+
+        document.getElementById('cx_loading').classList.add('d-none');
+
+        if (instances.length > 0) {
+            // Show instance list with radio buttons
+            const container = document.getElementById('cx_instances_container');
+            container.innerHTML = instances.map((inst, i) => `
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="radio" name="cx_choice"
+                           id="cx_inst_${inst.id}" value="${inst.id}"
+                           onchange="document.getElementById('cx_provision_section').classList.add('d-none');"
+                           ${i === 0 ? 'checked' : ''}>
+                    <label class="form-check-label" for="cx_inst_${inst.id}">
+                        <strong>${escHtml(inst.name)}</strong>
+                        <span class="text-muted ms-2">${escHtml(inst.ip_address || 'IP pending')}</span>
+                        <span class="badge bg-success ms-1">${escHtml(inst.status)}</span>
+                    </label>
+                </div>
+            `).join('');
+
+            // Provision new radio listener
+            const provRadio = document.getElementById('cx_provision_new');
+            provRadio.addEventListener('change', () => {
+                document.getElementById('cx_provision_section').classList.remove('d-none');
+            });
+
+            // Populate template dropdown
+            populateTemplateSelect('cx_template_id', templates);
+            document.getElementById('cx_instance_list').classList.remove('d-none');
+        } else {
+            // No existing instances — show provision-only view
+            populateTemplateSelect('cx_template_id_alt', templates);
+            if (!templates.length) {
+                document.getElementById('cx_no_templates').classList.remove('d-none');
+                document.getElementById('cx_next_btn').disabled = true;
+            }
+            document.getElementById('cx_no_instances').classList.remove('d-none');
+        }
+        feather.replace();
+    } catch (err) {
+        document.getElementById('cx_loading').classList.add('d-none');
+        const errEl = document.getElementById('addCyberXError');
+        errEl.textContent = `Failed to load data: ${err.message}`;
+        errEl.classList.remove('d-none');
+    }
+}
+
+function populateTemplateSelect(selectId, templates) {
+    const sel = document.getElementById(selectId);
+    sel.innerHTML = templates.map(t =>
+        `<option value="${t.id}">${escHtml(t.name)}${t.description ? ' — ' + escHtml(t.description) : ''}</option>`
+    ).join('');
+}
+
+// ============================================================
+// CyberX Step Navigation
+// ============================================================
+async function cyberXNext() {
+    const errEl = document.getElementById('addCyberXError');
+    errEl.classList.add('d-none');
+
+    // Determine user's choice
+    const selected = document.querySelector('input[name="cx_choice"]:checked');
+    if (!selected) {
+        errEl.textContent = 'Please select an instance or choose to provision a new one.';
+        errEl.classList.remove('d-none');
+        return;
+    }
+
+    document.getElementById('cx_step1').classList.add('d-none');
+    document.getElementById('cx_step2').classList.remove('d-none');
+    document.getElementById('cx_next_btn').classList.add('d-none');
+    document.getElementById('cx_back_btn').classList.remove('d-none');
+
+    if (selected.value === 'new') {
+        // Provision a new instance
+        const templateId = document.getElementById('cx_template_id').value
+            || document.getElementById('cx_template_id_alt').value;
+        const instName = (document.getElementById('cx_instance_name').value
+            || document.getElementById('cx_instance_name_alt').value).trim();
+
+        if (!templateId || !instName) {
+            errEl.textContent = 'Please select a template and enter an instance name.';
+            errEl.classList.remove('d-none');
+            document.getElementById('cx_step1').classList.remove('d-none');
+            document.getElementById('cx_step2').classList.add('d-none');
+            document.getElementById('cx_next_btn').classList.remove('d-none');
+            document.getElementById('cx_back_btn').classList.add('d-none');
+            return;
+        }
+
+        document.getElementById('cx_provisioning').classList.remove('d-none');
+        document.getElementById('cx_confirm_form').classList.add('d-none');
+
+        try {
+            const resp = await csrfFetch('/api/redirectors/provision-and-register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ template_id: parseInt(templateId), name: instName }),
+            });
+            const data = await resp.json();
+            if (!resp.ok) {
+                errEl.textContent = data.detail || 'Failed to provision instance.';
+                errEl.classList.remove('d-none');
+                document.getElementById('cx_provisioning').classList.add('d-none');
+                return;
+            }
+            // Start polling
+            pollInstanceStatus(data.id, instName);
+        } catch (err) {
+            errEl.textContent = `Provision failed: ${err.message}`;
+            errEl.classList.remove('d-none');
+            document.getElementById('cx_provisioning').classList.add('d-none');
+        }
+    } else {
+        // Selected an existing instance
+        _cxSelectedInstanceId = parseInt(selected.value);
+        const label = selected.closest('.form-check').querySelector('label');
+        const instName = label.querySelector('strong').textContent;
+        const instIp = label.querySelector('.text-muted').textContent.trim();
+
+        showCyberXConfirm(_cxSelectedInstanceId, instName, instIp);
+    }
+}
+
+function pollInstanceStatus(instanceId, name) {
+    const statusEl = document.getElementById('cx_provision_status');
+    _cxPollTimer = setInterval(async () => {
+        try {
+            const resp = await fetch(`/api/redirectors/instance-status/${instanceId}`);
+            if (!resp.ok) return;
+            const data = await resp.json();
+            statusEl.textContent = `Status: ${data.status}`;
+            if (data.status === 'ACTIVE') {
+                clearInterval(_cxPollTimer);
+                _cxPollTimer = null;
+                _cxSelectedInstanceId = data.id;
+                document.getElementById('cx_provisioning').classList.add('d-none');
+                showCyberXConfirm(data.id, data.name, data.ip_address || '');
+            } else if (data.status === 'ERROR') {
+                clearInterval(_cxPollTimer);
+                _cxPollTimer = null;
+                const errEl = document.getElementById('addCyberXError');
+                errEl.textContent = 'Instance provisioning failed. Check the instances page for details.';
+                errEl.classList.remove('d-none');
+                document.getElementById('cx_provisioning').classList.add('d-none');
+            }
+        } catch (e) { /* retry on next tick */ }
+    }, 5000);
+}
+
+function showCyberXConfirm(instanceId, name, ip) {
+    document.getElementById('cx_selected_instance_id').value = instanceId;
+    document.getElementById('cx_redir_name').value = name;
+    document.getElementById('cx_redir_ip').value = ip;
+    document.getElementById('cx_stream_dir').value = '/etc/nginx/stream.d';
+    document.getElementById('cx_notes').value = '';
+    document.getElementById('cx_confirm_form').classList.remove('d-none');
+    document.getElementById('cx_submit_btn').classList.remove('d-none');
+    feather.replace();
+}
+
+function cyberXBack() {
+    if (_cxPollTimer) { clearInterval(_cxPollTimer); _cxPollTimer = null; }
+    document.getElementById('cx_step1').classList.remove('d-none');
+    document.getElementById('cx_step2').classList.add('d-none');
+    document.getElementById('cx_next_btn').classList.remove('d-none');
+    document.getElementById('cx_submit_btn').classList.add('d-none');
+    document.getElementById('cx_back_btn').classList.add('d-none');
+    document.getElementById('cx_provisioning').classList.add('d-none');
+    document.getElementById('cx_confirm_form').classList.add('d-none');
+    document.getElementById('addCyberXError').classList.add('d-none');
+}
+
+async function submitCyberX() {
+    const errEl = document.getElementById('addCyberXError');
+    errEl.classList.add('d-none');
+
+    const instanceId = parseInt(document.getElementById('cx_selected_instance_id').value);
+    const payload = {
+        instance_id:     instanceId,
+        name:            document.getElementById('cx_redir_name').value.trim() || null,
+        nginx_stream_dir: document.getElementById('cx_stream_dir').value.trim(),
+        notes:           document.getElementById('cx_notes').value.trim() || null,
+    };
+
+    try {
+        const resp = await csrfFetch('/api/redirectors/from-instance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            errEl.textContent = data.detail || 'Failed to create redirector.';
+            errEl.classList.remove('d-none');
+            return;
+        }
+        cyberXModal.hide();
+        showToast(`CyberX Redirector <strong>${escHtml(data.name)}</strong> created.`, 'success');
         loadRedirectors();
     } catch (err) {
         errEl.textContent = `Request failed: ${err.message}`;
@@ -412,18 +745,27 @@ async function submitAddRedirector() {
 function openEditModal(id) {
     const r = _redirectors.find(x => x.id === id);
     if (!r) return;
+    const isCyberX = !!r.instance_id;
     document.getElementById('edit_redirector_id').value = r.id;
+    document.getElementById('edit_is_cyberx').value = isCyberX ? '1' : '';
     document.getElementById('edit_name').value         = r.name;
     document.getElementById('edit_ip').value           = r.current_ip;
     document.getElementById('edit_ssh_port').value     = r.ssh_port;
     document.getElementById('edit_ssh_username').value = r.ssh_username;
-    document.getElementById('edit_use_infra_key').checked = r.use_infrastructure_key || false;
-    toggleInfraKeyMode('edit');
-    document.getElementById('edit_ssh_key').value      = '';   // always blank
+    document.getElementById('edit_ssh_key').value      = '';
     document.getElementById('edit_passphrase').value   = '';
     document.getElementById('edit_stream_dir').value   = r.nginx_stream_dir;
     document.getElementById('edit_notes').value        = r.notes || '';
     document.getElementById('editRedirectorError').classList.add('d-none');
+
+    // Hide SSH key fields for CyberX redirectors (managed by infra key)
+    const keySection = document.getElementById('edit_byod_key_section');
+    if (isCyberX) {
+        keySection.classList.add('d-none');
+    } else {
+        keySection.classList.remove('d-none');
+    }
+
     editModal.show();
 }
 
@@ -432,7 +774,7 @@ async function submitEditRedirector() {
     const errEl = document.getElementById('editRedirectorError');
     errEl.classList.add('d-none');
 
-    const useInfraKey = document.getElementById('edit_use_infra_key').checked;
+    const isCyberX = document.getElementById('edit_is_cyberx').value === '1';
     const payload = {};
     const name    = document.getElementById('edit_name').value.trim();
     const ip      = document.getElementById('edit_ip').value.trim();
@@ -448,13 +790,7 @@ async function submitEditRedirector() {
     if (dir)   payload.nginx_stream_dir = dir;
     payload.notes = notes || null;
 
-    // Always send use_infrastructure_key so the backend knows the intended mode
-    const r = _redirectors.find(x => x.id === id);
-    if (r && useInfraKey !== (r.use_infrastructure_key || false)) {
-        payload.use_infrastructure_key = useInfraKey;
-    }
-
-    if (!useInfraKey) {
+    if (!isCyberX) {
         const key  = document.getElementById('edit_ssh_key').value.trim();
         const pass = document.getElementById('edit_passphrase').value;
         if (key)  payload.ssh_private_key = key;
@@ -507,22 +843,6 @@ async function confirmDeleteRedirector() {
         showToast(`Delete failed: ${escHtml(err.message)}`, 'danger');
     }
     _deleteTargetId = null;
-}
-
-// ============================================================
-// Infrastructure Key Toggle
-// ============================================================
-function toggleInfraKeyMode(prefix) {
-    const checked = document.getElementById(`${prefix}_use_infra_key`).checked;
-    const section = document.getElementById(`${prefix}_byod_key_section`);
-    const keyField = document.getElementById(`${prefix}_ssh_key`);
-    if (checked) {
-        section.classList.add('d-none');
-        if (keyField) keyField.removeAttribute('required');
-    } else {
-        section.classList.remove('d-none');
-        if (keyField && prefix === 'add') keyField.setAttribute('required', '');
-    }
 }
 
 // ============================================================

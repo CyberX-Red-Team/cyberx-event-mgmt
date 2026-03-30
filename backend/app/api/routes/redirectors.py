@@ -25,7 +25,9 @@ import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_db, require_permission
 from app.models.user import User
@@ -33,10 +35,21 @@ from app.models.redirector import Redirector, StreamConfig
 from app.services.event_service import EventService
 from app.schemas.redirector import (
     RedirectorCreate, RedirectorUpdate, RedirectorOut, RedirectorListOut,
+    RedirectorFromInstance, ProvisionRedirectorRequest,
+    AvailableInstanceOut, InstanceStatusOut, RedirectorTemplateOut,
     StreamConfigCreate, StreamConfigUpdate, StreamConfigOut,
     DeployResult, TestConnectionResult, ConfigPreview, CheckPortRequest,
 )
 from app.services.redirector_service import RedirectorService
+from app.services.instance_service import InstanceService
+from app.models.instance import Instance
+from app.models.instance_template import InstanceTemplate
+from app.models.cloud_init_template import CloudInitTemplate
+
+# Cloud-init template name that identifies redirector templates by convention.
+# Templates are considered redirector-eligible when is_redirector=True OR their
+# linked cloud-init template name matches this constant.
+REDIRECTOR_CLOUD_INIT_NAME = "Redirector Init"
 from app.services.ssh_service import (
     SSHService,
     SSHConnectionError, SSHAuthError, NginxReloadError, SSHCommandError,
@@ -82,6 +95,7 @@ def _build_redirector_out(
         ssh_key_passphrase="**REDACTED**" if redirector.ssh_key_passphrase else None,
         nginx_stream_dir=redirector.nginx_stream_dir,
         notes=redirector.notes,
+        instance_id=redirector.instance_id,
         status=redirector.status,
         os_info=redirector.os_info,
         last_deployed_at=redirector.last_deployed_at,
@@ -208,18 +222,13 @@ async def create_redirector(
     current_user: User = Depends(require_permission("redirectors.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a new redirector. SSH private key is encrypted before storage."""
-    svc = RedirectorService(db)
+    """Create a BYOD redirector.
 
-    # Validate infrastructure key availability before creating
-    if payload.use_infrastructure_key:
-        event_svc = EventService(db)
-        event = await event_svc.get_active_event()
-        if not event or not event.ssh_private_key:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Cannot use infrastructure key: the active event has no SSH key pair.",
-            )
+    The provided SSH key is used once to bootstrap the event's infrastructure
+    key onto the redirector. After a successful bootstrap the BYOD key is
+    deleted and the redirector switches to infrastructure-key mode.
+    """
+    svc = RedirectorService(db)
 
     # Uniqueness check
     existing = await svc.get_redirector_by_name(payload.name)
@@ -235,22 +244,23 @@ async def create_redirector(
     # Auto-test connection to set initial status (online/offline).
     # Best-effort: redirector is already saved, so any failure here just
     # sets status to offline rather than crashing the create request.
+    bootstrap_ok = False
     try:
         ssh = await _make_ssh_service(svc, redirector, db)
         result = await run_test_connection(ssh)
         new_status = "online" if result["success"] else "offline"
         await svc.update_status(redirector, new_status, os_info=result.get("os_info"))
 
-        # If connection succeeded and NOT using infrastructure key, deploy
-        # infrastructure public key if available (infra-key redirectors
-        # already have it pre-loaded).
-        if result["success"] and not payload.use_infrastructure_key:
+        # Deploy infrastructure key using the one-time BYOD credentials
+        if result["success"]:
             try:
                 event_svc = EventService(db)
                 event = await event_svc.get_active_event()
                 if event and event.ssh_public_key:
                     deploy_result = await run_deploy_infra_key(ssh, event.ssh_public_key)
-                    if deploy_result.get("deployed"):
+                    if deploy_result.get("deployed") or deploy_result.get("already_present"):
+                        bootstrap_ok = True
+                        await svc.clear_byod_key(redirector)
                         infra_audit = AuditService(db)
                         await infra_audit.log(
                             action="INFRA_KEY_DEPLOYED",
@@ -259,6 +269,7 @@ async def create_redirector(
                             details={
                                 "redirector_id": redirector.id,
                                 "event_name": event.name,
+                                "byod_key_cleared": True,
                             },
                             ip_address=request.client.host if request.client else None,
                         )
@@ -276,7 +287,12 @@ async def create_redirector(
         action="REDIRECTOR_CREATE",
         user_id=current_user.id,
         resource_type="REDIRECTOR",
-        details={"redirector_id": redirector.id, "name": redirector.name},
+        details={
+            "redirector_id": redirector.id,
+            "name": redirector.name,
+            "type": "byod",
+            "infra_key_bootstrapped": bootstrap_ok,
+        },
         ip_address=request.client.host if request.client else None,
     )
 
@@ -284,6 +300,310 @@ async def create_redirector(
     # Pass stream_count=0 to avoid lazy-loading the relationship.
     await db.refresh(redirector)
     return _build_redirector_out(redirector, stream_count=0)
+
+
+def _is_redirector_template_filter():
+    """SQLAlchemy filter: template is a redirector template.
+
+    Matches when EITHER is_redirector=True OR the linked cloud-init template
+    is named 'Redirector Init'.
+    """
+    return or_(
+        InstanceTemplate.is_redirector.is_(True),
+        InstanceTemplate.cloud_init_template.has(
+            CloudInitTemplate.name == REDIRECTOR_CLOUD_INIT_NAME
+        ),
+    )
+
+
+def _is_redirector_template(template: InstanceTemplate) -> bool:
+    """Python-side check: is this template a redirector template?"""
+    if template.is_redirector:
+        return True
+    if (
+        template.cloud_init_template
+        and template.cloud_init_template.name == REDIRECTOR_CLOUD_INIT_NAME
+    ):
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# CyberX Redirector endpoints (static paths — must precede /{redirector_id})
+# ---------------------------------------------------------------------------
+
+@router.get("/available-instances", response_model=List[AvailableInstanceOut])
+async def list_available_instances(
+    current_user: User = Depends(require_permission("redirectors.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """List ACTIVE cloud instances eligible to become CyberX redirectors.
+
+    Returns instances from redirector templates that are not already linked
+    to a managed redirector.
+    """
+    event_svc = EventService(db)
+    event = await event_svc.get_active_event()
+    if not event:
+        return []
+
+    # Subquery: instance IDs already linked to a redirector
+    linked_ids = (
+        select(Redirector.instance_id)
+        .where(Redirector.instance_id.isnot(None))
+        .scalar_subquery()
+    )
+
+    query = (
+        select(Instance)
+        .join(InstanceTemplate, Instance.instance_template_id == InstanceTemplate.id)
+        .outerjoin(CloudInitTemplate, InstanceTemplate.cloud_init_template_id == CloudInitTemplate.id)
+        .where(
+            Instance.status == "ACTIVE",
+            Instance.deleted_at.is_(None),
+            Instance.event_id == event.id,
+            _is_redirector_template_filter(),
+            Instance.id.notin_(linked_ids),
+        )
+        .order_by(Instance.name)
+    )
+
+    # Owner scoping: non-admins see only their own instances
+    if not current_user.has_permission("redirectors.view_all"):
+        query = query.where(Instance.created_by_user_id == current_user.id)
+
+    result = await db.execute(query)
+    return [AvailableInstanceOut.model_validate(i) for i in result.scalars().all()]
+
+
+@router.get("/redirector-templates", response_model=List[RedirectorTemplateOut])
+async def list_redirector_templates(
+    current_user: User = Depends(require_permission("redirectors.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """List active instance templates marked as redirector templates."""
+    event_svc = EventService(db)
+    event = await event_svc.get_active_event()
+    if not event:
+        return []
+
+    result = await db.execute(
+        select(InstanceTemplate)
+        .outerjoin(CloudInitTemplate, InstanceTemplate.cloud_init_template_id == CloudInitTemplate.id)
+        .where(
+            InstanceTemplate.event_id == event.id,
+            _is_redirector_template_filter(),
+            InstanceTemplate.is_active.is_(True),
+        )
+        .order_by(InstanceTemplate.name)
+    )
+    return [RedirectorTemplateOut.model_validate(t) for t in result.scalars().all()]
+
+
+@router.post("/from-instance", response_model=RedirectorOut, status_code=status.HTTP_201_CREATED)
+async def create_from_instance(
+    payload: RedirectorFromInstance,
+    request: Request,
+    current_user: User = Depends(require_permission("redirectors.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Auto-create a redirector from an existing CyberX cloud instance."""
+    svc = RedirectorService(db)
+
+    # Validate instance exists and is ACTIVE
+    instance = await db.get(Instance, payload.instance_id)
+    if not instance or instance.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Instance not found.")
+    if instance.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Instance is not active (status: {instance.status}).",
+        )
+
+    # Owner check
+    if not current_user.has_permission("redirectors.view_all") and instance.created_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to use this instance.")
+
+    # Validate template is a redirector template
+    template = None
+    if instance.instance_template_id:
+        result = await db.execute(
+            select(InstanceTemplate)
+            .options(selectinload(InstanceTemplate.cloud_init_template))
+            .where(InstanceTemplate.id == instance.instance_template_id)
+        )
+        template = result.scalar_one_or_none()
+    if not template or not _is_redirector_template(template):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This instance was not created from a redirector template.",
+        )
+
+    # Uniqueness: no redirector already linked to this instance
+    existing = await svc.get_redirector_by_instance_id(payload.instance_id)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A redirector is already linked to this instance ('{existing.name}').",
+        )
+
+    # Validate infra key exists
+    event_svc = EventService(db)
+    event = await event_svc.get_active_event()
+    if not event or not event.ssh_private_key:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Active event has no SSH key pair. Generate one in Event settings.",
+        )
+
+    # Name uniqueness
+    name = payload.name or instance.name
+    existing_name = await svc.get_redirector_by_name(name)
+    if existing_name:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A redirector named '{name}' already exists.",
+        )
+
+    # Auto-populate from instance + template
+    redirector = await svc.create_redirector({
+        "name": name,
+        "current_ip": instance.ip_address,
+        "ssh_port": 22,
+        "ssh_username": template.ssh_username,
+        "nginx_stream_dir": payload.nginx_stream_dir,
+        "notes": payload.notes,
+        "owner_id": current_user.id,
+        "instance_id": instance.id,
+    })
+
+    # Best-effort connection test
+    try:
+        ssh = await _make_ssh_service(svc, redirector, db)
+        result = await run_test_connection(ssh)
+        new_status = "online" if result["success"] else "offline"
+        await svc.update_status(redirector, new_status, os_info=result.get("os_info"))
+    except Exception as test_err:
+        logger.warning("Auto-test failed for CyberX redirector %s: %s", redirector.id, test_err)
+        try:
+            await svc.update_status(redirector, "offline")
+        except Exception:
+            pass
+
+    audit = AuditService(db)
+    await audit.log(
+        action="REDIRECTOR_CREATE_FROM_INSTANCE",
+        user_id=current_user.id,
+        resource_type="REDIRECTOR",
+        details={
+            "redirector_id": redirector.id,
+            "name": redirector.name,
+            "instance_id": instance.id,
+            "instance_name": instance.name,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    await db.refresh(redirector)
+    return _build_redirector_out(redirector, stream_count=0)
+
+
+@router.post("/provision-and-register", status_code=status.HTTP_201_CREATED)
+async def provision_redirector_instance(
+    payload: ProvisionRedirectorRequest,
+    request: Request,
+    current_user: User = Depends(require_permission("redirectors.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Provision a new cloud instance from a redirector template.
+
+    Returns the instance ID and status. The frontend polls /instance-status/{id}
+    until ACTIVE, then calls /from-instance to complete registration.
+    """
+    # Validate template
+    result = await db.execute(
+        select(InstanceTemplate)
+        .options(selectinload(InstanceTemplate.cloud_init_template))
+        .where(InstanceTemplate.id == payload.template_id)
+    )
+    template = result.scalar_one_or_none()
+    if not template or not _is_redirector_template(template) or not template.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid or inactive redirector template.",
+        )
+
+    event_svc = EventService(db)
+    event = await event_svc.get_active_event()
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No active event.",
+        )
+    if not event.ssh_private_key:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Active event has no SSH key pair.",
+        )
+
+    # Provision via existing InstanceService
+    instance_svc = InstanceService(db)
+    instance = await instance_svc.create_from_template(
+        template_id=payload.template_id,
+        name=payload.name,
+        assigned_to_user_id=current_user.id,
+        created_by_user_id=current_user.id,
+    )
+
+    audit = AuditService(db)
+    await audit.log(
+        action="REDIRECTOR_INSTANCE_PROVISIONED",
+        user_id=current_user.id,
+        resource_type="INSTANCE",
+        details={
+            "instance_id": instance.id,
+            "template_id": template.id,
+            "template_name": template.name,
+            "name": payload.name,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return InstanceStatusOut(
+        id=instance.id,
+        name=instance.name,
+        ip_address=instance.ip_address,
+        status=instance.status,
+    )
+
+
+@router.get("/instance-status/{instance_id}", response_model=InstanceStatusOut)
+async def get_instance_status(
+    instance_id: int,
+    current_user: User = Depends(require_permission("redirectors.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Poll instance provisioning status. Used by frontend during CyberX flow."""
+    instance = await db.get(Instance, instance_id)
+    if not instance or instance.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Instance not found.")
+    if not current_user.has_permission("redirectors.view_all") and instance.created_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized.")
+
+    # Trigger a status sync from the cloud provider
+    try:
+        instance_svc = InstanceService(db)
+        await instance_svc.sync_instance_status(instance)
+        await db.refresh(instance)
+    except Exception as e:
+        logger.warning("Failed to sync instance %s status: %s", instance_id, e)
+
+    return InstanceStatusOut(
+        id=instance.id,
+        name=instance.name,
+        ip_address=instance.ip_address,
+        status=instance.status,
+    )
 
 
 @router.get("/{redirector_id}", response_model=RedirectorOut)
@@ -312,17 +632,6 @@ async def update_redirector(
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
-
-    # Validate infrastructure key availability when switching to infra mode
-    if payload.use_infrastructure_key is True and not redirector.use_infrastructure_key:
-        event_svc = EventService(db)
-        event = await event_svc.get_active_event()
-        if not event or not event.ssh_private_key:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Cannot switch to infrastructure key: the active event has no SSH key pair.",
-            )
-
     redirector = await svc.update_redirector(
         redirector, payload.model_dump(exclude_unset=True)
     )

@@ -1,12 +1,15 @@
 """Unit tests for redirector Pydantic schemas.
 
-Tests validation logic including the infrastructure key mutual exclusion
-and field validators for IP, username, and path safety.
+Tests BYOD create validation, from-instance schema, update schema,
+and output schema including the instance_id field.
 """
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.redirector import RedirectorCreate, RedirectorUpdate, RedirectorOut
+from app.schemas.redirector import (
+    RedirectorCreate, RedirectorUpdate, RedirectorOut,
+    RedirectorFromInstance,
+)
 
 
 VALID_PEM = "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
@@ -14,44 +17,21 @@ VALID_PEM = "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE
 
 @pytest.mark.unit
 class TestRedirectorCreate:
-    """Tests for RedirectorCreate schema validation."""
+    """Tests for RedirectorCreate schema validation (BYOD path)."""
 
     def test_byod_valid(self):
-        """BYOD mode: ssh_private_key required, use_infrastructure_key=False."""
+        """BYOD mode: ssh_private_key is required."""
         schema = RedirectorCreate(
             name="redir-01",
             current_ip="10.0.0.1",
             ssh_username="debian",
             ssh_private_key=VALID_PEM,
         )
-        assert schema.use_infrastructure_key is False
         assert schema.ssh_private_key == VALID_PEM
 
-    def test_infra_key_valid(self):
-        """Infra key mode: no ssh_private_key, use_infrastructure_key=True."""
-        schema = RedirectorCreate(
-            name="redir-02",
-            current_ip="10.0.0.2",
-            ssh_username="debian",
-            use_infrastructure_key=True,
-        )
-        assert schema.use_infrastructure_key is True
-        assert schema.ssh_private_key is None
-
-    def test_both_key_and_infra_flag_rejected(self):
-        """Cannot provide ssh_private_key AND use_infrastructure_key=True."""
-        with pytest.raises(ValidationError, match="Cannot provide ssh_private_key"):
-            RedirectorCreate(
-                name="redir-03",
-                current_ip="10.0.0.3",
-                ssh_username="debian",
-                use_infrastructure_key=True,
-                ssh_private_key=VALID_PEM,
-            )
-
-    def test_neither_key_nor_infra_flag_rejected(self):
-        """Must provide either ssh_private_key OR use_infrastructure_key=True."""
-        with pytest.raises(ValidationError, match="ssh_private_key is required"):
+    def test_missing_key_rejected(self):
+        """Must provide ssh_private_key."""
+        with pytest.raises(ValidationError):
             RedirectorCreate(
                 name="redir-04",
                 current_ip="10.0.0.4",
@@ -100,44 +80,49 @@ class TestRedirectorCreate:
 
 
 @pytest.mark.unit
-class TestRedirectorUpdate:
-    """Tests for RedirectorUpdate schema validation."""
+class TestRedirectorFromInstance:
+    """Tests for RedirectorFromInstance schema validation (CyberX path)."""
 
-    def test_switching_to_infra_with_key_rejected(self):
-        """Cannot provide ssh_private_key when switching to infra mode."""
-        with pytest.raises(ValidationError, match="Cannot provide ssh_private_key"):
-            RedirectorUpdate(
-                use_infrastructure_key=True,
-                ssh_private_key=VALID_PEM,
+    def test_valid_minimal(self):
+        schema = RedirectorFromInstance(instance_id=42)
+        assert schema.instance_id == 42
+        assert schema.name is None
+        assert schema.nginx_stream_dir == "/etc/nginx/stream.d"
+
+    def test_valid_with_name(self):
+        schema = RedirectorFromInstance(instance_id=1, name="my-redir")
+        assert schema.name == "my-redir"
+
+    def test_unsafe_stream_dir_rejected(self):
+        with pytest.raises(ValidationError, match="safe characters"):
+            RedirectorFromInstance(
+                instance_id=1,
+                nginx_stream_dir="../etc/passwd",
             )
 
-    def test_switching_to_infra_without_key_ok(self):
-        schema = RedirectorUpdate(use_infrastructure_key=True)
-        assert schema.use_infrastructure_key is True
 
-    def test_switching_to_byod_with_key_ok(self):
-        schema = RedirectorUpdate(
-            use_infrastructure_key=False,
-            ssh_private_key=VALID_PEM,
-        )
-        assert schema.use_infrastructure_key is False
-        assert schema.ssh_private_key == VALID_PEM
+@pytest.mark.unit
+class TestRedirectorUpdate:
+    """Tests for RedirectorUpdate schema validation."""
 
     def test_all_fields_optional(self):
         schema = RedirectorUpdate()
         assert schema.name is None
-        assert schema.use_infrastructure_key is None
 
     def test_invalid_ip_rejected(self):
         with pytest.raises(ValidationError):
             RedirectorUpdate(current_ip="bad-ip")
+
+    def test_update_key_ok(self):
+        schema = RedirectorUpdate(ssh_private_key=VALID_PEM)
+        assert schema.ssh_private_key == VALID_PEM
 
 
 @pytest.mark.unit
 class TestRedirectorOut:
     """Tests for RedirectorOut response schema."""
 
-    def test_includes_use_infrastructure_key(self):
+    def test_includes_instance_id(self):
         out = RedirectorOut(
             id="abc",
             name="redir",
@@ -145,6 +130,7 @@ class TestRedirectorOut:
             ssh_port=22,
             ssh_username="debian",
             use_infrastructure_key=True,
+            instance_id=42,
             nginx_stream_dir="/etc/nginx/stream.d",
             notes=None,
             status="online",
@@ -154,9 +140,10 @@ class TestRedirectorOut:
             updated_at=None,
         )
         assert out.use_infrastructure_key is True
+        assert out.instance_id == 42
         assert out.ssh_private_key == "**REDACTED**"
 
-    def test_defaults_to_false(self):
+    def test_defaults(self):
         out = RedirectorOut(
             id="abc",
             name="redir",
@@ -172,3 +159,4 @@ class TestRedirectorOut:
             updated_at=None,
         )
         assert out.use_infrastructure_key is False
+        assert out.instance_id is None

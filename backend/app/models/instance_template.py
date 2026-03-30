@@ -63,6 +63,8 @@ class InstanceTemplate(Base):
         nullable=True
     )
     is_active = Column(Boolean, default=True, nullable=False)
+    is_redirector = Column(Boolean, default=False, nullable=False)
+    ssh_username = Column(String(50), default="root", nullable=False)
 
     # Timestamps
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

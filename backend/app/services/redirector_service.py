@@ -57,8 +57,17 @@ class RedirectorService:
         )
         return result.scalar_one_or_none()
 
+    async def get_redirector_by_instance_id(self, instance_id: int) -> Optional[Redirector]:
+        """Return the redirector linked to a cloud instance, or None."""
+        result = await self.session.execute(
+            select(Redirector).where(Redirector.instance_id == instance_id)
+        )
+        return result.scalar_one_or_none()
+
     async def create_redirector(self, data: dict) -> Redirector:
-        use_infra = data.get("use_infrastructure_key", False)
+        # CyberX redirectors (instance_id set) always use infrastructure key
+        has_instance = data.get("instance_id") is not None
+        use_infra = True if has_instance else data.get("use_infrastructure_key", False)
         redirector = Redirector(
             id=str(uuid.uuid4()),
             name=data["name"],
@@ -71,12 +80,25 @@ class RedirectorService:
             nginx_stream_dir=data.get("nginx_stream_dir", "/etc/nginx/stream.d"),
             notes=data.get("notes"),
             owner_id=data.get("owner_id"),
+            instance_id=data.get("instance_id"),
         )
         self.session.add(redirector)
         await self.session.commit()
         await self.session.refresh(redirector)
         # Refresh with stream_configs loaded so stream_count property works
         await self.session.refresh(redirector, attribute_names=["stream_configs"])
+        return redirector
+
+    async def clear_byod_key(self, redirector: Redirector) -> Redirector:
+        """Clear BYOD SSH credentials and switch to infrastructure key.
+
+        Called after successfully bootstrapping the infra key onto a BYOD redirector.
+        """
+        redirector.ssh_private_key = None
+        redirector.ssh_key_passphrase = None
+        redirector.use_infrastructure_key = True
+        await self.session.commit()
+        await self.session.refresh(redirector)
         return redirector
 
     async def update_redirector(self, redirector: Redirector, data: dict) -> Redirector:
@@ -88,14 +110,6 @@ class RedirectorService:
         for field in simple_fields:
             if field in data and data[field] is not None:
                 setattr(redirector, field, data[field])
-
-        # Handle use_infrastructure_key toggle
-        if "use_infrastructure_key" in data and data["use_infrastructure_key"] is not None:
-            redirector.use_infrastructure_key = data["use_infrastructure_key"]
-            if data["use_infrastructure_key"]:
-                # Switching to infra key: clear BYOD key material
-                redirector.ssh_private_key = None
-                redirector.ssh_key_passphrase = None
 
         # Update SSH key only when a non-empty value is provided
         if data.get("ssh_private_key"):
