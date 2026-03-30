@@ -496,12 +496,17 @@ async def deploy_all(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Sync all stream configs for this redirector:
-    write enabled, delete disabled, remove orphans, reload nginx.
+    Enable and deploy all stream configs for this redirector:
+    mark all as enabled, write configs, remove orphans, reload nginx.
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
     streams = await svc.list_streams(redirector_id)
+
+    # Mark all streams as enabled before deploying
+    for s in streams:
+        await svc.update_stream(s, {"enabled": True})
+
     ssh = _make_ssh_service(svc, redirector)
 
     try:
@@ -530,6 +535,57 @@ async def deploy_all(
             "redirector_id": redirector_id,
             "success": result["success"],
             "files_written": result["files_written"],
+            "files_deleted": result["files_deleted"],
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return DeployResult(**result)
+
+
+@router.post("/{redirector_id}/disable-all", response_model=DeployResult)
+async def disable_all(
+    redirector_id: str,
+    request: Request,
+    current_user: User = Depends(require_permission("redirectors.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Disable all streams for this redirector:
+    mark all as disabled, remove all config files, reload nginx.
+    """
+    svc = RedirectorService(db)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    streams = await svc.list_streams(redirector_id)
+
+    # Mark all streams as disabled before deploying
+    for s in streams:
+        await svc.update_stream(s, {"enabled": False})
+
+    ssh = await _make_ssh_service(svc, redirector, db)
+
+    try:
+        result = await run_deploy_all(ssh, redirector.nginx_stream_dir, streams)
+    except SSHConnectionError as e:
+        await svc.update_status(redirector, "offline")
+        raise _ssh_connection_error(e)
+    except SSHAuthError as e:
+        raise _ssh_auth_error(e)
+    except (NginxReloadError, SSHCommandError) as e:
+        raise _ssh_command_error(e)
+
+    if result["success"]:
+        for s in streams:
+            await svc.update_stream(s, {"deployed": False})
+
+    audit = AuditService(db)
+    await audit.log(
+        action="REDIRECTOR_DISABLE_ALL",
+        user_id=current_user.id,
+        resource_type="REDIRECTOR",
+        details={
+            "redirector_id": redirector_id,
+            "success": result["success"],
             "files_deleted": result["files_deleted"],
         },
         ip_address=request.client.host if request.client else None,

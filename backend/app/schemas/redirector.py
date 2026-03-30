@@ -167,7 +167,7 @@ class StreamConfigCreate(BaseModel):
     ssl_key_path: Optional[str] = Field(None, max_length=500)
     ssl_protocols: str = Field(default="TLSv1.2 TLSv1.3", max_length=100)
     ssl_ciphers: str = Field(default="HIGH:!aNULL:!MD5", max_length=200)
-    enabled: bool = True
+    enabled: bool = False
 
     @field_validator("ssl_cert_path", "ssl_key_path")
     @classmethod

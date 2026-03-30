@@ -105,6 +105,8 @@ class RedirectorService:
         return redirector
 
     async def delete_redirector(self, redirector: Redirector) -> None:
+        # Ensure stream_configs are loaded so ORM cascade="all, delete-orphan" works
+        await self.session.refresh(redirector, attribute_names=["stream_configs"])
         await self.session.delete(redirector)
         await self.session.commit()
 
@@ -176,7 +178,7 @@ class RedirectorService:
             ssl_key_path=data.get("ssl_key_path"),
             ssl_protocols=data.get("ssl_protocols", "TLSv1.2 TLSv1.3"),
             ssl_ciphers=data.get("ssl_ciphers", "HIGH:!aNULL:!MD5"),
-            enabled=data.get("enabled", True),
+            enabled=data.get("enabled", False),
         )
         self.session.add(stream)
         await self.session.commit()
