@@ -556,6 +556,107 @@
                 </div>
             </div>
 
+            <!-- Redirectors Card -->
+            <div id="redirectorsCard" style="display: none;">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i data-feather="shuffle" class="me-2"></i>Redirectors</h5>
+                        <span class="badge bg-primary" id="redirectorCountBadge">0</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3" id="redirectorAddRow">
+                            <span class="text-muted small">Manage nginx stream proxy redirectors for your operations.</span>
+                            <button class="btn btn-sm btn-danger" onclick="openAddRedirectorModal()">
+                                <i data-feather="plus" class="me-1"></i>Add Redirector
+                            </button>
+                        </div>
+                        <div id="redirectorsLoading" class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm me-2"></div>
+                            Loading redirectors...
+                        </div>
+                        <div id="redirectorsTableWrap" class="d-none">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>IP</th>
+                                            <th>Status</th>
+                                            <th>Streams</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="redirectorsTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div id="redirectorsEmpty" class="d-none text-center text-muted small py-3">
+                            No redirectors yet. Click "Add Redirector" to get started.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Redirector Modal -->
+            <div class="modal fade" id="addRedirectorModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i data-feather="plus-circle" class="me-2"></i>Add Redirector</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="addRedirectorForm">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="redir_add_name" placeholder="e.g. prod-redirector-01" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">IP Address <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="redir_add_ip" placeholder="203.0.113.10" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">SSH Port</label>
+                                        <input type="number" class="form-control" id="redir_add_port" value="22" min="1" max="65535">
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label fw-semibold">SSH Username <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="redir_add_user" placeholder="debian" required>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">SSH Private Key (PEM) <span class="text-danger">*</span></label>
+                                        <textarea class="form-control font-monospace" id="redir_add_key" rows="6"
+                                            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
+                                        <div class="form-text">Paste the full PEM private key. Stored encrypted at rest.</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">Key Passphrase <span class="text-muted small">(optional)</span></label>
+                                        <input type="password" class="form-control" id="redir_add_pass" placeholder="Leave blank if key has no passphrase">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">nginx Stream Directory</label>
+                                        <input type="text" class="form-control" id="redir_add_dir" value="/etc/nginx/stream.d">
+                                        <div class="form-text">Directory where <code>cyberx_*.conf</code> files are written.</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">Notes <span class="text-muted small">(optional)</span></label>
+                                        <textarea class="form-control" id="redir_add_notes" rows="2" placeholder="Optional notes"></textarea>
+                                    </div>
+                                </div>
+                            </form>
+                            <div id="addRedirectorError" class="alert alert-danger mt-3 d-none"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-danger" onclick="submitAddRedirector()">
+                                <i data-feather="save" class="me-1"></i>Add Redirector
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Instance Provisioning Section -->
             <div id="instanceProvisioningSection" style="display: none;">
                 <!-- Available Templates Card -->
@@ -2027,6 +2128,108 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// ============================================================
+// Redirectors
+// ============================================================
+var _addRedirectorModal = null;
+
+async function loadRedirectors() {
+    try {
+        var resp = await csrfFetch('/api/redirectors/');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var data = await resp.json();
+        var redirectors = data.redirectors || [];
+        document.getElementById('redirectorCountBadge').textContent = redirectors.length;
+        document.getElementById('redirectorsLoading').classList.add('d-none');
+
+        if (redirectors.length === 0) {
+            document.getElementById('redirectorsEmpty').classList.remove('d-none');
+            document.getElementById('redirectorsTableWrap').classList.add('d-none');
+        } else {
+            document.getElementById('redirectorsEmpty').classList.add('d-none');
+            document.getElementById('redirectorsTableWrap').classList.remove('d-none');
+            renderRedirectors(redirectors);
+        }
+        refreshFeatherIcons();
+    } catch (err) {
+        document.getElementById('redirectorsLoading').innerHTML =
+            '<span class="text-danger">Failed to load redirectors: ' + escapeHtml(err.message) + '</span>';
+    }
+}
+
+function renderRedirectors(redirectors) {
+    var tbody = document.getElementById('redirectorsTableBody');
+    tbody.innerHTML = redirectors.map(function(r) {
+        var statusMap = { online: 'bg-success', offline: 'bg-danger', unknown: 'bg-secondary' };
+        var cls = statusMap[r.status] || 'bg-secondary';
+        return '<tr>' +
+            '<td><a href="/portal/redirectors/' + escapeHtml(r.id) + '" class="fw-semibold text-decoration-none" style="color:var(--bs-danger,#dc3545);">' + escapeHtml(r.name) + '</a></td>' +
+            '<td class="text-muted">' + escapeHtml(r.current_ip) + '</td>' +
+            '<td><span class="badge ' + cls + '">' + escapeHtml(r.status) + '</span></td>' +
+            '<td><span class="badge bg-secondary rounded-pill">' + r.stream_count + '</span></td>' +
+            '<td class="text-end"><a href="/portal/redirectors/' + escapeHtml(r.id) + '" class="btn btn-sm btn-outline-secondary" title="Manage"><i data-feather="settings"></i></a></td>' +
+        '</tr>';
+    }).join('');
+}
+
+function openAddRedirectorModal() {
+    document.getElementById('addRedirectorForm').reset();
+    document.getElementById('redir_add_dir').value = '/etc/nginx/stream.d';
+    document.getElementById('addRedirectorError').classList.add('d-none');
+    if (!_addRedirectorModal) {
+        _addRedirectorModal = new bootstrap.Modal(document.getElementById('addRedirectorModal'));
+    }
+    _addRedirectorModal.show();
+    setTimeout(refreshFeatherIcons, 100);
+}
+
+async function submitAddRedirector() {
+    var errEl = document.getElementById('addRedirectorError');
+    errEl.classList.add('d-none');
+
+    var payload = {
+        name:               document.getElementById('redir_add_name').value.trim(),
+        current_ip:         document.getElementById('redir_add_ip').value.trim(),
+        ssh_port:           parseInt(document.getElementById('redir_add_port').value, 10),
+        ssh_username:       document.getElementById('redir_add_user').value.trim(),
+        ssh_private_key:    document.getElementById('redir_add_key').value.trim(),
+        ssh_key_passphrase: document.getElementById('redir_add_pass').value || null,
+        nginx_stream_dir:   document.getElementById('redir_add_dir').value.trim(),
+        notes:              document.getElementById('redir_add_notes').value.trim() || null,
+    };
+
+    if (!payload.name || !payload.current_ip || !payload.ssh_username) {
+        errEl.textContent = 'Please fill in all required fields.';
+        errEl.classList.remove('d-none');
+        return;
+    }
+    if (!payload.ssh_private_key) {
+        errEl.textContent = 'SSH private key is required.';
+        errEl.classList.remove('d-none');
+        return;
+    }
+
+    try {
+        var resp = await csrfFetch('/api/redirectors/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        var data = await resp.json();
+        if (!resp.ok) {
+            errEl.textContent = data.detail || 'Failed to create redirector.';
+            errEl.classList.remove('d-none');
+            return;
+        }
+        _addRedirectorModal.hide();
+        showToast('Redirector <strong>' + escapeHtml(data.name) + '</strong> created.', 'success');
+        loadRedirectors();
+    } catch (err) {
+        errEl.textContent = 'Request failed: ' + err.message;
+        errEl.classList.remove('d-none');
+    }
+}
+
 // Load event info and VPN status on page load
 document.addEventListener('DOMContentLoaded', async function() {
     // Hide sections the user doesn't have permissions for
@@ -2070,6 +2273,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Load TLS certificates
     if (hasPermission('tls.request') || hasPermission('tls.download')) {
         loadTlsCAChains();
+    }
+
+    // Load redirectors
+    if (hasPermission('redirectors.view')) {
+        document.getElementById('redirectorsCard').style.display = 'block';
+        loadRedirectors();
+        if (!hasPermission('redirectors.manage')) {
+            document.getElementById('redirectorAddRow').style.display = 'none';
+        }
     }
 
     // Check if VPN is available and user has instance permissions

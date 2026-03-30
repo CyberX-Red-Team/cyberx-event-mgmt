@@ -67,3 +67,29 @@ async def redirector_detail_page(
             "now": datetime.now(),
         },
     )
+
+
+@router.get("/portal/redirectors/{redirector_id}", response_class=HTMLResponse)
+async def participant_redirector_detail_page(
+    redirector_id: str,
+    request: Request,
+    current_user: User = Depends(require_permission("redirectors.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Render the participant redirector detail page with stream configs."""
+    svc = RedirectorService(db)
+    redirector = await svc.get_redirector(redirector_id)
+    if not redirector:
+        raise HTTPException(status_code=404, detail="Redirector not found.")
+    if not current_user.has_permission("redirectors.view_all") and redirector.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
+
+    return templates.TemplateResponse(
+        "pages/participant/redirector_detail.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "redirector": redirector,
+            "now": datetime.now(),
+        },
+    )
