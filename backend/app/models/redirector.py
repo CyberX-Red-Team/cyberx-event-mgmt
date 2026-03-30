@@ -133,7 +133,7 @@ class StreamConfig(Base):
     ssl_ciphers = Column(String(200), nullable=False, default="HIGH:!aNULL:!MD5")
 
     # If False, the .conf file is removed from the remote redirector
-    enabled = Column(Boolean, nullable=False, default=True)
+    enabled = Column(Boolean, nullable=False, default=False)
     # True when the config file has been deployed to the remote redirector
     deployed = Column(Boolean, nullable=False, default=False)
 
