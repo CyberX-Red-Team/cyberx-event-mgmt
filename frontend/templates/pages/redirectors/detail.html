@@ -530,8 +530,6 @@ function renderStreams(streams) {
             <td class="text-end align-middle">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Preview config"
                     onclick="previewStream('${s.id}')"><i data-feather="eye"></i></button>
-                <button class="btn btn-sm btn-outline-primary me-1" title="Deploy this stream"
-                    onclick="deployStream('${s.id}', '${escHtml(s.name)}')"><i data-feather="upload"></i></button>
                 ${s.enabled
                     ? `<button class="btn btn-sm btn-outline-warning me-1" title="Disable stream" onclick="removeStream('${s.id}', '${escHtml(s.name)}')"><i data-feather="x-circle"></i></button>`
                     : `<button class="btn btn-sm btn-outline-success me-1" title="Enable stream" onclick="enableStream('${s.id}', '${escHtml(s.name)}')"><i data-feather="play-circle"></i></button>`
@@ -606,25 +604,6 @@ async function previewStream(streamId) {
         previewModal.show();
     } catch (err) {
         showToast(`Preview failed: ${escHtml(err.message)}`, 'danger');
-    }
-}
-
-async function deployStream(streamId, streamName) {
-    if (!confirm(`Deploy stream "${streamName}" to the redirector?`)) return;
-    try {
-        const resp = await csrfFetch(
-            `/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}/deploy`,
-            { method: 'POST' }
-        );
-        const data = await resp.json();
-        if (!resp.ok) {
-            showToast(`Deploy failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
-            return;
-        }
-        showDeployResult(`Deploy: ${streamName}`, data);
-        if (data.success) loadStreams();
-    } catch (err) {
-        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
