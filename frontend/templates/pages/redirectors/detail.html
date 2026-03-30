@@ -66,8 +66,8 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     <button class="btn btn-outline-secondary" onclick="testConnection()">
                         <i data-feather="wifi" class="me-1"></i>Test Connection
                     </button>
-                    <button class="btn btn-primary" onclick="deployAll()">
-                        <i data-feather="upload-cloud" class="me-1"></i>Deploy All
+                    <button class="btn btn-primary" onclick="enableAll()">
+                        <i data-feather="play-circle" class="me-1"></i>Enable All
                     </button>
                     <button class="btn btn-outline-secondary" onclick="openEditRedirectorModal()">
                         <i data-feather="edit-2" class="me-1"></i>Edit
@@ -160,13 +160,12 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                             <th class="text-center">SSL</th>
                             <th class="text-center">ACL</th>
                             <th class="text-center">Enabled</th>
-                            <th class="text-center">Deployed</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="streamsBody">
                         <tr>
-                            <td colspan="9" class="text-center text-muted py-4">
+                            <td colspan="8" class="text-center text-muted py-4">
                                 <div class="spinner-border spinner-border-sm me-2" role="status"></div>
                                 Loading streams...
                             </td>
@@ -496,7 +495,7 @@ function renderStreams(streams) {
     _streams = streams;
     const tbody = document.getElementById('streamsBody');
     if (!streams.length) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-5">
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-5">
             No stream configs yet. Click <strong>Add Stream</strong> to create one.
         </td></tr>`;
         refreshUI();
@@ -523,9 +522,6 @@ function renderStreams(streams) {
             <td class="text-center align-middle">${s.access_control_enabled ? '<i data-feather="shield" class="text-warning" title="ACL enabled"></i>' : '<span class="text-muted">—</span>'}</td>
             <td class="text-center align-middle">
                 <span class="badge ${s.enabled ? 'bg-success' : 'bg-danger'}">${s.enabled ? 'Yes' : 'No'}</span>
-            </td>
-            <td class="text-center align-middle">
-                <span class="badge ${s.deployed ? 'bg-success' : 'bg-danger'}">${s.deployed ? 'Yes' : 'No'}</span>
             </td>
             <td class="text-end align-middle">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Preview config"
@@ -574,18 +570,18 @@ async function testConnection() {
 }
 
 // ============================================================
-// Deploy All
+// Enable All
 // ============================================================
-async function deployAll() {
-    showToast('Deploying all streams...', 'info');
+async function enableAll() {
+    showToast('Enabling all streams...', 'info');
     try {
         const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/deploy-all`, { method: 'POST' });
         const data = await resp.json();
         if (!resp.ok) {
-            showToast(`Deploy failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
+            showToast(`Enable failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
             return;
         }
-        showDeployResult('Deploy All', data);
+        showDeployResult('Enable All', data);
         if (data.success) loadStreams();
     } catch (err) {
         showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
