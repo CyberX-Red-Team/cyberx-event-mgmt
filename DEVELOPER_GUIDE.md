@@ -275,7 +275,7 @@ Routes are organized by domain. Each file defines an `APIRouter` with a tag and 
 | `instance_templates.py` | `/api/admin/instance-templates` | Instance template CRUD |
 | `participant_instances.py` | `/api/participants/instances` | Self-service provisioning |
 | `redirectors.py` | `/api/redirectors` | Redirector REST API |
-| `redirectors_pages.py` | (varies) | Redirector HTML pages |
+| `redirectors_pages.py` | (varies) | Redirector HTML pages (admin + participant portal) |
 | `vpn.py` | `/api/vpn` | VPN credential management |
 | `email.py` | `/api/email` | Email template/workflow admin |
 | `webhooks.py` | `/api/webhooks` | SendGrid, Keycloak, Discord webhooks |
@@ -482,10 +482,12 @@ raise HTTPException(
 base.html                    # Root: CSS variables, theme system, global JS utilities
 ├── dashboard.html           # Admin: sidebar nav + navbar + content area
 │   └── pages/admin/*.html   # Admin pages extend dashboard
-│   └── pages/redirectors/   # Redirector pages extend dashboard
+│   └── pages/redirectors/   # Admin redirector pages extend dashboard
 ├── auth.html                # Auth: cyberpunk-themed full-page layout
 │   └── pages/auth/*.html    # Login, forgot password, reset
 └── pages/participant/       # Participant portal extends base directly (no sidebar)
+    ├── portal.html          # Main portal with inline cards (VPN, TLS, instances, redirectors)
+    └── redirector_detail.html  # Redirector stream management (portal navbar)
 ```
 
 **Template blocks you can override:**
