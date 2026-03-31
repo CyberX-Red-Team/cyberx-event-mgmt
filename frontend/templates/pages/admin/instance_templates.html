@@ -199,6 +199,28 @@
                             <option value="">None</option>
                         </select>
                     </div>
+
+                    <hr class="my-3">
+                    <h6 class="fw-semibold mb-3">Redirector Configuration</h6>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="templateIsRedirector"
+                                   onchange="toggleRedirectorFields()">
+                            <label class="form-check-label" for="templateIsRedirector">
+                                Redirector Template
+                            </label>
+                            <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline"
+                                    data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="right"
+                                    data-bs-content="Mark this template as a redirector template. Instances created from it will appear in the 'Add CyberX Redirector' picker so operators can add them to redirector management. Templates using the 'Redirector Init' cloud-init template are detected automatically.">
+                                <i data-feather="info" style="width:14px;height:14px;"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-3" id="sshUsernameField" style="display:none;">
+                        <label class="form-label">SSH Username</label>
+                        <input type="text" class="form-control" id="templateSshUsername" value="root" placeholder="root">
+                        <div class="form-text">Default SSH user for redirector management (e.g. root, debian, ubuntu).</div>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -411,6 +433,12 @@ async function loadDigitalOceanResources() {
     }
 }
 
+// Toggle redirector-specific fields
+function toggleRedirectorFields() {
+    const isChecked = document.getElementById('templateIsRedirector').checked;
+    document.getElementById('sshUsernameField').style.display = isChecked ? 'block' : 'none';
+}
+
 // Toggle provider-specific fields
 function toggleProviderFields() {
     const provider = document.getElementById('templateProvider').value;
@@ -568,6 +596,9 @@ function showCreateModal() {
     document.getElementById('templateModalLabel').textContent = 'Create Template';
     document.getElementById('templateForm').reset();
     document.getElementById('templateId').value = '';
+    document.getElementById('templateIsRedirector').checked = false;
+    document.getElementById('templateSshUsername').value = 'root';
+    toggleRedirectorFields();
     toggleProviderFields();
     templateModal.show();
 }
@@ -586,6 +617,10 @@ async function editTemplate(templateId) {
         document.getElementById('templateProvider').value = template.provider;
         document.getElementById('templateCloudInit').value = template.cloud_init_template_id || '';
         document.getElementById('templateLicense').value = template.license_product_id || '';
+
+        document.getElementById('templateIsRedirector').checked = template.is_redirector || false;
+        document.getElementById('templateSshUsername').value = template.ssh_username || 'root';
+        toggleRedirectorFields();
 
         toggleProviderFields();
 
@@ -619,7 +654,9 @@ async function saveTemplate() {
         cloud_init_template_id: document.getElementById('templateCloudInit').value ?
             parseInt(document.getElementById('templateCloudInit').value) : null,
         license_product_id: document.getElementById('templateLicense').value ?
-            parseInt(document.getElementById('templateLicense').value) : null
+            parseInt(document.getElementById('templateLicense').value) : null,
+        is_redirector: document.getElementById('templateIsRedirector').checked,
+        ssh_username: document.getElementById('templateSshUsername').value || 'root',
     };
 
     if (provider === 'openstack') {
@@ -641,7 +678,9 @@ async function saveTemplate() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: data.name,
-                    description: data.description
+                    description: data.description,
+                    is_redirector: data.is_redirector,
+                    ssh_username: data.ssh_username,
                 })
             });
         } else {
@@ -720,6 +759,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadTemplates();
 
     feather.replace();
+
+    // Initialize Bootstrap popovers
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
+        new bootstrap.Popover(el);
+    });
 });
 </script>
 

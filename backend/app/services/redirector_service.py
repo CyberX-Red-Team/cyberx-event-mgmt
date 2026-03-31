@@ -57,24 +57,48 @@ class RedirectorService:
         )
         return result.scalar_one_or_none()
 
+    async def get_redirector_by_instance_id(self, instance_id: int) -> Optional[Redirector]:
+        """Return the redirector linked to a cloud instance, or None."""
+        result = await self.session.execute(
+            select(Redirector).where(Redirector.instance_id == instance_id)
+        )
+        return result.scalar_one_or_none()
+
     async def create_redirector(self, data: dict) -> Redirector:
+        # CyberX redirectors (instance_id set) always use infrastructure key
+        has_instance = data.get("instance_id") is not None
+        use_infra = True if has_instance else data.get("use_infrastructure_key", False)
         redirector = Redirector(
             id=str(uuid.uuid4()),
             name=data["name"],
             current_ip=data["current_ip"],
             ssh_port=data.get("ssh_port", 22),
             ssh_username=data["ssh_username"],
-            ssh_private_key=encrypt_field(data["ssh_private_key"]),
+            use_infrastructure_key=use_infra,
+            ssh_private_key=encrypt_field(data["ssh_private_key"]) if data.get("ssh_private_key") else None,
             ssh_key_passphrase=encrypt_field(data.get("ssh_key_passphrase")) if data.get("ssh_key_passphrase") else None,
             nginx_stream_dir=data.get("nginx_stream_dir", "/etc/nginx/stream.d"),
             notes=data.get("notes"),
             owner_id=data.get("owner_id"),
+            instance_id=data.get("instance_id"),
         )
         self.session.add(redirector)
         await self.session.commit()
         await self.session.refresh(redirector)
         # Refresh with stream_configs loaded so stream_count property works
         await self.session.refresh(redirector, attribute_names=["stream_configs"])
+        return redirector
+
+    async def clear_byod_key(self, redirector: Redirector) -> Redirector:
+        """Clear BYOD SSH credentials and switch to infrastructure key.
+
+        Called after successfully bootstrapping the infra key onto a BYOD redirector.
+        """
+        redirector.ssh_private_key = None
+        redirector.ssh_key_passphrase = None
+        redirector.use_infrastructure_key = True
+        await self.session.commit()
+        await self.session.refresh(redirector)
         return redirector
 
     async def update_redirector(self, redirector: Redirector, data: dict) -> Redirector:
