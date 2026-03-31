@@ -1760,17 +1760,29 @@ async function provisionInstance() {
 }
 
 async function deleteInstance(instanceId) {
+    // Check if instance is under redirector management
+    try {
+        var checkResp = await csrfFetch('/api/instances/' + instanceId + '/redirector-status');
+        if (checkResp.ok) {
+            var mgmt = await checkResp.json();
+            if (mgmt.under_management) {
+                showToast('This instance is under redirector management ("' + escapeHtml(mgmt.redirector_name) +
+                    '"). Remove it from redirector management first before deleting the instance.', 'warning');
+                return;
+            }
+        }
+    } catch (e) { /* proceed with normal flow */ }
+
     showConfirm('Are you sure you want to delete this instance? This cannot be undone.', async function() {
         try {
-            const response = await csrfFetch(`/api/participants/instances/${instanceId}`, {
+            var response = await csrfFetch('/api/participants/instances/' + instanceId, {
                 method: 'DELETE'
             });
-
             if (response.ok) {
                 await refreshInstances();
                 showToast('Instance deleted successfully', 'success');
             } else {
-                const error = await response.json();
+                var error = await response.json();
                 showToast(error.detail || 'Failed to delete instance', 'danger');
             }
         } catch (error) {
@@ -2279,7 +2291,7 @@ async function loadRedirectors() {
 function renderRedirectors(redirectors) {
     var tbody = document.getElementById('redirectorsTableBody');
     tbody.innerHTML = redirectors.map(function(r) {
-        var statusMap = { online: 'bg-success', offline: 'bg-danger', unknown: 'bg-secondary' };
+        var statusMap = { online: 'bg-success', offline: 'bg-danger', unknown: 'bg-secondary', isolated: 'bg-warning text-dark' };
         var cls = statusMap[r.status] || 'bg-secondary';
         var typeBadge = r.instance_id
             ? '<span class="badge bg-info ms-1">CyberX</span>'

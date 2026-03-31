@@ -445,7 +445,7 @@ function renderTable(redirectors) {
 }
 
 function statusBadge(status) {
-    const map = { online: 'bg-success', offline: 'bg-danger', unknown: 'bg-secondary' };
+    const map = { online: 'bg-success', offline: 'bg-danger', unknown: 'bg-secondary', isolated: 'bg-warning text-dark' };
     const cls = map[status] || 'bg-secondary';
     return `<span class="badge ${cls}">${escHtml(status)}</span>`;
 }

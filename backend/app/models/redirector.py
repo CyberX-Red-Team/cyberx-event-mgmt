@@ -21,6 +21,7 @@ class RedirectorStatus(str, enum.Enum):
     UNKNOWN = "unknown"
     ONLINE = "online"
     OFFLINE = "offline"
+    ISOLATED = "isolated"  # Source instance was deleted; redirector config is orphaned
 
 
 class StreamProtocol(str, enum.Enum):

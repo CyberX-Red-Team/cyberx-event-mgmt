@@ -35,6 +35,7 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                         <span id="statusBadge" class="badge fs-6
                             {% if redirector.status == 'online' %}bg-success
                             {% elif redirector.status == 'offline' %}bg-danger
+                            {% elif redirector.status == 'isolated' %}bg-warning text-dark
                             {% else %}bg-secondary{% endif %}">
                             {{ redirector.status }}
                         </span>
@@ -79,6 +80,25 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
             </div>
         </div>
     </div>
+
+    <!-- Isolated Warning Banner -->
+    {% if redirector.status == 'isolated' %}
+    <div class="alert alert-warning d-flex align-items-start mb-4" id="isolatedBanner">
+        <i data-feather="alert-triangle" class="me-2 flex-shrink-0 mt-1"></i>
+        <div>
+            <strong>Isolated Redirector</strong> -- The source instance for this redirector has been deleted and no longer exists.
+            Stream configurations are preserved but cannot be deployed until the redirector is re-homed to a new IP.
+            <div class="mt-2">
+                <button class="btn btn-sm btn-outline-warning me-2" onclick="openEditRedirectorModal()">
+                    <i data-feather="map-pin" class="me-1"></i>Re-home to New IP
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteRedirector()">
+                    <i data-feather="trash-2" class="me-1"></i>Delete Config
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Prerequisites (collapsible) -->
     <div class="accordion mb-4" id="setupGuide">
@@ -1204,6 +1224,20 @@ async function fixNginxSetup() {
         btn.innerHTML = '<i data-feather="tool" class="me-1"></i>Fix nginx.conf';
         refreshUI();
     }
+}
+
+async function deleteRedirector() {
+    if (!confirm('Delete this redirector and all its stream configurations? This cannot be undone.')) return;
+    try {
+        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}`, { method: 'DELETE' });
+        if (resp.ok || resp.status === 204) {
+            showToast('Redirector deleted.', 'success');
+            window.location.href = '{{ url_prefix }}/redirectors';
+        } else {
+            const data = await resp.json().catch(() => ({}));
+            showToast(escHtml(data.detail || 'Delete failed.'), 'danger');
+        }
+    } catch (e) { showToast('Delete failed: ' + escHtml(e.message), 'danger'); }
 }
 
 function escHtml(str) {

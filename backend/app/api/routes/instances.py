@@ -17,6 +17,8 @@ from app.models.user import User
 from app.services.openstack_service import OpenStackService
 from app.services.digitalocean_service import DigitalOceanService
 from app.services.instance_service import InstanceService
+from app.services.redirector_service import RedirectorService
+from app.models.redirector import RedirectorStatus
 from app.schemas.instance import (
     InstanceCreate,
     InstanceBulkCreate,
@@ -336,6 +338,26 @@ async def update_instance(
     return InstanceResponse.model_validate(instance)
 
 
+@router.get("/{instance_id}/redirector-status")
+async def get_instance_redirector_status(
+    instance_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("instances.delete")),
+):
+    """Check if an instance is under redirector management."""
+    redir_svc = RedirectorService(db)
+    redirector = await redir_svc.get_redirector_by_instance_id(instance_id)
+    if not redirector:
+        return {"under_management": False}
+    return {
+        "under_management": True,
+        "redirector_id": redirector.id,
+        "redirector_name": redirector.name,
+        "owner_id": redirector.owner_id,
+        "stream_count": redirector.stream_count if redirector.stream_configs else 0,
+    }
+
+
 @router.delete("/{instance_id}")
 async def delete_instance(
     instance_id: int,
@@ -344,11 +366,20 @@ async def delete_instance(
     current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
 ):
-    """Delete (terminate) an instance from its cloud provider."""
-    # Fetch instance details before deletion for audit
+    """Delete (terminate) an instance from its cloud provider.
+
+    If the instance is under redirector management, the linked redirector
+    is set to 'isolated' status (admin only).
+    """
     instance = await service.get_tracked_instance(instance_id)
     if not instance:
         raise not_found("Instance", instance_id)
+
+    # Check if instance is under redirector management
+    redir_svc = RedirectorService(db)
+    redirector = await redir_svc.get_redirector_by_instance_id(instance_id)
+    if redirector:
+        await redir_svc.update_status(redirector, RedirectorStatus.ISOLATED.value)
 
     ok = await service.delete_and_track_instance(instance_id)
     if not ok:
@@ -363,6 +394,7 @@ async def delete_instance(
             "provider": instance.provider,
             "status": instance.status,
             "assigned_to_email": instance.assigned_to_email,
+            "redirector_isolated": redirector.name if redirector else None,
         },
         ip_address=request.client.host if request.client else None,
     )

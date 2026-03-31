@@ -895,13 +895,34 @@ async function cycleVPN(id) {
 }
 
 async function deleteInstance(id, name) {
-    if (!confirm(`Delete instance "${name}"? This will terminate it on the cloud provider.`)) return;
+    // Check if instance is under redirector management
+    try {
+        const checkResp = await csrfFetch(`/api/instances/${id}/redirector-status`);
+        if (checkResp.ok) {
+            const mgmt = await checkResp.json();
+            if (mgmt.under_management) {
+                const streams = mgmt.stream_count || 0;
+                const msg = `WARNING: Instance "${name}" is under redirector management as "${mgmt.redirector_name}"` +
+                    (streams > 0 ? ` with ${streams} stream config(s)` : '') +
+                    `.\n\nDeleting this instance will set the redirector to "Isolated" status. ` +
+                    `You can re-home it to a new IP or delete the config later.\n\nContinue with deletion?`;
+                if (!confirm(msg)) return;
+            } else {
+                if (!confirm(`Delete instance "${name}"? This will terminate it on the cloud provider.`)) return;
+            }
+        }
+    } catch (e) {
+        if (!confirm(`Delete instance "${name}"? This will terminate it on the cloud provider.`)) return;
+    }
     try {
         const resp = await csrfFetch(`/api/instances/${id}`, { method: 'DELETE' });
         if (resp.ok) {
             loadInstances(currentPage);
             loadStats();
             showToast('Instance deleted', 'success');
+        } else {
+            const data = await resp.json().catch(() => ({}));
+            showToast(data.detail || 'Delete failed', 'danger');
         }
     } catch (e) { showToast('Delete failed', 'danger'); }
 }
