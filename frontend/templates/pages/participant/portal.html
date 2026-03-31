@@ -2301,7 +2301,10 @@ function renderRedirectors(redirectors) {
             '<td class="text-muted">' + escapeHtml(r.current_ip) + '</td>' +
             '<td><span class="badge ' + cls + '">' + escapeHtml(r.status) + '</span></td>' +
             '<td><span class="badge bg-secondary rounded-pill">' + r.stream_count + '</span></td>' +
-            '<td class="text-end"><a href="/portal/redirectors/' + escapeHtml(r.id) + '" class="btn btn-sm btn-outline-secondary" title="Manage"><i data-feather="settings"></i></a></td>' +
+            '<td class="text-end">' +
+                '<a href="/portal/redirectors/' + escapeHtml(r.id) + '" class="btn btn-sm btn-outline-secondary me-1" title="Manage"><i data-feather="settings"></i></a>' +
+                '<button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteRedirector(\'' + escapeHtml(r.id) + '\', \'' + escapeHtml(r.name) + '\')"><i data-feather="trash-2"></i></button>' +
+            '</td>' +
         '</tr>';
     }).join('');
 }
@@ -2512,6 +2515,25 @@ async function submitCyberX() {
         showToast('CyberX Redirector <strong>' + escapeHtml(data.name) + '</strong> created.', 'success');
         loadRedirectors();
     } catch (err) { errEl.textContent = 'Request failed: ' + err.message; errEl.classList.remove('d-none'); }
+}
+
+// --- Delete Redirector ---
+function deleteRedirector(id, name) {
+    showConfirm('Delete redirector "' + escapeHtml(name) + '" and all its stream configurations? This cannot be undone.',
+        async function() {
+            try {
+                var resp = await csrfFetch('/api/redirectors/' + id, { method: 'DELETE' });
+                if (resp.ok || resp.status === 204) {
+                    showToast('Redirector deleted.', 'success');
+                    loadRedirectors();
+                } else {
+                    var data = await resp.json().catch(function() { return {}; });
+                    showToast(escapeHtml(data.detail || 'Delete failed.'), 'danger');
+                }
+            } catch (e) { showToast('Delete failed: ' + escapeHtml(e.message), 'danger'); }
+        },
+        { title: 'Delete Redirector', confirmText: 'Delete', confirmClass: 'btn-danger' }
+    );
 }
 
 // Clean up polling on modal close
