@@ -338,6 +338,11 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                                 onchange="toggleCollapse('aclSection', this.checked)">
                             <label class="form-check-label fw-semibold" for="sm_acl_enabled">
                                 <i data-feather="shield" class="me-1"></i>Enable Access Control
+                                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline"
+                                        data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="right"
+                                        data-bs-content="Restricts which source IPs can connect to this stream. Generates nginx allow/deny rules from the CIDR list below. Traffic from IPs not in the allow list is dropped. Example: adding 10.0.0.0/8 allows only traffic from the 10.x.x.x range and denies everything else.">
+                                    <i data-feather="info" style="width:14px;height:14px;"></i>
+                                </button>
                             </label>
                         </div>
                         <div id="aclSection" class="mt-2 ps-4 d-none">
@@ -355,6 +360,11 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                                 onchange="toggleCollapse('sslSection', this.checked)">
                             <label class="form-check-label fw-semibold" for="sm_ssl_enabled">
                                 <i data-feather="lock" class="me-1"></i>Enable SSL/TLS Termination
+                                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline"
+                                        data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="right"
+                                        data-bs-content="Terminates TLS on the redirector so traffic arrives encrypted from the client but is forwarded as plaintext to the upstream server. Requires a certificate and key already present on the redirector. TCP streams only. Example: an HTTPS beacon on port 443 where the redirector handles the TLS handshake and forwards plaintext HTTP to your teamserver.">
+                                    <i data-feather="info" style="width:14px;height:14px;"></i>
+                                </button>
                             </label>
                         </div>
                         <div id="sslSection" class="mt-2 ps-4 d-none">
