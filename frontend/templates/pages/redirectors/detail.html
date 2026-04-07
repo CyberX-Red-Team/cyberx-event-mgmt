@@ -516,7 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Stream table
 // ============================================================
 async function loadStreams() {
-    const resp = await fetch(`/api/redirectors/${REDIRECTOR_ID}/streams`);
+    const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/streams`);
     if (!resp.ok) { renderStreams([]); return; }
     const streams = await resp.json();
     renderStreams(streams);
@@ -646,7 +646,7 @@ async function disableAll() {
 // ============================================================
 async function previewStream(streamId) {
     try {
-        const resp = await fetch(`/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}/preview`);
+        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}/preview`);
         const data = await resp.json();
         document.getElementById('previewFilename').textContent = data.filename;
         document.getElementById('previewContent').value = data.content;

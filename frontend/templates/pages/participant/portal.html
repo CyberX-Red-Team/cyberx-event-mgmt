@@ -2454,7 +2454,7 @@ function _cxPollInstance(instanceId) {
     var statusEl = document.getElementById('cx_provision_status');
     _cxPollTimer = setInterval(async function() {
         try {
-            var resp = await fetch('/api/redirectors/instance-status/' + instanceId);
+            var resp = await csrfFetch('/api/redirectors/instance-status/' + instanceId);
             if (!resp.ok) return;
             var data = await resp.json();
             statusEl.textContent = 'Status: ' + data.status;

@@ -34,7 +34,8 @@ def upgrade():
 
 
 def downgrade():
-    # Restore NOT NULL — any NULL rows must be cleaned up first
+    # Backfill NULLs before restoring NOT NULL to avoid constraint violation
+    op.execute("UPDATE redirectors SET ssh_private_key = '' WHERE ssh_private_key IS NULL")
     op.alter_column(
         "redirectors",
         "ssh_private_key",

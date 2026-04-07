@@ -390,7 +390,7 @@ document.addEventListener('DOMContentLoaded', loadRedirectors);
 
 async function loadRedirectors() {
     try {
-        const resp = await fetch('/api/redirectors/');
+        const resp = await csrfFetch('/api/redirectors/');
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         _redirectors = data.redirectors || [];
@@ -527,8 +527,8 @@ async function openAddCyberX() {
 
     try {
         const [instResp, tmplResp] = await Promise.all([
-            fetch('/api/redirectors/available-instances'),
-            fetch('/api/redirectors/redirector-templates'),
+            csrfFetch('/api/redirectors/available-instances'),
+            csrfFetch('/api/redirectors/redirector-templates'),
         ]);
         const instances = instResp.ok ? await instResp.json() : [];
         const templates = tmplResp.ok ? await tmplResp.json() : [];
@@ -661,7 +661,7 @@ function pollInstanceStatus(instanceId, name) {
     const statusEl = document.getElementById('cx_provision_status');
     _cxPollTimer = setInterval(async () => {
         try {
-            const resp = await fetch(`/api/redirectors/instance-status/${instanceId}`);
+            const resp = await csrfFetch(`/api/redirectors/instance-status/${instanceId}`);
             if (!resp.ok) return;
             const data = await resp.json();
             statusEl.textContent = `Status: ${data.status}`;
