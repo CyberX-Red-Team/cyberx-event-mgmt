@@ -862,13 +862,16 @@ async function submitStream() {
         : `/api/redirectors/${REDIRECTOR_ID}/streams`;
     const method = streamId ? 'PUT' : 'POST';
 
-    // Detect ACL changes before saving (compare against current state in _streams)
+    // Detect changes before saving (compare against current state in _streams)
     const original = _streams.find(s => s.id === streamId);
     const aclChanged = streamId && original && (
         payload.access_control_enabled !== original.access_control_enabled ||
         JSON.stringify((payload.allowed_cidrs || []).slice().sort()) !==
         JSON.stringify((original.allowed_cidrs || []).slice().sort())
     );
+    const wasEnabled = original && original.enabled;
+    const nowEnabled = payload.enabled;
+    const enabledChanged = streamId && original && (wasEnabled !== nowEnabled);
 
     try {
         const resp = await csrfFetch(url, {
@@ -884,8 +887,41 @@ async function submitStream() {
         }
         streamModal.hide();
 
-        // Auto-deploy when ACL settings changed and stream is enabled
-        if (aclChanged && data.enabled) {
+        // Auto-deploy/undeploy when enabled state changes
+        if (enabledChanged && nowEnabled) {
+            showToast(`Stream <strong>${escHtml(data.name)}</strong> saved — deploying…`, 'info');
+            try {
+                const deployResp = await csrfFetch(
+                    `/api/redirectors/${REDIRECTOR_ID}/streams/${data.id}/enable`,
+                    { method: 'POST' }
+                );
+                const deployData = await deployResp.json();
+                if (deployResp.ok) {
+                    showDeployResult(`Enable: ${data.name}`, deployData);
+                } else {
+                    showToast(`Saved but deploy failed: ${escHtml(deployData.detail || 'unknown error')}`, 'warning');
+                }
+            } catch (deployErr) {
+                showToast(`Saved but deploy failed: ${escHtml(deployErr.message)}`, 'warning');
+            }
+        } else if (enabledChanged && !nowEnabled) {
+            showToast(`Stream <strong>${escHtml(data.name)}</strong> saved — removing config…`, 'info');
+            try {
+                const deployResp = await csrfFetch(
+                    `/api/redirectors/${REDIRECTOR_ID}/streams/${data.id}/remove`,
+                    { method: 'POST' }
+                );
+                const deployData = await deployResp.json();
+                if (deployResp.ok) {
+                    showDeployResult(`Disable: ${data.name}`, deployData);
+                } else {
+                    showToast(`Saved but removal failed: ${escHtml(deployData.detail || 'unknown error')}`, 'warning');
+                }
+            } catch (deployErr) {
+                showToast(`Saved but removal failed: ${escHtml(deployErr.message)}`, 'warning');
+            }
+        } else if (aclChanged && data.enabled) {
+            // Auto-deploy when ACL settings changed and stream is enabled
             showToast(`Stream <strong>${escHtml(data.name)}</strong> updated — deploying ACL changes…`, 'info');
             const deployResp = await csrfFetch(
                 `/api/redirectors/${REDIRECTOR_ID}/streams/${data.id}/deploy`,
