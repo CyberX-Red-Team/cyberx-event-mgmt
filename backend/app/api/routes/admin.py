@@ -5,6 +5,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 
@@ -2656,6 +2657,11 @@ async def regenerate_discord_invite(
     participation.discord_invite_code = invite_code
     participation.discord_invite_generated_at = datetime.now(timezone.utc)
     participation.discord_invite_used_at = None  # Reset used status
+    participation.discord_verified_at = None  # Re-show "Join Discord Server" in portal
+
+    # Clear linked Discord identity so portal stops showing "Discord Linked"
+    user.discord_username = None
+    user.snowflake_id = None
 
     await db.commit()
 
@@ -2724,7 +2730,6 @@ async def assign_participant_role(
     data: RoleAssignRequest,
     request: Request,
     current_user: User = Depends(require_permission("admin.manage_roles")),
-    service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -2742,7 +2747,14 @@ async def assign_participant_role(
             detail="Role not found",
         )
 
-    participant = await service.get_participant(participant_id)
+    # Query on the route's `db` session so the mutation+commit happen on the same session.
+    # See: get_db duplication issue (services use a different session via app.database.get_db).
+    part_result = await db.execute(
+        select(User)
+        .options(selectinload(User.sponsor), selectinload(User.event_participations))
+        .where(User.id == participant_id)
+    )
+    participant = part_result.scalar_one_or_none()
     if not participant:
         raise not_found("Participant")
 
@@ -2783,6 +2795,11 @@ async def assign_participant_role(
         user_agent=user_agent,
     )
 
-    # Re-fetch participant with relationships loaded (refresh fails on service-loaded objects)
-    refreshed = await service.get_participant(participant_id)
+    # Re-fetch participant with relationships loaded on the same `db` session
+    refreshed_result = await db.execute(
+        select(User)
+        .options(selectinload(User.sponsor), selectinload(User.event_participations))
+        .where(User.id == participant_id)
+    )
+    refreshed = refreshed_result.scalar_one_or_none()
     return await build_participant_response(refreshed, db)

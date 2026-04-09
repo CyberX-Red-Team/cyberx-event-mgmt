@@ -713,6 +713,231 @@
                 </div>
             </div>
 
+            <!-- Redirectors Card -->
+            <div id="redirectorsCard" style="display: none;">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i data-feather="shuffle" class="me-2"></i>Redirectors</h5>
+                        <span class="badge bg-primary" id="redirectorCountBadge">0</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3" id="redirectorAddRow">
+                            <span class="text-muted small">Manage nginx stream proxy redirectors for your operations.</span>
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-danger dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i data-feather="plus" class="me-1"></i>Add Redirector
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item" href="#" onclick="openAddBYOD(); return false;">
+                                        <i data-feather="upload" class="me-1" style="width:14px;height:14px;"></i> Add BYOD Redirector
+                                    </a></li>
+                                    <li><a class="dropdown-item" href="#" onclick="openAddCyberX(); return false;">
+                                        <i data-feather="cloud" class="me-1" style="width:14px;height:14px;"></i> Add CyberX Redirector
+                                    </a></li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div id="redirectorsLoading" class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm me-2"></div>
+                            Loading redirectors...
+                        </div>
+                        <div id="redirectorsTableWrap" class="d-none">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>IP</th>
+                                            <th>Status</th>
+                                            <th>Streams</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="redirectorsTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div id="redirectorsEmpty" class="d-none text-center text-muted small py-3">
+                            No redirectors yet. Click "Add Redirector" to get started.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add BYOD Redirector Modal -->
+            <div class="modal fade" id="addBYODModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i data-feather="upload" class="me-2"></i>Add BYOD Redirector</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-info small mb-3">
+                                <i data-feather="info" class="me-1" style="width:14px;height:14px;"></i>
+                                Your SSH key will be used once to bootstrap the CyberX infrastructure key, then removed from storage.
+                            </div>
+                            <form id="addBYODForm">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="redir_add_name" placeholder="e.g. prod-redirector-01" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">IP Address <span class="text-danger">*</span>
+                                            <i data-feather="info" class="ms-1 text-info" style="width:14px;height:14px;cursor:pointer;"
+                                               data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top"
+                                               title="IP Address Requirements"
+                                               data-bs-content="Enter a publicly routable IPv4 or IPv6 address (e.g. 203.0.113.10). Domain names and FQDNs are not accepted. Private/non-routable addresses (10.x, 172.16-31.x, 192.168.x) will be rejected."></i>
+                                        </label>
+                                        <input type="text" class="form-control" id="redir_add_ip" placeholder="203.0.113.10" required
+                                               onblur="checkIPField(this, 'redirAddIpWarn')">
+                                        <div id="redirAddIpWarn" class="form-text text-warning d-none"></div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">SSH Port</label>
+                                        <input type="number" class="form-control" id="redir_add_port" value="22" min="1" max="65535">
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label fw-semibold">SSH Username <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="redir_add_user" placeholder="debian" required>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">SSH Private Key (PEM) <span class="text-danger">*</span></label>
+                                        <textarea class="form-control font-monospace" id="redir_add_key" rows="6"
+                                            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
+                                        <div class="form-text">Paste the full PEM private key. Used once for bootstrapping, then securely deleted.</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">Key Passphrase <span class="text-muted small">(optional)</span></label>
+                                        <input type="password" class="form-control" id="redir_add_pass" placeholder="Leave blank if key has no passphrase">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">nginx Stream Directory</label>
+                                        <input type="text" class="form-control" id="redir_add_dir" value="/etc/nginx/stream.d">
+                                        <div class="form-text">Directory where <code>cyberx_*.conf</code> files are written.</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">Notes <span class="text-muted small">(optional)</span></label>
+                                        <textarea class="form-control" id="redir_add_notes" rows="2" placeholder="Optional notes"></textarea>
+                                    </div>
+                                </div>
+                            </form>
+                            <div id="addBYODError" class="alert alert-danger mt-3 d-none"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-danger" onclick="submitAddBYOD()">
+                                <i data-feather="save" class="me-1"></i>Add Redirector
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add CyberX Redirector Modal (two-step wizard) -->
+            <div class="modal fade" id="addCyberXModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i data-feather="cloud" class="me-2"></i>Add CyberX Redirector</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <!-- Step 1: Select or Provision -->
+                            <div id="cx_step1">
+                                <p class="text-muted small mb-3">Select an existing redirector instance or provision a new one.</p>
+                                <div id="cx_loading" class="text-center py-4">
+                                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                    Loading available instances...
+                                </div>
+                                <div id="cx_instance_list" class="d-none">
+                                    <div id="cx_instances_container"></div>
+                                    <hr class="my-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="cx_choice" id="cx_provision_new" value="new">
+                                        <label class="form-check-label fw-semibold" for="cx_provision_new">
+                                            <i data-feather="plus-circle" class="me-1" style="width:14px;height:14px;"></i>
+                                            Provision New Redirector
+                                        </label>
+                                    </div>
+                                    <div id="cx_provision_section" class="d-none mt-3 ms-4">
+                                        <div class="row g-2">
+                                            <div class="col-md-6">
+                                                <label class="form-label small fw-semibold">Template</label>
+                                                <select class="form-select form-select-sm" id="cx_template_id"></select>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label small fw-semibold">Instance Name</label>
+                                                <input type="text" class="form-control form-control-sm" id="cx_instance_name" placeholder="e.g. redir-01">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="cx_no_instances" class="d-none">
+                                    <p class="text-muted mb-3">No available redirector instances. Provision one below.</p>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small fw-semibold">Template</label>
+                                            <select class="form-select form-select-sm" id="cx_template_id_alt"></select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small fw-semibold">Instance Name</label>
+                                            <input type="text" class="form-control form-control-sm" id="cx_instance_name_alt" placeholder="e.g. redir-01">
+                                        </div>
+                                    </div>
+                                    <div id="cx_no_templates" class="alert alert-warning small mt-3 d-none">
+                                        No redirector templates configured for this event. Ask an admin to create one.
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Step 2: Confirm & Create -->
+                            <div id="cx_step2" class="d-none">
+                                <div id="cx_provisioning" class="text-center py-4 d-none">
+                                    <div class="spinner-border text-danger me-2" role="status"></div>
+                                    <p class="mt-2 mb-0 text-muted">Provisioning instance... This may take a few minutes.</p>
+                                    <p class="mt-1 mb-0 small text-muted" id="cx_provision_status">Status: BUILDING</p>
+                                </div>
+                                <div id="cx_confirm_form" class="d-none">
+                                    <div class="alert alert-success small mb-3">
+                                        <i data-feather="check-circle" class="me-1" style="width:14px;height:14px;"></i>
+                                        Instance is active. Confirm details to add as a managed redirector.
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-semibold">Redirector Name</label>
+                                            <input type="text" class="form-control" id="cx_redir_name">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-semibold">IP Address</label>
+                                            <input type="text" class="form-control" id="cx_redir_ip" readonly>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label fw-semibold">nginx Stream Directory</label>
+                                            <input type="text" class="form-control" id="cx_stream_dir" value="/etc/nginx/stream.d">
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label fw-semibold">Notes <span class="text-muted small">(optional)</span></label>
+                                            <textarea class="form-control" id="cx_notes" rows="2"></textarea>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" id="cx_selected_instance_id">
+                                </div>
+                            </div>
+                            <div id="addCyberXError" class="alert alert-danger mt-3 d-none"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-outline-secondary d-none" id="cx_back_btn" onclick="cyberXBack()">Back</button>
+                            <button type="button" class="btn btn-danger" id="cx_next_btn" onclick="cyberXNext()">Next</button>
+                            <button type="button" class="btn btn-danger d-none" id="cx_submit_btn" onclick="submitCyberX()">
+                                <i data-feather="save" class="me-1"></i>Add Redirector
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Help Card -->
             <div class="card shadow-sm">
                 <div class="card-header">
@@ -1542,17 +1767,29 @@ async function provisionInstance() {
 }
 
 async function deleteInstance(instanceId) {
+    // Check if instance is under redirector management
+    try {
+        var checkResp = await csrfFetch('/api/instances/' + instanceId + '/redirector-status');
+        if (checkResp.ok) {
+            var mgmt = await checkResp.json();
+            if (mgmt.under_management) {
+                showToast('This instance is under redirector management ("' + escapeHtml(mgmt.redirector_name) +
+                    '"). Remove it from redirector management first before deleting the instance.', 'warning');
+                return;
+            }
+        }
+    } catch (e) { /* proceed with normal flow */ }
+
     showConfirm('Are you sure you want to delete this instance? This cannot be undone.', async function() {
         try {
-            const response = await csrfFetch(`/api/participants/instances/${instanceId}`, {
+            var response = await csrfFetch('/api/participants/instances/' + instanceId, {
                 method: 'DELETE'
             });
-
             if (response.ok) {
                 await refreshInstances();
                 showToast('Instance deleted successfully', 'success');
             } else {
-                const error = await response.json();
+                var error = await response.json();
                 showToast(error.detail || 'Failed to delete instance', 'danger');
             }
         } catch (error) {
@@ -1780,6 +2017,47 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function parseApiError(detail, fallback) {
+    if (!detail) return fallback || 'An unknown error occurred.';
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) return detail.map(function(e) { return e.msg || JSON.stringify(e); }).join('; ');
+    return String(detail);
+}
+
+function isPrivateIP(ip) {
+    var parts = ip.split('.');
+    if (parts.length === 4 && parts.every(function(p) { return /^\d{1,3}$/.test(p); })) {
+        var a = Number(parts[0]), b = Number(parts[1]);
+        if (a === 10) return true;
+        if (a === 172 && b >= 16 && b <= 31) return true;
+        if (a === 192 && b === 168) return true;
+        if (a === 100 && b >= 64 && b <= 127) return true;
+        if (a === 169 && b === 254) return true;
+        if (a === 127) return true;
+    }
+    if (ip === '::1') return true;
+    var lower = ip.toLowerCase();
+    if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80')) return true;
+    return false;
+}
+
+function looksLikeFQDN(val) { return /[a-zA-Z]/.test(val) && val.includes('.'); }
+
+function checkIPField(input, warnId) {
+    var val = input.value.trim();
+    var warnEl = document.getElementById(warnId);
+    if (!val) { warnEl.classList.add('d-none'); return; }
+    if (looksLikeFQDN(val)) {
+        warnEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
+        warnEl.classList.remove('d-none');
+    } else if (isPrivateIP(val)) {
+        warnEl.textContent = 'This is a private/non-routable address. The redirector must be reachable over the internet.';
+        warnEl.classList.remove('d-none');
+    } else {
+        warnEl.classList.add('d-none');
+    }
 }
 
 // =============================================================================
@@ -2027,6 +2305,303 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// ============================================================
+// Redirectors
+// ============================================================
+var _byodModal = null;
+var _cyberXModal = null;
+var _cxPollTimer = null;
+var _cxSelectedInstanceId = null;
+
+async function loadRedirectors() {
+    try {
+        var resp = await csrfFetch('/api/redirectors/');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var data = await resp.json();
+        var redirectors = data.redirectors || [];
+        document.getElementById('redirectorCountBadge').textContent = redirectors.length;
+        document.getElementById('redirectorsLoading').classList.add('d-none');
+        if (redirectors.length === 0) {
+            document.getElementById('redirectorsEmpty').classList.remove('d-none');
+            document.getElementById('redirectorsTableWrap').classList.add('d-none');
+        } else {
+            document.getElementById('redirectorsEmpty').classList.add('d-none');
+            document.getElementById('redirectorsTableWrap').classList.remove('d-none');
+            renderRedirectors(redirectors);
+        }
+        refreshFeatherIcons();
+    } catch (err) {
+        document.getElementById('redirectorsLoading').innerHTML =
+            '<span class="text-danger">Failed to load redirectors: ' + escapeHtml(err.message) + '</span>';
+    }
+}
+
+function renderRedirectors(redirectors) {
+    var tbody = document.getElementById('redirectorsTableBody');
+    tbody.innerHTML = redirectors.map(function(r) {
+        var statusMap = { online: 'bg-success', offline: 'bg-danger', unknown: 'bg-secondary', isolated: 'bg-warning text-dark' };
+        var cls = statusMap[r.status] || 'bg-secondary';
+        var typeBadge = r.instance_id
+            ? '<span class="badge bg-info ms-1">CyberX</span>'
+            : '<span class="badge bg-secondary ms-1">BYOD</span>';
+        return '<tr>' +
+            '<td><a href="/portal/redirectors/' + escapeHtml(r.id) + '" class="fw-semibold text-decoration-none" style="color:var(--bs-danger,#dc3545);">' + escapeHtml(r.name) + '</a>' + typeBadge + '</td>' +
+            '<td class="text-muted">' + escapeHtml(r.current_ip) + '</td>' +
+            '<td><span class="badge ' + cls + '">' + escapeHtml(r.status) + '</span></td>' +
+            '<td><span class="badge bg-secondary rounded-pill">' + r.stream_count + '</span></td>' +
+            '<td class="text-end">' +
+                '<a href="/portal/redirectors/' + escapeHtml(r.id) + '" class="btn btn-sm btn-outline-secondary me-1" title="Manage"><i data-feather="settings"></i></a>' +
+                '<button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteRedirector(\'' + escapeHtml(r.id) + '\', \'' + escapeHtml(r.name) + '\')"><i data-feather="trash-2"></i></button>' +
+            '</td>' +
+        '</tr>';
+    }).join('');
+}
+
+// --- BYOD Flow ---
+function openAddBYOD() {
+    document.getElementById('addBYODForm').reset();
+    document.getElementById('redir_add_dir').value = '/etc/nginx/stream.d';
+    document.getElementById('addBYODError').classList.add('d-none');
+    if (!_byodModal) _byodModal = new bootstrap.Modal(document.getElementById('addBYODModal'));
+    _byodModal.show();
+    setTimeout(refreshFeatherIcons, 100);
+}
+
+async function submitAddBYOD() {
+    var errEl = document.getElementById('addBYODError');
+    errEl.classList.add('d-none');
+    var payload = {
+        name:               document.getElementById('redir_add_name').value.trim(),
+        current_ip:         document.getElementById('redir_add_ip').value.trim(),
+        ssh_port:           parseInt(document.getElementById('redir_add_port').value, 10),
+        ssh_username:       document.getElementById('redir_add_user').value.trim(),
+        ssh_private_key:    document.getElementById('redir_add_key').value.trim(),
+        ssh_key_passphrase: document.getElementById('redir_add_pass').value || null,
+        nginx_stream_dir:   document.getElementById('redir_add_dir').value.trim(),
+        notes:              document.getElementById('redir_add_notes').value.trim() || null,
+    };
+    if (!payload.name || !payload.current_ip || !payload.ssh_username) {
+        errEl.textContent = 'Please fill in all required fields.'; errEl.classList.remove('d-none'); return;
+    }
+    if (!payload.ssh_private_key) {
+        errEl.textContent = 'SSH private key is required.'; errEl.classList.remove('d-none'); return;
+    }
+    if (looksLikeFQDN(payload.current_ip)) {
+        errEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).'; errEl.classList.remove('d-none'); return;
+    }
+    if (isPrivateIP(payload.current_ip)) {
+        errEl.textContent = 'Private/non-routable IP addresses are not permitted. The redirector must be reachable over the internet.'; errEl.classList.remove('d-none'); return;
+    }
+    try {
+        var resp = await csrfFetch('/api/redirectors/', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        var data = await resp.json();
+        if (!resp.ok) { errEl.textContent = parseApiError(data.detail, 'Failed to create redirector.'); errEl.classList.remove('d-none'); return; }
+        _byodModal.hide();
+        showToast('Redirector <strong>' + escapeHtml(data.name) + '</strong> created.', 'success');
+        loadRedirectors();
+    } catch (err) { errEl.textContent = 'Request failed: ' + err.message; errEl.classList.remove('d-none'); }
+}
+
+// --- CyberX Flow ---
+function _cxPopulateTemplates(selectId, templates) {
+    var sel = document.getElementById(selectId);
+    sel.innerHTML = templates.map(function(t) {
+        return '<option value="' + t.id + '">' + escapeHtml(t.name) + (t.description ? ' — ' + escapeHtml(t.description) : '') + '</option>';
+    }).join('');
+}
+
+async function openAddCyberX() {
+    document.getElementById('cx_step1').classList.remove('d-none');
+    document.getElementById('cx_step2').classList.add('d-none');
+    document.getElementById('cx_loading').classList.remove('d-none');
+    document.getElementById('cx_instance_list').classList.add('d-none');
+    document.getElementById('cx_no_instances').classList.add('d-none');
+    document.getElementById('cx_next_btn').classList.remove('d-none');
+    document.getElementById('cx_next_btn').disabled = false;
+    document.getElementById('cx_submit_btn').classList.add('d-none');
+    document.getElementById('cx_back_btn').classList.add('d-none');
+    document.getElementById('addCyberXError').classList.add('d-none');
+    _cxSelectedInstanceId = null;
+    if (!_cyberXModal) _cyberXModal = new bootstrap.Modal(document.getElementById('addCyberXModal'));
+    _cyberXModal.show();
+    try {
+        var results = await Promise.all([
+            fetch('/api/redirectors/available-instances'),
+            fetch('/api/redirectors/redirector-templates'),
+        ]);
+        var instances = results[0].ok ? await results[0].json() : [];
+        var templates = results[1].ok ? await results[1].json() : [];
+        document.getElementById('cx_loading').classList.add('d-none');
+        if (instances.length > 0) {
+            var container = document.getElementById('cx_instances_container');
+            container.innerHTML = instances.map(function(inst, i) {
+                return '<div class="form-check mb-2">' +
+                    '<input class="form-check-input" type="radio" name="cx_choice" id="cx_inst_' + inst.id + '" value="' + inst.id + '"' +
+                    ' onchange="document.getElementById(\'cx_provision_section\').classList.add(\'d-none\');"' +
+                    (i === 0 ? ' checked' : '') + '>' +
+                    '<label class="form-check-label" for="cx_inst_' + inst.id + '">' +
+                    '<strong>' + escapeHtml(inst.name) + '</strong>' +
+                    '<span class="text-muted ms-2">' + escapeHtml(inst.ip_address || 'IP pending') + '</span>' +
+                    '<span class="badge bg-success ms-1">' + escapeHtml(inst.status) + '</span>' +
+                    '</label></div>';
+            }).join('');
+            document.getElementById('cx_provision_new').addEventListener('change', function() {
+                document.getElementById('cx_provision_section').classList.remove('d-none');
+            });
+            _cxPopulateTemplates('cx_template_id', templates);
+            document.getElementById('cx_instance_list').classList.remove('d-none');
+        } else {
+            _cxPopulateTemplates('cx_template_id_alt', templates);
+            if (!templates.length) {
+                document.getElementById('cx_no_templates').classList.remove('d-none');
+                document.getElementById('cx_next_btn').disabled = true;
+            }
+            document.getElementById('cx_no_instances').classList.remove('d-none');
+        }
+        refreshFeatherIcons();
+    } catch (err) {
+        document.getElementById('cx_loading').classList.add('d-none');
+        var errEl = document.getElementById('addCyberXError');
+        errEl.textContent = 'Failed to load data: ' + err.message; errEl.classList.remove('d-none');
+    }
+}
+
+async function cyberXNext() {
+    var errEl = document.getElementById('addCyberXError');
+    errEl.classList.add('d-none');
+    var selected = document.querySelector('input[name="cx_choice"]:checked');
+    if (!selected) { errEl.textContent = 'Please select an instance or choose to provision a new one.'; errEl.classList.remove('d-none'); return; }
+    document.getElementById('cx_step1').classList.add('d-none');
+    document.getElementById('cx_step2').classList.remove('d-none');
+    document.getElementById('cx_next_btn').classList.add('d-none');
+    document.getElementById('cx_back_btn').classList.remove('d-none');
+    if (selected.value === 'new') {
+        var templateId = document.getElementById('cx_template_id').value || document.getElementById('cx_template_id_alt').value;
+        var instName = (document.getElementById('cx_instance_name').value || document.getElementById('cx_instance_name_alt').value).trim();
+        if (!templateId || !instName) {
+            errEl.textContent = 'Please select a template and enter an instance name.'; errEl.classList.remove('d-none');
+            document.getElementById('cx_step1').classList.remove('d-none'); document.getElementById('cx_step2').classList.add('d-none');
+            document.getElementById('cx_next_btn').classList.remove('d-none'); document.getElementById('cx_back_btn').classList.add('d-none');
+            return;
+        }
+        document.getElementById('cx_provisioning').classList.remove('d-none');
+        document.getElementById('cx_confirm_form').classList.add('d-none');
+        try {
+            var resp = await csrfFetch('/api/redirectors/provision-and-register', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ template_id: parseInt(templateId), name: instName }),
+            });
+            var data = await resp.json();
+            if (!resp.ok) { errEl.textContent = data.detail || 'Failed to provision instance.'; errEl.classList.remove('d-none'); document.getElementById('cx_provisioning').classList.add('d-none'); return; }
+            _cxPollInstance(data.id, instName);
+        } catch (err) { errEl.textContent = 'Provision failed: ' + err.message; errEl.classList.remove('d-none'); document.getElementById('cx_provisioning').classList.add('d-none'); }
+    } else {
+        _cxSelectedInstanceId = parseInt(selected.value);
+        var label = selected.closest('.form-check').querySelector('label');
+        _cxShowConfirm(_cxSelectedInstanceId, label.querySelector('strong').textContent, label.querySelector('.text-muted').textContent.trim());
+    }
+}
+
+function _cxPollInstance(instanceId) {
+    var statusEl = document.getElementById('cx_provision_status');
+    _cxPollTimer = setInterval(async function() {
+        try {
+            var resp = await csrfFetch('/api/redirectors/instance-status/' + instanceId);
+            if (!resp.ok) return;
+            var data = await resp.json();
+            statusEl.textContent = 'Status: ' + data.status;
+            if (data.status === 'ACTIVE') {
+                clearInterval(_cxPollTimer); _cxPollTimer = null;
+                _cxSelectedInstanceId = data.id;
+                document.getElementById('cx_provisioning').classList.add('d-none');
+                _cxShowConfirm(data.id, data.name, data.ip_address || '');
+            } else if (data.status === 'ERROR') {
+                clearInterval(_cxPollTimer); _cxPollTimer = null;
+                var errEl = document.getElementById('addCyberXError');
+                errEl.textContent = 'Instance provisioning failed.'; errEl.classList.remove('d-none');
+                document.getElementById('cx_provisioning').classList.add('d-none');
+            }
+        } catch (e) { /* retry */ }
+    }, 5000);
+}
+
+function _cxShowConfirm(instanceId, name, ip) {
+    document.getElementById('cx_selected_instance_id').value = instanceId;
+    document.getElementById('cx_redir_name').value = name;
+    document.getElementById('cx_redir_ip').value = ip;
+    document.getElementById('cx_stream_dir').value = '/etc/nginx/stream.d';
+    document.getElementById('cx_notes').value = '';
+    document.getElementById('cx_confirm_form').classList.remove('d-none');
+    document.getElementById('cx_submit_btn').classList.remove('d-none');
+    refreshFeatherIcons();
+}
+
+function cyberXBack() {
+    if (_cxPollTimer) { clearInterval(_cxPollTimer); _cxPollTimer = null; }
+    document.getElementById('cx_step1').classList.remove('d-none');
+    document.getElementById('cx_step2').classList.add('d-none');
+    document.getElementById('cx_next_btn').classList.remove('d-none');
+    document.getElementById('cx_submit_btn').classList.add('d-none');
+    document.getElementById('cx_back_btn').classList.add('d-none');
+    document.getElementById('cx_provisioning').classList.add('d-none');
+    document.getElementById('cx_confirm_form').classList.add('d-none');
+    document.getElementById('addCyberXError').classList.add('d-none');
+}
+
+async function submitCyberX() {
+    var errEl = document.getElementById('addCyberXError');
+    errEl.classList.add('d-none');
+    var payload = {
+        instance_id: parseInt(document.getElementById('cx_selected_instance_id').value),
+        name: document.getElementById('cx_redir_name').value.trim() || null,
+        nginx_stream_dir: document.getElementById('cx_stream_dir').value.trim(),
+        notes: document.getElementById('cx_notes').value.trim() || null,
+    };
+    try {
+        var resp = await csrfFetch('/api/redirectors/from-instance', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        var data = await resp.json();
+        if (!resp.ok) { errEl.textContent = data.detail || 'Failed to create redirector.'; errEl.classList.remove('d-none'); return; }
+        _cyberXModal.hide();
+        showToast('CyberX Redirector <strong>' + escapeHtml(data.name) + '</strong> created.', 'success');
+        loadRedirectors();
+    } catch (err) { errEl.textContent = 'Request failed: ' + err.message; errEl.classList.remove('d-none'); }
+}
+
+// --- Delete Redirector ---
+function deleteRedirector(id, name) {
+    showConfirm('Delete redirector "' + escapeHtml(name) + '" and all its stream configurations? This cannot be undone.',
+        async function() {
+            try {
+                var resp = await csrfFetch('/api/redirectors/' + id, { method: 'DELETE' });
+                if (resp.ok || resp.status === 204) {
+                    showToast('Redirector deleted.', 'success');
+                    loadRedirectors();
+                } else {
+                    var data = await resp.json().catch(function() { return {}; });
+                    showToast(escapeHtml(data.detail || 'Delete failed.'), 'danger');
+                }
+            } catch (e) { showToast('Delete failed: ' + escapeHtml(e.message), 'danger'); }
+        },
+        { title: 'Delete Redirector', confirmText: 'Delete', confirmClass: 'btn-danger' }
+    );
+}
+
+// Clean up polling on modal close
+document.addEventListener('DOMContentLoaded', function() {
+    var cxEl = document.getElementById('addCyberXModal');
+    if (cxEl) cxEl.addEventListener('hidden.bs.modal', function() {
+        if (_cxPollTimer) { clearInterval(_cxPollTimer); _cxPollTimer = null; }
+    });
+    // Initialize Bootstrap popovers
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
+        new bootstrap.Popover(el, { html: false });
+    });
+});
+
 // Load event info and VPN status on page load
 document.addEventListener('DOMContentLoaded', async function() {
     // Hide sections the user doesn't have permissions for
@@ -2070,6 +2645,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Load TLS certificates
     if (hasPermission('tls.request') || hasPermission('tls.download')) {
         loadTlsCAChains();
+    }
+
+    // Load redirectors
+    if (hasPermission('redirectors.view')) {
+        document.getElementById('redirectorsCard').style.display = 'block';
+        loadRedirectors();
+        if (!hasPermission('redirectors.manage')) {
+            document.getElementById('redirectorAddRow').style.display = 'none';
+        }
     }
 
     // Check if VPN is available and user has instance permissions

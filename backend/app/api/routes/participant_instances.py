@@ -21,6 +21,7 @@ from app.schemas.instance_template import (
     InstanceFromTemplateRequest,
 )
 from app.schemas.instance import InstanceResponse, InstanceListResponse
+from app.services.redirector_service import RedirectorService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/participants", tags=["Participant Portal"])
@@ -262,6 +263,15 @@ async def delete_my_instance(
 
     if not is_creator:
         raise forbidden("You can only delete instances you created")
+
+    # Block deletion if instance is under redirector management
+    redir_svc = RedirectorService(service.session)
+    redirector = await redir_svc.get_redirector_by_instance_id(instance_id)
+    if redirector:
+        raise forbidden(
+            "This instance is under redirector management "
+            f"('{redirector.name}'). Remove it from redirector management first."
+        )
 
     instance_name = instance.name
     instance_provider = instance.provider

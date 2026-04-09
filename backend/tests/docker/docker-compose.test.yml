@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  mock-redirector:
+    build:
+      context: ./mock-redirector
+      dockerfile: Dockerfile
+    ports:
+      - "2222:22"
+    healthcheck:
+      test: ["CMD", "ssh-keyscan", "-p", "22", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s

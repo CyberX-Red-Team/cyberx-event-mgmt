@@ -13,20 +13,20 @@ class TestPermissionConstants:
     """Test permission constant definitions."""
 
     def test_all_permissions_count(self):
-        """All 46 permission strings should be defined."""
-        assert len(ALL_PERMISSIONS) == 46
+        """All 49 permission strings should be defined (includes redirector permissions)."""
+        assert len(ALL_PERMISSIONS) == 49
 
     def test_admin_has_all_permissions(self):
         """Admin role should have all permissions."""
         assert ROLE_PERMISSIONS["admin"] == ALL_PERMISSIONS
 
     def test_sponsor_permission_count(self):
-        """Sponsor role should have 16 permissions."""
-        assert len(ROLE_PERMISSIONS["sponsor"]) == 16
+        """Sponsor role should have 18 permissions (includes redirector permissions)."""
+        assert len(ROLE_PERMISSIONS["sponsor"]) == 18
 
     def test_invitee_permission_count(self):
-        """Invitee role should have 11 permissions."""
-        assert len(ROLE_PERMISSIONS["invitee"]) == 11
+        """Invitee role should have 13 permissions (includes redirector permissions)."""
+        assert len(ROLE_PERMISSIONS["invitee"]) == 13
 
     def test_sponsor_is_superset_of_invitee(self):
         """Sponsor permissions should include all invitee permissions."""

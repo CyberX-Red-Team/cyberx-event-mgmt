@@ -18,6 +18,9 @@ from app.api.routes import admin_actions, participant_actions, admin_keycloak, a
 from app.api.routes import admin_tls, participant_tls, admin_roles
 from app.api.routes.agent import agent_router, participant_router as agent_participant_router, admin_router as agent_admin_router
 from app.api.routes import bot as bot_routes, admin_api_keys
+from app.api.routes import redirectors as redirectors_routes
+from app.api.routes import redirectors_pages
+from app.api.routes import admin_pages
 from app.tasks import start_scheduler, stop_scheduler
 from app.utils.encryption import init_encryptor, generate_encryption_key
 from cryptography.fernet import Fernet
@@ -47,6 +50,10 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown events."""
+    # Install memory log handler first — captures all startup messages for the log viewer
+    from app.services.log_buffer import install_memory_handler
+    install_memory_handler()
+
     # Startup
     logger.info("CyberX Event Management API starting...")
     logger.info("  Environment: %s", settings.ENVIRONMENT.upper())
@@ -205,6 +212,24 @@ app = FastAPI(
 )
 
 
+# Security headers (defense-in-depth alongside nginx)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
@@ -279,6 +304,9 @@ app.include_router(agent_participant_router)  # Participant agent task managemen
 app.include_router(agent_admin_router)  # Admin agent task management
 app.include_router(bot_routes.router)  # External bot API (Discord verification)
 app.include_router(admin_api_keys.router)  # Admin API key management
+app.include_router(redirectors_routes.router)   # Redirector REST API
+app.include_router(redirectors_pages.router)    # Redirector web UI pages
+app.include_router(admin_pages.router)           # Admin pages (logs, etc.)
 
 # Include view routes (HTML pages)
 app.include_router(views.router)

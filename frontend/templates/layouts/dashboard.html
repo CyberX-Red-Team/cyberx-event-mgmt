@@ -161,6 +161,21 @@
                     </a>
                     {% endif %}
                     {% endif %}
+                    {% if 'redirectors.view' in perms %}
+                    <a class="nav-link {% if active_page == 'redirectors' %}active{% endif %}" href="/admin/redirectors">
+                        <i data-feather="shuffle"></i>
+                        <span>Redirectors</span>
+                    </a>
+                    {% endif %}
+
+                    <!-- System -->
+                    {% if 'admin.manage' in perms %}
+                    <div class="sidenav-menu-heading text-muted small px-3 py-2 mt-3">System</div>
+                    <a class="nav-link {% if active_page == 'logs' %}active{% endif %}" href="/admin/logs">
+                        <i data-feather="file-text"></i>
+                        <span>Error Logs</span>
+                    </a>
+                    {% endif %}
 
                     <!-- Certificates -->
                     {% if 'cpe.manage' in perms or 'tls.manage' in perms %}
@@ -398,6 +413,11 @@ window.showToast = function(message, type = 'info') {
     toast.style.minWidth = '300px';
     toast.setAttribute('role', 'alert');
     toast.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+    toast.style.cursor = 'pointer';
+    toast.addEventListener('click', function() {
+        toast.classList.remove('show');
+        setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 150);
+    });
 
     document.body.appendChild(toast);
 

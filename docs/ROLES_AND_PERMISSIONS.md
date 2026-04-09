@@ -1,7 +1,7 @@
 # Roles & Permissions System
 
 **Status:** Implemented
-**Last Updated:** 2026-03-09
+**Last Updated:** 2026-03-30
 
 ---
 
@@ -31,35 +31,36 @@ The system uses a hybrid approach combining:
 - **Slug:** `admin`
 - **Base type:** `admin`
 - **System role:** Yes (cannot be deleted)
-- **Permissions:** All 46 permissions
-- **Description:** Full system access. Manages users, roles, events, email, infrastructure, and all platform features.
+- **Permissions:** All 49 permissions
+- **Description:** Full system access. Manages users, roles, events, email, infrastructure, and all platform features. Redirectors visible in admin sidebar.
 
 ### Sponsor
 - **Slug:** `sponsor`
 - **Base type:** `sponsor`
 - **System role:** Yes (cannot be deleted)
-- **Permissions:** 15 (all invitee self-service + participant management)
-- **Description:** Manages their own sponsored participants. Can create, edit, invite, and view participant resources. Also has full self-service access.
+- **Permissions:** 18 (all invitee self-service + participant management + redirectors)
+- **Description:** Manages their own sponsored participants. Can create, edit, invite, and view participant resources. Also has full self-service access. Redirectors visible in participant portal card.
 
 **Sponsor-specific permissions (beyond invitee):**
 - `participants.view` — view sponsored participants
 - `participants.create` — create new participants
 - `participants.edit` — edit participant records
 - `participants.invite` — send invitations
+- `participants.remove` — remove participants
 
 ### Invitee
 - **Slug:** `invitee`
 - **Base type:** `invitee`
 - **System role:** Yes (cannot be deleted)
-- **Permissions:** 11 (self-service only)
-- **Description:** Standard participant. Can provision instances, request VPN, download certificates, and manage their own resources.
+- **Permissions:** 13 (self-service only)
+- **Description:** Standard participant. Can provision instances, request VPN, download certificates, manage redirectors, and manage their own resources. Redirectors visible in participant portal card.
 
 **Invitee permissions:**
-`instances.view`, `instances.provision`, `instances.delete`, `instances.manage_agent`, `vpn.view`, `vpn.request`, `vpn.download`, `tls.request`, `tls.download`, `cpe.download`, `discord.view`
+`instances.view`, `instances.provision`, `instances.delete`, `instances.manage_agent`, `vpn.view`, `vpn.request`, `vpn.download`, `tls.request`, `tls.download`, `cpe.download`, `discord.view`, `redirectors.view`, `redirectors.manage`
 
 ---
 
-## All Permissions (46)
+## All Permissions (49)
 
 ### Events (4)
 | Permission | Description |
@@ -125,6 +126,13 @@ The system uses a hybrid approach combining:
 |-----------|-------------|
 | `discord.view` | View Discord integration and invite card |
 | `discord.manage` | Configure Discord integration |
+
+### Redirectors (3)
+| Permission | Description |
+|-----------|-------------|
+| `redirectors.view` | View own redirectors and stream configs |
+| `redirectors.manage` | Create, edit, delete, deploy own redirectors and streams |
+| `redirectors.view_all` | View all redirectors across all users (admin) |
 
 ### Cloud Infrastructure (3)
 | Permission | Description |

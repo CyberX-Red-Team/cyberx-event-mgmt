@@ -23,6 +23,8 @@ class InstanceTemplateCreate(BaseModel):
     cloud_init_template_id: Optional[int] = None
     license_product_id: Optional[int] = None
     event_id: int
+    is_redirector: bool = False
+    ssh_username: str = Field(default="root", max_length=50)
 
 
 class InstanceTemplateUpdate(BaseModel):
@@ -30,6 +32,8 @@ class InstanceTemplateUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    is_redirector: Optional[bool] = None
+    ssh_username: Optional[str] = Field(None, max_length=50)
 
 
 class InstanceTemplateResponse(BaseModel):
@@ -52,6 +56,8 @@ class InstanceTemplateResponse(BaseModel):
     created_by_user_id: Optional[int]
     created_by_username: Optional[str] = None  # Computed
     is_active: bool
+    is_redirector: bool = False
+    ssh_username: str = "root"
     created_at: datetime
     updated_at: datetime
 

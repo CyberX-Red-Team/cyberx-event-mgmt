@@ -1,0 +1,1186 @@
+"""SSH/SFTP service for managing nginx stream configs on remote redirectors.
+
+All paramiko operations are synchronous. Public async methods wrap the sync
+implementations in a bounded ThreadPoolExecutor so they don't block the
+FastAPI event loop.
+
+Error taxonomy (maps to HTTP responses in the route layer):
+    SSHConnectionError  → 503 Service Unavailable
+    SSHAuthError        → 422 Unprocessable Entity
+    NginxTestError      → 200 OK  with success=False + nginx stderr
+    NginxReloadError    → 500 Internal Server Error
+    SSHCommandError     → 500 Internal Server Error
+
+NginxTestError returns HTTP 200 (not 500) because the operation completed —
+the operator needs to see the nginx -t output to diagnose and fix the config.
+
+Rollback: on single-stream deploy with NginxTestError, the just-written file
+is deleted via SFTP before returning, leaving the remote in its prior state.
+
+Sudo requirement on each redirector (set up once by operator):
+    # /etc/sudoers.d/cyberx
+    <ssh_user> ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx
+"""
+import asyncio
+import io
+import logging
+import shlex
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, Tuple
+
+import re
+
+import paramiko
+
+logger = logging.getLogger(__name__)
+
+# Validates that stream/redirector IDs are safe for use in filenames
+_SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+# Bounded thread pool — all paramiko calls execute here
+_executor = ThreadPoolExecutor(max_workers=10)
+
+# Semaphore prevents queuing more requests than the pool can handle,
+# so a few offline redirectors can't exhaust all workers.
+_ssh_semaphore = asyncio.Semaphore(10)
+
+
+# ---------------------------------------------------------------------------
+# Custom exceptions
+# ---------------------------------------------------------------------------
+
+class SSHConnectionError(Exception):
+    """TCP connect or handshake failed."""
+
+
+class SSHAuthError(Exception):
+    """SSH authentication rejected (bad key, wrong user, missing passphrase)."""
+
+
+class NginxTestError(Exception):
+    """nginx -t returned non-zero. Message contains nginx stderr output."""
+
+
+class NginxReloadError(Exception):
+    """nginx -t passed but systemctl reload failed."""
+
+
+class SSHCommandError(Exception):
+    """exec_command returned non-zero for a command that is not otherwise handled."""
+
+
+# ---------------------------------------------------------------------------
+# SSHService (synchronous core — runs inside the executor)
+# ---------------------------------------------------------------------------
+
+class SSHService:
+    """
+    Manages SSH/SFTP operations for a single Redirector.
+
+    Instantiate per-request in the route handler with the decrypted key.
+    Do NOT store the instance across requests — the decrypted key must
+    remain a short-lived local variable.
+    """
+
+    CONNECT_TIMEOUT = 10   # seconds until TCP connect fails
+    AUTH_TIMEOUT = 15      # seconds for key exchange + auth
+    COMMAND_TIMEOUT = 30   # per-command channel timeout
+
+    @property
+    def _sudo_prefix(self) -> str:
+        """Return 'sudo ' if not root, empty string if root."""
+        return "" if self.username == "root" else "sudo "
+
+    def __init__(
+        self,
+        hostname: str,
+        port: int,
+        username: str,
+        private_key_pem: str,
+        passphrase: Optional[str] = None,
+    ):
+        self.hostname = hostname
+        self.port = port
+        self.username = username
+        self._private_key_pem = private_key_pem
+        self._passphrase = passphrase
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _load_key(self) -> paramiko.PKey:
+        """
+        Try RSA → Ed25519 → ECDSA key loading from PEM string.
+
+        Raises SSHAuthError on authentication-related failures.
+        """
+        pem = self._private_key_pem
+        passphrase_bytes: Optional[bytes] = (
+            self._passphrase.encode("utf-8") if self._passphrase else None
+        )
+
+        for key_class in (paramiko.RSAKey, paramiko.Ed25519Key, paramiko.ECDSAKey):
+            try:
+                return key_class.from_private_key(
+                    io.StringIO(pem), password=passphrase_bytes
+                )
+            except paramiko.PasswordRequiredException:
+                raise SSHAuthError(
+                    "SSH key is passphrase-protected but no passphrase was provided."
+                )
+            except paramiko.ssh_exception.SSHException:
+                # Wrong key type — try the next one
+                continue
+            except Exception:
+                continue
+
+        raise SSHAuthError(
+            "Could not load SSH private key: unsupported key type or malformed PEM."
+        )
+
+    def _connect(self) -> paramiko.SSHClient:
+        """Establish an authenticated SSH connection. Caller must call client.close().
+
+        Security note: WarningPolicy logs a warning when connecting to an unknown
+        host key instead of silently accepting it (AutoAddPolicy). This is a
+        Trust-On-First-Use (TOFU) model — an adversary performing a MitM attack
+        before the first connection would not be detected. For hardened deployments,
+        a future enhancement will store per-redirector host key fingerprints and
+        validate them on each connection.
+        """
+        client = paramiko.SSHClient()
+        # TODO: SECURITY — implement host key pinning (TOFU) by storing
+        # per-redirector fingerprints and verifying on each connection.
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())
+        try:
+            pkey = self._load_key()
+            client.connect(
+                hostname=self.hostname,
+                port=self.port,
+                username=self.username,
+                pkey=pkey,
+                timeout=self.CONNECT_TIMEOUT,
+                auth_timeout=self.AUTH_TIMEOUT,
+                look_for_keys=False,
+                allow_agent=False,
+            )
+        except (SSHAuthError, SSHConnectionError):
+            raise
+        except paramiko.AuthenticationException as e:
+            raise SSHAuthError(f"Authentication failed: {e}")
+        except Exception as e:
+            raise SSHConnectionError(
+                f"Could not connect to {self.hostname}:{self.port}: {e}"
+            )
+        return client
+
+    def _exec(
+        self, client: paramiko.SSHClient, command: str
+    ) -> Tuple[str, str, int]:
+        """Execute a shell command. Returns (stdout, stderr, exit_code)."""
+        _, stdout_fh, stderr_fh = client.exec_command(
+            command, timeout=self.COMMAND_TIMEOUT
+        )
+        exit_code = stdout_fh.channel.recv_exit_status()
+        stdout = stdout_fh.read().decode("utf-8", errors="replace")
+        stderr = stderr_fh.read().decode("utf-8", errors="replace")
+        return stdout, stderr, exit_code
+
+    def _ensure_remote_dir(self, sftp: paramiko.SFTPClient, path: str) -> None:
+        """Create the remote directory if it does not exist."""
+        try:
+            sftp.stat(path)
+        except FileNotFoundError:
+            sftp.mkdir(path)
+
+    def _nginx_test_and_reload(
+        self, client: paramiko.SSHClient
+    ) -> Tuple[str, str]:
+        """
+        Run `sudo nginx -t`. On pass, run `sudo systemctl reload nginx`.
+
+        Returns (test_output, reload_output) on full success.
+        Raises NginxTestError if nginx -t fails (test_output = nginx stderr).
+        Raises NginxReloadError if reload fails after a successful test.
+        """
+        # nginx -t writes its output to stderr
+        _, test_stderr, test_code = self._exec(client, f"{self._sudo_prefix}/usr/sbin/nginx -t")
+        test_output = test_stderr.strip()
+
+        if test_code != 0:
+            raise NginxTestError(test_output)
+
+        # Try reload first; if nginx isn't running, start it instead
+        _, reload_stderr, reload_code = self._exec(
+            client, f"{self._sudo_prefix}/bin/systemctl reload nginx"
+        )
+        reload_output = reload_stderr.strip()
+
+        if reload_code != 0:
+            # reload fails when nginx is stopped — try restart
+            _, restart_stderr, restart_code = self._exec(
+                client, f"{self._sudo_prefix}/bin/systemctl restart nginx"
+            )
+            if restart_code != 0:
+                raise NginxReloadError(
+                    f"nginx reload/restart failed: {reload_output} | {restart_stderr.strip()}"
+                )
+            reload_output = restart_stderr.strip()
+
+        return test_output, reload_output
+
+    # ------------------------------------------------------------------
+    # Public synchronous operations (called via run_in_executor)
+    # ------------------------------------------------------------------
+
+    def sync_test_connection(self) -> dict:
+        """
+        Verify SSH connectivity and confirm nginx stream module is present.
+
+        Returns a dict compatible with TestConnectionResult schema.
+        """
+        t0 = time.monotonic()
+        client = self._connect()
+        try:
+            stdout, _, code = self._exec(client, "echo cyberx_ok")
+            if code != 0 or "cyberx_ok" not in stdout:
+                raise SSHCommandError("Echo connectivity check failed.")
+
+            rtt_ms = round((time.monotonic() - t0) * 1000, 1)
+
+            # nginx stream module check (compiled-in, or dynamic AND loaded)
+            stream_out, _, _ = self._exec(
+                client, f"{self._sudo_prefix}/usr/sbin/nginx -V 2>&1 | grep -- --with-stream"
+            )
+            compiled_in = "--with-stream" in stream_out
+            if not compiled_in:
+                _, _, mod_code = self._exec(
+                    client, "test -f /usr/lib/nginx/modules/ngx_stream_module.so"
+                )
+                if mod_code == 0:
+                    # .so exists — check if it's actually loaded
+                    loaded_out, _, _ = self._exec(
+                        client,
+                        "grep -rq 'ngx_stream_module' /etc/nginx/modules-enabled/ 2>/dev/null "
+                        "|| grep -q 'ngx_stream_module' /etc/nginx/nginx.conf 2>/dev/null "
+                        "&& echo loaded || echo not_loaded"
+                    )
+                    stream_module_present = "loaded" in loaded_out and "not_loaded" not in loaded_out
+                else:
+                    stream_module_present = False
+            else:
+                stream_module_present = True
+
+            # Collect OS info in a single command for efficiency
+            os_raw, _, _ = self._exec(
+                client,
+                "echo \"OS=$(. /etc/os-release 2>/dev/null && echo $PRETTY_NAME || uname -s)\";"
+                "echo \"ARCH=$(uname -m)\";"
+                "echo \"KERNEL=$(uname -r)\";"
+                "echo \"HOSTNAME=$(hostname -f 2>/dev/null || hostname)\";"
+                "echo \"UPTIME=$(uptime -p 2>/dev/null || uptime | sed 's/.*up/up/')\";"
+                "echo \"CPU=$(nproc 2>/dev/null || echo unknown) cores\";"
+                "echo \"MEM=$(free -h 2>/dev/null | awk '/^Mem:/{print $2}' || echo unknown)\";"
+            )
+            os_info = {}
+            for line in os_raw.strip().splitlines():
+                if "=" in line:
+                    key, _, val = line.partition("=")
+                    os_info[key.strip().lower()] = val.strip()
+
+            return {
+                "success": True,
+                "status": "online",
+                "stream_module_present": stream_module_present,
+                "os_info": os_info,
+                "rtt_ms": rtt_ms,
+                "message": "Connection successful."
+                + ("" if stream_module_present else " WARNING: nginx stream module not detected."),
+            }
+        finally:
+            client.close()
+
+    def sync_deploy_infra_key(self, infra_public_key: str) -> dict:
+        """
+        Check if the infrastructure public key is already in authorized_keys.
+        If not, append it using SFTP-to-tmp-then-sudo-cp.
+        Returns whether the key was already present or newly added.
+        """
+        key_line = infra_public_key.strip()
+        safe_key = shlex.quote(key_line)
+        client = self._connect()
+        try:
+            # Check if key already exists
+            _, _, code = self._exec(
+                client,
+                f"{self._sudo_prefix}grep -qF {safe_key} "
+                f"/home/{self.username}/.ssh/authorized_keys 2>/dev/null "
+                f"|| {self._sudo_prefix}grep -qF {safe_key} /root/.ssh/authorized_keys 2>/dev/null"
+            )
+            if code == 0:
+                return {"already_present": True, "deployed": False}
+
+            # Deploy the key using SFTP-to-tmp-then-sudo-cp pattern
+            use_sudo = self.username != "root"
+            auth_keys_dir = f"/home/{self.username}/.ssh" if use_sudo else "/root/.ssh"
+            auth_keys_path = f"{auth_keys_dir}/authorized_keys"
+            tmp_path = f"/tmp/.cyberx_authkey_{uuid.uuid4().hex[:8]}"
+
+            self._exec(client, f"{self._sudo_prefix}mkdir -p {shlex.quote(auth_keys_dir)}")
+            self._exec(client, f"{self._sudo_prefix}chmod 700 {shlex.quote(auth_keys_dir)}")
+
+            # Read existing authorized_keys content (may not exist yet)
+            existing, _, _ = self._exec(
+                client,
+                f"{self._sudo_prefix}cat {shlex.quote(auth_keys_path)} 2>/dev/null || true"
+            )
+            existing_text = existing.strip()
+            new_content = f"{existing_text}\n{key_line}\n" if existing_text else f"{key_line}\n"
+
+            # Write via SFTP to tmp, then sudo cp to target
+            sftp = client.open_sftp()
+            sftp.putfo(io.BytesIO(new_content.encode("utf-8")), tmp_path)
+            if use_sudo:
+                self._exec(client, f"sudo cp {shlex.quote(tmp_path)} {shlex.quote(auth_keys_path)}")
+            else:
+                self._exec(client, f"cp {shlex.quote(tmp_path)} {shlex.quote(auth_keys_path)}")
+            self._exec(client, f"rm -f {shlex.quote(tmp_path)}")
+            self._exec(client, f"{self._sudo_prefix}chmod 600 {shlex.quote(auth_keys_path)}")
+
+            logger.info("Deployed infrastructure public key to %s on %s", auth_keys_path, self.hostname)
+            return {"already_present": False, "deployed": True}
+        finally:
+            client.close()
+
+    def sync_check_port(self, port: int, protocol: str) -> dict:
+        """
+        Check whether anything is already listening on the given port.
+
+        Runs `ss -tlunp sport = :<port>` (covers both TCP and UDP) so the
+        operator is warned regardless of which protocol nginx would use.
+
+        Returns {"in_use": bool, "listeners": list[str], "process_names": list[str], "message": str}.
+        """
+        import re
+        command = f"ss -tlunp sport = :{port} 2>/dev/null"
+        client = self._connect()
+        try:
+            stdout, _, _ = self._exec(client, command)
+            lines = [ln for ln in stdout.strip().splitlines() if ln.strip()]
+            # First line is the ss header row; anything beyond it is a match
+            listeners = lines[1:] if len(lines) > 1 else []
+            in_use = bool(listeners)
+
+            # Extract unique process names from users:(("name",...)) in each line
+            process_names: list[str] = []
+            for ln in listeners:
+                for m in re.finditer(r'users:\(\("([^"]+)"', ln):
+                    name = m.group(1)
+                    if name not in process_names:
+                        process_names.append(name)
+
+            nginx_listening = "nginx" in process_names
+            other_processes = [p for p in process_names if p != "nginx"]
+
+            if nginx_listening:
+                status = "healthy"
+                message = f"nginx is listening on port {port}."
+            elif in_use:
+                status = "conflict"
+                proc_str = ", ".join(other_processes) if other_processes else "unknown process"
+                message = (
+                    f"Port {port} is already in use by: {proc_str} — "
+                    "nginx will not be able to bind."
+                )
+            else:
+                status = "not_listening"
+                message = f"Nothing is listening on port {port} — stream may not be deployed."
+
+            return {
+                "in_use": in_use,
+                "status": status,
+                "listeners": listeners,
+                "process_names": process_names,
+                "message": message,
+            }
+        finally:
+            client.close()
+
+    def sync_deploy_single(self, stream_dir: str, stream) -> dict:
+        """
+        Write a single enabled StreamConfig file to the redirector and reload nginx.
+
+        On NginxTestError: deletes the file just written (rollback) before returning.
+        Returns a dict compatible with DeployResult schema.
+        """
+        from app.services.nginx_config_service import generate_stream_config
+
+        if not _SAFE_ID_RE.match(stream.id):
+            raise SSHCommandError(f"Invalid stream ID format: {stream.id!r}")
+        filename = f"cyberx_{stream.id}.conf"
+        remote_path = f"{stream_dir}/{filename}"
+        config_text = generate_stream_config(stream)
+
+        use_sudo = self.username != "root"
+        client = self._connect()
+        try:
+            sftp = client.open_sftp()
+            if use_sudo:
+                self._exec(client, f"{self._sudo_prefix}mkdir -p {shlex.quote(stream_dir)}")
+                tmp_path = f"/tmp/.cyberx_single_{uuid.uuid4().hex[:8]}.conf"
+                sftp.putfo(io.BytesIO(config_text.encode("utf-8")), tmp_path)
+                self._exec(client, f"{self._sudo_prefix}cp {shlex.quote(tmp_path)} {shlex.quote(remote_path)}")
+                self._exec(client, f"rm -f {tmp_path}")
+            else:
+                self._ensure_remote_dir(sftp, stream_dir)
+                sftp.putfo(io.BytesIO(config_text.encode("utf-8")), remote_path)
+
+            try:
+                test_out, reload_out = self._nginx_test_and_reload(client)
+            except NginxTestError as e:
+                # Rollback: remove the file we just wrote
+                try:
+                    if use_sudo:
+                        self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(remote_path)}")
+                    else:
+                        sftp.remove(remote_path)
+                    logger.info("Rolled back %s after nginx -t failure", remote_path)
+                except Exception as rm_err:
+                    logger.warning("Rollback failed for %s: %s", remote_path, rm_err)
+
+                return {
+                    "success": False,
+                    "nginx_test_output": str(e),
+                    "nginx_reload_output": "",
+                    "stream_module_present": True,
+                    "files_written": [],
+                    "files_deleted": [],
+                    "message": "nginx configuration test failed. File rolled back.",
+                }
+
+            return {
+                "success": True,
+                "nginx_test_output": test_out,
+                "nginx_reload_output": reload_out,
+                "stream_module_present": True,
+                "files_written": [filename],
+                "files_deleted": [],
+                "message": f"Stream '{stream.name}' deployed successfully.",
+            }
+        finally:
+            client.close()
+
+    def sync_remove_single(
+        self, stream_dir: str, stream_id: str, stream_name: str
+    ) -> dict:
+        """
+        Delete a single stream config file from the redirector and reload nginx.
+
+        Missing file is not an error (idempotent).
+        Returns a dict compatible with DeployResult schema.
+        """
+        if not _SAFE_ID_RE.match(stream_id):
+            raise SSHCommandError(f"Invalid stream ID format: {stream_id!r}")
+        filename = f"cyberx_{stream_id}.conf"
+        remote_path = f"{stream_dir}/{filename}"
+
+        use_sudo = self.username != "root"
+        client = self._connect()
+        try:
+            sftp = client.open_sftp()
+            try:
+                if use_sudo:
+                    _, _, code = self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(remote_path)}")
+                    files_deleted = [filename] if code == 0 else []
+                else:
+                    sftp.remove(remote_path)
+                    files_deleted = [filename]
+                logger.info("Removed %s from redirector", remote_path)
+            except FileNotFoundError:
+                files_deleted = []
+                logger.info("File %s not found on redirector (already removed)", remote_path)
+
+            try:
+                test_out, reload_out = self._nginx_test_and_reload(client)
+            except NginxTestError as e:
+                return {
+                    "success": False,
+                    "nginx_test_output": str(e),
+                    "nginx_reload_output": "",
+                    "stream_module_present": True,
+                    "files_written": [],
+                    "files_deleted": files_deleted,
+                    "message": "nginx configuration test failed after file removal.",
+                }
+
+            return {
+                "success": True,
+                "nginx_test_output": test_out,
+                "nginx_reload_output": reload_out,
+                "stream_module_present": True,
+                "files_written": [],
+                "files_deleted": files_deleted,
+                "message": f"Stream '{stream_name}' removed successfully.",
+            }
+        finally:
+            client.close()
+
+    def sync_deploy_all(self, stream_dir: str, streams: list) -> dict:
+        """
+        Sync all StreamConfigs for a redirector:
+          1. Snapshot existing config files (for rollback)
+          2. Write enabled streams
+          3. Delete disabled streams
+          4. Remove orphaned cyberx_*.conf files not in the current set
+          5. nginx -t → systemctl reload nginx
+          6. On nginx -t failure: restore all snapshots (rollback)
+
+        Returns a dict compatible with DeployResult schema.
+        """
+        from app.services.nginx_config_service import generate_stream_config
+
+        # Validate all stream IDs before any file operations
+        for s in streams:
+            if not _SAFE_ID_RE.match(s.id):
+                raise SSHCommandError(f"Invalid stream ID format: {s.id!r}")
+
+        files_written: list[str] = []
+        files_deleted: list[str] = []
+        use_sudo = self.username != "root"
+
+        client = self._connect()
+        try:
+            sftp = client.open_sftp()
+
+            # Ensure stream dir exists (use sudo for non-root)
+            if use_sudo:
+                self._exec(client, f"{self._sudo_prefix}mkdir -p {shlex.quote(stream_dir)}")
+            else:
+                self._ensure_remote_dir(sftp, stream_dir)
+
+            # For non-root users, stage files in a temp dir then sudo cp
+            staging_dir = f"/tmp/.cyberx_deploy_{uuid.uuid4().hex[:8]}"
+            if use_sudo:
+                self._exec(client, f"mkdir -p {staging_dir}")
+
+            known_filenames = {f"cyberx_{s.id}.conf" for s in streams}
+
+            # Snapshot existing files for rollback on nginx -t failure
+            # Key = remote_path, Value = bytes (existing content) or None (file was new)
+            backup: dict[str, Optional[bytes]] = {}
+
+            for stream in streams:
+                filename = f"cyberx_{stream.id}.conf"
+                remote_path = f"{stream_dir}/{filename}"
+                if stream.enabled:
+                    try:
+                        if use_sudo:
+                            out, _, code = self._exec(
+                                client, f"{self._sudo_prefix}cat {shlex.quote(remote_path)} 2>/dev/null"
+                            )
+                            backup[remote_path] = out.encode() if code == 0 else None
+                        else:
+                            with sftp.open(remote_path, "rb") as f:
+                                backup[remote_path] = f.read()
+                    except FileNotFoundError:
+                        backup[remote_path] = None
+
+            # Write enabled streams, delete disabled streams
+            for stream in streams:
+                filename = f"cyberx_{stream.id}.conf"
+                remote_path = f"{stream_dir}/{filename}"
+
+                if stream.enabled:
+                    config_text = generate_stream_config(stream)
+                    if use_sudo:
+                        # Write to staging dir, then sudo cp
+                        staged_path = f"{staging_dir}/{filename}"
+                        sftp.putfo(io.BytesIO(config_text.encode("utf-8")), staged_path)
+                        self._exec(client, f"{self._sudo_prefix}cp {shlex.quote(staged_path)} {shlex.quote(remote_path)}")
+                    else:
+                        sftp.putfo(io.BytesIO(config_text.encode("utf-8")), remote_path)
+                    files_written.append(filename)
+                    logger.debug("Wrote %s", remote_path)
+                else:
+                    try:
+                        # Snapshot before deleting for rollback
+                        if use_sudo:
+                            out, _, code = self._exec(
+                                client, f"{self._sudo_prefix}cat {shlex.quote(remote_path)} 2>/dev/null"
+                            )
+                            if code == 0:
+                                backup[remote_path] = out.encode()
+                            self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(remote_path)}")
+                        else:
+                            try:
+                                with sftp.open(remote_path, "rb") as f:
+                                    backup[remote_path] = f.read()
+                            except FileNotFoundError:
+                                pass
+                            sftp.remove(remote_path)
+                        files_deleted.append(filename)
+                        logger.debug("Removed disabled stream file %s", remote_path)
+                    except FileNotFoundError:
+                        pass
+
+            # Orphan cleanup: remove cyberx_*.conf files that are no longer in the DB
+            try:
+                if use_sudo:
+                    ls_out, _, _ = self._exec(client, f"{self._sudo_prefix}ls {shlex.quote(stream_dir)} 2>/dev/null")
+                    remote_listing = ls_out.strip().split() if ls_out.strip() else []
+                else:
+                    remote_listing = sftp.listdir(stream_dir)
+                for remote_file in remote_listing:
+                    if (
+                        remote_file.startswith("cyberx_")
+                        and remote_file.endswith(".conf")
+                        and remote_file not in known_filenames
+                    ):
+                        orphan_path = f"{stream_dir}/{remote_file}"
+                        if use_sudo:
+                            out, _, code = self._exec(
+                                client, f"{self._sudo_prefix}cat {shlex.quote(orphan_path)} 2>/dev/null"
+                            )
+                            if code == 0:
+                                backup[orphan_path] = out.encode()
+                            self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(orphan_path)}")
+                        else:
+                            try:
+                                with sftp.open(orphan_path, "rb") as f:
+                                    backup[orphan_path] = f.read()
+                            except FileNotFoundError:
+                                pass
+                            sftp.remove(orphan_path)
+                        files_deleted.append(remote_file)
+                        logger.info("Removed orphan file %s", remote_file)
+            except Exception as list_err:
+                logger.warning("Orphan cleanup failed: %s", list_err)
+
+            # Clean up staging dir
+            if use_sudo:
+                self._exec(client, f"rm -rf {staging_dir}")
+
+            try:
+                test_out, reload_out = self._nginx_test_and_reload(client)
+            except NginxTestError as e:
+                # Rollback: restore all files to their pre-deploy state
+                rollback_ok = True
+                for path, content in backup.items():
+                    try:
+                        if content is None:
+                            if use_sudo:
+                                self._exec(client, f"{self._sudo_prefix}rm -f {shlex.quote(path)}")
+                            else:
+                                sftp.remove(path)
+                        else:
+                            if use_sudo:
+                                rb_tmp = f"/tmp/.cyberx_rb_{uuid.uuid4().hex[:8]}"
+                                sftp.putfo(io.BytesIO(content), rb_tmp)
+                                self._exec(client, f"{self._sudo_prefix}cp {shlex.quote(rb_tmp)} {shlex.quote(path)}")
+                                self._exec(client, f"rm -f {rb_tmp}")
+                            else:
+                                sftp.putfo(io.BytesIO(content), path)
+                    except Exception as rb_err:
+                        rollback_ok = False
+                        logger.warning("Rollback failed for %s: %s", path, rb_err)
+                if rollback_ok:
+                    logger.info("Rolled back %d file(s) after nginx -t failure", len(backup))
+                return {
+                    "success": False,
+                    "nginx_test_output": str(e),
+                    "nginx_reload_output": "",
+                    "stream_module_present": True,
+                    "files_written": files_written,
+                    "files_deleted": files_deleted,
+                    "message": "nginx configuration test failed. Files rolled back."
+                    if rollback_ok
+                    else "nginx configuration test failed. Partial rollback — check server manually.",
+                }
+
+            return {
+                "success": True,
+                "nginx_test_output": test_out,
+                "nginx_reload_output": reload_out,
+                "stream_module_present": True,
+                "files_written": files_written,
+                "files_deleted": files_deleted,
+                "message": (
+                    f"Deployed {len(files_written)} stream(s), "
+                    f"removed {len(files_deleted)} file(s)."
+                ),
+            }
+        finally:
+            client.close()
+
+
+    def sync_check_nginx_setup(self) -> dict:
+        """
+        Check two common nginx setup issues on the redirector:
+          1. Default HTTP site active (port 80 served by nginx, not a stream)
+          2. Stream block with stream.d include absent from nginx config
+
+        Returns {"nginx_conf_ok": bool, "default_site_active": bool,
+                 "stream_block_present": bool, "issues": list[str]}
+        """
+        client = self._connect()
+        try:
+            issues = []
+
+            # Default site: symlink exists → nginx is serving HTTP on port 80
+            _, _, code = self._exec(
+                client, "test -e /etc/nginx/sites-enabled/default"
+            )
+            default_site_active = (code == 0)
+            if default_site_active:
+                issues.append(
+                    "Default HTTP site is active — nginx is listening on port 80 via "
+                    "sites-enabled/default. This blocks any stream config that also needs "
+                    "port 80 and may be unexpected traffic on a redirector."
+                )
+
+            # Stream block: grep for stream.d include in all nginx config files
+            stream_out, _, _ = self._exec(
+                client, "grep -r 'stream.d' /etc/nginx/ 2>/dev/null || true"
+            )
+            stream_block_present = bool(stream_out.strip())
+            if not stream_block_present:
+                issues.append(
+                    "No stream block found in nginx config — stream proxying will not work "
+                    "until a 'stream { include stream.d/*.conf; }' block is added to nginx.conf."
+                )
+
+            return {
+                "nginx_conf_ok": not issues,
+                "default_site_active": default_site_active,
+                "stream_block_present": stream_block_present,
+                "issues": issues,
+            }
+        finally:
+            client.close()
+
+    def sync_fix_nginx_setup(self, stream_dir: str) -> dict:
+        """
+        Fix common nginx setup issues:
+          1. Remove sites-enabled/default symlink (disables default HTTP server)
+          2. Ensure stream.d directory exists
+          3. Append stream block to nginx.conf if absent
+          4. nginx -t → systemctl reload nginx
+
+        Writes a temp script via SFTP and executes it with sudo.
+        Requires sudoers entry:
+            <user> ALL=(ALL) NOPASSWD: /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh
+        """
+        safe_dir = shlex.quote(stream_dir)
+        script_name = f".cyberx_nginx_fix_{uuid.uuid4().hex[:8]}.sh"
+        # Use secure dir if it exists, fall back to /tmp before prereqs have run
+        script_dir = "/var/lib/cyberx/scripts"
+        script_path = f"{script_dir}/{script_name}"
+        script = (
+            "#!/bin/bash\n"
+            "set -e\n"
+            "rm -f /etc/nginx/sites-enabled/default\n"
+            f"mkdir -p {safe_dir}\n"
+            "# Ensure stream module is loaded\n"
+            "STREAM_LOADED=0\n"
+            "if nginx -V 2>&1 | grep -q -- '--with-stream'; then STREAM_LOADED=1; fi\n"
+            "if [ $STREAM_LOADED -eq 0 ] && grep -rq 'ngx_stream_module' /etc/nginx/modules-enabled/ 2>/dev/null; then STREAM_LOADED=1; fi\n"
+            "if [ $STREAM_LOADED -eq 0 ] && grep -q 'load_module.*ngx_stream_module' /etc/nginx/nginx.conf 2>/dev/null; then STREAM_LOADED=1; fi\n"
+            "if [ $STREAM_LOADED -eq 0 ] && [ -f /usr/lib/nginx/modules/ngx_stream_module.so ]; then\n"
+            "    if [ -f /usr/share/nginx/modules-available/mod-stream.conf ]; then\n"
+            "        ln -sf /usr/share/nginx/modules-available/mod-stream.conf /etc/nginx/modules-enabled/50-mod-stream.conf\n"
+            "    else\n"
+            "        sed -i '1i load_module /usr/lib/nginx/modules/ngx_stream_module.so;' /etc/nginx/nginx.conf\n"
+            "    fi\n"
+            "fi\n"
+            "# Add stream block if not present\n"
+            "if ! grep -rq 'stream.d' /etc/nginx/ 2>/dev/null; then\n"
+            f"    printf '\\nstream {{\\n    include {safe_dir}/*.conf;\\n}}\\n'"
+            " >> /etc/nginx/nginx.conf\n"
+            "fi\n"
+            "/usr/sbin/nginx -t\n"
+            "systemctl reload nginx 2>/dev/null || systemctl restart nginx\n"
+        )
+        client = self._connect()
+        try:
+            sftp = client.open_sftp()
+            try:
+                sftp.putfo(io.BytesIO(script.encode()), script_path)
+            except FileNotFoundError:
+                # /var/lib/cyberx/scripts/ doesn't exist yet — fall back to /tmp
+                script_path = f"/tmp/{script_name}"
+                sftp.putfo(io.BytesIO(script.encode()), script_path)
+            sftp.chmod(script_path, 0o700)
+
+            _, stderr, code = self._exec(
+                client, f"{self._sudo_prefix}/bin/bash {shlex.quote(script_path)} 2>&1"
+            )
+            self._exec(client, f"rm -f {shlex.quote(script_path)}")
+
+            if code != 0:
+                return {
+                    "success": False,
+                    "message": f"Fix script failed: {stderr.strip()}",
+                    "output": stderr.strip(),
+                }
+            return {
+                "success": True,
+                "message": "nginx configuration fixed — default site disabled, stream block added, nginx reloaded.",
+                "output": stderr.strip(),
+            }
+        finally:
+            client.close()
+
+
+    def sync_check_prereqs(self, stream_dir: str) -> dict:
+        """
+        Verify all CyberX prerequisites on the redirector:
+          1. nginx installed
+          2. nginx stream module compiled in
+          3. Stream directory exists
+          4. sudo nginx -t works
+          5. sudo systemctl reload nginx is allowed
+        """
+        client = self._connect()
+        try:
+            checks = []
+
+            # 1. nginx installed
+            _, _, code = self._exec(client, "which nginx 2>/dev/null")
+            nginx_ok = code == 0
+            checks.append({
+                "id": "nginx_installed",
+                "label": "nginx installed",
+                "ok": nginx_ok,
+                "detail": "nginx binary found." if nginx_ok
+                          else "nginx not found — install with: apt-get install nginx-full",
+            })
+
+            # 2. nginx stream module (compiled-in or dynamic, AND actually loaded)
+            if nginx_ok:
+                v_out, _, _ = self._exec(client, "nginx -V 2>&1")
+                compiled_in = "with-stream" in v_out
+                # Check for dynamic stream module .so file
+                _, _, mod_code = self._exec(
+                    client, "test -f /usr/lib/nginx/modules/ngx_stream_module.so 2>/dev/null"
+                )
+                dynamic_mod = mod_code == 0
+                # Check if module is actually loaded (compiled-in, or load_module/modules-enabled present)
+                if compiled_in:
+                    stream_mod_ok = True
+                    stream_mod_detail = "Stream module compiled in."
+                elif dynamic_mod:
+                    # Check if it's loaded via modules-enabled or load_module directive
+                    loaded_out, _, _ = self._exec(
+                        client,
+                        "grep -rq 'ngx_stream_module' /etc/nginx/modules-enabled/ 2>/dev/null "
+                        "|| grep -q 'ngx_stream_module' /etc/nginx/nginx.conf 2>/dev/null "
+                        "&& echo loaded || echo not_loaded"
+                    )
+                    if "loaded" in loaded_out and "not_loaded" not in loaded_out:
+                        stream_mod_ok = True
+                        stream_mod_detail = "Stream module available (dynamic, loaded)."
+                    else:
+                        stream_mod_ok = False
+                        stream_mod_detail = (
+                            "Stream module .so exists but is not loaded — "
+                            "auto-fix will add load_module directive."
+                        )
+                else:
+                    stream_mod_ok = False
+                    stream_mod_detail = "Stream module absent — install nginx-full: apt-get install nginx-full"
+            else:
+                stream_mod_ok = False
+                stream_mod_detail = "Cannot check — nginx not installed."
+            checks.append({
+                "id": "nginx_stream",
+                "label": "nginx stream module",
+                "ok": stream_mod_ok,
+                "detail": stream_mod_detail,
+            })
+
+            # 3. Stream directory
+            _, _, code = self._exec(client, f"test -d {shlex.quote(stream_dir)}")
+            dir_ok = code == 0
+            checks.append({
+                "id": "stream_dir",
+                "label": f"Stream directory ({stream_dir})",
+                "ok": dir_ok,
+                "detail": "Directory exists." if dir_ok
+                          else f"Directory missing — fix will create it.",
+            })
+
+            # 3b. Stream block in nginx.conf
+            stream_out, _, _ = self._exec(
+                client, "grep -r 'stream.d' /etc/nginx/ 2>/dev/null || true"
+            )
+            stream_block_ok = bool(stream_out.strip())
+            checks.append({
+                "id": "stream_block",
+                "label": "nginx stream block",
+                "ok": stream_block_ok,
+                "detail": "stream { include ... } block present in nginx config."
+                          if stream_block_ok
+                          else "No stream block in nginx config — auto-fix will add it.",
+            })
+
+            # 4. nginx -t (runs nginx config test — safe, read-only)
+            sudo_n = "" if self.username == "root" else "sudo -n "
+            out4, _, code = self._exec(
+                client, f"{sudo_n}/usr/sbin/nginx -t 2>&1"
+            )
+            sudo_nginx_ok = code == 0
+            if sudo_nginx_ok:
+                nginx_t_detail = "nginx -t succeeded."
+            elif self.username == "root":
+                nginx_t_detail = f"nginx -t failed — config error: {out4.strip()}"
+            else:
+                nginx_t_detail = (
+                    f"nginx -t failed — run Auto-fix in Prerequisites to configure sudoers, "
+                    f"or manually add to /etc/sudoers.d/cyberx: "
+                    f"{self.username} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx"
+                )
+            checks.append({
+                "id": "sudo_nginx",
+                "label": "nginx -t",
+                "ok": sudo_nginx_ok,
+                "detail": nginx_t_detail,
+            })
+
+            # 5. systemctl reload nginx (check via is-active — read-only)
+            _, _, code = self._exec(
+                client, f"{sudo_n}/bin/systemctl is-active nginx 2>/dev/null"
+            )
+            # exit 0 = active, exit 3 = inactive — both mean the command works
+            sudo_systemctl_ok = code in (0, 3)
+            if sudo_systemctl_ok:
+                systemctl_detail = "systemctl works."
+            elif self.username == "root":
+                systemctl_detail = "systemctl failed — nginx may not be running."
+            else:
+                systemctl_detail = (
+                    f"systemctl failed — run Auto-fix in Prerequisites to configure sudoers, "
+                    f"or manually add to /etc/sudoers.d/cyberx: "
+                    f"{self.username} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx"
+                )
+            checks.append({
+                "id": "sudo_systemctl",
+                "label": "systemctl nginx",
+                "ok": sudo_systemctl_ok,
+                "detail": systemctl_detail,
+            })
+
+            # 6. Port 53 — systemd-resolved stub listener blocks DNS redirects
+            out53, _, _ = self._exec(
+                client, "ss -tulnp 2>/dev/null | grep ':53 ' || true"
+            )
+            stub_listener = "systemd-resolve" in out53 or "resolved" in out53
+            # nginx on port 53 is expected — it means a DNS stream is deployed
+            nginx_on_53 = "nginx" in out53
+            if stub_listener:
+                port53_ok = False
+                port53_detail = (
+                    "Port 53 is bound by systemd-resolved stub listener. "
+                    "Auto-fix will disable it and configure real DNS servers."
+                )
+            elif ":53 " in out53 and not nginx_on_53:
+                port53_ok = False
+                port53_detail = f"Port 53 in use by another process: {out53.strip()}"
+            elif nginx_on_53:
+                port53_ok = True
+                port53_detail = "Port 53 bound by nginx (DNS stream deployed)."
+            else:
+                port53_ok = True
+                port53_detail = "Port 53 is free."
+            checks.append({
+                "id": "port53_free",
+                "label": "Port 53 (DNS) available",
+                "ok": port53_ok,
+                "detail": port53_detail,
+            })
+
+            all_ok = all(c["ok"] for c in checks)
+            return {"all_ok": all_ok, "checks": checks}
+        finally:
+            client.close()
+
+    def sync_fix_prereqs(self, stream_dir: str) -> dict:
+        """
+        Attempt to satisfy CyberX prerequisites automatically:
+          1. Install nginx-full (if absent)
+          2. Create stream directory
+          3. Write /etc/sudoers.d/cyberx with required NOPASSWD entries
+          4. Validate sudoers with visudo -c
+
+        Writes a temp script via SFTP and executes it with 'sudo /bin/bash'.
+        Requires the SSH user to have NOPASSWD sudo (any command).
+        """
+        safe_dir = shlex.quote(stream_dir)
+        safe_user = shlex.quote(self.username)
+        # Bootstrap script uses /tmp because /var/lib/cyberx/scripts/ doesn't exist yet
+        script_path = f"/tmp/.cyberx_prereq_fix_{uuid.uuid4().hex[:8]}.sh"
+        script = (
+            "#!/bin/bash\n"
+            "set -e\n"
+            "export DEBIAN_FRONTEND=noninteractive\n"
+            "# Install nginx if binary is missing\n"
+            "if ! command -v nginx &>/dev/null; then\n"
+            "    apt-get update -qq\n"
+            "    apt-get install -y nginx\n"
+            "fi\n"
+            "# Install stream module package if .so is missing\n"
+            "if [ ! -f /usr/lib/nginx/modules/ngx_stream_module.so ]; then\n"
+            "    apt-get update -qq\n"
+            "    apt-get install -y libnginx-mod-stream 2>/dev/null || apt-get install -y nginx-full\n"
+            "fi\n"
+            f"# Create stream directory\n"
+            f"mkdir -p {safe_dir}\n"
+            "# Create script staging directory (not world-writable, unlike /tmp)\n"
+            "mkdir -p /var/lib/cyberx/scripts\n"
+            f"chown {safe_user}:{safe_user} /var/lib/cyberx/scripts\n"
+            "chmod 750 /var/lib/cyberx/scripts\n"
+            "# Ensure stream module is loaded\n"
+            "STREAM_LOADED=0\n"
+            "# Check if compiled in\n"
+            "if nginx -V 2>&1 | grep -q -- '--with-stream'; then\n"
+            "    STREAM_LOADED=1\n"
+            "fi\n"
+            "# Check modules-enabled\n"
+            "if [ $STREAM_LOADED -eq 0 ] && grep -rq 'ngx_stream_module' /etc/nginx/modules-enabled/ 2>/dev/null; then\n"
+            "    STREAM_LOADED=1\n"
+            "fi\n"
+            "# Check load_module in nginx.conf\n"
+            "if [ $STREAM_LOADED -eq 0 ] && grep -q 'load_module.*ngx_stream_module' /etc/nginx/nginx.conf 2>/dev/null; then\n"
+            "    STREAM_LOADED=1\n"
+            "fi\n"
+            "# If still not loaded, enable it\n"
+            "if [ $STREAM_LOADED -eq 0 ] && [ -f /usr/lib/nginx/modules/ngx_stream_module.so ]; then\n"
+            "    # Debian/Ubuntu: symlink from modules-available if possible\n"
+            "    if [ -f /usr/share/nginx/modules-available/mod-stream.conf ]; then\n"
+            "        ln -sf /usr/share/nginx/modules-available/mod-stream.conf /etc/nginx/modules-enabled/50-mod-stream.conf\n"
+            "    else\n"
+            "        # Add load_module at top of nginx.conf if not already present\n"
+            "        sed -i '1i load_module /usr/lib/nginx/modules/ngx_stream_module.so;' /etc/nginx/nginx.conf\n"
+            "    fi\n"
+            "fi\n"
+            "# Add stream block if not present\n"
+            "if ! grep -rq 'stream.d' /etc/nginx/ 2>/dev/null; then\n"
+            f"    printf '\\nstream {{\\n    include {safe_dir}/*.conf;\\n}}\\n'"
+            " >> /etc/nginx/nginx.conf\n"
+            "fi\n"
+            "# Disable systemd-resolved stub listener if it holds port 53\n"
+            "if ss -tulnp 2>/dev/null | grep ':53 ' | grep -q 'systemd-resolve\\|resolved'; then\n"
+            "    # Extract real DNS servers from netplan or resolv.conf\n"
+            "    DNS_SERVERS=''\n"
+            "    if command -v netplan &>/dev/null; then\n"
+            "        DNS_SERVERS=$(netplan get 2>/dev/null | grep -oP 'addresses:\\s*\\[\\K[^]]+' | tr ',' '\\n' | tr -d ' \"' | head -3)\n"
+            "    fi\n"
+            "    if [ -z \"$DNS_SERVERS\" ] && [ -f /run/systemd/resolve/resolv.conf ]; then\n"
+            "        DNS_SERVERS=$(grep '^nameserver' /run/systemd/resolve/resolv.conf | awk '{print $2}' | head -3)\n"
+            "    fi\n"
+            "    if [ -z \"$DNS_SERVERS\" ]; then\n"
+            "        DNS_SERVERS='1.1.1.1\\n8.8.8.8'\n"
+            "    fi\n"
+            "    # Disable stub listener\n"
+            "    mkdir -p /etc/systemd/resolved.conf.d\n"
+            "    cat > /etc/systemd/resolved.conf.d/no-stub.conf <<RESOLVED\n"
+            "[Resolve]\n"
+            "DNSStubListener=no\n"
+            "RESOLVED\n"
+            "    # Point resolv.conf to real file instead of stub\n"
+            "    rm -f /etc/resolv.conf\n"
+            "    printf '' > /etc/resolv.conf\n"
+            "    for ns in $DNS_SERVERS; do\n"
+            "        echo \"nameserver $ns\" >> /etc/resolv.conf\n"
+            "    done\n"
+            "    systemctl restart systemd-resolved 2>/dev/null || true\n"
+            "    # Wait for port 53 to be released\n"
+            "    sleep 1\n"
+            "fi\n"
+            "# Write sudoers file for CyberX\n"
+            f"cat > /etc/sudoers.d/cyberx <<SUDOERS\n"
+            f"{safe_user} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh\n"
+            "SUDOERS\n"
+            "chmod 440 /etc/sudoers.d/cyberx\n"
+            "visudo -c -f /etc/sudoers.d/cyberx\n"
+        )
+        client = self._connect()
+        try:
+            sftp = client.open_sftp()
+            sftp.putfo(io.BytesIO(script.encode()), script_path)
+            sftp.chmod(script_path, 0o700)
+            sftp.close()
+
+            out, stderr, code = self._exec(
+                client, f"{self._sudo_prefix}/bin/bash {shlex.quote(script_path)} 2>&1"
+            )
+            self._exec(client, f"rm -f {shlex.quote(script_path)}")
+
+            if code != 0:
+                return {
+                    "success": False,
+                    "message": f"Prereq fix failed: {(out + stderr).strip()}",
+                    "output": (out + stderr).strip(),
+                }
+            return {
+                "success": True,
+                "message": "Prerequisites installed — nginx-full, stream dir, and sudoers configured.",
+                "output": (out + stderr).strip(),
+            }
+        finally:
+            client.close()
+
+
+# ---------------------------------------------------------------------------
+# Async wrappers — use these from FastAPI route handlers
+# ---------------------------------------------------------------------------
+
+async def _run_ssh(fn, *args) -> dict:
+    """Run a synchronous SSH operation in the bounded thread pool with semaphore."""
+    async with _ssh_semaphore:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_executor, fn, *args)
+
+
+async def run_test_connection(ssh: SSHService) -> dict:
+    return await _run_ssh(ssh.sync_test_connection)
+
+
+async def run_deploy_infra_key(ssh: SSHService, infra_public_key: str) -> dict:
+    return await _run_ssh(ssh.sync_deploy_infra_key, infra_public_key)
+
+
+async def run_check_prereqs(ssh: SSHService, stream_dir: str) -> dict:
+    return await _run_ssh(ssh.sync_check_prereqs, stream_dir)
+
+
+async def run_fix_prereqs(ssh: SSHService, stream_dir: str) -> dict:
+    return await _run_ssh(ssh.sync_fix_prereqs, stream_dir)
+
+
+async def run_check_nginx_setup(ssh: SSHService) -> dict:
+    return await _run_ssh(ssh.sync_check_nginx_setup)
+
+
+async def run_fix_nginx_setup(ssh: SSHService, stream_dir: str) -> dict:
+    return await _run_ssh(ssh.sync_fix_nginx_setup, stream_dir)
+
+
+async def run_check_port(ssh: SSHService, port: int, protocol: str) -> dict:
+    return await _run_ssh(ssh.sync_check_port, port, protocol)
+
+
+async def run_deploy_single(ssh: SSHService, stream_dir: str, stream) -> dict:
+    return await _run_ssh(ssh.sync_deploy_single, stream_dir, stream)
+
+
+async def run_remove_single(
+    ssh: SSHService, stream_dir: str, stream_id: str, stream_name: str
+) -> dict:
+    return await _run_ssh(ssh.sync_remove_single, stream_dir, stream_id, stream_name)
+
+
+async def run_deploy_all(ssh: SSHService, stream_dir: str, streams: list) -> dict:
+    return await _run_ssh(ssh.sync_deploy_all, stream_dir, streams)
