@@ -784,8 +784,15 @@
                                         <input type="text" class="form-control" id="redir_add_name" placeholder="e.g. prod-redirector-01" required>
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label fw-semibold">IP Address <span class="text-danger">*</span></label>
-                                        <input type="text" class="form-control" id="redir_add_ip" placeholder="203.0.113.10" required>
+                                        <label class="form-label fw-semibold">IP Address <span class="text-danger">*</span>
+                                            <i data-feather="info" class="ms-1 text-info" style="width:14px;height:14px;cursor:pointer;"
+                                               data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top"
+                                               title="IP Address Requirements"
+                                               data-bs-content="Enter a publicly routable IPv4 or IPv6 address (e.g. 203.0.113.10). Domain names and FQDNs are not accepted. Private/non-routable addresses (10.x, 172.16-31.x, 192.168.x) will be rejected."></i>
+                                        </label>
+                                        <input type="text" class="form-control" id="redir_add_ip" placeholder="203.0.113.10" required
+                                               onblur="checkIPField(this, 'redirAddIpWarn')">
+                                        <div id="redirAddIpWarn" class="form-text text-warning d-none"></div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label fw-semibold">SSH Port</label>
@@ -2012,6 +2019,47 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function parseApiError(detail, fallback) {
+    if (!detail) return fallback || 'An unknown error occurred.';
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) return detail.map(function(e) { return e.msg || JSON.stringify(e); }).join('; ');
+    return String(detail);
+}
+
+function isPrivateIP(ip) {
+    var parts = ip.split('.');
+    if (parts.length === 4 && parts.every(function(p) { return /^\d{1,3}$/.test(p); })) {
+        var a = Number(parts[0]), b = Number(parts[1]);
+        if (a === 10) return true;
+        if (a === 172 && b >= 16 && b <= 31) return true;
+        if (a === 192 && b === 168) return true;
+        if (a === 100 && b >= 64 && b <= 127) return true;
+        if (a === 169 && b === 254) return true;
+        if (a === 127) return true;
+    }
+    if (ip === '::1') return true;
+    var lower = ip.toLowerCase();
+    if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80')) return true;
+    return false;
+}
+
+function looksLikeFQDN(val) { return /[a-zA-Z]/.test(val) && val.includes('.'); }
+
+function checkIPField(input, warnId) {
+    var val = input.value.trim();
+    var warnEl = document.getElementById(warnId);
+    if (!val) { warnEl.classList.add('d-none'); return; }
+    if (looksLikeFQDN(val)) {
+        warnEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
+        warnEl.classList.remove('d-none');
+    } else if (isPrivateIP(val)) {
+        warnEl.textContent = 'This is a private/non-routable address. The redirector must be reachable over the internet.';
+        warnEl.classList.remove('d-none');
+    } else {
+        warnEl.classList.add('d-none');
+    }
+}
+
 // =============================================================================
 // CPE Certificates Functions
 // =============================================================================
@@ -2338,12 +2386,18 @@ async function submitAddBYOD() {
     if (!payload.ssh_private_key) {
         errEl.textContent = 'SSH private key is required.'; errEl.classList.remove('d-none'); return;
     }
+    if (looksLikeFQDN(payload.current_ip)) {
+        errEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).'; errEl.classList.remove('d-none'); return;
+    }
+    if (isPrivateIP(payload.current_ip)) {
+        errEl.textContent = 'Private/non-routable IP addresses are not permitted. The redirector must be reachable over the internet.'; errEl.classList.remove('d-none'); return;
+    }
     try {
         var resp = await csrfFetch('/api/redirectors/', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
         var data = await resp.json();
-        if (!resp.ok) { errEl.textContent = data.detail || 'Failed to create redirector.'; errEl.classList.remove('d-none'); return; }
+        if (!resp.ok) { errEl.textContent = parseApiError(data.detail, 'Failed to create redirector.'); errEl.classList.remove('d-none'); return; }
         _byodModal.hide();
         showToast('Redirector <strong>' + escapeHtml(data.name) + '</strong> created.', 'success');
         loadRedirectors();
@@ -2541,6 +2595,10 @@ document.addEventListener('DOMContentLoaded', function() {
     var cxEl = document.getElementById('addCyberXModal');
     if (cxEl) cxEl.addEventListener('hidden.bs.modal', function() {
         if (_cxPollTimer) { clearInterval(_cxPollTimer); _cxPollTimer = null; }
+    });
+    // Initialize Bootstrap popovers
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el) {
+        new bootstrap.Popover(el, { html: false });
     });
 });
 

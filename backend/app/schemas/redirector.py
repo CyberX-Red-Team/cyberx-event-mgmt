@@ -19,6 +19,38 @@ _SAFE_PATH_RE = re.compile(r"^/[a-zA-Z0-9_./-]+$")
 _SAFE_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
 _SAFE_HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 _SAFE_CIPHER_RE = re.compile(r"^[a-zA-Z0-9_:!+\-@.]+$")
+
+# RFC 1918 / RFC 6598 / link-local / loopback private ranges
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("100.64.0.0/10"),   # Carrier-grade NAT
+    ipaddress.ip_network("169.254.0.0/16"),   # Link-local
+    ipaddress.ip_network("127.0.0.0/8"),      # Loopback
+    ipaddress.ip_network("::1/128"),           # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),          # IPv6 ULA
+    ipaddress.ip_network("fe80::/10"),         # IPv6 link-local
+]
+
+
+def _validate_public_ip(v: str) -> str:
+    """Validate that a string is a publicly routable IP address (not an FQDN, not private)."""
+    try:
+        addr = ipaddress.ip_address(v)
+    except ValueError:
+        raise ValueError(
+            f"'{v}' is not a valid IP address. Enter a publicly routable IPv4 or IPv6 address "
+            "(e.g. 203.0.113.10). Domain names and FQDNs are not accepted."
+        )
+    for net in _PRIVATE_NETWORKS:
+        if addr in net:
+            raise ValueError(
+                f"'{v}' is a private/non-routable address. "
+                "The redirector must be reachable over the internet. "
+                "Enter a publicly routable IP address (e.g. 203.0.113.10)."
+            )
+    return v
 _ALLOWED_SSL_PROTOCOLS = {"TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"}
 _UNSAFE_NGINX_CHARS = re.compile(r"[;\n\r{}]")
 
@@ -41,8 +73,7 @@ class RedirectorCreate(BaseModel):
     @field_validator("current_ip")
     @classmethod
     def validate_ip(cls, v: str) -> str:
-        ipaddress.ip_address(v)
-        return v
+        return _validate_public_ip(v)
 
     @field_validator("ssh_username")
     @classmethod
@@ -137,7 +168,7 @@ class RedirectorUpdate(BaseModel):
     @classmethod
     def validate_ip(cls, v: Optional[str]) -> Optional[str]:
         if v is not None:
-            ipaddress.ip_address(v)
+            return _validate_public_ip(v)
         return v
 
     @field_validator("ssh_username")

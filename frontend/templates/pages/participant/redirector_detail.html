@@ -253,8 +253,15 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                         <input type="text" class="form-control" id="er_name" value="{{ redirector.name | e }}">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label fw-semibold">IP Address</label>
-                        <input type="text" class="form-control" id="er_ip" value="{{ redirector.current_ip | e }}">
+                        <label class="form-label fw-semibold">IP Address
+                            <i data-feather="info" class="ms-1 text-info" style="width:14px;height:14px;cursor:pointer;"
+                               data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top"
+                               title="IP Address Requirements"
+                               data-bs-content="Enter a publicly routable IPv4 or IPv6 address (e.g. 203.0.113.10). Domain names and FQDNs are not accepted. Private/non-routable addresses (10.x, 172.16-31.x, 192.168.x) will be rejected."></i>
+                        </label>
+                        <input type="text" class="form-control" id="er_ip" value="{{ redirector.current_ip | e }}"
+                               onblur="checkIPField(this, 'erIpWarn')">
+                        <div id="erIpWarn" class="form-text text-warning d-none"></div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-semibold">SSH Port</label>
@@ -583,6 +590,10 @@ document.querySelectorAll('.modal').forEach(el => {
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.js-dt').forEach(el => {
         el.textContent = formatDateTime(el.textContent);
+    });
+    // Initialize Bootstrap popovers
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
+        new bootstrap.Popover(el, { html: false });
     });
     loadStreams().then(startPolling);
     checkNginxSetup();
@@ -997,6 +1008,18 @@ async function submitEditRedirector() {
     if (v('er_dir').trim())   payload.nginx_stream_dir = v('er_dir').trim();
     payload.notes = v('er_notes').trim() || null;
 
+    const ip = payload.current_ip;
+    if (ip && looksLikeFQDN(ip)) {
+        errEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
+        errEl.classList.remove('d-none');
+        return;
+    }
+    if (ip && isPrivateIP(ip)) {
+        errEl.textContent = 'Private/non-routable IP addresses are not permitted. The redirector must be reachable over the internet.';
+        errEl.classList.remove('d-none');
+        return;
+    }
+
     try {
         const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}`, {
             method: 'PUT',
@@ -1005,7 +1028,7 @@ async function submitEditRedirector() {
         });
         const data = await resp.json();
         if (!resp.ok) {
-            errEl.textContent = data.detail || 'Update failed.';
+            errEl.textContent = parseApiError(data.detail, 'Update failed.');
             errEl.classList.remove('d-none');
             return;
         }
@@ -1351,6 +1374,47 @@ async function deleteRedirector() {
             showToast(escHtml(data.detail || 'Delete failed.'), 'danger');
         }
     } catch (e) { showToast('Delete failed: ' + escHtml(e.message), 'danger'); }
+}
+
+function parseApiError(detail, fallback) {
+    if (!detail) return fallback || 'An unknown error occurred.';
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) return detail.map(e => e.msg || JSON.stringify(e)).join('; ');
+    return String(detail);
+}
+
+function isPrivateIP(ip) {
+    const parts = ip.split('.');
+    if (parts.length === 4 && parts.every(p => /^\d{1,3}$/.test(p))) {
+        const [a, b] = parts.map(Number);
+        if (a === 10) return true;
+        if (a === 172 && b >= 16 && b <= 31) return true;
+        if (a === 192 && b === 168) return true;
+        if (a === 100 && b >= 64 && b <= 127) return true;
+        if (a === 169 && b === 254) return true;
+        if (a === 127) return true;
+    }
+    if (ip === '::1') return true;
+    const lower = ip.toLowerCase();
+    if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80')) return true;
+    return false;
+}
+
+function looksLikeFQDN(val) { return /[a-zA-Z]/.test(val) && val.includes('.'); }
+
+function checkIPField(input, warnId) {
+    const val = input.value.trim();
+    const warnEl = document.getElementById(warnId);
+    if (!val) { warnEl.classList.add('d-none'); return; }
+    if (looksLikeFQDN(val)) {
+        warnEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
+        warnEl.classList.remove('d-none');
+    } else if (isPrivateIP(val)) {
+        warnEl.textContent = 'This is a private/non-routable address. The redirector must be reachable over the internet.';
+        warnEl.classList.remove('d-none');
+    } else {
+        warnEl.classList.add('d-none');
+    }
 }
 
 function escHtml(str) {
