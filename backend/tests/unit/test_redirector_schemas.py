@@ -23,7 +23,7 @@ class TestRedirectorCreate:
         """BYOD mode: ssh_private_key is required."""
         schema = RedirectorCreate(
             name="redir-01",
-            current_ip="10.0.0.1",
+            current_ip="198.51.100.1",
             ssh_username="debian",
             ssh_private_key=VALID_PEM,
         )
@@ -34,12 +34,12 @@ class TestRedirectorCreate:
         with pytest.raises(ValidationError):
             RedirectorCreate(
                 name="redir-04",
-                current_ip="10.0.0.4",
+                current_ip="198.51.100.4",
                 ssh_username="debian",
             )
 
     def test_invalid_ip_rejected(self):
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match="not a valid IP address"):
             RedirectorCreate(
                 name="redir-05",
                 current_ip="not-an-ip",
@@ -47,11 +47,30 @@ class TestRedirectorCreate:
                 ssh_private_key=VALID_PEM,
             )
 
+    def test_fqdn_rejected(self):
+        with pytest.raises(ValidationError, match="not a valid IP address"):
+            RedirectorCreate(
+                name="redir-fqdn",
+                current_ip="escape.golearn.us",
+                ssh_username="root",
+                ssh_private_key=VALID_PEM,
+            )
+
+    def test_private_ip_rejected(self):
+        for ip in ("10.0.0.1", "192.168.1.1", "172.16.0.1", "127.0.0.1"):
+            with pytest.raises(ValidationError, match="private/non-routable"):
+                RedirectorCreate(
+                    name="redir-priv",
+                    current_ip=ip,
+                    ssh_username="debian",
+                    ssh_private_key=VALID_PEM,
+                )
+
     def test_unsafe_username_rejected(self):
         with pytest.raises(ValidationError, match="invalid characters"):
             RedirectorCreate(
                 name="redir-06",
-                current_ip="10.0.0.6",
+                current_ip="198.51.100.6",
                 ssh_username="user;rm -rf",
                 ssh_private_key=VALID_PEM,
             )
@@ -60,7 +79,7 @@ class TestRedirectorCreate:
         with pytest.raises(ValidationError, match="safe characters"):
             RedirectorCreate(
                 name="redir-07",
-                current_ip="10.0.0.7",
+                current_ip="198.51.100.7",
                 ssh_username="debian",
                 ssh_private_key=VALID_PEM,
                 nginx_stream_dir="../etc/passwd",
@@ -69,7 +88,7 @@ class TestRedirectorCreate:
     def test_defaults(self):
         schema = RedirectorCreate(
             name="redir-08",
-            current_ip="10.0.0.8",
+            current_ip="198.51.100.8",
             ssh_username="debian",
             ssh_private_key=VALID_PEM,
         )
@@ -126,7 +145,7 @@ class TestRedirectorOut:
         out = RedirectorOut(
             id="abc",
             name="redir",
-            current_ip="10.0.0.1",
+            current_ip="198.51.100.1",
             ssh_port=22,
             ssh_username="debian",
             use_infrastructure_key=True,
@@ -147,7 +166,7 @@ class TestRedirectorOut:
         out = RedirectorOut(
             id="abc",
             name="redir",
-            current_ip="10.0.0.1",
+            current_ip="198.51.100.1",
             ssh_port=22,
             ssh_username="debian",
             nginx_stream_dir="/etc/nginx/stream.d",
