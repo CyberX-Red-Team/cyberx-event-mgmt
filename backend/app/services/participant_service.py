@@ -528,6 +528,9 @@ class ParticipantService:
                         detail=f"A user with email {new_email} already exists"
                     )
                 kwargs['email_normalized'] = new_normalized
+                # Reset email verification status — old status doesn't apply to new address
+                kwargs['email_status'] = 'UNKNOWN'
+                kwargs['email_status_timestamp'] = None
 
         # Update remaining fields (allow None values for nullable fields like sponsor_id)
         for key, value in kwargs.items():

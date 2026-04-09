@@ -325,6 +325,42 @@ class TestParticipantServiceUpdate:
         assert updated is not None
         assert updated.email == "newemail@test.com"
 
+    async def test_update_email_resets_email_status_to_unknown(
+        self, db_session: AsyncSession, invitee_user: User
+    ):
+        """Changing the email address resets email_status to UNKNOWN."""
+        # Pre-set a non-UNKNOWN status to verify it gets reset
+        invitee_user.email_status = "BOUNCED"
+        invitee_user.email_status_timestamp = 1234567890
+        await db_session.commit()
+
+        service = ParticipantService(db_session)
+        updated = await service.update_participant(
+            invitee_user.id, email="changed@test.com"
+        )
+
+        assert updated.email == "changed@test.com"
+        assert updated.email_status == "UNKNOWN"
+        assert updated.email_status_timestamp is None
+
+    async def test_update_email_to_same_value_preserves_email_status(
+        self, db_session: AsyncSession, invitee_user: User
+    ):
+        """Updating with the same email leaves email_status unchanged."""
+        invitee_user.email_status = "BOUNCED"
+        invitee_user.email_status_timestamp = 1234567890
+        await db_session.commit()
+        original_email = invitee_user.email
+
+        service = ParticipantService(db_session)
+        updated = await service.update_participant(
+            invitee_user.id, email=original_email
+        )
+
+        assert updated.email == original_email
+        assert updated.email_status == "BOUNCED"
+        assert updated.email_status_timestamp == 1234567890
+
     async def test_update_participant_name(
         self, db_session: AsyncSession, invitee_user: User
     ):

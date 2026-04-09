@@ -329,6 +329,7 @@
                                     <th width="260" data-sort-key="email">Email</th>
                                     <th width="80" data-sort-key="country">Country</th>
                                     <th width="130" data-sort-key="email_status">Email Status</th>
+                                    <th width="140" data-sort-key="discord_username">Discord</th>
                                     <th width="90" data-sort-key="role">Role</th>
                                     <th width="180">Sponsor</th>
                                     <th width="90" data-sort-key="is_active">Active</th>
@@ -341,7 +342,7 @@
                             </thead>
                             <tbody id="usersBody">
                                 <tr>
-                                    <td colspan="13" class="text-center py-4">
+                                    <td colspan="14" class="text-center py-4">
                                         <div class="spinner-border spinner-border-sm me-2"></div>
                                         Loading users...
                                     </td>
@@ -536,6 +537,26 @@
                                 </div>
                             </div>
                         </div>
+                        {% if 'discord.view' in perms %}
+                        <div class="col-12" id="discordSection">
+                            <hr>
+                            <h6 class="mb-3">Discord</h6>
+                            <div class="row g-3">
+                                <div class="col-md-8">
+                                    <label class="form-label">Discord Username</label>
+                                    <input type="text" class="form-control" id="userDiscordUsername" readonly disabled placeholder="Not linked">
+                                    <small class="text-muted">Set automatically when the user joins via the bot.</small>
+                                </div>
+                                {% if 'discord.manage' in perms %}
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button class="btn btn-outline-warning w-100" type="button" onclick="resetDiscordInvite()" title="Generate a new invite and unlink current Discord account">
+                                        <i data-feather="refresh-cw" class="me-1"></i> Reset Discord Invite
+                                    </button>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
                     </div>
                 </form>
             </div>
@@ -852,7 +873,7 @@ window.loadUsers = async function(page = 1) {
         console.error('Error loading users:', error);
         document.getElementById('usersBody').innerHTML = `
             <tr>
-                <td colspan="13" class="text-center text-danger py-4">
+                <td colspan="14" class="text-center text-danger py-4">
                     Failed to load users. Please try again.
                 </td>
             </tr>
@@ -1043,7 +1064,7 @@ function renderUsersTable() {
     const groupBy = document.getElementById('userGroupByFilter').value;
 
     if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-muted">No invitees found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="text-center py-4 text-muted">No invitees found</td></tr>';
         return;
     }
 
@@ -1089,7 +1110,7 @@ function renderUsersTable() {
             if (groupKey !== lastGroupKey) {
                 rows.push(`
                     <tr class="table-secondary">
-                        <td colspan="13" class="fw-bold small py-1 ps-3">
+                        <td colspan="14" class="fw-bold small py-1 ps-3">
                             <i data-feather="${groupIcon}" style="width:14px;height:14px;" class="me-1"></i>
                             ${groupBy === 'country' ? groupName : escapeHtml(groupName)}
                             <span class="badge bg-secondary ms-2">${groupCounts[groupKey]}</span>
@@ -1113,6 +1134,7 @@ function renderUsersTable() {
             <td>${escapeHtml(user.email)}</td>
             <td class="text-center">${user.country ? `<span title="${escapeHtml(user.country)}" style="font-size: 1.5rem; cursor: help;">${getCountryFlag(user.country)}</span>` : '<span class="text-muted">-</span>'}</td>
             <td>${getEmailStatusBadge(user.email_status)}</td>
+            <td class="small">${user.discord_username ? escapeHtml(user.discord_username) : '<span class="text-muted">—</span>'}</td>
             <td>${getRoleBadge(user)}</td>
             <td>${user.sponsor ? escapeHtml(user.sponsor.first_name + ' ' + user.sponsor.last_name) : '<span class="text-muted">-</span>'}</td>
             <td>${user.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
@@ -1419,6 +1441,12 @@ window.editUser = async function(userId) {
         document.getElementById('userPandasUsername').value = user.pandas_username || '';
         document.getElementById('userPandasPassword').value = user.pandas_password || '';
 
+        // Populate Discord username (section only present if perms allow)
+        const discordField = document.getElementById('userDiscordUsername');
+        if (discordField) {
+            discordField.value = user.discord_username || '';
+        }
+
         // Show email status section (read-only)
         document.getElementById('emailStatusSection').style.display = 'block';
         document.getElementById('userEmailStatus').innerHTML = getEmailStatusBadge(user.email_status);
@@ -1548,6 +1576,34 @@ window.resetUserPassword = async function() {
     } catch (error) {
         console.error('Error sending reset link:', error);
         showToast('Failed to send reset link', 'error');
+    }
+}
+
+window.resetDiscordInvite = async function() {
+    const userId = document.getElementById('userId').value;
+    if (!userId) return;
+
+    if (!confirm("Reset this user's Discord invite? This will unlink their current Discord account and generate a new invite link.")) return;
+
+    try {
+        const response = await csrfFetch(`/api/admin/participants/${userId}/regenerate-discord-invite`, {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            showToast(result.message || 'Discord invite reset', 'success');
+            // Clear the displayed Discord username since it's now unlinked
+            const field = document.getElementById('userDiscordUsername');
+            if (field) field.value = '';
+            // Refresh the table so the column updates
+            loadUsers();
+        } else {
+            showToast(escapeHtml(result.detail || 'Failed to reset Discord invite'), 'danger');
+        }
+    } catch (error) {
+        console.error('Error resetting Discord invite:', error);
+        showToast('Failed to reset Discord invite', 'danger');
     }
 }
 
