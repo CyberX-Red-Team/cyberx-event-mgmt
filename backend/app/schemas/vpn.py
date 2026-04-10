@@ -115,13 +115,48 @@ class VPNRequestResponse(BaseModel):
 
 
 class VPNImportResponse(BaseModel):
-    """Response for VPN bulk import."""
+    """Response from queueing a VPN bulk import job.
+
+    The actual import runs asynchronously in a background task. Clients
+    should poll ``GET /api/vpn/import-jobs/{job_id}`` for progress and the
+    final imported/skipped counts.
+    """
 
     success: bool
     message: str
+    job_id: int
+    status: str
+
+
+class VPNImportJobResponse(BaseModel):
+    """Detailed status of a VPN import job."""
+
+    id: int
+    status: str  # pending | processing | completed | failed
+    filename: Optional[str] = None
+    file_size_bytes: int
+    assignment_type: str
+    endpoint_override: Optional[str] = None
+
+    total_files: Optional[int] = None
+    processed_files: int
     imported_count: int
     skipped_count: int
+    error_count: int
     errors: List[str] = []
+
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    created_by_user_id: Optional[int] = None
+
+
+class VPNImportJobListResponse(BaseModel):
+    """List of recent VPN import jobs."""
+
+    items: List[VPNImportJobResponse]
+    total: int
 
 
 class VPNMyCredentialsResponse(BaseModel):
@@ -138,13 +173,43 @@ class VPNBulkDeleteRequest(BaseModel):
 
 
 class VPNBulkDeleteResponse(BaseModel):
-    """Response for bulk VPN deletion."""
+    """Response from queueing a bulk VPN deletion job.
+
+    The actual deletion runs asynchronously in a background task. Clients
+    should poll ``GET /api/vpn/delete-jobs/{job_id}`` for progress and the
+    final deleted count.
+    """
 
     success: bool
     message: str
+    job_id: int
+    status: str
+
+
+class VPNDeleteJobResponse(BaseModel):
+    """Detailed status of a VPN bulk-delete job."""
+
+    id: int
+    status: str  # pending | processing | completed | failed
+    mode: str  # by_ids | all
+    total_credentials: Optional[int] = None
+    processed_credentials: int
     deleted_count: int
-    failed_ids: List[int] = []
+    failed_count: int
     errors: List[str] = []
+
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    created_by_user_id: Optional[int] = None
+
+
+class VPNDeleteJobListResponse(BaseModel):
+    """List of recent VPN bulk-delete jobs."""
+
+    items: List[VPNDeleteJobResponse]
+    total: int
 
 
 class VPNRequestBatch(BaseModel):

@@ -13,10 +13,156 @@ from sqlalchemy.orm import selectinload
 from app.models.user import User
 from app.models.vpn import VPNCredential
 from app.config import get_settings
+from app.utils.r2_client import R2Client
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+def parse_wireguard_config(
+    config_content: str,
+    endpoint_override: Optional[str] = None,
+) -> dict:
+    """
+    Parse a WireGuard configuration file into a flat dictionary of fields.
+
+    This is a pure function with no side effects so it can be reused by both
+    the synchronous import path and the background import service.
+
+    Args:
+        config_content: Raw text content of the config file
+        endpoint_override: Optional endpoint to use instead of the parsed value
+
+    Returns:
+        Dict with the parsed fields. Keys: ``private_key``, ``preshared_key``,
+        ``addresses`` (list), ``endpoint``, ``mtu``, ``dns``, ``public_key``,
+        ``allowed_ips``, ``persistent_keepalive``, ``table``, ``save_config``,
+        ``fwmark``.
+
+    Raises:
+        ValueError: If required fields (PrivateKey, Address, Endpoint) are missing.
+    """
+    private_key = None
+    addresses: list[str] = []
+    parsed_endpoint = None
+    preshared_key = None
+    mtu = None
+    dns = None
+    public_key = None
+    allowed_ips = None
+    persistent_keepalive = None
+    table = None
+    save_config = None
+    fwmark = None
+
+    for line in config_content.split("\n"):
+        line = line.strip()
+        if line.startswith("PrivateKey"):
+            match = re.match(r"PrivateKey\s*=\s*(.+)", line)
+            if match:
+                private_key = match.group(1).strip()
+        elif line.startswith("PresharedKey"):
+            match = re.match(r"PresharedKey\s*=\s*(.+)", line)
+            if match:
+                preshared_key = match.group(1).strip()
+        elif line.startswith("Address"):
+            match = re.match(r"Address\s*=\s*(.+)", line)
+            if match:
+                addr_str = match.group(1).strip()
+                addresses = [a.strip() for a in addr_str.split(",")]
+        elif line.startswith("Endpoint"):
+            match = re.match(r"Endpoint\s*=\s*(.+)", line)
+            if match:
+                parsed_endpoint = match.group(1).strip()
+        elif line.startswith("MTU"):
+            match = re.match(r"MTU\s*=\s*(.+)", line)
+            if match:
+                mtu = match.group(1).strip()
+        elif line.startswith("DNS"):
+            match = re.match(r"DNS\s*=\s*(.+)", line)
+            if match:
+                dns = match.group(1).strip()
+        elif line.startswith("#") and "DNS" in line:
+            match = re.match(r"#\s*DNS\s*=\s*(.+)", line)
+            if match:
+                dns = match.group(1).strip()
+        elif line.startswith("PublicKey"):
+            match = re.match(r"PublicKey\s*=\s*(.+)", line)
+            if match:
+                public_key = match.group(1).strip()
+        elif line.startswith("AllowedIPs"):
+            match = re.match(r"AllowedIPs\s*=\s*(.+)", line)
+            if match:
+                allowed_ips = match.group(1).strip()
+        elif line.startswith("PersistentKeepalive"):
+            match = re.match(r"PersistentKeepalive\s*=\s*(.+)", line)
+            if match:
+                persistent_keepalive = match.group(1).strip()
+        elif line.startswith("Table"):
+            match = re.match(r"Table\s*=\s*(.+)", line)
+            if match:
+                table = match.group(1).strip()
+        elif line.startswith("SaveConfig"):
+            match = re.match(r"SaveConfig\s*=\s*(.+)", line)
+            if match:
+                save_config = match.group(1).strip()
+        elif line.startswith("FwMark"):
+            match = re.match(r"FwMark\s*=\s*(.+)", line)
+            if match:
+                fwmark = match.group(1).strip()
+
+    final_endpoint = endpoint_override or parsed_endpoint
+
+    missing = []
+    if not private_key:
+        missing.append("PrivateKey")
+    if not addresses:
+        missing.append("Address")
+    if not final_endpoint:
+        missing.append("Endpoint")
+    if missing:
+        raise ValueError(
+            f"Invalid WireGuard config - missing required fields: {', '.join(missing)}"
+        )
+
+    return {
+        "private_key": private_key,
+        "preshared_key": preshared_key,
+        "addresses": addresses,
+        "endpoint": final_endpoint,
+        "mtu": mtu,
+        "dns": dns,
+        "public_key": public_key,
+        "allowed_ips": allowed_ips,
+        "persistent_keepalive": persistent_keepalive,
+        "table": table,
+        "save_config": save_config,
+        "fwmark": fwmark,
+    }
+
+
+def split_addresses(addresses: list[str]) -> tuple[str, Optional[str], Optional[str], Optional[str]]:
+    """
+    Split a list of WireGuard interface addresses into the per-family columns.
+
+    Returns ``(interface_ip, ipv4_address, ipv6_local, ipv6_global)``.
+    """
+    interface_ip = ",".join(addresses)
+    ipv4_address: Optional[str] = None
+    ipv6_local: Optional[str] = None
+    ipv6_global: Optional[str] = None
+
+    for addr in addresses:
+        ip = addr.split("/")[0]
+        if "." in ip:  # IPv4
+            ipv4_address = ip
+        elif ip.startswith("fd00:") or ip.startswith("fe80:"):
+            ipv6_local = ip
+        elif ":" in ip:
+            ipv6_global = ip
+
+    return interface_ip, ipv4_address, ipv6_local, ipv6_global
 
 
 class VPNService:
@@ -25,52 +171,31 @@ class VPNService:
     def __init__(self, session: AsyncSession):
         """Initialize VPN service."""
         self.session = session
+        self._r2: Optional[R2Client] = None
 
     # ─── R2 helpers ──────────────────────────────────────────────────
 
-    def _get_r2_client(self):
-        """Get an S3 client configured for Cloudflare R2."""
-        import boto3
-        from botocore.config import Config as BotoConfig
-        return boto3.client(
-            "s3",
-            endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
-            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
-            region_name="auto",
-            config=BotoConfig(signature_version="s3v4"),
-        )
+    @property
+    def r2(self) -> R2Client:
+        """Lazy-initialized shared R2 client."""
+        if self._r2 is None:
+            self._r2 = R2Client.from_settings()
+        return self._r2
 
     def _upload_to_r2(self, key: str, data: bytes) -> bool:
-        """Upload raw VPN config to R2."""
-        try:
-            s3 = self._get_r2_client()
-            s3.put_object(Bucket=settings.R2_BUCKET, Key=key, Body=data, ContentType="text/plain")
+        """Upload raw VPN config to R2 (synchronous)."""
+        ok = self.r2.put_object(key, data, content_type="text/plain")
+        if ok:
             logger.info("Uploaded VPN config to R2: %s", key)
-            return True
-        except Exception as e:
-            logger.error("R2 upload failed for %s: %s", key, e)
-            return False
+        return ok
 
     def _download_from_r2(self, key: str) -> Optional[bytes]:
-        """Download raw VPN config from R2."""
-        try:
-            s3 = self._get_r2_client()
-            response = s3.get_object(Bucket=settings.R2_BUCKET, Key=key)
-            return response["Body"].read()
-        except Exception as e:
-            logger.error("R2 download failed for %s: %s", key, e)
-            return None
+        """Download raw VPN config from R2 (synchronous)."""
+        return self.r2.get_object(key)
 
     def _delete_from_r2(self, key: str) -> bool:
-        """Delete a VPN config from R2."""
-        try:
-            s3 = self._get_r2_client()
-            s3.delete_object(Bucket=settings.R2_BUCKET, Key=key)
-            return True
-        except Exception as e:
-            logger.error("R2 delete failed for %s: %s", key, e)
-            return False
+        """Delete a VPN config from R2 (synchronous)."""
+        return self.r2.delete_object(key)
 
     @staticmethod
     def _make_r2_key(credential_id: int) -> str:
@@ -658,11 +783,8 @@ class VPNService:
         """
         Parse a WireGuard config file and create a VPN credential.
 
-        Validates that the file contains required WireGuard fields:
-        - PrivateKey (under [Interface]) - REQUIRED
-        - Address (under [Interface]) - REQUIRED
-        - Endpoint (under [Peer]) - REQUIRED (parsed from config or provided)
-        - PresharedKey (under [Peer]) - OPTIONAL (provides post-quantum security)
+        Delegates parsing to ``parse_wireguard_config`` (a pure helper) and
+        handles the database + R2 side effects.
 
         Args:
             config_content: Raw text content of the config file
@@ -676,110 +798,8 @@ class VPNService:
         Raises:
             ValueError: If config is missing required fields
         """
-        # Required fields
-        private_key = None
-        addresses = []
-        parsed_endpoint = None
-
-        # Optional fields (preserve from original config)
-        preshared_key = None
-        mtu = None
-        dns = None
-        public_key = None
-        allowed_ips = None
-        persistent_keepalive = None
-        table = None
-        save_config = None
-        fwmark = None
-
-        # Parse the config
-        for line in config_content.split('\n'):
-            line = line.strip()
-            if line.startswith('PrivateKey'):
-                match = re.match(r'PrivateKey\s*=\s*(.+)', line)
-                if match:
-                    private_key = match.group(1).strip()
-            elif line.startswith('PresharedKey'):
-                match = re.match(r'PresharedKey\s*=\s*(.+)', line)
-                if match:
-                    preshared_key = match.group(1).strip()
-            elif line.startswith('Address'):
-                match = re.match(r'Address\s*=\s*(.+)', line)
-                if match:
-                    # Parse comma-separated addresses
-                    addr_str = match.group(1).strip()
-                    addresses = [a.strip() for a in addr_str.split(',')]
-            elif line.startswith('Endpoint'):
-                match = re.match(r'Endpoint\s*=\s*(.+)', line)
-                if match:
-                    parsed_endpoint = match.group(1).strip()
-            elif line.startswith('MTU'):
-                match = re.match(r'MTU\s*=\s*(.+)', line)
-                if match:
-                    mtu = match.group(1).strip()
-            elif line.startswith('DNS'):
-                match = re.match(r'DNS\s*=\s*(.+)', line)
-                if match:
-                    dns = match.group(1).strip()
-            elif line.startswith('#') and 'DNS' in line:
-                match = re.match(r'#\s*DNS\s*=\s*(.+)', line)
-                if match:
-                    dns = match.group(1).strip()
-            elif line.startswith('PublicKey'):
-                match = re.match(r'PublicKey\s*=\s*(.+)', line)
-                if match:
-                    public_key = match.group(1).strip()
-            elif line.startswith('AllowedIPs'):
-                match = re.match(r'AllowedIPs\s*=\s*(.+)', line)
-                if match:
-                    allowed_ips = match.group(1).strip()
-            elif line.startswith('PersistentKeepalive'):
-                match = re.match(r'PersistentKeepalive\s*=\s*(.+)', line)
-                if match:
-                    persistent_keepalive = match.group(1).strip()
-            elif line.startswith('Table'):
-                match = re.match(r'Table\s*=\s*(.+)', line)
-                if match:
-                    table = match.group(1).strip()
-            elif line.startswith('SaveConfig'):
-                match = re.match(r'SaveConfig\s*=\s*(.+)', line)
-                if match:
-                    save_config = match.group(1).strip()
-            elif line.startswith('FwMark'):
-                match = re.match(r'FwMark\s*=\s*(.+)', line)
-                if match:
-                    fwmark = match.group(1).strip()
-
-        # Use provided endpoint or parsed endpoint
-        final_endpoint = endpoint or parsed_endpoint
-
-        # Validate required fields (PresharedKey is optional)
-        missing_fields = []
-        if not private_key:
-            missing_fields.append("PrivateKey")
-        if not addresses:
-            missing_fields.append("Address")
-        if not final_endpoint:
-            missing_fields.append("Endpoint")
-
-        if missing_fields:
-            raise ValueError(f"Invalid WireGuard config - missing required fields: {', '.join(missing_fields)}")
-
-        # Extract IP addresses (no spaces after commas)
-        interface_ip = ','.join(addresses)
-        ipv4_address = None
-        ipv6_local = None
-        ipv6_global = None
-
-        for addr in addresses:
-            # Remove CIDR notation
-            ip = addr.split('/')[0]
-            if '.' in ip:  # IPv4
-                ipv4_address = ip
-            elif ip.startswith('fd00:') or ip.startswith('fe80:'):  # Link-local IPv6
-                ipv6_local = ip
-            elif ':' in ip:  # Other IPv6
-                ipv6_global = ip
+        parsed = parse_wireguard_config(config_content, endpoint_override=endpoint)
+        interface_ip, ipv4_address, ipv6_local, ipv6_global = split_addresses(parsed["addresses"])
 
         # Generate file hash to detect duplicates
         file_hash = hashlib.sha256(config_content.encode()).hexdigest()
@@ -791,37 +811,34 @@ class VPNService:
         if existing.scalar_one_or_none():
             return None  # Skip duplicate
 
-        # Create the credential (preserve all fields from original config)
         vpn = VPNCredential(
             interface_ip=interface_ip,
             ipv4_address=ipv4_address,
             ipv6_local=ipv6_local,
             ipv6_global=ipv6_global,
-            private_key=private_key,
-            preshared_key=preshared_key,
-            endpoint=final_endpoint,
-            key_type="vpn",  # Generic type
-            # Optional fields from original config (NULL if not present)
-            mtu=mtu,
-            dns=dns,
-            public_key=public_key,
-            allowed_ips=allowed_ips,
-            persistent_keepalive=persistent_keepalive,
-            table=table,
-            save_config=save_config,
-            fwmark=fwmark,
+            private_key=parsed["private_key"],
+            preshared_key=parsed["preshared_key"],
+            endpoint=parsed["endpoint"],
+            key_type="vpn",
+            mtu=parsed["mtu"],
+            dns=parsed["dns"],
+            public_key=parsed["public_key"],
+            allowed_ips=parsed["allowed_ips"],
+            persistent_keepalive=parsed["persistent_keepalive"],
+            table=parsed["table"],
+            save_config=parsed["save_config"],
+            fwmark=parsed["fwmark"],
             file_hash=file_hash,
-            assignment_type=assignment_type,  # Assignment type from import
+            assignment_type=assignment_type,
             is_available=True,
-            is_active=True
+            is_active=True,
         )
 
         self.session.add(vpn)
-        await self.session.flush()  # Get auto-generated ID for R2 key
+        await self.session.flush()
 
-        # Upload raw config to R2
         r2_key = self._make_r2_key(vpn.id)
-        if self._upload_to_r2(r2_key, config_content.encode('utf-8')):
+        if self._upload_to_r2(r2_key, config_content.encode("utf-8")):
             vpn.r2_key = r2_key
         else:
             logger.warning(

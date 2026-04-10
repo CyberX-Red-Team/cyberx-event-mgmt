@@ -25,7 +25,11 @@ from app.models.app_setting import AppSetting
 from app.models.audit_log import AuditLog
 from app.models.instance import Instance
 from app.services.vpn_service import VPNService
+from app.services.vpn_import_service import VPNImportService
+from app.services.vpn_delete_service import VPNDeleteService
 from app.services.participant_service import ParticipantService
+from app.models.vpn_import_job import VPNImportJob, VPNImportJobStatus
+from app.models.vpn_delete_job import VPNDeleteJob, VPNDeleteJobStatus
 from app.schemas.vpn import (
     VPNCredentialResponse,
     VPNCredentialListResponse,
@@ -38,9 +42,13 @@ from app.schemas.vpn import (
     VPNRequestRequest,
     VPNRequestResponse,
     VPNImportResponse,
+    VPNImportJobResponse,
+    VPNImportJobListResponse,
     VPNMyCredentialsResponse,
     VPNBulkDeleteRequest,
     VPNBulkDeleteResponse,
+    VPNDeleteJobResponse,
+    VPNDeleteJobListResponse,
     VPNRequestBatchesResponse,
     VPNUpdateAssignmentTypeRequest,
     VPNUpdateAssignmentTypeResponse,
@@ -316,49 +324,168 @@ async def bulk_assign_vpn(
     )
 
 
+def _serialize_import_job(job: VPNImportJob) -> VPNImportJobResponse:
+    """Convert a VPNImportJob ORM row to its response schema."""
+    error_items: list[str] = []
+    if job.errors and isinstance(job.errors, dict):
+        items = job.errors.get("items")
+        if isinstance(items, list):
+            error_items = [str(x) for x in items]
+    return VPNImportJobResponse(
+        id=job.id,
+        status=job.status,
+        filename=job.filename,
+        file_size_bytes=job.file_size_bytes,
+        assignment_type=job.assignment_type,
+        endpoint_override=job.endpoint_override,
+        total_files=job.total_files,
+        processed_files=job.processed_files,
+        imported_count=job.imported_count,
+        skipped_count=job.skipped_count,
+        error_count=job.error_count,
+        errors=error_items,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        last_error=job.last_error,
+        created_by_user_id=job.created_by_user_id,
+    )
+
+
 @router.post("/import", response_model=VPNImportResponse)
 async def import_vpn_configs(
     file: UploadFile = File(..., description="ZIP file containing WireGuard .conf files"),
     endpoint: Optional[str] = Query(None, description="Optional VPN server endpoint override (ip:port)"),
     assignment_type: str = Query("USER_REQUESTABLE", description="Assignment type: USER_REQUESTABLE | INSTANCE_AUTO_ASSIGN | RESERVED"),
     current_user: User = Depends(require_permission("vpn.manage_pool")),
-    service: VPNService = Depends(get_vpn_service)
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Import VPN credentials from a ZIP file (admin only).
+    Queue a VPN credential import from a ZIP file (admin only).
 
-    The ZIP file should contain WireGuard .conf files with [Interface], [Peer], and Endpoint sections.
-    The endpoint will be parsed from each config file unless an override is provided.
+    The upload is staged to R2 and a background job is created. The actual
+    import runs in a scheduled task and progress can be polled via
+    ``GET /api/vpn/import-jobs/{job_id}``. This endpoint returns immediately
+    once the upload is staged.
+
+    The ZIP file should contain WireGuard ``.conf`` files with ``[Interface]``,
+    ``[Peer]``, and ``Endpoint`` sections. The endpoint will be parsed from
+    each config file unless an override is provided.
 
     Assignment types:
     - USER_REQUESTABLE: VPNs available for participant self-service requests (default)
     - INSTANCE_AUTO_ASSIGN: VPNs automatically assigned to instances in events with vpn_available=true
     - RESERVED: VPNs held in reserve, not available for auto-assignment
     """
-    # Validate assignment_type
     valid_types = ["USER_REQUESTABLE", "INSTANCE_AUTO_ASSIGN", "RESERVED"]
     if assignment_type not in valid_types:
-        raise bad_request(f"Invalid assignment_type. Must be one of: {', '.join(valid_types)}")
+        raise bad_request(
+            f"Invalid assignment_type. Must be one of: {', '.join(valid_types)}"
+        )
 
-    if not file.filename.endswith('.zip'):
+    if not file.filename or not file.filename.endswith(".zip"):
         raise bad_request("File must be a ZIP archive")
 
-    # Read file content
     content = await file.read()
 
-    # Limit file size (50MB)
-    if len(content) > 50 * 1024 * 1024:
-        raise bad_request("File too large (max 50MB)")
+    max_bytes = settings.VPN_IMPORT_MAX_FILE_SIZE_MB * 1024 * 1024
+    if len(content) > max_bytes:
+        raise bad_request(
+            f"File too large (max {settings.VPN_IMPORT_MAX_FILE_SIZE_MB}MB)"
+        )
 
-    imported, skipped, errors = await service.import_from_zip(content, endpoint, assignment_type)
+    import_service = VPNImportService(db)
+    try:
+        job = await import_service.stage_upload(
+            zip_bytes=content,
+            filename=file.filename,
+            assignment_type=assignment_type,
+            endpoint=endpoint,
+            user_id=current_user.id,
+        )
+    except RuntimeError as e:
+        raise server_error(str(e))
+
+    await db.commit()
 
     return VPNImportResponse(
-        success=imported > 0,
-        message=f"Imported {imported} VPN credentials, skipped {skipped}",
-        imported_count=imported,
-        skipped_count=skipped,
-        errors=errors[:10]  # Limit error messages
+        success=True,
+        message=f"Import queued. Poll /api/vpn/import-jobs/{job.id} for status.",
+        job_id=job.id,
+        status=job.status,
     )
+
+
+@router.get("/import-jobs", response_model=VPNImportJobListResponse)
+async def list_import_jobs(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the most recent VPN import jobs (admin only)."""
+    result = await db.execute(
+        select(VPNImportJob)
+        .order_by(VPNImportJob.created_at.desc())
+        .limit(limit)
+    )
+    jobs = list(result.scalars().all())
+    return VPNImportJobListResponse(
+        items=[_serialize_import_job(j) for j in jobs],
+        total=len(jobs),
+    )
+
+
+@router.get("/import-jobs/{job_id}", response_model=VPNImportJobResponse)
+async def get_import_job(
+    job_id: int,
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the status and progress of a single VPN import job (admin only)."""
+    result = await db.execute(
+        select(VPNImportJob).where(VPNImportJob.id == job_id)
+    )
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise not_found("VPN import job not found")
+    return _serialize_import_job(job)
+
+
+@router.post("/import-jobs/{job_id}/retry", response_model=VPNImportJobResponse)
+async def retry_import_job(
+    job_id: int,
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset a failed import job back to pending so the worker picks it up again."""
+    import_service = VPNImportService(db)
+    job = await import_service.retry_job(job_id)
+    if job is None:
+        raise not_found(
+            "Job not found, or job is not in a retryable state (must be 'failed')"
+        )
+    return _serialize_import_job(job)
+
+
+@router.delete("/import-jobs/{job_id}")
+async def delete_import_job(
+    job_id: int,
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a completed or failed VPN import job (admin only).
+
+    Refuses to delete a job while it is processing.
+    """
+    import_service = VPNImportService(db)
+    try:
+        deleted = await import_service.delete_job(job_id)
+    except ValueError as e:
+        raise bad_request(str(e))
+    if not deleted:
+        raise not_found("VPN import job not found")
+    return {"success": True, "deleted_id": job_id}
 
 
 @router.get("/credentials/{vpn_id}", response_model=VPNCredentialResponse)
@@ -753,55 +880,155 @@ async def get_available_vpn_count(
     return {"available_count": count}
 
 
+def _serialize_delete_job(job: VPNDeleteJob) -> VPNDeleteJobResponse:
+    """Convert a VPNDeleteJob ORM row to its response schema."""
+    error_items: list[str] = []
+    if job.errors and isinstance(job.errors, dict):
+        items = job.errors.get("items")
+        if isinstance(items, list):
+            error_items = [str(x) for x in items]
+    return VPNDeleteJobResponse(
+        id=job.id,
+        status=job.status,
+        mode=job.mode,
+        total_credentials=job.total_credentials,
+        processed_credentials=job.processed_credentials,
+        deleted_count=job.deleted_count,
+        failed_count=job.failed_count,
+        errors=error_items,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        last_error=job.last_error,
+        created_by_user_id=job.created_by_user_id,
+    )
+
+
 @router.post("/bulk-delete", response_model=VPNBulkDeleteResponse)
 async def bulk_delete_vpn_credentials(
     request: VPNBulkDeleteRequest,
     current_user: User = Depends(require_permission("vpn.manage_pool")),
-    service: VPNService = Depends(get_vpn_service)
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Delete multiple VPN credentials by ID.
+    Queue a bulk delete of multiple VPN credentials by ID (admin only).
 
-    Requires admin role.
+    The deletion runs asynchronously in a background task. Progress can be
+    polled via ``GET /api/vpn/delete-jobs/{job_id}``. Requires admin role.
     """
     if not request.vpn_ids:
         raise bad_request("No VPN credential IDs provided")
 
-    deleted_count, failed_ids, errors = await service.delete_credentials(request.vpn_ids)
-
-    success = deleted_count > 0
-    message = f"Deleted {deleted_count} VPN credential(s)"
-    if failed_ids:
-        message += f", {len(failed_ids)} failed"
+    delete_service = VPNDeleteService(db)
+    try:
+        job = await delete_service.queue_delete_by_ids(
+            vpn_ids=request.vpn_ids, user_id=current_user.id
+        )
+    except ValueError as e:
+        raise bad_request(str(e))
+    await db.commit()
 
     return VPNBulkDeleteResponse(
-        success=success,
-        message=message,
-        deleted_count=deleted_count,
-        failed_ids=failed_ids,
-        errors=errors
+        success=True,
+        message=f"Bulk delete queued. Poll /api/vpn/delete-jobs/{job.id} for status.",
+        job_id=job.id,
+        status=job.status,
     )
 
 
 @router.post("/delete-all", response_model=VPNBulkDeleteResponse)
 async def delete_all_vpn_credentials(
     current_user: User = Depends(require_permission("vpn.manage_pool")),
-    service: VPNService = Depends(get_vpn_service)
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Delete all VPN credentials.
+    Queue a delete of every VPN credential (admin only).
 
-    Requires admin role.
+    The deletion runs asynchronously in a background task. Progress can be
+    polled via ``GET /api/vpn/delete-jobs/{job_id}``. Requires admin role.
     """
-    deleted_count = await service.delete_all_credentials()
+    delete_service = VPNDeleteService(db)
+    job = await delete_service.queue_delete_all(user_id=current_user.id)
+    await db.commit()
 
     return VPNBulkDeleteResponse(
         success=True,
-        message=f"Deleted all {deleted_count} VPN credential(s)",
-        deleted_count=deleted_count,
-        failed_ids=[],
-        errors=[]
+        message=f"Delete-all queued. Poll /api/vpn/delete-jobs/{job.id} for status.",
+        job_id=job.id,
+        status=job.status,
     )
+
+
+@router.get("/delete-jobs", response_model=VPNDeleteJobListResponse)
+async def list_delete_jobs(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the most recent VPN bulk-delete jobs (admin only)."""
+    result = await db.execute(
+        select(VPNDeleteJob)
+        .order_by(VPNDeleteJob.created_at.desc())
+        .limit(limit)
+    )
+    jobs = list(result.scalars().all())
+    return VPNDeleteJobListResponse(
+        items=[_serialize_delete_job(j) for j in jobs],
+        total=len(jobs),
+    )
+
+
+@router.get("/delete-jobs/{job_id}", response_model=VPNDeleteJobResponse)
+async def get_delete_job(
+    job_id: int,
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the status and progress of a single VPN bulk-delete job (admin only)."""
+    result = await db.execute(
+        select(VPNDeleteJob).where(VPNDeleteJob.id == job_id)
+    )
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise not_found("VPN delete job not found")
+    return _serialize_delete_job(job)
+
+
+@router.post("/delete-jobs/{job_id}/retry", response_model=VPNDeleteJobResponse)
+async def retry_delete_job(
+    job_id: int,
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset a failed delete job back to pending so the worker picks it up again."""
+    delete_service = VPNDeleteService(db)
+    job = await delete_service.retry_job(job_id)
+    if job is None:
+        raise not_found(
+            "Job not found, or job is not in a retryable state (must be 'failed')"
+        )
+    return _serialize_delete_job(job)
+
+
+@router.delete("/delete-jobs/{job_id}")
+async def delete_delete_job(
+    job_id: int,
+    current_user: User = Depends(require_permission("vpn.manage_pool")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a completed or failed VPN delete-job row (admin only).
+
+    Refuses to delete a job while it is processing.
+    """
+    delete_service = VPNDeleteService(db)
+    try:
+        deleted = await delete_service.delete_job(job_id)
+    except ValueError as e:
+        raise bad_request(str(e))
+    if not deleted:
+        raise not_found("VPN delete job not found")
+    return {"success": True, "deleted_id": job_id}
 
 
 @router.get("/naming-pattern")

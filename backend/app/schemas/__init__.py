@@ -46,7 +46,11 @@ from app.schemas.vpn import (
     VPNRequestRequest,
     VPNRequestResponse,
     VPNImportResponse,
+    VPNImportJobResponse,
+    VPNImportJobListResponse,
     VPNMyCredentialsResponse,
+    VPNDeleteJobResponse,
+    VPNDeleteJobListResponse,
 )
 
 __all__ = [
@@ -94,5 +98,9 @@ __all__ = [
     "VPNRequestRequest",
     "VPNRequestResponse",
     "VPNImportResponse",
+    "VPNImportJobResponse",
+    "VPNImportJobListResponse",
     "VPNMyCredentialsResponse",
+    "VPNDeleteJobResponse",
+    "VPNDeleteJobListResponse",
 ]

@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     VPN_DNS_SERVERS: str = "10.20.200.1"
     VPN_ALLOWED_IPS: str = "10.0.0.0/8,fd00:a::/32"
 
+    # VPN Import (background job for ZIP imports of WireGuard configs)
+    VPN_IMPORT_MAX_FILE_SIZE_MB: int = 20  # Reject staged uploads above this size
+    VPN_IMPORT_RETENTION_DAYS: int = 30  # Auto-delete completed/failed jobs older than this
+    VPN_IMPORT_R2_PARALLELISM: int = 10  # Concurrent R2 uploads per chunk
+
     # Session Configuration
     SESSION_EXPIRY_HOURS: int = 24
     CSRF_TOKEN_MAX_AGE: int = 0  # seconds; 0 = match session lifetime

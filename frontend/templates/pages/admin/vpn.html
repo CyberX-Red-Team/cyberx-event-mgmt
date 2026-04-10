@@ -140,9 +140,9 @@
                     </div>
                     <div id="uploadProgress" class="mt-3" style="display: none;">
                         <div class="progress">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                            <div id="uploadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
                         </div>
-                        <p class="small text-muted mt-1 mb-0">Importing VPN credentials...</p>
+                        <p id="uploadProgressLabel" class="small text-muted mt-1 mb-0">Queueing import...</p>
                     </div>
                     <div id="uploadResult" class="mt-3" style="display: none;"></div>
                 </div>
@@ -889,65 +889,151 @@ fileInput.addEventListener('change', () => {
     }
 });
 
+// Tracks the current poll loop so cancelling a previous upload (or replacing
+// one with a new file) doesn't leave a zombie interval running.
+let _vpnImportPollHandle = null;
+
+function _vpnImportSetProgress(percent, label) {
+    const bar = document.getElementById('uploadProgressBar');
+    const lbl = document.getElementById('uploadProgressLabel');
+    if (bar) {
+        bar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+        bar.setAttribute('aria-valuenow', String(percent));
+    }
+    if (lbl) {
+        lbl.textContent = label;
+    }
+}
+
+function _vpnImportShowResult(html, alertClass) {
+    document.getElementById('uploadProgress').style.display = 'none';
+    dropzone.classList.remove('uploading');
+    const resultDiv = document.getElementById('uploadResult');
+    resultDiv.style.display = 'block';
+    resultDiv.className = `mt-3 alert ${alertClass}`;
+    resultDiv.innerHTML = html;
+}
+
+function _vpnImportRenderJobProgress(job) {
+    const total = job.total_files;
+    const processed = job.processed_files || 0;
+    let percent = 0;
+    let label;
+
+    if (job.status === 'pending') {
+        label = 'Queued — waiting for worker to pick it up...';
+        percent = 5;
+    } else if (job.status === 'processing') {
+        if (total && total > 0) {
+            percent = Math.round((processed / total) * 100);
+            label = `Processing ${processed} / ${total} (Imported: ${job.imported_count}, Skipped: ${job.skipped_count})`;
+        } else {
+            percent = 10;
+            label = 'Processing — reading ZIP archive...';
+        }
+    } else {
+        percent = 100;
+        label = 'Complete';
+    }
+
+    _vpnImportSetProgress(percent, label);
+}
+
+async function _vpnImportPollOnce(jobId) {
+    const resp = await csrfFetch(`/api/vpn/import-jobs/${jobId}`);
+    if (!resp.ok) {
+        throw new Error(`Status fetch failed: HTTP ${resp.status}`);
+    }
+    return await resp.json();
+}
+
 async function handleFileUpload(file) {
     if (!file.name.endsWith('.zip')) {
         showToast('Please upload a ZIP file', 'warning');
         return;
     }
 
+    // Cancel any previous in-flight poll loop
+    if (_vpnImportPollHandle !== null) {
+        clearInterval(_vpnImportPollHandle);
+        _vpnImportPollHandle = null;
+    }
+
     dropzone.classList.add('uploading');
     document.getElementById('uploadProgress').style.display = 'block';
     document.getElementById('uploadResult').style.display = 'none';
+    _vpnImportSetProgress(2, 'Uploading ZIP...');
 
-    // Get assignment type from dropdown
     const assignmentType = document.getElementById('assignmentType').value;
-
     const formData = new FormData();
     formData.append('file', file);
-
-    // Build URL with assignment_type query parameter
     const url = `/api/vpn/import?assignment_type=${encodeURIComponent(assignmentType)}`;
 
+    let jobId;
     try {
         const response = await csrfFetch(url, {
             method: 'POST',
-            body: formData
+            body: formData,
         });
-
         const data = await response.json();
-
-        document.getElementById('uploadProgress').style.display = 'none';
-        dropzone.classList.remove('uploading');
-
-        const resultDiv = document.getElementById('uploadResult');
-        resultDiv.style.display = 'block';
-
-        if (response.ok) {
-            resultDiv.className = 'mt-3 alert alert-success';
-            resultDiv.innerHTML = `
-                <strong>Import Complete</strong><br>
-                Imported: ${data.imported_count}<br>
-                Skipped: ${data.skipped_count}
-                ${data.errors.length > 0 ? '<br><small class="text-muted">Errors: ' + data.errors.slice(0, 3).join(', ') + '</small>' : ''}
-            `;
-            loadVPNCredentials(1);
-            loadStats();
-        } else {
-            resultDiv.className = 'mt-3 alert alert-danger';
-            resultDiv.innerHTML = `<strong>Import Failed</strong><br>${data.detail || 'Unknown error'}`;
+        if (!response.ok) {
+            _vpnImportShowResult(
+                `<strong>Upload Failed</strong><br>${data.detail || 'Unknown error'}`,
+                'alert-danger'
+            );
+            fileInput.value = '';
+            return;
         }
+        jobId = data.job_id;
     } catch (error) {
         console.error('Error:', error);
-        document.getElementById('uploadProgress').style.display = 'none';
-        dropzone.classList.remove('uploading');
-
-        const resultDiv = document.getElementById('uploadResult');
-        resultDiv.style.display = 'block';
-        resultDiv.className = 'mt-3 alert alert-danger';
-        resultDiv.innerHTML = '<strong>Upload Failed</strong><br>Please try again.';
+        _vpnImportShowResult(
+            '<strong>Upload Failed</strong><br>Please try again.',
+            'alert-danger'
+        );
+        fileInput.value = '';
+        return;
     }
 
     fileInput.value = '';
+    _vpnImportSetProgress(5, 'Queued — waiting for worker to pick it up...');
+
+    // Poll the job status every 2 seconds until it terminates
+    _vpnImportPollHandle = setInterval(async () => {
+        let job;
+        try {
+            job = await _vpnImportPollOnce(jobId);
+        } catch (e) {
+            console.error('Poll error:', e);
+            return; // try again next tick
+        }
+
+        _vpnImportRenderJobProgress(job);
+
+        if (job.status === 'completed') {
+            clearInterval(_vpnImportPollHandle);
+            _vpnImportPollHandle = null;
+            const errorsHtml = (job.errors && job.errors.length > 0)
+                ? `<br><small class="text-muted">Errors: ${job.errors.slice(0, 3).join(', ')}${job.errors.length > 3 ? ` (+${job.errors.length - 3} more)` : ''}</small>`
+                : '';
+            _vpnImportShowResult(
+                `<strong>Import Complete</strong><br>` +
+                `Imported: ${job.imported_count}<br>` +
+                `Skipped: ${job.skipped_count}` +
+                errorsHtml,
+                'alert-success'
+            );
+            loadVPNCredentials(1);
+            loadStats();
+        } else if (job.status === 'failed') {
+            clearInterval(_vpnImportPollHandle);
+            _vpnImportPollHandle = null;
+            _vpnImportShowResult(
+                `<strong>Import Failed</strong><br>${job.last_error || 'Unknown error'}`,
+                'alert-danger'
+            );
+        }
+    }, 2000);
 }
 {% endif %}
 
@@ -996,6 +1082,74 @@ function getSelectedVPNIds() {
     return Array.from(checkboxes).map(cb => parseInt(cb.value));
 }
 
+// Tracks the current bulk-delete poll loop so a new delete cancels any
+// previous one cleanly.
+let _vpnDeletePollHandle = null;
+
+async function _vpnDeletePollOnce(jobId) {
+    const resp = await csrfFetch(`/api/vpn/delete-jobs/${jobId}`);
+    if (!resp.ok) {
+        throw new Error(`Status fetch failed: HTTP ${resp.status}`);
+    }
+    return await resp.json();
+}
+
+function _vpnDeleteShowProgressToast(job) {
+    const total = job.total_credentials;
+    const processed = job.processed_credentials || 0;
+    if (total && total > 0) {
+        return `Deleting ${processed} / ${total} (Deleted: ${job.deleted_count}, Failed: ${job.failed_count})`;
+    }
+    if (job.status === 'pending') {
+        return 'Queued — waiting for worker to pick it up...';
+    }
+    return 'Processing...';
+}
+
+function _vpnDeleteStartPolling(jobId, label) {
+    if (_vpnDeletePollHandle !== null) {
+        clearInterval(_vpnDeletePollHandle);
+        _vpnDeletePollHandle = null;
+    }
+
+    showToast(`${label} — job queued`, 'info');
+
+    _vpnDeletePollHandle = setInterval(async () => {
+        let job;
+        try {
+            job = await _vpnDeletePollOnce(jobId);
+        } catch (e) {
+            console.error('Delete poll error:', e);
+            return;
+        }
+
+        if (job.status === 'completed') {
+            clearInterval(_vpnDeletePollHandle);
+            _vpnDeletePollHandle = null;
+            const failedSuffix = job.failed_count > 0
+                ? ` (${job.failed_count} failed)`
+                : '';
+            showToast(
+                `Deleted ${job.deleted_count} VPN credential(s)${failedSuffix}`,
+                'success'
+            );
+            loadVPNCredentials(1);
+            loadStats();
+        } else if (job.status === 'failed') {
+            clearInterval(_vpnDeletePollHandle);
+            _vpnDeletePollHandle = null;
+            showToast(
+                `Bulk delete failed: ${job.last_error || 'Unknown error'}`,
+                'danger'
+            );
+        } else if (job.status === 'processing') {
+            // Render a quiet status update; the toast may be debounced.
+            const msg = _vpnDeleteShowProgressToast(job);
+            showToast(msg, 'info');
+        }
+    }, 2000);
+}
+
 async function deleteSelectedVPNs() {
     const vpnIds = getSelectedVPNIds();
 
@@ -1016,20 +1170,14 @@ async function deleteSelectedVPNs() {
 
         const data = await response.json();
 
-        if (response.ok && data.success) {
-            showToast(`Successfully deleted ${data.deleted_count} VPN credential(s)`, 'success');
-            if (data.failed_ids && data.failed_ids.length > 0) {
-                showToast(`Failed to delete ${data.failed_ids.length} credential(s)`, 'warning');
-            }
-            // Reload the table and stats
-            loadVPNCredentials(currentPage);
-            loadStats();
+        if (response.ok && data.success && data.job_id) {
+            _vpnDeleteStartPolling(data.job_id, `Bulk delete ${vpnIds.length} credential(s)`);
         } else {
-            showToast(data.message || 'Failed to delete VPN credentials', 'danger');
+            showToast(data.detail || data.message || 'Failed to queue bulk delete', 'danger');
         }
     } catch (error) {
-        console.error('Error deleting VPN credentials:', error);
-        showToast('An error occurred while deleting VPN credentials', 'danger');
+        console.error('Error queueing bulk delete:', error);
+        showToast('An error occurred while queueing bulk delete', 'danger');
     }
 }
 
@@ -1052,17 +1200,14 @@ async function deleteAllVPNs() {
 
         const data = await response.json();
 
-        if (response.ok && data.success) {
-            showToast(`Successfully deleted all ${data.deleted_count} VPN credential(s)`, 'success');
-            // Reload the table and stats
-            loadVPNCredentials(1);
-            loadStats();
+        if (response.ok && data.success && data.job_id) {
+            _vpnDeleteStartPolling(data.job_id, `Delete all ${totalCount} credential(s)`);
         } else {
-            showToast(data.message || 'Failed to delete VPN credentials', 'danger');
+            showToast(data.detail || data.message || 'Failed to queue delete-all', 'danger');
         }
     } catch (error) {
-        console.error('Error deleting all VPN credentials:', error);
-        showToast('An error occurred while deleting VPN credentials', 'danger');
+        console.error('Error queueing delete-all:', error);
+        showToast('An error occurred while queueing delete-all', 'danger');
     }
 }
 
