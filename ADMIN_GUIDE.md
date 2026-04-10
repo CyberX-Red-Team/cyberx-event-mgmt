@@ -1039,24 +1039,52 @@ sequenceDiagram
 
 ### Bulk VPN Import
 
-1. **Prepare ZIP File**: Contains WireGuard `.conf` files
-2. **Upload**: Admin uploads via `/api/vpn/import`
-3. **Parse**: Extract private key, preshared key, IPs
-4. **Validate**: Check for duplicates, valid format
-5. **Store**: Save to `vpn_credentials` table
-6. **Report**: Return import statistics
+VPN imports run **asynchronously** in a background job so the admin UI does
+not block on large ZIPs. The flow is:
 
-Import response example:
+1. **Prepare ZIP file**: Contains WireGuard `.conf` files.
+2. **Upload**: Admin uploads via `POST /api/vpn/import`. The upload is
+   staged to R2 and a `vpn_import_jobs` row is created in `pending` state.
+3. **Queue response**: The endpoint returns immediately with the job id.
+4. **Background processing**: A scheduled task picks up pending jobs every
+   30 seconds, parses the ZIP cooperatively, deduplicates against existing
+   credentials, bulk-inserts new rows, and uploads per-credential configs
+   to R2 in parallel.
+5. **Polling**: The admin UI polls `GET /api/vpn/import-jobs/{job_id}` every
+   2 seconds to show a live progress bar.
+6. **Cleanup**: A daily cleanup task removes completed/failed jobs older
+   than `VPN_IMPORT_RETENTION_DAYS` (default 30 days).
+
+Queue response example:
 ```json
 {
   "success": true,
-  "imported_count": 150,
-  "skipped_count": 5,
-  "skipped_reasons": [
-    "Duplicate IP: 10.20.200.100"
-  ]
+  "message": "Import queued. Poll /api/vpn/import-jobs/42 for status.",
+  "job_id": 42,
+  "status": "pending"
 }
 ```
+
+Status response example (mid-import):
+```json
+{
+  "id": 42,
+  "status": "processing",
+  "filename": "wg-configs.zip",
+  "total_files": 2000,
+  "processed_files": 840,
+  "imported_count": 832,
+  "skipped_count": 8,
+  "error_count": 0,
+  "errors": [],
+  "started_at": "2026-04-09T14:03:11Z"
+}
+```
+
+Related endpoints:
+- `GET /api/vpn/import-jobs` — recent jobs (history)
+- `POST /api/vpn/import-jobs/{id}/retry` — retry a failed job
+- `DELETE /api/vpn/import-jobs/{id}` — delete a completed/failed job
 
 ---
 

@@ -119,6 +119,9 @@ Multi-stage reminder system for participants who haven't confirmed. The backgrou
 | `VPN_SERVER_ENDPOINT` | No | Yes | No | `""` | WireGuard server address and port. |
 | `VPN_DNS_SERVERS` | No | Yes | No | `10.20.200.1` | DNS servers pushed to VPN clients. |
 | `VPN_ALLOWED_IPS` | No | Yes | No | `10.0.0.0/8,fd00:a::/32` | IP ranges routed through the VPN tunnel. |
+| `VPN_IMPORT_MAX_FILE_SIZE_MB` | No | Yes | No | `20` | Maximum size in MB for ZIP uploads to `/api/vpn/import`. |
+| `VPN_IMPORT_RETENTION_DAYS` | No | Yes | No | `30` | How long to keep completed/failed VPN import job rows before the daily cleanup task removes them. |
+| `VPN_IMPORT_R2_PARALLELISM` | No | Yes | No | `10` | Maximum concurrent R2 uploads per import chunk. Lower this if R2 rate-limits or the host is memory-constrained. |
 
 **Notes:**
 - Only needed if generating WireGuard VPN credentials for participants

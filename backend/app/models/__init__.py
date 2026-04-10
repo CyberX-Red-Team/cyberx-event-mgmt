@@ -2,6 +2,7 @@
 from app.models.role import Role, BaseType
 from app.models.user import User, UserRole
 from app.models.vpn import VPNCredential
+from app.models.vpn_import_job import VPNImportJob, VPNImportJobStatus
 from app.models.session import Session
 from app.models.audit_log import AuditLog, EmailEvent, VPNRequest
 from app.models.event import Event, EventParticipation, ParticipationStatus
@@ -28,6 +29,8 @@ __all__ = [
     "User",
     "UserRole",
     "VPNCredential",
+    "VPNImportJob",
+    "VPNImportJobStatus",
     "Session",
     "AuditLog",
     "EmailEvent",
