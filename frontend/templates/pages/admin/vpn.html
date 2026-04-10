@@ -1082,6 +1082,74 @@ function getSelectedVPNIds() {
     return Array.from(checkboxes).map(cb => parseInt(cb.value));
 }
 
+// Tracks the current bulk-delete poll loop so a new delete cancels any
+// previous one cleanly.
+let _vpnDeletePollHandle = null;
+
+async function _vpnDeletePollOnce(jobId) {
+    const resp = await csrfFetch(`/api/vpn/delete-jobs/${jobId}`);
+    if (!resp.ok) {
+        throw new Error(`Status fetch failed: HTTP ${resp.status}`);
+    }
+    return await resp.json();
+}
+
+function _vpnDeleteShowProgressToast(job) {
+    const total = job.total_credentials;
+    const processed = job.processed_credentials || 0;
+    if (total && total > 0) {
+        return `Deleting ${processed} / ${total} (Deleted: ${job.deleted_count}, Failed: ${job.failed_count})`;
+    }
+    if (job.status === 'pending') {
+        return 'Queued — waiting for worker to pick it up...';
+    }
+    return 'Processing...';
+}
+
+function _vpnDeleteStartPolling(jobId, label) {
+    if (_vpnDeletePollHandle !== null) {
+        clearInterval(_vpnDeletePollHandle);
+        _vpnDeletePollHandle = null;
+    }
+
+    showToast(`${label} — job queued`, 'info');
+
+    _vpnDeletePollHandle = setInterval(async () => {
+        let job;
+        try {
+            job = await _vpnDeletePollOnce(jobId);
+        } catch (e) {
+            console.error('Delete poll error:', e);
+            return;
+        }
+
+        if (job.status === 'completed') {
+            clearInterval(_vpnDeletePollHandle);
+            _vpnDeletePollHandle = null;
+            const failedSuffix = job.failed_count > 0
+                ? ` (${job.failed_count} failed)`
+                : '';
+            showToast(
+                `Deleted ${job.deleted_count} VPN credential(s)${failedSuffix}`,
+                'success'
+            );
+            loadVPNCredentials(1);
+            loadStats();
+        } else if (job.status === 'failed') {
+            clearInterval(_vpnDeletePollHandle);
+            _vpnDeletePollHandle = null;
+            showToast(
+                `Bulk delete failed: ${job.last_error || 'Unknown error'}`,
+                'danger'
+            );
+        } else if (job.status === 'processing') {
+            // Render a quiet status update; the toast may be debounced.
+            const msg = _vpnDeleteShowProgressToast(job);
+            showToast(msg, 'info');
+        }
+    }, 2000);
+}
+
 async function deleteSelectedVPNs() {
     const vpnIds = getSelectedVPNIds();
 
@@ -1102,20 +1170,14 @@ async function deleteSelectedVPNs() {
 
         const data = await response.json();
 
-        if (response.ok && data.success) {
-            showToast(`Successfully deleted ${data.deleted_count} VPN credential(s)`, 'success');
-            if (data.failed_ids && data.failed_ids.length > 0) {
-                showToast(`Failed to delete ${data.failed_ids.length} credential(s)`, 'warning');
-            }
-            // Reload the table and stats
-            loadVPNCredentials(currentPage);
-            loadStats();
+        if (response.ok && data.success && data.job_id) {
+            _vpnDeleteStartPolling(data.job_id, `Bulk delete ${vpnIds.length} credential(s)`);
         } else {
-            showToast(data.message || 'Failed to delete VPN credentials', 'danger');
+            showToast(data.detail || data.message || 'Failed to queue bulk delete', 'danger');
         }
     } catch (error) {
-        console.error('Error deleting VPN credentials:', error);
-        showToast('An error occurred while deleting VPN credentials', 'danger');
+        console.error('Error queueing bulk delete:', error);
+        showToast('An error occurred while queueing bulk delete', 'danger');
     }
 }
 
@@ -1138,17 +1200,14 @@ async function deleteAllVPNs() {
 
         const data = await response.json();
 
-        if (response.ok && data.success) {
-            showToast(`Successfully deleted all ${data.deleted_count} VPN credential(s)`, 'success');
-            // Reload the table and stats
-            loadVPNCredentials(1);
-            loadStats();
+        if (response.ok && data.success && data.job_id) {
+            _vpnDeleteStartPolling(data.job_id, `Delete all ${totalCount} credential(s)`);
         } else {
-            showToast(data.message || 'Failed to delete VPN credentials', 'danger');
+            showToast(data.detail || data.message || 'Failed to queue delete-all', 'danger');
         }
     } catch (error) {
-        console.error('Error deleting all VPN credentials:', error);
-        showToast('An error occurred while deleting VPN credentials', 'danger');
+        console.error('Error queueing delete-all:', error);
+        showToast('An error occurred while queueing delete-all', 'danger');
     }
 }
 
