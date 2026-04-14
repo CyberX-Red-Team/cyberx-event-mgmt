@@ -918,9 +918,20 @@
                                             <label class="form-label fw-semibold">IP Address</label>
                                             <input type="text" class="form-control" id="cx_redir_ip" readonly>
                                         </div>
-                                        <div class="col-12">
+                                        <div class="col-md-8">
                                             <label class="form-label fw-semibold">nginx Stream Directory</label>
                                             <input type="text" class="form-control" id="cx_stream_dir" value="/etc/nginx/stream.d">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-semibold">Visibility</label>
+                                            <select class="form-select" id="cx_visibility">
+                                                <option value="private">Private (only I can see it)</option>
+                                                <option value="public">Public (visible to all participants)</option>
+                                            </select>
+                                            <div class="form-text text-warning d-none" id="cx_visibility_locked_hint">
+                                                The source instance is public, so the redirector management row must also be public.
+                                                Make the instance private first before setting this to private.
+                                            </div>
                                         </div>
                                         <div class="col-12">
                                             <label class="form-label fw-semibold">Notes <span class="text-muted small">(optional)</span></label>
@@ -928,6 +939,7 @@
                                         </div>
                                     </div>
                                     <input type="hidden" id="cx_selected_instance_id">
+                                    <input type="hidden" id="cx_selected_instance_visibility" value="private">
                                 </div>
                             </div>
                             <div id="addCyberXError" class="alert alert-danger mt-3 d-none"></div>
@@ -2434,14 +2446,18 @@ async function openAddCyberX() {
         if (instances.length > 0) {
             var container = document.getElementById('cx_instances_container');
             container.innerHTML = instances.map(function(inst, i) {
+                var visibility = inst.visibility || 'private';
+                var publicBadge = visibility === 'public' ? '<span class="badge bg-success ms-1">public</span>' : '';
                 return '<div class="form-check mb-2">' +
                     '<input class="form-check-input" type="radio" name="cx_choice" id="cx_inst_' + inst.id + '" value="' + inst.id + '"' +
+                    ' data-visibility="' + escapeHtml(visibility) + '"' +
                     ' onchange="document.getElementById(\'cx_provision_section\').classList.add(\'d-none\');"' +
                     (i === 0 ? ' checked' : '') + '>' +
                     '<label class="form-check-label" for="cx_inst_' + inst.id + '">' +
                     '<strong>' + escapeHtml(inst.name) + '</strong>' +
                     '<span class="text-muted ms-2">' + escapeHtml(inst.ip_address || 'IP pending') + '</span>' +
                     '<span class="badge bg-success ms-1">' + escapeHtml(inst.status) + '</span>' +
+                    publicBadge +
                     '</label></div>';
             }).join('');
             document.getElementById('cx_provision_new').addEventListener('change', function() {
@@ -2509,7 +2525,13 @@ async function cyberXNext() {
         // is only reachable when noInstancesMode is false.
         _cxSelectedInstanceId = parseInt(selected.value);
         var label = selected.closest('.form-check').querySelector('label');
-        _cxShowConfirm(_cxSelectedInstanceId, label.querySelector('strong').textContent, label.querySelector('.text-muted').textContent.trim());
+        var instVisibility = selected.dataset.visibility || 'private';
+        _cxShowConfirm(
+            _cxSelectedInstanceId,
+            label.querySelector('strong').textContent,
+            label.querySelector('.text-muted').textContent.trim(),
+            instVisibility,
+        );
     }
 }
 
@@ -2525,7 +2547,7 @@ function _cxPollInstance(instanceId) {
                 clearInterval(_cxPollTimer); _cxPollTimer = null;
                 _cxSelectedInstanceId = data.id;
                 document.getElementById('cx_provisioning').classList.add('d-none');
-                _cxShowConfirm(data.id, data.name, data.ip_address || '');
+                _cxShowConfirm(data.id, data.name, data.ip_address || '', data.visibility || 'private');
             } else if (data.status === 'ERROR') {
                 clearInterval(_cxPollTimer); _cxPollTimer = null;
                 var errEl = document.getElementById('addCyberXError');
@@ -2536,12 +2558,28 @@ function _cxPollInstance(instanceId) {
     }, 5000);
 }
 
-function _cxShowConfirm(instanceId, name, ip) {
+function _cxShowConfirm(instanceId, name, ip, instanceVisibility) {
+    instanceVisibility = instanceVisibility || 'private';
     document.getElementById('cx_selected_instance_id').value = instanceId;
+    document.getElementById('cx_selected_instance_visibility').value = instanceVisibility;
     document.getElementById('cx_redir_name').value = name;
     document.getElementById('cx_redir_ip').value = ip;
     document.getElementById('cx_stream_dir').value = '/etc/nginx/stream.d';
     document.getElementById('cx_notes').value = '';
+
+    // Visibility parity: a public instance forces the redirector to public.
+    var visSelect = document.getElementById('cx_visibility');
+    var visHint = document.getElementById('cx_visibility_locked_hint');
+    if (instanceVisibility === 'public') {
+        visSelect.value = 'public';
+        visSelect.disabled = true;
+        visHint.classList.remove('d-none');
+    } else {
+        visSelect.value = 'private';
+        visSelect.disabled = false;
+        visHint.classList.add('d-none');
+    }
+
     document.getElementById('cx_confirm_form').classList.remove('d-none');
     document.getElementById('cx_submit_btn').classList.remove('d-none');
     refreshFeatherIcons();
@@ -2567,6 +2605,7 @@ async function submitCyberX() {
         name: document.getElementById('cx_redir_name').value.trim() || null,
         nginx_stream_dir: document.getElementById('cx_stream_dir').value.trim(),
         notes: document.getElementById('cx_notes').value.trim() || null,
+        visibility: document.getElementById('cx_visibility').value,
     };
     try {
         var resp = await csrfFetch('/api/redirectors/from-instance', {

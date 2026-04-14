@@ -121,6 +121,7 @@ class AvailableInstanceOut(BaseModel):
     ip_address: Optional[str] = None
     provider: str
     status: str
+    visibility: str = "private"
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -132,6 +133,7 @@ class InstanceStatusOut(BaseModel):
     name: str
     ip_address: Optional[str] = None
     status: str
+    visibility: str = "private"
 
     model_config = {"from_attributes": True}
 

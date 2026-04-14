@@ -682,6 +682,7 @@ async def provision_redirector_instance(
         name=instance.name,
         ip_address=instance.ip_address,
         status=instance.status,
+        visibility=instance.visibility or "private",
     )
 
 
@@ -711,6 +712,7 @@ async def get_instance_status(
         name=instance.name,
         ip_address=instance.ip_address,
         status=instance.status,
+        visibility=instance.visibility or "private",
     )
 
 
