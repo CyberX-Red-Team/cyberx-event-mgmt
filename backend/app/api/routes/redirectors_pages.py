@@ -54,7 +54,11 @@ async def redirector_detail_page(
     if not redirector:
         raise HTTPException(status_code=404, detail="Redirector not found.")
     # Owner check: non-admins can only view their own redirectors
-    if not current_user.has_permission("redirectors.view_all") and redirector.owner_id != current_user.id:
+    if (
+        not current_user.has_permission("redirectors.view_all")
+        and redirector.owner_id != current_user.id
+        and redirector.visibility != "public"
+    ):
         raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
 
     return templates.TemplateResponse(
@@ -81,7 +85,11 @@ async def participant_redirector_detail_page(
     redirector = await svc.get_redirector(redirector_id)
     if not redirector:
         raise HTTPException(status_code=404, detail="Redirector not found.")
-    if not current_user.has_permission("redirectors.view_all") and redirector.owner_id != current_user.id:
+    if (
+        not current_user.has_permission("redirectors.view_all")
+        and redirector.owner_id != current_user.id
+        and redirector.visibility != "public"
+    ):
         raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
 
     return templates.TemplateResponse(

@@ -716,9 +716,16 @@
             <!-- Redirectors Card -->
             <div id="redirectorsCard" style="display: none;">
                 <div class="card shadow-sm mb-4">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i data-feather="shuffle" class="me-2"></i>Redirectors</h5>
-                        <span class="badge bg-primary" id="redirectorCountBadge">0</span>
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center gap-3 flex-grow-1">
+                                <h5 class="mb-0"><i data-feather="shuffle" class="me-2"></i>Redirectors</h5>
+                                <span class="badge bg-primary" id="redirectorCountBadge">0</span>
+                            </div>
+                            <button class="btn btn-sm btn-outline-primary ms-3" onclick="refreshRedirectors()">
+                                <i data-feather="refresh-cw" class="me-1"></i> Refresh
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center mb-3" id="redirectorAddRow">
@@ -750,6 +757,7 @@
                                             <th>IP</th>
                                             <th>Status</th>
                                             <th>Streams</th>
+                                            <th>Visibility</th>
                                             <th></th>
                                         </tr>
                                     </thead>
@@ -784,15 +792,13 @@
                                         <input type="text" class="form-control" id="redir_add_name" placeholder="e.g. prod-redirector-01" required>
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label fw-semibold">IP Address <span class="text-danger">*</span>
+                                        <label class="form-label fw-semibold">IP Address or Hostname <span class="text-danger">*</span>
                                             <i data-feather="info" class="ms-1 text-info" style="width:14px;height:14px;cursor:pointer;"
                                                data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top"
-                                               title="IP Address Requirements"
-                                               data-bs-content="Enter a publicly routable IPv4 or IPv6 address (e.g. 203.0.113.10). Domain names and FQDNs are not accepted. Private/non-routable addresses (10.x, 172.16-31.x, 192.168.x) will be rejected."></i>
+                                               title="Host"
+                                               data-bs-content="Enter an IPv4/IPv6 address or a hostname the CyberX server can reach over SSH. Public, private (10.x, 172.16-31.x, 192.168.x), and DNS names are all accepted."></i>
                                         </label>
-                                        <input type="text" class="form-control" id="redir_add_ip" placeholder="203.0.113.10" required
-                                               onblur="checkIPField(this, 'redirAddIpWarn')">
-                                        <div id="redirAddIpWarn" class="form-text text-warning d-none"></div>
+                                        <input type="text" class="form-control" id="redir_add_ip" placeholder="203.0.113.10 or redir.lab.example.com" required>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label fw-semibold">SSH Port</label>
@@ -2026,40 +2032,6 @@ function parseApiError(detail, fallback) {
     return String(detail);
 }
 
-function isPrivateIP(ip) {
-    var parts = ip.split('.');
-    if (parts.length === 4 && parts.every(function(p) { return /^\d{1,3}$/.test(p); })) {
-        var a = Number(parts[0]), b = Number(parts[1]);
-        if (a === 10) return true;
-        if (a === 172 && b >= 16 && b <= 31) return true;
-        if (a === 192 && b === 168) return true;
-        if (a === 100 && b >= 64 && b <= 127) return true;
-        if (a === 169 && b === 254) return true;
-        if (a === 127) return true;
-    }
-    if (ip === '::1') return true;
-    var lower = ip.toLowerCase();
-    if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80')) return true;
-    return false;
-}
-
-function looksLikeFQDN(val) { return /[a-zA-Z]/.test(val) && val.includes('.'); }
-
-function checkIPField(input, warnId) {
-    var val = input.value.trim();
-    var warnEl = document.getElementById(warnId);
-    if (!val) { warnEl.classList.add('d-none'); return; }
-    if (looksLikeFQDN(val)) {
-        warnEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
-        warnEl.classList.remove('d-none');
-    } else if (isPrivateIP(val)) {
-        warnEl.textContent = 'This is a private/non-routable address. The redirector must be reachable over the internet.';
-        warnEl.classList.remove('d-none');
-    } else {
-        warnEl.classList.add('d-none');
-    }
-}
-
 // =============================================================================
 // CPE Certificates Functions
 // =============================================================================
@@ -2313,6 +2285,29 @@ var _cyberXModal = null;
 var _cxPollTimer = null;
 var _cxSelectedInstanceId = null;
 
+async function refreshRedirectors() {
+    var refreshBtn = document.querySelector('[onclick="refreshRedirectors()"]');
+    var originalHtml = refreshBtn ? refreshBtn.innerHTML : '';
+    try {
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<i data-feather="refresh-cw" class="me-1 rotating"></i> Refreshing...';
+            refreshFeatherIcons();
+        }
+        // Background sync task handles SSH status updates every 2 minutes;
+        // this just re-reads the list from the database.
+        await loadRedirectors();
+    } catch (error) {
+        console.error('Failed to refresh redirectors:', error);
+    } finally {
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = originalHtml;
+            refreshFeatherIcons();
+        }
+    }
+}
+
 async function loadRedirectors() {
     try {
         var resp = await csrfFetch('/api/redirectors/');
@@ -2344,14 +2339,22 @@ function renderRedirectors(redirectors) {
         var typeBadge = r.instance_id
             ? '<span class="badge bg-info ms-1">CyberX</span>'
             : '<span class="badge bg-secondary ms-1">BYOD</span>';
+        var visibility = r.visibility || 'private';
+        var visBadge = visibility === 'public' ? 'bg-success' : 'bg-secondary';
+        var isOwner = r.owner_id === currentUser.id;
+        var canManage = isOwner || hasPermission('redirectors.view_all');
+        var ownerSuffix = (visibility !== 'private' && r.owner_username && !isOwner)
+            ? '<br><small>by ' + escapeHtml(r.owner_username) + '</small>'
+            : '';
         return '<tr>' +
             '<td><a href="/portal/redirectors/' + escapeHtml(r.id) + '" class="fw-semibold text-decoration-none" style="color:var(--bs-danger,#dc3545);">' + escapeHtml(r.name) + '</a>' + typeBadge + '</td>' +
             '<td class="text-muted">' + escapeHtml(r.current_ip) + '</td>' +
             '<td><span class="badge ' + cls + '">' + escapeHtml(r.status) + '</span></td>' +
             '<td><span class="badge bg-secondary rounded-pill">' + r.stream_count + '</span></td>' +
+            '<td><span class="badge ' + visBadge + '">' + escapeHtml(visibility) + '</span>' + ownerSuffix + '</td>' +
             '<td class="text-end">' +
                 '<a href="/portal/redirectors/' + escapeHtml(r.id) + '" class="btn btn-sm btn-outline-secondary me-1" title="Manage"><i data-feather="settings"></i></a>' +
-                '<button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteRedirector(\'' + escapeHtml(r.id) + '\', \'' + escapeHtml(r.name) + '\')"><i data-feather="trash-2"></i></button>' +
+                (canManage ? '<button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteRedirector(\'' + escapeHtml(r.id) + '\', \'' + escapeHtml(r.name) + '\')"><i data-feather="trash-2"></i></button>' : '') +
             '</td>' +
         '</tr>';
     }).join('');
@@ -2385,12 +2388,6 @@ async function submitAddBYOD() {
     }
     if (!payload.ssh_private_key) {
         errEl.textContent = 'SSH private key is required.'; errEl.classList.remove('d-none'); return;
-    }
-    if (looksLikeFQDN(payload.current_ip)) {
-        errEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).'; errEl.classList.remove('d-none'); return;
-    }
-    if (isPrivateIP(payload.current_ip)) {
-        errEl.textContent = 'Private/non-routable IP addresses are not permitted. The redirector must be reachable over the internet.'; errEl.classList.remove('d-none'); return;
     }
     try {
         var resp = await csrfFetch('/api/redirectors/', {

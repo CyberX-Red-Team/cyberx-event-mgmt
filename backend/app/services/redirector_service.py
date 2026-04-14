@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,26 +27,47 @@ class RedirectorService:
     # Redirectors
     # -------------------------------------------------------------------------
 
-    async def list_redirectors(self, owner_id: int = None) -> List[Redirector]:
-        """Return redirectors ordered by name, with stream_configs eager-loaded.
+    async def list_redirectors(
+        self,
+        owner_id: int = None,
+        include_public: bool = False,
+    ) -> List[Redirector]:
+        """Return redirectors ordered by name, with stream_configs and owner eager-loaded.
 
-        If owner_id is provided, only return redirectors owned by that user.
+        Scoping:
+          - owner_id=None → all redirectors (admin view).
+          - owner_id set, include_public=False → only this user's redirectors.
+          - owner_id set, include_public=True → user's own + visibility='public'.
         """
         query = (
             select(Redirector)
-            .options(selectinload(Redirector.stream_configs))
+            .options(
+                selectinload(Redirector.stream_configs),
+                selectinload(Redirector.owner),
+            )
             .order_by(Redirector.name)
         )
         if owner_id is not None:
-            query = query.where(Redirector.owner_id == owner_id)
+            if include_public:
+                query = query.where(
+                    or_(
+                        Redirector.owner_id == owner_id,
+                        Redirector.visibility == "public",
+                    )
+                )
+            else:
+                query = query.where(Redirector.owner_id == owner_id)
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
     async def get_redirector(self, redirector_id: str) -> Optional[Redirector]:
-        """Return a redirector by ID with stream_configs eager-loaded, or None."""
+        """Return a redirector by ID with stream_configs and owner eager-loaded, or None."""
         result = await self.session.execute(
             select(Redirector)
-            .options(selectinload(Redirector.stream_configs))
+            .options(
+                selectinload(Redirector.stream_configs),
+                selectinload(Redirector.owner),
+            )
             .where(Redirector.id == redirector_id)
         )
         return result.scalar_one_or_none()
@@ -81,12 +102,15 @@ class RedirectorService:
             notes=data.get("notes"),
             owner_id=data.get("owner_id"),
             instance_id=data.get("instance_id"),
+            visibility=data.get("visibility", "private"),
         )
         self.session.add(redirector)
         await self.session.commit()
         await self.session.refresh(redirector)
-        # Refresh with stream_configs loaded so stream_count property works
-        await self.session.refresh(redirector, attribute_names=["stream_configs"])
+        # Refresh relationships so stream_count and owner are available
+        await self.session.refresh(
+            redirector, attribute_names=["stream_configs", "owner"]
+        )
         return redirector
 
     async def clear_byod_key(self, redirector: Redirector) -> Redirector:
@@ -106,7 +130,10 @@ class RedirectorService:
         Update a redirector from a dict of changed fields (from model_dump(exclude_unset=True)).
         SSH key fields: only updated when non-empty string is provided.
         """
-        simple_fields = ("name", "current_ip", "ssh_port", "ssh_username", "nginx_stream_dir", "notes")
+        simple_fields = (
+            "name", "current_ip", "ssh_port", "ssh_username",
+            "nginx_stream_dir", "notes", "visibility",
+        )
         for field in simple_fields:
             if field in data and data[field] is not None:
                 setattr(redirector, field, data[field])
@@ -125,7 +152,9 @@ class RedirectorService:
 
         await self.session.commit()
         await self.session.refresh(redirector)
-        await self.session.refresh(redirector, attribute_names=["stream_configs"])
+        await self.session.refresh(
+            redirector, attribute_names=["stream_configs", "owner"]
+        )
         return redirector
 
     async def delete_redirector(self, redirector: Redirector) -> None:

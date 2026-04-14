@@ -926,6 +926,23 @@ class SSHService:
                           else "No stream block in nginx config — auto-fix will add it.",
             })
 
+            # 3c. Default HTTP site disabled (sites-enabled/default absent).
+            # A default HTTP server occupies port 80 and can interfere with
+            # stream configs that expect the port to be free.
+            _, _, def_code = self._exec(
+                client, "test -e /etc/nginx/sites-enabled/default"
+            )
+            default_site_disabled = def_code != 0
+            checks.append({
+                "id": "default_site",
+                "label": "Default HTTP site disabled",
+                "ok": default_site_disabled,
+                "detail": "sites-enabled/default is not active."
+                          if default_site_disabled
+                          else "nginx is serving a default HTTP site on port 80 "
+                               "via sites-enabled/default — auto-fix will remove it.",
+            })
+
             # 4. nginx -t (runs nginx config test — safe, read-only)
             sudo_n = "" if self.username == "root" else "sudo -n "
             out4, _, code = self._exec(
@@ -1070,6 +1087,8 @@ class SSHService:
             f"    printf '\\nstream {{\\n    include {safe_dir}/*.conf;\\n}}\\n'"
             " >> /etc/nginx/nginx.conf\n"
             "fi\n"
+            "# Remove default HTTP site so nginx doesn't hold port 80\n"
+            "rm -f /etc/nginx/sites-enabled/default\n"
             "# Disable systemd-resolved stub listener if it holds port 53\n"
             "if ss -tulnp 2>/dev/null | grep ':53 ' | grep -q 'systemd-resolve\\|resolved'; then\n"
             "    # Extract real DNS servers from netplan or resolv.conf\n"

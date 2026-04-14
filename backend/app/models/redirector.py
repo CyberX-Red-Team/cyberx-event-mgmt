@@ -77,6 +77,9 @@ class Redirector(Base):
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     owner = relationship("User", foreign_keys=[owner_id])
 
+    # Visibility — "private" (owner only) or "public" (visible to all participants)
+    visibility = Column(String(20), nullable=False, default="private", index=True)
+
     # Updated by test-connection and deploy operations
     status = Column(String(20), nullable=False, default=RedirectorStatus.UNKNOWN.value)
     os_info = Column(JSON, nullable=True)  # Populated by test-connection: {os, arch, kernel, uptime, ...}

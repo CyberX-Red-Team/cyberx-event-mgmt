@@ -72,18 +72,26 @@ router = APIRouter(prefix="/api/redirectors", tags=["Redirectors"])
 def _build_redirector_out(
     redirector: Redirector,
     stream_count: int | None = None,
+    owner_username: str | None = None,
 ) -> RedirectorOut:
     """Build RedirectorOut from ORM object, always redacting key fields.
 
-    stream_count can be passed explicitly to avoid lazy-loading the
-    stream_configs relationship (which fails outside a greenlet context
-    after session commits have expired the ORM object).
+    stream_count and owner_username can be passed explicitly to avoid
+    lazy-loading the corresponding relationships (which fails outside a
+    greenlet context after session commits have expired the ORM object).
     """
     if stream_count is None:
         try:
             stream_count = redirector.stream_count
         except Exception:
             stream_count = 0
+    if owner_username is None:
+        try:
+            owner = redirector.owner
+            if owner is not None:
+                owner_username = owner.pandas_username or owner.email
+        except Exception:
+            owner_username = None
     return RedirectorOut(
         id=redirector.id,
         name=redirector.name,
@@ -104,6 +112,8 @@ def _build_redirector_out(
         created_at=redirector.created_at,
         updated_at=redirector.updated_at,
         owner_id=redirector.owner_id,
+        owner_username=owner_username,
+        visibility=redirector.visibility or "private",
     )
 
 
@@ -176,13 +186,26 @@ async def _get_redirector_or_404(
 
 
 async def _get_authorized_redirector(
-    redirector_id: str, current_user: User, svc: RedirectorService
+    redirector_id: str,
+    current_user: User,
+    svc: RedirectorService,
+    *,
+    allow_public: bool = False,
 ) -> Redirector:
-    """Fetch redirector and verify the user has access (owner or admin)."""
+    """Fetch redirector and verify the user has access.
+
+    Admins (redirectors.view_all) always pass. Owners always pass. When
+    allow_public=True, any user who can view the list may read a public
+    redirector (used by read-only routes like GET).
+    """
     redir = await _get_redirector_or_404(redirector_id, svc)
-    if not current_user.has_permission("redirectors.view_all") and redir.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
-    return redir
+    if current_user.has_permission("redirectors.view_all"):
+        return redir
+    if redir.owner_id == current_user.id:
+        return redir
+    if allow_public and redir.visibility == "public":
+        return redir
+    raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
 
 
 async def _get_stream_or_404(
@@ -203,12 +226,18 @@ async def list_redirectors(
     current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """List redirectors. Admins see all; others see only their own."""
+    """List redirectors.
+
+    Admins (redirectors.view_all) see all rows regardless of visibility.
+    Other users see their own redirectors plus any redirector marked public.
+    """
     svc = RedirectorService(db)
     if current_user.has_permission("redirectors.view_all"):
         redirectors = await svc.list_redirectors()
     else:
-        redirectors = await svc.list_redirectors(owner_id=current_user.id)
+        redirectors = await svc.list_redirectors(
+            owner_id=current_user.id, include_public=True
+        )
     return RedirectorListOut(
         redirectors=[_build_redirector_out(r) for r in redirectors],
         total=len(redirectors),
@@ -475,6 +504,7 @@ async def create_from_instance(
         "notes": payload.notes,
         "owner_id": current_user.id,
         "instance_id": instance.id,
+        "visibility": payload.visibility,
     })
 
     # Best-effort connection test
@@ -612,9 +642,15 @@ async def get_redirector(
     current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a single redirector with its stream count."""
+    """Get a single redirector with its stream count.
+
+    Non-owners may fetch a redirector when its visibility is 'public';
+    mutating routes below still require owner or admin permissions.
+    """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True
+    )
     return _build_redirector_out(redirector)
 
 

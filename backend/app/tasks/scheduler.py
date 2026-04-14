@@ -51,6 +51,7 @@ async def start_scheduler():
     from app.tasks.session_cleanup import schedule_session_cleanup_job
     from app.tasks.invitation_reminders import schedule_invitation_reminder_job
     from app.tasks.instance_status_sync import schedule_instance_status_sync_job
+    from app.tasks.redirector_status_sync import schedule_redirector_status_sync_job
     from app.tasks.license_slot_reaper import schedule_license_slot_reaper_job
     from app.tasks.keycloak_sync import schedule_keycloak_sync_job
     from app.tasks.agent_task_timeout import schedule_agent_task_timeout_job
@@ -70,6 +71,7 @@ async def start_scheduler():
     schedule_session_cleanup_job(sched)
     schedule_invitation_reminder_job(sched)
     schedule_instance_status_sync_job(sched)
+    schedule_redirector_status_sync_job(sched)
     schedule_license_slot_reaper_job(sched)
     schedule_keycloak_sync_job(sched)
     schedule_agent_task_timeout_job(sched)
