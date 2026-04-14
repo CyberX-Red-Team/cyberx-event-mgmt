@@ -53,13 +53,14 @@
                             <th>SSH User:Port</th>
                             <th>Status</th>
                             <th>Streams</th>
+                            <th>Visibility</th>
                             <th>Last Deployed</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="redirectorsBody">
                         <tr id="loadingRow">
-                            <td colspan="7" class="text-center text-muted py-4">
+                            <td colspan="8" class="text-center text-muted py-4">
                                 <div class="spinner-border spinner-border-sm me-2" role="status"></div>
                                 Loading redirectors...
                             </td>
@@ -95,15 +96,13 @@
                             <input type="text" class="form-control" id="add_name" placeholder="e.g. prod-redirector-01" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">IP Address <span class="text-danger">*</span>
+                            <label class="form-label fw-semibold">IP Address or Hostname <span class="text-danger">*</span>
                                 <i data-feather="info" class="ms-1 text-info" style="width:14px;height:14px;cursor:pointer;"
                                    data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top"
-                                   title="IP Address Requirements"
-                                   data-bs-content="Enter a publicly routable IPv4 or IPv6 address (e.g. 203.0.113.10). Domain names and FQDNs are not accepted. Private/non-routable addresses (10.x, 172.16-31.x, 192.168.x) will be rejected."></i>
+                                   title="Host"
+                                   data-bs-content="IPv4/IPv6 address or hostname the CyberX server can reach over SSH. Public, private, and DNS names are all accepted."></i>
                             </label>
-                            <input type="text" class="form-control" id="add_ip" placeholder="203.0.113.10" required
-                                   onblur="checkIPField(this, 'addBYODIpWarn')">
-                            <div id="addBYODIpWarn" class="form-text text-warning d-none"></div>
+                            <input type="text" class="form-control" id="add_ip" placeholder="203.0.113.10 or redir.lab.example.com" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">SSH Port</label>
@@ -234,9 +233,20 @@
                                 <label class="form-label fw-semibold">IP Address</label>
                                 <input type="text" class="form-control" id="cx_redir_ip" readonly>
                             </div>
-                            <div class="col-12">
+                            <div class="col-md-8">
                                 <label class="form-label fw-semibold">nginx Stream Directory</label>
                                 <input type="text" class="form-control" id="cx_stream_dir" value="/etc/nginx/stream.d">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Visibility</label>
+                                <select class="form-select" id="cx_visibility">
+                                    <option value="private">Private (only I can see it)</option>
+                                    <option value="public">Public (visible to all participants)</option>
+                                </select>
+                                <div class="form-text text-warning d-none" id="cx_visibility_locked_hint">
+                                    The source instance is public, so the redirector management row must also be public.
+                                    Make the instance private first before setting this to private.
+                                </div>
                             </div>
                             <div class="col-12">
                                 <label class="form-label fw-semibold">Notes <span class="text-muted small">(optional)</span></label>
@@ -244,6 +254,7 @@
                             </div>
                         </div>
                         <input type="hidden" id="cx_selected_instance_id">
+                        <input type="hidden" id="cx_selected_instance_visibility" value="private">
                     </div>
                 </div>
 
@@ -283,15 +294,13 @@
                             <input type="text" class="form-control" id="edit_name" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">IP Address
+                            <label class="form-label fw-semibold">IP Address or Hostname
                                 <i data-feather="info" class="ms-1 text-info" style="width:14px;height:14px;cursor:pointer;"
                                    data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top"
-                                   title="IP Address Requirements"
-                                   data-bs-content="Enter a publicly routable IPv4 or IPv6 address (e.g. 203.0.113.10). Domain names and FQDNs are not accepted. Private/non-routable addresses (10.x, 172.16-31.x, 192.168.x) will be rejected."></i>
+                                   title="Host"
+                                   data-bs-content="IPv4/IPv6 address or hostname the CyberX server can reach over SSH. Public, private, and DNS names are all accepted."></i>
                             </label>
-                            <input type="text" class="form-control" id="edit_ip" required
-                                   onblur="checkIPField(this, 'editIpWarn')">
-                            <div id="editIpWarn" class="form-text text-warning d-none"></div>
+                            <input type="text" class="form-control" id="edit_ip" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">SSH Port</label>
@@ -317,9 +326,20 @@
                                 <div class="form-text">Leave blank to keep existing. Send a space to clear the passphrase.</div>
                             </div>
                         </div>
-                        <div class="col-12">
+                        <div class="col-md-8">
                             <label class="form-label fw-semibold">nginx Stream Directory</label>
                             <input type="text" class="form-control" id="edit_stream_dir">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Visibility</label>
+                            <select class="form-select" id="edit_visibility">
+                                <option value="private">Private (only I can see it)</option>
+                                <option value="public">Public (visible to all participants)</option>
+                            </select>
+                            <div class="form-text text-warning d-none" id="edit_visibility_locked_hint">
+                                The linked instance is public, so this redirector must also be public.
+                                Make the instance private first (delete the redirector to unblock the change) before setting this to private.
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">Notes</label>
@@ -417,14 +437,14 @@ async function loadRedirectors() {
         renderTable(_redirectors);
     } catch (err) {
         document.getElementById('redirectorsBody').innerHTML =
-            `<tr><td colspan="7" class="text-center text-danger py-4">Failed to load redirectors: ${escHtml(err.message)}</td></tr>`;
+            `<tr><td colspan="8" class="text-center text-danger py-4">Failed to load redirectors: ${escHtml(err.message)}</td></tr>`;
     }
 }
 
 function renderTable(redirectors) {
     const tbody = document.getElementById('redirectorsBody');
     if (!redirectors.length) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-5">
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-5">
             No redirectors yet. Click <strong>Add Redirector</strong> to get started.
         </td></tr>`;
         feather.replace();
@@ -434,6 +454,11 @@ function renderTable(redirectors) {
         const typeBadge = r.instance_id
             ? '<span class="badge bg-info ms-1" title="CyberX provisioned">CyberX</span>'
             : '<span class="badge bg-secondary ms-1" title="Bring Your Own Device">BYOD</span>';
+        const visibility = r.visibility || 'private';
+        const visCls = visibility === 'public' ? 'bg-success' : 'bg-secondary';
+        const ownerSuffix = (visibility !== 'private' && r.owner_username)
+            ? `<br><small class="text-muted">by ${escHtml(r.owner_username)}</small>`
+            : '';
         return `
         <tr>
             <td>
@@ -448,6 +473,7 @@ function renderTable(redirectors) {
             </td>
             <td>${statusBadge(r.status)}</td>
             <td><span class="badge bg-secondary rounded-pill">${r.stream_count}</span></td>
+            <td><span class="badge ${visCls}">${escHtml(visibility)}</span>${ownerSuffix}</td>
             <td class="text-muted">${r.last_deployed_at ? formatDateTime(r.last_deployed_at) : '—'}</td>
             <td class="text-end">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Edit"
@@ -502,16 +528,6 @@ async function submitAddBYOD() {
     }
     if (!payload.ssh_private_key) {
         errEl.textContent = 'SSH private key is required.';
-        errEl.classList.remove('d-none');
-        return;
-    }
-    if (looksLikeFQDN(payload.current_ip)) {
-        errEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
-        errEl.classList.remove('d-none');
-        return;
-    }
-    if (isPrivateIP(payload.current_ip)) {
-        errEl.textContent = 'Private/non-routable IP addresses are not permitted. The redirector must be reachable over the internet.';
         errEl.classList.remove('d-none');
         return;
     }
@@ -572,12 +588,14 @@ async function openAddCyberX() {
                 <div class="form-check mb-2">
                     <input class="form-check-input" type="radio" name="cx_choice"
                            id="cx_inst_${inst.id}" value="${inst.id}"
+                           data-visibility="${escHtml(inst.visibility || 'private')}"
                            onchange="document.getElementById('cx_provision_section').classList.add('d-none');"
                            ${i === 0 ? 'checked' : ''}>
                     <label class="form-check-label" for="cx_inst_${inst.id}">
                         <strong>${escHtml(inst.name)}</strong>
                         <span class="text-muted ms-2">${escHtml(inst.ip_address || 'IP pending')}</span>
                         <span class="badge bg-success ms-1">${escHtml(inst.status)}</span>
+                        ${inst.visibility === 'public' ? '<span class="badge bg-success ms-1">public</span>' : ''}
                     </label>
                 </div>
             `).join('');
@@ -623,12 +641,19 @@ async function cyberXNext() {
     const errEl = document.getElementById('addCyberXError');
     errEl.classList.add('d-none');
 
-    // Determine user's choice
-    const selected = document.querySelector('input[name="cx_choice"]:checked');
-    if (!selected) {
-        errEl.textContent = 'Please select an instance or choose to provision a new one.';
-        errEl.classList.remove('d-none');
-        return;
+    // Determine user's choice. Two entry points:
+    //   1. Instance list visible → radio button selection (existing or "new")
+    //   2. No-instances fallback → form fields only, treat as provision-new
+    const noInstancesMode = !document.getElementById('cx_no_instances').classList.contains('d-none');
+    let selectedValue = noInstancesMode ? 'new' : null;
+    if (!noInstancesMode) {
+        const selected = document.querySelector('input[name="cx_choice"]:checked');
+        if (!selected) {
+            errEl.textContent = 'Please select an instance or choose to provision a new one.';
+            errEl.classList.remove('d-none');
+            return;
+        }
+        selectedValue = selected.value;
     }
 
     document.getElementById('cx_step1').classList.add('d-none');
@@ -636,7 +661,7 @@ async function cyberXNext() {
     document.getElementById('cx_next_btn').classList.add('d-none');
     document.getElementById('cx_back_btn').classList.remove('d-none');
 
-    if (selected.value === 'new') {
+    if (selectedValue === 'new') {
         // Provision a new instance
         const templateId = document.getElementById('cx_template_id').value
             || document.getElementById('cx_template_id_alt').value;
@@ -678,12 +703,14 @@ async function cyberXNext() {
         }
     } else {
         // Selected an existing instance
+        const selected = document.querySelector('input[name="cx_choice"]:checked');
         _cxSelectedInstanceId = parseInt(selected.value);
         const label = selected.closest('.form-check').querySelector('label');
         const instName = label.querySelector('strong').textContent;
         const instIp = label.querySelector('.text-muted').textContent.trim();
+        const instVisibility = selected.dataset.visibility || 'private';
 
-        showCyberXConfirm(_cxSelectedInstanceId, instName, instIp);
+        showCyberXConfirm(_cxSelectedInstanceId, instName, instIp, instVisibility);
     }
 }
 
@@ -700,7 +727,7 @@ function pollInstanceStatus(instanceId, name) {
                 _cxPollTimer = null;
                 _cxSelectedInstanceId = data.id;
                 document.getElementById('cx_provisioning').classList.add('d-none');
-                showCyberXConfirm(data.id, data.name, data.ip_address || '');
+                showCyberXConfirm(data.id, data.name, data.ip_address || '', data.visibility || 'private');
             } else if (data.status === 'ERROR') {
                 clearInterval(_cxPollTimer);
                 _cxPollTimer = null;
@@ -713,12 +740,28 @@ function pollInstanceStatus(instanceId, name) {
     }, 5000);
 }
 
-function showCyberXConfirm(instanceId, name, ip) {
+function showCyberXConfirm(instanceId, name, ip, instanceVisibility) {
+    instanceVisibility = instanceVisibility || 'private';
     document.getElementById('cx_selected_instance_id').value = instanceId;
+    document.getElementById('cx_selected_instance_visibility').value = instanceVisibility;
     document.getElementById('cx_redir_name').value = name;
     document.getElementById('cx_redir_ip').value = ip;
     document.getElementById('cx_stream_dir').value = '/etc/nginx/stream.d';
     document.getElementById('cx_notes').value = '';
+
+    // Visibility parity: a public instance forces the redirector to public.
+    const visSelect = document.getElementById('cx_visibility');
+    const visHint = document.getElementById('cx_visibility_locked_hint');
+    if (instanceVisibility === 'public') {
+        visSelect.value = 'public';
+        visSelect.disabled = true;
+        visHint.classList.remove('d-none');
+    } else {
+        visSelect.value = 'private';
+        visSelect.disabled = false;
+        visHint.classList.add('d-none');
+    }
+
     document.getElementById('cx_confirm_form').classList.remove('d-none');
     document.getElementById('cx_submit_btn').classList.remove('d-none');
     feather.replace();
@@ -746,6 +789,7 @@ async function submitCyberX() {
         name:            document.getElementById('cx_redir_name').value.trim() || null,
         nginx_stream_dir: document.getElementById('cx_stream_dir').value.trim(),
         notes:           document.getElementById('cx_notes').value.trim() || null,
+        visibility:      document.getElementById('cx_visibility').value,
     };
 
     try {
@@ -785,8 +829,22 @@ function openEditModal(id) {
     document.getElementById('edit_ssh_key').value      = '';
     document.getElementById('edit_passphrase').value   = '';
     document.getElementById('edit_stream_dir').value   = r.nginx_stream_dir;
+    document.getElementById('edit_visibility').value   = r.visibility || 'private';
     document.getElementById('edit_notes').value        = r.notes || '';
     document.getElementById('editRedirectorError').classList.add('d-none');
+
+    // Lock visibility when the linked instance is public — the redirector
+    // row must stay public to keep stream config access consistent.
+    const visSelect = document.getElementById('edit_visibility');
+    const visHint = document.getElementById('edit_visibility_locked_hint');
+    if (r.instance_visibility === 'public') {
+        visSelect.value = 'public';
+        visSelect.disabled = true;
+        visHint.classList.remove('d-none');
+    } else {
+        visSelect.disabled = false;
+        visHint.classList.add('d-none');
+    }
 
     // Hide SSH key fields for CyberX redirectors (managed by infra key)
     const keySection = document.getElementById('edit_byod_key_section');
@@ -818,6 +876,7 @@ async function submitEditRedirector() {
     if (port)  payload.ssh_port = port;
     if (user)  payload.ssh_username = user;
     if (dir)   payload.nginx_stream_dir = dir;
+    payload.visibility = document.getElementById('edit_visibility').value;
     payload.notes = notes || null;
 
     if (!isCyberX) {
@@ -825,17 +884,6 @@ async function submitEditRedirector() {
         const pass = document.getElementById('edit_passphrase').value;
         if (key)  payload.ssh_private_key = key;
         if (pass) payload.ssh_key_passphrase = pass;
-    }
-
-    if (ip && looksLikeFQDN(ip)) {
-        errEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
-        errEl.classList.remove('d-none');
-        return;
-    }
-    if (ip && isPrivateIP(ip)) {
-        errEl.textContent = 'Private/non-routable IP addresses are not permitted. The redirector must be reachable over the internet.';
-        errEl.classList.remove('d-none');
-        return;
     }
 
     try {
@@ -889,22 +937,6 @@ async function confirmDeleteRedirector() {
 // ============================================================
 // Utility
 // ============================================================
-/** Inline warning for IP address fields (blur handler) */
-function checkIPField(input, warnId) {
-    const val = input.value.trim();
-    const warnEl = document.getElementById(warnId);
-    if (!val) { warnEl.classList.add('d-none'); return; }
-    if (looksLikeFQDN(val)) {
-        warnEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
-        warnEl.classList.remove('d-none');
-    } else if (isPrivateIP(val)) {
-        warnEl.textContent = 'This is a private/non-routable address. The redirector must be reachable over the internet.';
-        warnEl.classList.remove('d-none');
-    } else {
-        warnEl.classList.add('d-none');
-    }
-}
-
 function escHtml(str) {
     if (!str) return '';
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -924,29 +956,5 @@ function parseApiError(detail, fallback) {
     return String(detail);
 }
 
-/** RFC 1918 / RFC 6598 / link-local / loopback check */
-function isPrivateIP(ip) {
-    // IPv4 check
-    const parts = ip.split('.');
-    if (parts.length === 4 && parts.every(p => /^\d{1,3}$/.test(p))) {
-        const [a, b] = parts.map(Number);
-        if (a === 10) return true;                          // 10.0.0.0/8
-        if (a === 172 && b >= 16 && b <= 31) return true;   // 172.16.0.0/12
-        if (a === 192 && b === 168) return true;            // 192.168.0.0/16
-        if (a === 100 && b >= 64 && b <= 127) return true;  // 100.64.0.0/10
-        if (a === 169 && b === 254) return true;            // 169.254.0.0/16
-        if (a === 127) return true;                         // 127.0.0.0/8
-    }
-    // IPv6 private/loopback
-    if (ip === '::1') return true;
-    const lower = ip.toLowerCase();
-    if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80')) return true;
-    return false;
-}
-
-/** Check if a value looks like a domain name rather than an IP */
-function looksLikeFQDN(val) {
-    return /[a-zA-Z]/.test(val) && val.includes('.');
-}
 </script>
 {% endblock %}

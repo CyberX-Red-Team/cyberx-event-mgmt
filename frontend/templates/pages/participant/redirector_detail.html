@@ -8,6 +8,9 @@ tr.stream-conflict > td { background-color: rgba(220,53,69,0.15) !important; }
 tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !important; }
 [data-theme="dark"] tr.stream-conflict > td { background-color: rgba(220,53,69,0.25) !important; }
 [data-theme="dark"] tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.35) !important; }
+.prereq-header { cursor: pointer; user-select: none; }
+.prereq-chevron { transition: transform 0.2s ease-in-out; width: 18px; height: 18px; }
+.prereq-header[aria-expanded="true"] .prereq-chevron { transform: rotate(180deg); }
 </style>
 {% endblock %}
 
@@ -137,64 +140,41 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
     {% endif %}
 
     <!-- Prerequisites (collapsible) -->
-    <div class="accordion mb-4" id="setupGuide">
-        <div class="accordion-item border">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed fw-semibold" type="button"
-                    data-bs-toggle="collapse" data-bs-target="#setupGuideBody">
-                    <i data-feather="check-square" class="me-2"></i>Prerequisites
-                    <span id="prereqBadge" class="badge bg-secondary ms-2 d-none">?</span>
+    <div class="card border mb-4" id="setupGuide">
+        <div class="card-header d-flex align-items-center justify-content-between gap-2 flex-wrap prereq-header"
+             role="button" data-bs-toggle="collapse" data-bs-target="#setupGuideBody"
+             aria-expanded="false" aria-controls="setupGuideBody">
+            <div class="d-flex align-items-center flex-grow-1">
+                <i data-feather="check-square" class="me-2"></i>
+                <span class="fw-semibold">Prerequisites</span>
+                <span id="prereqBadge" class="badge bg-secondary ms-2 d-none">?</span>
+            </div>
+            <div class="d-flex align-items-center gap-2" onclick="event.stopPropagation();">
+                <button class="btn btn-sm btn-outline-secondary" type="button" onclick="event.stopPropagation(); checkPrereqs();">
+                    <i data-feather="refresh-cw" class="me-1"></i>Re-check
                 </button>
-            </h2>
-            <div id="setupGuideBody" class="accordion-collapse collapse">
-                <div class="accordion-body">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="small text-muted">Required on <code>{{ redirector.current_ip }}</code> for CyberX to operate.</span>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-sm btn-outline-secondary" onclick="checkPrereqs()">
-                                <i data-feather="refresh-cw" class="me-1"></i>Re-check
-                            </button>
-                            <button class="btn btn-sm btn-warning d-none" id="fixPrereqsBtn" onclick="fixPrereqs()">
-                                <i data-feather="tool" class="me-1"></i>Auto-fix
-                            </button>
-                        </div>
-                    </div>
-                    <div id="prereqResults">
-                        <!-- populated by checkPrereqs() -->
-                        <div class="text-muted small fst-italic">Click "Re-check" or expand to run live check.</div>
-                    </div>
-                    <div id="fixPrereqStatus" class="mt-2 small d-none"></div>
-                    <hr class="my-3">
-                    <p class="small mb-2 fw-semibold">Manual setup reference:</p>
-                    <div class="small text-muted mb-1">sudoers (<code>/etc/sudoers.d/cyberx</code>):</div>
-                    <pre class="bg-dark text-light rounded p-2 mb-2 small">{{ redirector.ssh_username | e }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh</pre>
-                    <div class="small text-muted mb-1">nginx.conf stream block:</div>
-                    <pre class="bg-dark text-light rounded p-2 mb-0 small">stream {
-    include {{ redirector.nginx_stream_dir | e }}/*.conf;
-}</pre>
-                </div>
+                <button class="btn btn-sm btn-warning d-none" id="fixPrereqsBtn" type="button" onclick="event.stopPropagation(); fixPrereqs();">
+                    <i data-feather="tool" class="me-1"></i>Auto-fix
+                </button>
+                <i data-feather="chevron-down" class="prereq-chevron ms-1"></i>
             </div>
         </div>
-    </div>
-
-    <!-- nginx Setup Warning Banner (shown when setup issues detected) -->
-    <div id="nginxSetupBanner" class="alert alert-warning d-none mb-4" role="alert">
-        <div class="d-flex align-items-start gap-3">
-            <i data-feather="alert-triangle" style="flex-shrink:0;margin-top:2px;width:20px;height:20px;"></i>
-            <div class="flex-grow-1">
-                <strong>nginx Configuration Issues Detected</strong>
-                <ul id="nginxSetupIssues" class="mb-2 mt-1 ps-3 small"></ul>
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <button class="btn btn-sm btn-warning" id="fixNginxBtn" onclick="fixNginxSetup()">
-                        <i data-feather="tool" class="me-1"></i>Fix nginx.conf
-                    </button>
-                    <span id="fixNginxStatus" class="small d-none"></span>
+        <div id="setupGuideBody" class="collapse">
+            <div class="card-body">
+                <div class="small text-muted mb-3">Required on <code>{{ redirector.current_ip }}</code> for CyberX to operate.</div>
+                <div id="prereqResults">
+                    <!-- populated by checkPrereqs() -->
+                    <div class="text-muted small fst-italic">Click "Re-check" or expand to run live check.</div>
                 </div>
-                <p class="mb-0 mt-2 small text-muted">
-                    The fix will: remove <code>sites-enabled/default</code>, load the stream module,
-                    add a stream block to <code>nginx.conf</code>, and reload nginx.
-                    {% if redirector.ssh_username != 'root' %}Requires sudoers access for the SSH user.{% endif %}
-                </p>
+                <div id="fixPrereqStatus" class="mt-2 small d-none"></div>
+                <hr class="my-3">
+                <p class="small mb-2 fw-semibold">Manual setup reference:</p>
+                <div class="small text-muted mb-1">sudoers (<code>/etc/sudoers.d/cyberx</code>):</div>
+                <pre class="bg-dark text-light rounded p-2 mb-2 small">{{ redirector.ssh_username | e }} ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx, /bin/bash /var/lib/cyberx/scripts/.cyberx_nginx_fix_*.sh</pre>
+                <div class="small text-muted mb-1">nginx.conf stream block:</div>
+                <pre class="bg-dark text-light rounded p-2 mb-0 small">stream {
+    include {{ redirector.nginx_stream_dir | e }}/*.conf;
+}</pre>
             </div>
         </div>
     </div>
@@ -253,15 +233,13 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                         <input type="text" class="form-control" id="er_name" value="{{ redirector.name | e }}">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label fw-semibold">IP Address
+                        <label class="form-label fw-semibold">IP Address or Hostname
                             <i data-feather="info" class="ms-1 text-info" style="width:14px;height:14px;cursor:pointer;"
                                data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top"
-                               title="IP Address Requirements"
-                               data-bs-content="Enter a publicly routable IPv4 or IPv6 address (e.g. 203.0.113.10). Domain names and FQDNs are not accepted. Private/non-routable addresses (10.x, 172.16-31.x, 192.168.x) will be rejected."></i>
+                               title="Host"
+                               data-bs-content="IPv4/IPv6 address or hostname the CyberX server can reach over SSH. Public, private, and DNS names are all accepted."></i>
                         </label>
-                        <input type="text" class="form-control" id="er_ip" value="{{ redirector.current_ip | e }}"
-                               onblur="checkIPField(this, 'erIpWarn')">
-                        <div id="erIpWarn" class="form-text text-warning d-none"></div>
+                        <input type="text" class="form-control" id="er_ip" value="{{ redirector.current_ip | e }}">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-semibold">SSH Port</label>
@@ -284,9 +262,23 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                         <input type="password" class="form-control" id="er_pass"
                             placeholder="Leave blank to keep existing passphrase">
                     </div>
-                    <div class="col-12">
+                    <div class="col-md-8">
                         <label class="form-label fw-semibold">nginx Stream Directory</label>
                         <input type="text" class="form-control" id="er_dir" value="{{ redirector.nginx_stream_dir | e }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">Visibility</label>
+                        <select class="form-select" id="er_visibility"
+                            {% if instance_visibility == 'public' %}disabled{% endif %}>
+                            <option value="private"{% if redirector.visibility != 'public' %} selected{% endif %}>Private (only I can see it)</option>
+                            <option value="public"{% if redirector.visibility == 'public' %} selected{% endif %}>Public (visible to all participants)</option>
+                        </select>
+                        {% if instance_visibility == 'public' %}
+                        <div class="form-text text-warning">
+                            The linked instance is public, so this redirector must also be public.
+                            Make the instance private first (delete the redirector to unblock the change) before setting this to private.
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">Notes</label>
@@ -596,7 +588,6 @@ document.addEventListener('DOMContentLoaded', () => {
         new bootstrap.Popover(el, { html: false });
     });
     loadStreams().then(startPolling);
-    checkNginxSetup();
     checkPrereqs();
 });
 
@@ -1006,19 +997,8 @@ async function submitEditRedirector() {
     if (v('er_key').trim())   payload.ssh_private_key = v('er_key').trim();
     if (v('er_pass'))         payload.ssh_key_passphrase = v('er_pass');
     if (v('er_dir').trim())   payload.nginx_stream_dir = v('er_dir').trim();
+    payload.visibility = v('er_visibility');
     payload.notes = v('er_notes').trim() || null;
-
-    const ip = payload.current_ip;
-    if (ip && looksLikeFQDN(ip)) {
-        errEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
-        errEl.classList.remove('d-none');
-        return;
-    }
-    if (ip && isPrivateIP(ip)) {
-        errEl.textContent = 'Private/non-routable IP addresses are not permitted. The redirector must be reachable over the internet.';
-        errEl.classList.remove('d-none');
-        return;
-    }
 
     try {
         const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}`, {
@@ -1289,7 +1269,6 @@ async function fixPrereqs() {
 
         // 3. Update the UI with the fresh check results
         await checkPrereqs();
-        await checkNginxSetup();
     } catch (err) {
         showToast(`Fix failed: ${escHtml(err.message)}`, 'danger');
         statusEl.textContent = `Failed: ${err.message}`;
@@ -1298,66 +1277,6 @@ async function fixPrereqs() {
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i data-feather="tool" class="me-1"></i>Auto-fix';
-        refreshUI();
-    }
-}
-
-// ============================================================
-// nginx setup check + fix
-// ============================================================
-async function checkNginxSetup() {
-    try {
-        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/check-nginx-setup`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-        });
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const banner = document.getElementById('nginxSetupBanner');
-        if (data.nginx_conf_ok) {
-            banner.classList.add('d-none');
-        } else {
-            document.getElementById('nginxSetupIssues').innerHTML =
-                data.issues.map(i => `<li>${escHtml(i)}</li>`).join('');
-            banner.classList.remove('d-none');
-            refreshUI();
-        }
-    } catch (_) { /* SSH unreachable — skip silently */ }
-}
-
-async function fixNginxSetup() {
-    const btn = document.getElementById('fixNginxBtn');
-    const status = document.getElementById('fixNginxStatus');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Fixing…';
-    status.classList.add('d-none');
-
-    try {
-        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/fix-nginx-setup`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-        });
-        const data = await resp.json();
-        if (resp.ok && data.success) {
-            showToast('nginx configuration fixed successfully.', 'success');
-            await checkNginxSetup();
-            await checkPrereqs();
-        } else {
-            const msg = data.message || data.detail || 'Fix failed.';
-            const hint = msg.toLowerCase().includes('sudo') || msg.toLowerCase().includes('permission')
-                ? '\nEnsure the SSH user has passwordless sudo access. Run auto-fix in Prerequisites first to configure sudoers.'
-                : '';
-            status.textContent = msg + hint;
-            status.className = 'small text-danger';
-            status.classList.remove('d-none');
-        }
-    } catch (err) {
-        status.textContent = `Failed: ${err.message}`;
-        status.className = 'small text-danger';
-        status.classList.remove('d-none');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i data-feather="tool" class="me-1"></i>Fix nginx.conf';
         refreshUI();
     }
 }
@@ -1381,40 +1300,6 @@ function parseApiError(detail, fallback) {
     if (typeof detail === 'string') return detail;
     if (Array.isArray(detail)) return detail.map(e => e.msg || JSON.stringify(e)).join('; ');
     return String(detail);
-}
-
-function isPrivateIP(ip) {
-    const parts = ip.split('.');
-    if (parts.length === 4 && parts.every(p => /^\d{1,3}$/.test(p))) {
-        const [a, b] = parts.map(Number);
-        if (a === 10) return true;
-        if (a === 172 && b >= 16 && b <= 31) return true;
-        if (a === 192 && b === 168) return true;
-        if (a === 100 && b >= 64 && b <= 127) return true;
-        if (a === 169 && b === 254) return true;
-        if (a === 127) return true;
-    }
-    if (ip === '::1') return true;
-    const lower = ip.toLowerCase();
-    if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80')) return true;
-    return false;
-}
-
-function looksLikeFQDN(val) { return /[a-zA-Z]/.test(val) && val.includes('.'); }
-
-function checkIPField(input, warnId) {
-    const val = input.value.trim();
-    const warnEl = document.getElementById(warnId);
-    if (!val) { warnEl.classList.add('d-none'); return; }
-    if (looksLikeFQDN(val)) {
-        warnEl.textContent = 'Domain names are not accepted. Enter a publicly routable IP address (e.g. 203.0.113.10).';
-        warnEl.classList.remove('d-none');
-    } else if (isPrivateIP(val)) {
-        warnEl.textContent = 'This is a private/non-routable address. The redirector must be reachable over the internet.';
-        warnEl.classList.remove('d-none');
-    } else {
-        warnEl.classList.add('d-none');
-    }
 }
 
 function escHtml(str) {

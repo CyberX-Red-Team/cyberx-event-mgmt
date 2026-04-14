@@ -38,33 +38,37 @@ class TestRedirectorCreate:
                 ssh_username="debian",
             )
 
-    def test_invalid_ip_rejected(self):
-        with pytest.raises(ValidationError, match="not a valid IP address"):
-            RedirectorCreate(
-                name="redir-05",
-                current_ip="not-an-ip",
-                ssh_username="debian",
-                ssh_private_key=VALID_PEM,
-            )
-
-    def test_fqdn_rejected(self):
-        with pytest.raises(ValidationError, match="not a valid IP address"):
-            RedirectorCreate(
-                name="redir-fqdn",
-                current_ip="escape.golearn.us",
-                ssh_username="root",
-                ssh_private_key=VALID_PEM,
-            )
-
-    def test_private_ip_rejected(self):
-        for ip in ("10.0.0.1", "192.168.1.1", "172.16.0.1", "127.0.0.1"):
-            with pytest.raises(ValidationError, match="private/non-routable"):
+    def test_invalid_host_rejected(self):
+        """Hosts with whitespace or shell metacharacters must be rejected."""
+        for bad in ("not an ip", "host;rm", "10.0.0.1 | whoami", "bad$host"):
+            with pytest.raises(ValidationError, match="not a valid IP address or hostname"):
                 RedirectorCreate(
-                    name="redir-priv",
-                    current_ip=ip,
+                    name="redir-05",
+                    current_ip=bad,
                     ssh_username="debian",
                     ssh_private_key=VALID_PEM,
                 )
+
+    def test_fqdn_accepted(self):
+        """FQDNs are allowed so redirectors can be reached via DNS."""
+        schema = RedirectorCreate(
+            name="redir-fqdn",
+            current_ip="redir.lab.example.com",
+            ssh_username="root",
+            ssh_private_key=VALID_PEM,
+        )
+        assert schema.current_ip == "redir.lab.example.com"
+
+    def test_private_ip_accepted(self):
+        """RFC 1918 and loopback addresses are allowed for lab/internal use."""
+        for ip in ("10.0.0.1", "192.168.1.1", "172.16.0.1", "127.0.0.1"):
+            schema = RedirectorCreate(
+                name="redir-priv",
+                current_ip=ip,
+                ssh_username="debian",
+                ssh_private_key=VALID_PEM,
+            )
+            assert schema.current_ip == ip
 
     def test_unsafe_username_rejected(self):
         with pytest.raises(ValidationError, match="invalid characters"):
@@ -130,7 +134,7 @@ class TestRedirectorUpdate:
 
     def test_invalid_ip_rejected(self):
         with pytest.raises(ValidationError):
-            RedirectorUpdate(current_ip="bad-ip")
+            RedirectorUpdate(current_ip="bad ip with space")
 
     def test_update_key_ok(self):
         schema = RedirectorUpdate(ssh_private_key=VALID_PEM)

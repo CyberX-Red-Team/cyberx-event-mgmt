@@ -316,8 +316,35 @@ async def update_instance(
     if "visibility" in data:
         if data["visibility"] not in ("private", "public"):
             raise bad_request("Visibility must be 'private' or 'public'")
+        if instance.visibility == "public" and data["visibility"] == "private":
+            redir_svc = RedirectorService(db)
+            linked = await redir_svc.get_redirector_by_instance_id(instance_id)
+            if linked is not None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"This instance is managed by redirector '{linked.name}'. "
+                        "Delete the redirector management row first before changing "
+                        "the instance visibility to private."
+                    ),
+                )
         changes["visibility"] = {"old": instance.visibility, "new": data["visibility"]}
         instance.visibility = data["visibility"]
+
+        # Parity: when an instance is promoted to public, any linked redirector
+        # must also be public, otherwise collaborators silently lose visibility
+        # even though the parent instance is shared.
+        if data["visibility"] == "public":
+            redir_svc = RedirectorService(db)
+            linked = await redir_svc.get_redirector_by_instance_id(instance_id)
+            if linked is not None and linked.visibility != "public":
+                changes["redirector_visibility_auto_promoted"] = {
+                    "redirector_id": linked.id,
+                    "redirector_name": linked.name,
+                    "old": linked.visibility,
+                    "new": "public",
+                }
+                linked.visibility = "public"
 
     if "notes" in data:
         changes["notes"] = True
