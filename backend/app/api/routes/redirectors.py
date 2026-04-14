@@ -819,15 +819,20 @@ async def delete_redirector(
 async def test_connection(
     redirector_id: str,
     request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     SSH connect to the redirector and verify nginx stream module presence.
     Updates the redirector status (online/offline) and last_tested_at.
+
+    Read-only probe: anyone who can view the redirector (including public
+    rows and sponsors viewing their invitees' rows) may run it.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
@@ -864,15 +869,19 @@ async def test_connection(
 @router.post("/{redirector_id}/check-nginx-setup")
 async def check_nginx_setup(
     redirector_id: str,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     SSH into the redirector and check for common nginx config issues:
     default site active (port 80) and stream block presence.
+
+    Read-only probe: open to anyone who can view the redirector.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_check_nginx_setup(ssh)
@@ -918,12 +927,17 @@ async def fix_nginx_setup(
 @router.post("/{redirector_id}/check-prereqs")
 async def check_prereqs(
     redirector_id: str,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Check that all CyberX prerequisites are met on the redirector."""
+    """Check that all CyberX prerequisites are met on the redirector.
+
+    Read-only probe: open to anyone who can view the redirector.
+    """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_check_prereqs(ssh, redirector.nginx_stream_dir)
@@ -962,15 +976,19 @@ async def fix_prereqs(
 async def check_port(
     redirector_id: str,
     body: CheckPortRequest,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     SSH into the redirector and check whether a port is already in use.
     Returns: {"in_use": bool, "listeners": [...], "message": str}
+
+    Read-only probe: open to anyone who can view the redirector.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
@@ -1103,7 +1121,9 @@ async def list_streams(
 ):
     """List all stream configs for a redirector."""
     svc = RedirectorService(db)
-    await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     streams = await svc.list_streams(redirector_id)
     return [StreamConfigOut.model_validate(s) for s in streams]
 
