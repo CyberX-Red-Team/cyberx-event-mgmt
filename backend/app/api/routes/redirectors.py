@@ -1007,15 +1007,20 @@ async def check_port(
 async def deploy_all(
     redirector_id: str,
     request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Enable and deploy all stream configs for this redirector:
     mark all as enabled, write configs, remove orphans, reload nginx.
+
+    Stream-level operation: open to any viewer (owner, admin, sponsor of
+    invitee, or anyone viewing a public row).
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     streams = await svc.list_streams(redirector_id)
 
     # Mark all streams as enabled before deploying
@@ -1062,15 +1067,19 @@ async def deploy_all(
 async def disable_all(
     redirector_id: str,
     request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Disable all streams for this redirector:
     mark all as disabled, remove all config files, reload nginx.
+
+    Stream-level operation: open to any viewer.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     streams = await svc.list_streams(redirector_id)
 
     # Mark all streams as disabled before deploying
@@ -1137,12 +1146,17 @@ async def create_stream(
     redirector_id: str,
     payload: StreamConfigCreate,
     request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a stream config for a redirector (does not deploy immediately)."""
+    """Create a stream config for a redirector (does not deploy immediately).
+
+    Stream-level operation: open to any viewer.
+    """
     svc = RedirectorService(db)
-    await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     stream = await svc.create_stream(redirector_id, payload.model_dump())
 
     audit = AuditService(db)
@@ -1169,8 +1183,11 @@ async def get_stream(
     current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a single stream config."""
+    """Get a single stream config. Open to any viewer of the redirector."""
     svc = RedirectorService(db)
+    await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     return StreamConfigOut.model_validate(stream)
 
@@ -1181,11 +1198,17 @@ async def update_stream(
     stream_id: str,
     payload: StreamConfigUpdate,
     request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update a stream config (does not redeploy automatically)."""
+    """Update a stream config (does not redeploy automatically).
+
+    Stream-level operation: open to any viewer of the redirector.
+    """
     svc = RedirectorService(db)
+    await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     stream = await svc.update_stream(stream, payload.model_dump(exclude_unset=True))
 
@@ -1209,12 +1232,17 @@ async def delete_stream(
     redirector_id: str,
     stream_id: str,
     request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a stream config from the database and remove the config file from the redirector."""
+    """Delete a stream config from the database and remove the config file from the redirector.
+
+    Stream-level operation: open to any viewer of the redirector.
+    """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     name = stream.name
 
@@ -1253,6 +1281,9 @@ async def preview_stream(
 ):
     """Return the generated nginx config text without performing any SSH operation."""
     svc = RedirectorService(db)
+    await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     content = generate_stream_config_preview(stream)
     return ConfigPreview(filename=stream.filename, content=content)
@@ -1263,16 +1294,20 @@ async def enable_stream(
     redirector_id: str,
     stream_id: str,
     request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Mark a stream as enabled, write its config file to the redirector, and reload nginx.
     Rolls back (deletes the file) if nginx -t fails — stream stays enabled in DB on rollback
     so the operator can fix the config and retry.
+
+    Stream-level operation: open to any viewer of the redirector.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
 
     stream = await svc.update_stream(stream, {"enabled": True})
@@ -1312,16 +1347,20 @@ async def deploy_stream(
     redirector_id: str,
     stream_id: str,
     request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Write a single stream config file to the redirector and reload nginx.
     Rolls back (deletes the file) if nginx -t fails.
     Returns HTTP 200 with success=False if nginx test fails (operator sees output).
+
+    Stream-level operation: open to any viewer of the redirector.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
 
     if not stream.enabled:
@@ -1366,15 +1405,19 @@ async def remove_stream_file(
     redirector_id: str,
     stream_id: str,
     request: Request,
-    current_user: User = Depends(require_permission("redirectors.manage")),
+    current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Remove a stream config file from the redirector and reload nginx.
     Does not delete the StreamConfig from the database — use DELETE for that.
+
+    Stream-level operation: open to any viewer of the redirector.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     ssh = await _make_ssh_service(svc, redirector, db)
 
