@@ -3,7 +3,7 @@ import logging
 from typing import Optional, List
 from pydantic import BaseModel
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
@@ -325,6 +325,21 @@ async def update_my_instance(
     if visibility is not None:
         if visibility not in ["private", "public"]:
             raise bad_request("Invalid visibility. Must be private or public")
+        # Visibility parity: a public instance linked to a managed redirector
+        # cannot be demoted to private without first removing the redirector,
+        # otherwise other operators' stream configs would silently lose access.
+        if instance.visibility == "public" and visibility == "private":
+            redir_svc = RedirectorService(db)
+            linked = await redir_svc.get_redirector_by_instance_id(instance_id)
+            if linked is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"This instance is managed by redirector '{linked.name}'. "
+                        "Delete the redirector management row first before changing "
+                        "the instance visibility to private."
+                    ),
+                )
         changes["visibility"] = {"old": instance.visibility, "new": visibility}
         instance.visibility = visibility
 

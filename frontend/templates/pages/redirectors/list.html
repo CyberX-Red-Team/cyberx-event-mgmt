@@ -324,6 +324,10 @@
                                 <option value="private">Private (only I can see it)</option>
                                 <option value="public">Public (visible to all participants)</option>
                             </select>
+                            <div class="form-text text-warning d-none" id="edit_visibility_locked_hint">
+                                The linked instance is public, so this redirector must also be public.
+                                Make the instance private first (delete the redirector to unblock the change) before setting this to private.
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">Notes</label>
@@ -796,6 +800,19 @@ function openEditModal(id) {
     document.getElementById('edit_visibility').value   = r.visibility || 'private';
     document.getElementById('edit_notes').value        = r.notes || '';
     document.getElementById('editRedirectorError').classList.add('d-none');
+
+    // Lock visibility when the linked instance is public — the redirector
+    // row must stay public to keep stream config access consistent.
+    const visSelect = document.getElementById('edit_visibility');
+    const visHint = document.getElementById('edit_visibility_locked_hint');
+    if (r.instance_visibility === 'public') {
+        visSelect.value = 'public';
+        visSelect.disabled = true;
+        visHint.classList.remove('d-none');
+    } else {
+        visSelect.disabled = false;
+        visHint.classList.add('d-none');
+    }
 
     // Hide SSH key fields for CyberX redirectors (managed by infra key)
     const keySection = document.getElementById('edit_byod_key_section');

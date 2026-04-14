@@ -227,10 +227,17 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-semibold">Visibility</label>
-                        <select class="form-select" id="er_visibility">
+                        <select class="form-select" id="er_visibility"
+                            {% if instance_visibility == 'public' %}disabled{% endif %}>
                             <option value="private"{% if redirector.visibility != 'public' %} selected{% endif %}>Private (only I can see it)</option>
                             <option value="public"{% if redirector.visibility == 'public' %} selected{% endif %}>Public (visible to all participants)</option>
                         </select>
+                        {% if instance_visibility == 'public' %}
+                        <div class="form-text text-warning">
+                            The linked instance is public, so this redirector must also be public.
+                            Make the instance private first (delete the redirector to unblock the change) before setting this to private.
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">Notes</label>

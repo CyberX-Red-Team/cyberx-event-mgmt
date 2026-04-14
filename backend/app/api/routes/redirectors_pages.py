@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.dependencies import get_db, require_permission
+from app.models.instance import Instance
 from app.models.redirector import Redirector
 from app.models.user import User
 from app.services.redirector_service import RedirectorService
@@ -79,6 +80,11 @@ async def redirector_detail_page(
     if not await _can_view_redirector(current_user, redirector, db):
         raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
 
+    instance_visibility = None
+    if redirector.instance_id:
+        linked = await db.get(Instance, redirector.instance_id)
+        instance_visibility = linked.visibility if linked else None
+
     return templates.TemplateResponse(
         "pages/redirectors/detail.html",
         {
@@ -86,6 +92,7 @@ async def redirector_detail_page(
             "current_user": current_user,
             "active_page": "redirectors",
             "redirector": redirector,
+            "instance_visibility": instance_visibility,
             "now": datetime.now(),
         },
     )
@@ -106,12 +113,18 @@ async def participant_redirector_detail_page(
     if not await _can_view_redirector(current_user, redirector, db):
         raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
 
+    instance_visibility = None
+    if redirector.instance_id:
+        linked = await db.get(Instance, redirector.instance_id)
+        instance_visibility = linked.visibility if linked else None
+
     return templates.TemplateResponse(
         "pages/participant/redirector_detail.html",
         {
             "request": request,
             "current_user": current_user,
             "redirector": redirector,
+            "instance_visibility": instance_visibility,
             "now": datetime.now(),
         },
     )

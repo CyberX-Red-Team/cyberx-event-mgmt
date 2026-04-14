@@ -73,12 +73,14 @@ def _build_redirector_out(
     redirector: Redirector,
     stream_count: int | None = None,
     owner_username: str | None = None,
+    instance_visibility: str | None = None,
 ) -> RedirectorOut:
     """Build RedirectorOut from ORM object, always redacting key fields.
 
-    stream_count and owner_username can be passed explicitly to avoid
-    lazy-loading the corresponding relationships (which fails outside a
-    greenlet context after session commits have expired the ORM object).
+    stream_count, owner_username, and instance_visibility can be passed
+    explicitly to avoid lazy-loading the corresponding relationships
+    (which fails outside a greenlet context after session commits have
+    expired the ORM object).
     """
     if stream_count is None:
         try:
@@ -114,7 +116,21 @@ def _build_redirector_out(
         owner_id=redirector.owner_id,
         owner_username=owner_username,
         visibility=redirector.visibility or "private",
+        instance_visibility=instance_visibility,
     )
+
+
+async def _instance_visibilities_for(
+    db: AsyncSession, redirectors: list[Redirector]
+) -> dict[int, str]:
+    """Return {instance_id: visibility} for the linked instances of a list."""
+    ids = [r.instance_id for r in redirectors if r.instance_id is not None]
+    if not ids:
+        return {}
+    result = await db.execute(
+        select(Instance.id, Instance.visibility).where(Instance.id.in_(ids))
+    )
+    return {row[0]: row[1] for row in result.all()}
 
 
 async def _make_ssh_service(
@@ -257,8 +273,12 @@ async def list_redirectors(
             include_public=True,
             sponsored_owner_ids=sponsored_ids or None,
         )
+    inst_vis = await _instance_visibilities_for(db, redirectors)
     return RedirectorListOut(
-        redirectors=[_build_redirector_out(r) for r in redirectors],
+        redirectors=[
+            _build_redirector_out(r, instance_visibility=inst_vis.get(r.instance_id))
+            for r in redirectors
+        ],
         total=len(redirectors),
     )
 
@@ -534,6 +554,22 @@ async def create_from_instance(
             detail=f"A redirector named '{name}' already exists.",
         )
 
+    # Visibility parity: a public instance can only host a public redirector
+    # row (so every operator with access to the instance also has access to
+    # the management record and its stream configs).
+    effective_visibility = payload.visibility
+    if instance.visibility == "public":
+        if payload.visibility == "private":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "The source instance is public, so the redirector management "
+                    "row must also be public. Set visibility to public or make "
+                    "the instance private first."
+                ),
+            )
+        effective_visibility = "public"
+
     # Auto-populate from instance + template
     redirector = await svc.create_redirector({
         "name": name,
@@ -544,7 +580,7 @@ async def create_from_instance(
         "notes": payload.notes,
         "owner_id": current_user.id,
         "instance_id": instance.id,
-        "visibility": payload.visibility,
+        "visibility": effective_visibility,
     })
 
     # Best-effort connection test
@@ -575,7 +611,9 @@ async def create_from_instance(
     )
 
     await db.refresh(redirector)
-    return _build_redirector_out(redirector, stream_count=0)
+    return _build_redirector_out(
+        redirector, stream_count=0, instance_visibility=instance.visibility
+    )
 
 
 @router.post("/provision-and-register", status_code=status.HTTP_201_CREATED)
@@ -691,7 +729,11 @@ async def get_redirector(
     redirector = await _get_authorized_redirector(
         redirector_id, current_user, svc, allow_public=True, db=db
     )
-    return _build_redirector_out(redirector)
+    inst_vis: str | None = None
+    if redirector.instance_id:
+        linked_instance = await db.get(Instance, redirector.instance_id)
+        inst_vis = linked_instance.visibility if linked_instance else None
+    return _build_redirector_out(redirector, instance_visibility=inst_vis)
 
 
 @router.put("/{redirector_id}", response_model=RedirectorOut)
@@ -708,9 +750,25 @@ async def update_redirector(
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
-    redirector = await svc.update_redirector(
-        redirector, payload.model_dump(exclude_unset=True)
-    )
+
+    update_data = payload.model_dump(exclude_unset=True)
+
+    # Visibility parity: if the linked instance is public, this row must
+    # remain public too, otherwise other operators would lose access to the
+    # management record for a resource they can still see.
+    if update_data.get("visibility") == "private" and redirector.instance_id:
+        linked_instance = await db.get(Instance, redirector.instance_id)
+        if linked_instance is not None and linked_instance.visibility == "public":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "The linked instance is public, so this redirector must also "
+                    "be public. Make the instance private first, or delete the "
+                    "redirector, before setting the redirector to private."
+                ),
+            )
+
+    redirector = await svc.update_redirector(redirector, update_data)
 
     audit = AuditService(db)
     await audit.log(
@@ -721,7 +779,11 @@ async def update_redirector(
         ip_address=request.client.host if request.client else None,
     )
 
-    return _build_redirector_out(redirector)
+    inst_vis: str | None = None
+    if redirector.instance_id:
+        linked_instance = await db.get(Instance, redirector.instance_id)
+        inst_vis = linked_instance.visibility if linked_instance else None
+    return _build_redirector_out(redirector, instance_visibility=inst_vis)
 
 
 @router.delete("/{redirector_id}", status_code=status.HTTP_204_NO_CONTENT)

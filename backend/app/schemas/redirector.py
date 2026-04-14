@@ -202,6 +202,7 @@ class RedirectorOut(BaseModel):
     owner_id: Optional[int] = None
     owner_username: Optional[str] = None
     visibility: str = "private"
+    instance_visibility: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
