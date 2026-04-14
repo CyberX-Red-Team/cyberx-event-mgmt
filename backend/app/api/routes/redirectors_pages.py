@@ -16,12 +16,35 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.dependencies import get_db, require_permission
+from app.models.redirector import Redirector
 from app.models.user import User
 from app.services.redirector_service import RedirectorService
 from app.api.routes.views import templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["Redirector Pages"])
+
+
+async def _can_view_redirector(
+    user: User, redirector: Redirector, db: AsyncSession
+) -> bool:
+    """Return True when the user may view the given redirector detail page.
+
+    Mirrors the API-side rule: admins always; owners always; sponsors for
+    any row owned by one of their invitees; anyone else only when the row
+    is marked public.
+    """
+    if user.has_permission("redirectors.view_all"):
+        return True
+    if redirector.owner_id == user.id:
+        return True
+    if redirector.visibility == "public":
+        return True
+    if getattr(user, "is_sponsor_role", False) and redirector.owner_id:
+        owner = await db.get(User, redirector.owner_id)
+        if owner is not None and owner.sponsor_id == user.id:
+            return True
+    return False
 
 
 @router.get("/admin/redirectors", response_class=HTMLResponse)
@@ -53,12 +76,7 @@ async def redirector_detail_page(
     redirector = await svc.get_redirector(redirector_id)
     if not redirector:
         raise HTTPException(status_code=404, detail="Redirector not found.")
-    # Owner check: non-admins can only view their own redirectors
-    if (
-        not current_user.has_permission("redirectors.view_all")
-        and redirector.owner_id != current_user.id
-        and redirector.visibility != "public"
-    ):
+    if not await _can_view_redirector(current_user, redirector, db):
         raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
 
     return templates.TemplateResponse(
@@ -85,11 +103,7 @@ async def participant_redirector_detail_page(
     redirector = await svc.get_redirector(redirector_id)
     if not redirector:
         raise HTTPException(status_code=404, detail="Redirector not found.")
-    if (
-        not current_user.has_permission("redirectors.view_all")
-        and redirector.owner_id != current_user.id
-        and redirector.visibility != "public"
-    ):
+    if not await _can_view_redirector(current_user, redirector, db):
         raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
 
     return templates.TemplateResponse(

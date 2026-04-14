@@ -2468,13 +2468,23 @@ async function openAddCyberX() {
 async function cyberXNext() {
     var errEl = document.getElementById('addCyberXError');
     errEl.classList.add('d-none');
-    var selected = document.querySelector('input[name="cx_choice"]:checked');
-    if (!selected) { errEl.textContent = 'Please select an instance or choose to provision a new one.'; errEl.classList.remove('d-none'); return; }
+    // Two entry points: the instance-list view with radios, or the no-instances
+    // fallback that only offers the provision-new form.
+    var noInstancesMode = !document.getElementById('cx_no_instances').classList.contains('d-none');
+    var selected = null;
+    var selectedValue = null;
+    if (noInstancesMode) {
+        selectedValue = 'new';
+    } else {
+        selected = document.querySelector('input[name="cx_choice"]:checked');
+        if (!selected) { errEl.textContent = 'Please select an instance or choose to provision a new one.'; errEl.classList.remove('d-none'); return; }
+        selectedValue = selected.value;
+    }
     document.getElementById('cx_step1').classList.add('d-none');
     document.getElementById('cx_step2').classList.remove('d-none');
     document.getElementById('cx_next_btn').classList.add('d-none');
     document.getElementById('cx_back_btn').classList.remove('d-none');
-    if (selected.value === 'new') {
+    if (selectedValue === 'new') {
         var templateId = document.getElementById('cx_template_id').value || document.getElementById('cx_template_id_alt').value;
         var instName = (document.getElementById('cx_instance_name').value || document.getElementById('cx_instance_name_alt').value).trim();
         if (!templateId || !instName) {
@@ -2495,6 +2505,8 @@ async function cyberXNext() {
             _cxPollInstance(data.id, instName);
         } catch (err) { errEl.textContent = 'Provision failed: ' + err.message; errEl.classList.remove('d-none'); document.getElementById('cx_provisioning').classList.add('d-none'); }
     } else {
+        // selected is always set here because the existing-instance branch
+        // is only reachable when noInstancesMode is false.
         _cxSelectedInstanceId = parseInt(selected.value);
         var label = selected.closest('.form-check').querySelector('label');
         _cxShowConfirm(_cxSelectedInstanceId, label.querySelector('strong').textContent, label.querySelector('.text-muted').textContent.trim());

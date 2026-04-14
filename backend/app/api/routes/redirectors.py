@@ -191,10 +191,12 @@ async def _get_authorized_redirector(
     svc: RedirectorService,
     *,
     allow_public: bool = False,
+    db: AsyncSession | None = None,
 ) -> Redirector:
     """Fetch redirector and verify the user has access.
 
-    Admins (redirectors.view_all) always pass. Owners always pass. When
+    Admins (redirectors.view_all) always pass. Owners always pass. Sponsors
+    pass when the redirector belongs to one of their invitees. When
     allow_public=True, any user who can view the list may read a public
     redirector (used by read-only routes like GET).
     """
@@ -205,6 +207,14 @@ async def _get_authorized_redirector(
         return redir
     if allow_public and redir.visibility == "public":
         return redir
+    if (
+        getattr(current_user, "is_sponsor_role", False)
+        and redir.owner_id
+        and db is not None
+    ):
+        owner = await db.get(User, redir.owner_id)
+        if owner is not None and owner.sponsor_id == current_user.id:
+            return redir
     raise HTTPException(status_code=403, detail="Not authorized to access this redirector.")
 
 
@@ -228,15 +238,24 @@ async def list_redirectors(
 ):
     """List redirectors.
 
-    Admins (redirectors.view_all) see all rows regardless of visibility.
-    Other users see their own redirectors plus any redirector marked public.
+    Admins (redirectors.view_all) see every row regardless of visibility.
+    Sponsors see their own, any public row, and any row owned by one of
+    their invitees. Everyone else sees their own plus any public row.
     """
     svc = RedirectorService(db)
     if current_user.has_permission("redirectors.view_all"):
         redirectors = await svc.list_redirectors()
     else:
+        sponsored_ids: List[int] = []
+        if getattr(current_user, "is_sponsor_role", False):
+            sponsored_result = await db.execute(
+                select(User.id).where(User.sponsor_id == current_user.id)
+            )
+            sponsored_ids = [row[0] for row in sponsored_result.all()]
         redirectors = await svc.list_redirectors(
-            owner_id=current_user.id, include_public=True
+            owner_id=current_user.id,
+            include_public=True,
+            sponsored_owner_ids=sponsored_ids or None,
         )
     return RedirectorListOut(
         redirectors=[_build_redirector_out(r) for r in redirectors],
@@ -397,9 +416,21 @@ async def list_available_instances(
         .order_by(Instance.name)
     )
 
-    # Owner scoping: non-admins see only their own instances
+    # Visibility scoping:
+    #   - Admins (redirectors.view_all): see everything.
+    #   - Sponsors: see their own + any instance owned by a user they sponsor.
+    #   - Everyone else: see their own + public instances.
     if not current_user.has_permission("redirectors.view_all"):
-        query = query.where(Instance.created_by_user_id == current_user.id)
+        conditions = [
+            Instance.created_by_user_id == current_user.id,
+            Instance.visibility == "public",
+        ]
+        if getattr(current_user, "is_sponsor_role", False):
+            sponsored_ids_subq = (
+                select(User.id).where(User.sponsor_id == current_user.id).scalar_subquery()
+            )
+            conditions.append(Instance.created_by_user_id.in_(sponsored_ids_subq))
+        query = query.where(or_(*conditions))
 
     result = await db.execute(query)
     return [AvailableInstanceOut.model_validate(i) for i in result.scalars().all()]
@@ -449,9 +480,18 @@ async def create_from_instance(
             detail=f"Instance is not active (status: {instance.status}).",
         )
 
-    # Owner check
-    if not current_user.has_permission("redirectors.view_all") and instance.created_by_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to use this instance.")
+    # Authorization: admins pass; owners pass; sponsors pass when the
+    # instance belongs to one of their invitees; everyone else may use
+    # the instance only when it is marked public.
+    if not current_user.has_permission("redirectors.view_all"):
+        is_owner = instance.created_by_user_id == current_user.id
+        is_public = instance.visibility == "public"
+        is_sponsor_of_owner = False
+        if getattr(current_user, "is_sponsor_role", False) and instance.created_by_user_id:
+            owner = await db.get(User, instance.created_by_user_id)
+            is_sponsor_of_owner = bool(owner and owner.sponsor_id == current_user.id)
+        if not (is_owner or is_public or is_sponsor_of_owner):
+            raise HTTPException(status_code=403, detail="Not authorized to use this instance.")
 
     # Validate template is a redirector template
     template = None
@@ -649,7 +689,7 @@ async def get_redirector(
     """
     svc = RedirectorService(db)
     redirector = await _get_authorized_redirector(
-        redirector_id, current_user, svc, allow_public=True
+        redirector_id, current_user, svc, allow_public=True, db=db
     )
     return _build_redirector_out(redirector)
 
@@ -667,7 +707,7 @@ async def update_redirector(
     Send an empty string for ssh_key_passphrase to clear it.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     redirector = await svc.update_redirector(
         redirector, payload.model_dump(exclude_unset=True)
     )
@@ -693,7 +733,7 @@ async def delete_redirector(
 ):
     """Delete a redirector and all its stream configs (cascade). Does not remove remote files."""
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     name = redirector.name
     await svc.delete_redirector(redirector)
 
@@ -723,7 +763,7 @@ async def test_connection(
     Updates the redirector status (online/offline) and last_tested_at.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
@@ -768,7 +808,7 @@ async def check_nginx_setup(
     default site active (port 80) and stream block presence.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_check_nginx_setup(ssh)
@@ -794,7 +834,7 @@ async def fix_nginx_setup(
         <user> ALL=(ALL) NOPASSWD: /bin/bash /tmp/.cyberx_nginx_fix.sh
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_fix_nginx_setup(ssh, redirector.nginx_stream_dir)
@@ -819,7 +859,7 @@ async def check_prereqs(
 ):
     """Check that all CyberX prerequisites are met on the redirector."""
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_check_prereqs(ssh, redirector.nginx_stream_dir)
@@ -842,7 +882,7 @@ async def fix_prereqs(
     Requires the SSH user to have sudo access (NOPASSWD preferred).
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     ssh = await _make_ssh_service(svc, redirector, db)
     try:
         return await run_fix_prereqs(ssh, redirector.nginx_stream_dir)
@@ -866,7 +906,7 @@ async def check_port(
     Returns: {"in_use": bool, "listeners": [...], "message": str}
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
@@ -893,7 +933,7 @@ async def deploy_all(
     mark all as enabled, write configs, remove orphans, reload nginx.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     streams = await svc.list_streams(redirector_id)
 
     # Mark all streams as enabled before deploying
@@ -948,7 +988,7 @@ async def disable_all(
     mark all as disabled, remove all config files, reload nginx.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     streams = await svc.list_streams(redirector_id)
 
     # Mark all streams as disabled before deploying
@@ -999,7 +1039,7 @@ async def list_streams(
 ):
     """List all stream configs for a redirector."""
     svc = RedirectorService(db)
-    await _get_authorized_redirector(redirector_id, current_user, svc)
+    await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     streams = await svc.list_streams(redirector_id)
     return [StreamConfigOut.model_validate(s) for s in streams]
 
@@ -1018,7 +1058,7 @@ async def create_stream(
 ):
     """Create a stream config for a redirector (does not deploy immediately)."""
     svc = RedirectorService(db)
-    await _get_authorized_redirector(redirector_id, current_user, svc)
+    await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     stream = await svc.create_stream(redirector_id, payload.model_dump())
 
     audit = AuditService(db)
@@ -1090,7 +1130,7 @@ async def delete_stream(
 ):
     """Delete a stream config from the database and remove the config file from the redirector."""
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     name = stream.name
 
@@ -1148,7 +1188,7 @@ async def enable_stream(
     so the operator can fix the config and retry.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
 
     stream = await svc.update_stream(stream, {"enabled": True})
@@ -1197,7 +1237,7 @@ async def deploy_stream(
     Returns HTTP 200 with success=False if nginx test fails (operator sees output).
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
 
     if not stream.enabled:
@@ -1250,7 +1290,7 @@ async def remove_stream_file(
     Does not delete the StreamConfig from the database — use DELETE for that.
     """
     svc = RedirectorService(db)
-    redirector = await _get_authorized_redirector(redirector_id, current_user, svc)
+    redirector = await _get_authorized_redirector(redirector_id, current_user, svc, db=db)
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     ssh = await _make_ssh_service(svc, redirector, db)
 

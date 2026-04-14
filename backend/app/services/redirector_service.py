@@ -31,6 +31,7 @@ class RedirectorService:
         self,
         owner_id: int = None,
         include_public: bool = False,
+        sponsored_owner_ids: Optional[List[int]] = None,
     ) -> List[Redirector]:
         """Return redirectors ordered by name, with stream_configs and owner eager-loaded.
 
@@ -38,6 +39,8 @@ class RedirectorService:
           - owner_id=None → all redirectors (admin view).
           - owner_id set, include_public=False → only this user's redirectors.
           - owner_id set, include_public=True → user's own + visibility='public'.
+          - sponsored_owner_ids provided → also include redirectors owned by
+            those users (used for sponsors who see all their invitees' rows).
         """
         query = (
             select(Redirector)
@@ -48,15 +51,12 @@ class RedirectorService:
             .order_by(Redirector.name)
         )
         if owner_id is not None:
+            clauses = [Redirector.owner_id == owner_id]
             if include_public:
-                query = query.where(
-                    or_(
-                        Redirector.owner_id == owner_id,
-                        Redirector.visibility == "public",
-                    )
-                )
-            else:
-                query = query.where(Redirector.owner_id == owner_id)
+                clauses.append(Redirector.visibility == "public")
+            if sponsored_owner_ids:
+                clauses.append(Redirector.owner_id.in_(sponsored_owner_ids))
+            query = query.where(or_(*clauses))
         result = await self.session.execute(query)
         return list(result.scalars().all())
 

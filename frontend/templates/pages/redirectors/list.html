@@ -623,12 +623,19 @@ async function cyberXNext() {
     const errEl = document.getElementById('addCyberXError');
     errEl.classList.add('d-none');
 
-    // Determine user's choice
-    const selected = document.querySelector('input[name="cx_choice"]:checked');
-    if (!selected) {
-        errEl.textContent = 'Please select an instance or choose to provision a new one.';
-        errEl.classList.remove('d-none');
-        return;
+    // Determine user's choice. Two entry points:
+    //   1. Instance list visible → radio button selection (existing or "new")
+    //   2. No-instances fallback → form fields only, treat as provision-new
+    const noInstancesMode = !document.getElementById('cx_no_instances').classList.contains('d-none');
+    let selectedValue = noInstancesMode ? 'new' : null;
+    if (!noInstancesMode) {
+        const selected = document.querySelector('input[name="cx_choice"]:checked');
+        if (!selected) {
+            errEl.textContent = 'Please select an instance or choose to provision a new one.';
+            errEl.classList.remove('d-none');
+            return;
+        }
+        selectedValue = selected.value;
     }
 
     document.getElementById('cx_step1').classList.add('d-none');
@@ -636,7 +643,7 @@ async function cyberXNext() {
     document.getElementById('cx_next_btn').classList.add('d-none');
     document.getElementById('cx_back_btn').classList.remove('d-none');
 
-    if (selected.value === 'new') {
+    if (selectedValue === 'new') {
         // Provision a new instance
         const templateId = document.getElementById('cx_template_id').value
             || document.getElementById('cx_template_id_alt').value;
@@ -678,6 +685,7 @@ async function cyberXNext() {
         }
     } else {
         // Selected an existing instance
+        const selected = document.querySelector('input[name="cx_choice"]:checked');
         _cxSelectedInstanceId = parseInt(selected.value);
         const label = selected.closest('.form-check').querySelector('label');
         const instName = label.querySelector('strong').textContent;
