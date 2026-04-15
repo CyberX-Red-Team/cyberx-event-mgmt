@@ -114,10 +114,34 @@ class StreamConfig(Base):
 
     Each enabled StreamConfig results in one file in the redirector's stream_dir.
     Disabled StreamConfigs have their file deleted from the remote server.
+
+    SNI routing (two-tier):
+        When sni_hostname is set, this stream participates in an SNI router
+        that lets multiple streams share one public listen_port (typically 443).
+        The outer router (generated per (redirector_id, listen_port) with any
+        SNI streams) uses ssl_preread to read $ssl_preread_server_name and
+        proxies TCP to 127.0.0.1:<internal_bridge_port>. This stream's own
+        file is an "inner terminator" that listens on that loopback port with
+        its own legit certificate and bridges to (cs_ip:cs_port). Non-SNI
+        streams on other ports are unaffected.
     """
     __tablename__ = "stream_configs"
     __table_args__ = (
-        UniqueConstraint('redirector_id', 'listen_port', name='uq_stream_configs_redirector_port'),
+        # A given listen_port on a redirector can hold either one legacy
+        # (non-SNI) stream or N SNI streams differentiated by hostname.
+        # This constraint enforces uniqueness per (listen_port, sni_hostname),
+        # where NULL sni_hostname represents "legacy exclusive stream on this
+        # port". The collision rule "can't mix NULL with non-NULL on the same
+        # port" is enforced in the service layer because SQL NULLs in unique
+        # indexes aren't equal to each other.
+        UniqueConstraint(
+            'redirector_id', 'listen_port', 'sni_hostname',
+            name='uq_stream_configs_redirector_port_sni',
+        ),
+        UniqueConstraint(
+            'redirector_id', 'internal_bridge_port',
+            name='uq_stream_configs_redirector_bridge_port',
+        ),
         {'extend_existing': True},
     )
 
@@ -134,6 +158,15 @@ class StreamConfig(Base):
     listen_port = Column(Integer, nullable=False)
     cs_ip = Column(String(255), nullable=False)   # CS teamserver IP or hostname
     cs_port = Column(Integer, nullable=False)
+
+    # SNI routing — when set, this stream is behind the per-port SNI router
+    # and listens only on 127.0.0.1:internal_bridge_port. The router matches
+    # $ssl_preread_server_name against this hostname exactly and routes the
+    # TCP connection to the inner terminator that holds this stream's cert.
+    sni_hostname = Column(String(253), nullable=True, index=True)
+    # Allocated from SNI_BRIDGE_PORT_RANGE on create, released on delete.
+    # Only set when sni_hostname is set.
+    internal_bridge_port = Column(Integer, nullable=True)
 
     # Access control: allow/deny by CIDR
     access_control_enabled = Column(Boolean, nullable=False, default=False)
@@ -176,6 +209,11 @@ class StreamConfig(Base):
     def has_custom_override(self) -> bool:
         """True when this stream has a hand-edited config override."""
         return bool(self.custom_config_override)
+
+    @property
+    def is_sni_routed(self) -> bool:
+        """True when this stream is behind the per-port SNI router."""
+        return bool(self.sni_hostname)
 
     def __repr__(self):
         return (

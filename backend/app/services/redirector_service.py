@@ -14,7 +14,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.redirector import Redirector, StreamConfig
+from app.services.nginx_config_service import (
+    SNI_BRIDGE_PORT_MIN,
+    SNI_BRIDGE_PORT_MAX,
+)
 from app.utils.encryption import encrypt_field, decrypt_field
+
+
+class StreamSniCollisionError(ValueError):
+    """Raised when SNI/legacy streams can't co-exist on a (redirector, listen_port).
+
+    A given listen_port on a redirector is either:
+      - hosting exactly one legacy (non-SNI) stream, or
+      - hosting N SNI-routed streams (each with a distinct sni_hostname).
+    Trying to mix the two is rejected before any DB write.
+    """
+
+
+class NoBridgePortAvailableError(RuntimeError):
+    """Raised when the SNI bridge port pool for a redirector is exhausted."""
 
 
 class RedirectorService:
@@ -216,14 +234,40 @@ class RedirectorService:
         return result.scalar_one_or_none()
 
     async def create_stream(self, redirector_id: str, data: dict) -> StreamConfig:
+        sni_hostname = data.get("sni_hostname")
+        listen_port = data["listen_port"]
+
+        # Enforce SNI/legacy collision rule BEFORE allocating a bridge port —
+        # so a rejected create doesn't burn a port slot.
+        await self._check_sni_collision(
+            redirector_id=redirector_id,
+            listen_port=listen_port,
+            sni_hostname=sni_hostname,
+            excluded_stream_id=None,
+        )
+
+        internal_bridge_port: Optional[int] = None
+        if sni_hostname:
+            internal_bridge_port = await self._allocate_bridge_port(redirector_id)
+            # SNI streams require TLS — enforce here instead of silently
+            # producing an inner terminator that nginx would reject.
+            if not data.get("ssl_enabled"):
+                raise ValueError("SNI-routed streams must have ssl_enabled=True.")
+            if not (data.get("ssl_cert_path") and data.get("ssl_key_path")):
+                raise ValueError(
+                    "SNI-routed streams must have ssl_cert_path and ssl_key_path."
+                )
+
         stream = StreamConfig(
             id=str(uuid.uuid4()),
             redirector_id=redirector_id,
             name=data["name"],
             protocol=data.get("protocol", "tcp"),
-            listen_port=data["listen_port"],
+            listen_port=listen_port,
             cs_ip=data["cs_ip"],
             cs_port=data["cs_port"],
+            sni_hostname=sni_hostname,
+            internal_bridge_port=internal_bridge_port,
             access_control_enabled=data.get("access_control_enabled", False),
             allowed_cidrs=data.get("allowed_cidrs"),
             ssl_enabled=data.get("ssl_enabled", False),
@@ -238,8 +282,121 @@ class RedirectorService:
         await self.session.refresh(stream)
         return stream
 
+    # -------------------------------------------------------------------------
+    # SNI routing helpers
+    # -------------------------------------------------------------------------
+
+    async def _check_sni_collision(
+        self,
+        *,
+        redirector_id: str,
+        listen_port: int,
+        sni_hostname: Optional[str],
+        excluded_stream_id: Optional[str],
+    ) -> None:
+        """Enforce: a port is either legacy-only or SNI-only on a redirector.
+
+        - legacy new on legacy-occupied port → reject
+        - legacy new on SNI-occupied port    → reject
+        - SNI new on legacy-occupied port    → reject
+        - SNI new on SNI-occupied port       → OK (duplicate-hostname caught
+          by the DB unique constraint)
+        """
+        result = await self.session.execute(
+            select(StreamConfig).where(
+                StreamConfig.redirector_id == redirector_id,
+                StreamConfig.listen_port == listen_port,
+            )
+        )
+        existing = [
+            s for s in result.scalars().all()
+            if excluded_stream_id is None or s.id != excluded_stream_id
+        ]
+        if not existing:
+            return
+
+        existing_has_legacy = any(s.sni_hostname is None for s in existing)
+        existing_has_sni = any(s.sni_hostname is not None for s in existing)
+
+        if sni_hostname is None:
+            # New stream is legacy
+            if existing_has_sni:
+                raise StreamSniCollisionError(
+                    f"Port {listen_port} is already hosting SNI-routed streams on "
+                    f"this redirector. Use a different port or add an SNI hostname "
+                    f"to share the port."
+                )
+            if existing_has_legacy:
+                raise StreamSniCollisionError(
+                    f"Port {listen_port} is already in use by a legacy stream."
+                )
+        else:
+            # New stream is SNI
+            if existing_has_legacy:
+                raise StreamSniCollisionError(
+                    f"Port {listen_port} is already in use by a non-SNI stream "
+                    f"on this redirector. Remove it first or pick a different port."
+                )
+
+    async def _allocate_bridge_port(self, redirector_id: str) -> int:
+        """Pick the lowest free bridge port in [SNI_BRIDGE_PORT_MIN, SNI_BRIDGE_PORT_MAX]
+        for this redirector. Raises NoBridgePortAvailableError if exhausted.
+        """
+        result = await self.session.execute(
+            select(StreamConfig.internal_bridge_port).where(
+                StreamConfig.redirector_id == redirector_id,
+                StreamConfig.internal_bridge_port.is_not(None),
+            )
+        )
+        used = {row[0] for row in result.all()}
+        for candidate in range(SNI_BRIDGE_PORT_MIN, SNI_BRIDGE_PORT_MAX + 1):
+            if candidate not in used:
+                return candidate
+        raise NoBridgePortAvailableError(
+            f"No free SNI bridge ports remain on redirector {redirector_id} "
+            f"(range {SNI_BRIDGE_PORT_MIN}-{SNI_BRIDGE_PORT_MAX} exhausted)."
+        )
+
     async def update_stream(self, stream: StreamConfig, data: dict) -> StreamConfig:
-        """Update stream from a dict of changed fields (exclude_unset=True)."""
+        """Update stream from a dict of changed fields (exclude_unset=True).
+
+        SNI rules:
+          - You can rename sni_hostname on an already-SNI stream (changes the
+            map entry in the outer router; no port realloc).
+          - You cannot toggle a stream between legacy and SNI via update —
+            it's a structural change with port-allocation and cert implications.
+            Delete + recreate is the supported path.
+          - Changing listen_port triggers the same SNI/legacy collision check
+            the create path uses.
+        """
+        # Structural toggle guard
+        if "sni_hostname" in data:
+            new_sni = data["sni_hostname"]
+            current_sni = stream.sni_hostname
+            if (current_sni is None) != (new_sni is None):
+                raise StreamSniCollisionError(
+                    "Cannot toggle a stream between legacy and SNI routing via "
+                    "update. Delete this stream and create a new one with the "
+                    "desired routing mode."
+                )
+
+        # Collision check if listen_port is changing OR sni_hostname changes
+        # to a value that might conflict (same hostname would hit the DB
+        # unique constraint anyway, but we surface a clearer error first).
+        effective_listen_port = data.get("listen_port", stream.listen_port)
+        effective_sni = data.get("sni_hostname", stream.sni_hostname)
+        if (
+            "listen_port" in data and data["listen_port"] != stream.listen_port
+        ) or (
+            "sni_hostname" in data and data["sni_hostname"] != stream.sni_hostname
+        ):
+            await self._check_sni_collision(
+                redirector_id=stream.redirector_id,
+                listen_port=effective_listen_port,
+                sni_hostname=effective_sni,
+                excluded_stream_id=stream.id,
+            )
+
         simple_fields = (
             "name", "protocol", "listen_port", "cs_ip", "cs_port",
             "access_control_enabled", "ssl_enabled", "ssl_cert_path",
@@ -261,6 +418,9 @@ class RedirectorService:
         # key in data to allow both operations.
         if "custom_config_override" in data:
             stream.custom_config_override = data["custom_config_override"]
+        # sni_hostname rename (same-polarity per structural guard above)
+        if "sni_hostname" in data:
+            stream.sni_hostname = data["sni_hostname"]
 
         await self.session.commit()
         await self.session.refresh(stream)

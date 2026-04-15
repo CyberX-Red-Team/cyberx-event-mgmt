@@ -365,6 +365,23 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                                     <label class="form-label small">SSL Ciphers</label>
                                     <input type="text" class="form-control" id="sm_ssl_ciphers" value="HIGH:!aNULL:!MD5">
                                 </div>
+                                <div class="col-12 pt-2 border-top mt-2">
+                                    <label class="form-label small fw-semibold">
+                                        SNI Hostname <span class="text-muted">(optional)</span>
+                                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline"
+                                                data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="right"
+                                                data-bs-content="When set, this stream joins an SNI router on the same listen port. Multiple streams with distinct SNI hostnames can share one public port (e.g. 443), each terminating TLS with its own certificate. Leave blank for a regular single-cert stream on this port. Unmatched SNI hostnames receive the decoy maintenance page.">
+                                            <i data-feather="info" style="width:14px;height:14px;"></i>
+                                        </button>
+                                    </label>
+                                    <input type="text" class="form-control" id="sm_sni_hostname"
+                                        placeholder="beacon.example.com"
+                                        pattern="^[a-zA-Z0-9_]([a-zA-Z0-9_.\-]*[a-zA-Z0-9_])?$">
+                                    <div class="form-text">
+                                        Set this to share <strong>listen_port</strong> with other SNI-routed
+                                        streams on the same redirector. Requires the SSL fields above.
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -806,6 +823,8 @@ function openAddStreamModal() {
     document.getElementById('sm_ssl_key').value = '';
     document.getElementById('sm_ssl_protocols').value = 'TLSv1.2 TLSv1.3';
     document.getElementById('sm_ssl_ciphers').value = 'HIGH:!aNULL:!MD5';
+    document.getElementById('sm_sni_hostname').value = '';
+    document.getElementById('sm_sni_hostname').disabled = false;
     document.getElementById('aclSection').classList.add('d-none');
     document.getElementById('sslSection').classList.add('d-none');
     document.getElementById('streamModalError').classList.add('d-none');
@@ -833,6 +852,13 @@ function openEditStreamModal(id) {
     document.getElementById('sm_ssl_key').value = s.ssl_key_path || '';
     document.getElementById('sm_ssl_protocols').value = s.ssl_protocols;
     document.getElementById('sm_ssl_ciphers').value = s.ssl_ciphers;
+    const sniInput = document.getElementById('sm_sni_hostname');
+    sniInput.value = s.sni_hostname || '';
+    // Disable the SNI field on edit when it's already set or already unset —
+    // toggling between legacy and SNI modes is rejected server-side, so we
+    // only allow renaming an existing SNI hostname (both modes keep the
+    // field enabled but can't switch polarity).
+    sniInput.disabled = false;
     toggleCollapse('aclSection', s.access_control_enabled);
     toggleCollapse('sslSection', s.ssl_enabled);
     document.getElementById('streamModalError').classList.add('d-none');
@@ -848,6 +874,7 @@ async function submitStream() {
     const cidrsRaw = document.getElementById('sm_cidrs').value.trim();
     const cidrs = cidrsRaw ? cidrsRaw.split(',').map(c => c.trim()).filter(c => c) : null;
 
+    const sniHostname = document.getElementById('sm_sni_hostname').value.trim() || null;
     const payload = {
         name: document.getElementById('sm_name').value.trim(),
         protocol: document.getElementById('sm_protocol').value,
@@ -862,7 +889,15 @@ async function submitStream() {
         ssl_key_path: document.getElementById('sm_ssl_key').value.trim() || null,
         ssl_protocols: document.getElementById('sm_ssl_protocols').value.trim(),
         ssl_ciphers: document.getElementById('sm_ssl_ciphers').value.trim(),
+        sni_hostname: sniHostname,
     };
+
+    // SNI requires SSL — catch obvious misconfig client-side before sending.
+    if (sniHostname && !payload.ssl_enabled) {
+        errEl.textContent = 'SNI routing requires SSL/TLS to be enabled with a certificate and key.';
+        errEl.classList.remove('d-none');
+        return;
+    }
 
     if (!payload.name || !payload.cs_ip || !payload.listen_port || !payload.cs_port) {
         errEl.textContent = 'Please fill in all required fields.';

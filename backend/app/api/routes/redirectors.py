@@ -41,7 +41,11 @@ from app.schemas.redirector import (
     StreamConfigOut,
     DeployResult, TestConnectionResult, ConfigPreview, CheckPortRequest,
 )
-from app.services.redirector_service import RedirectorService
+from app.services.redirector_service import (
+    RedirectorService,
+    StreamSniCollisionError,
+    NoBridgePortAvailableError,
+)
 from app.services.instance_service import InstanceService
 from app.models.instance import Instance
 from app.models.instance_template import InstanceTemplate
@@ -1161,7 +1165,14 @@ async def create_stream(
     await _get_authorized_redirector(
         redirector_id, current_user, svc, allow_public=True, db=db
     )
-    stream = await svc.create_stream(redirector_id, payload.model_dump())
+    try:
+        stream = await svc.create_stream(redirector_id, payload.model_dump())
+    except StreamSniCollisionError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except NoBridgePortAvailableError as e:
+        raise HTTPException(status_code=status.HTTP_507_INSUFFICIENT_STORAGE, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
     audit = AuditService(db)
     await audit.log(
@@ -1204,7 +1215,40 @@ _DEPLOY_SENSITIVE_FIELDS = frozenset({
     "ssl_enabled", "ssl_cert_path", "ssl_key_path",
     "ssl_protocols", "ssl_ciphers",
     "custom_config_override",
+    "sni_hostname",
 })
+
+
+async def _deploy_stream(ssh, svc: RedirectorService, redirector: Redirector, stream: StreamConfig) -> dict:
+    """Deploy a single stream, routing SNI streams through deploy_all.
+
+    SNI-routed streams can't be deployed in isolation because the per-port
+    SNI router file (cyberx_sni_<port>.conf) and the decoy http conf
+    depend on the full set of SNI streams across the redirector. Routing
+    through deploy_all rebuilds those artifacts atomically. Legacy
+    streams continue to use the cheaper single-file path.
+    """
+    if getattr(stream, "sni_hostname", None):
+        all_streams = await svc.list_streams(redirector.id)
+        return await run_deploy_all(ssh, redirector.nginx_stream_dir, all_streams)
+    return await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
+
+
+async def _remove_stream_file(
+    ssh, svc: RedirectorService, redirector: Redirector, stream: StreamConfig
+) -> dict:
+    """Remove a single stream file, routing SNI streams through deploy_all.
+
+    Caller must mark the stream disabled in the DB BEFORE invoking this
+    helper so deploy_all sees the stream as no-longer-enabled and rebuilds
+    the router file without its hostname.
+    """
+    if getattr(stream, "sni_hostname", None):
+        all_streams = await svc.list_streams(redirector.id)
+        return await run_deploy_all(ssh, redirector.nginx_stream_dir, all_streams)
+    return await run_remove_single(
+        ssh, redirector.nginx_stream_dir, stream.id, stream.name
+    )
 
 
 @router.put("/{redirector_id}/streams/{stream_id}", response_model=StreamConfigOut)
@@ -1230,7 +1274,12 @@ async def update_stream(
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     changes = payload.model_dump(exclude_unset=True)
     was_deployed = bool(stream.deployed)
-    stream = await svc.update_stream(stream, changes)
+    try:
+        stream = await svc.update_stream(stream, changes)
+    except StreamSniCollisionError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
     # Redeploy if this edit touched a deploy-sensitive field and the stream
     # is currently live on the redirector. Best-effort: on SSH or nginx -t
@@ -1241,7 +1290,7 @@ async def update_stream(
     if was_deployed and stream.enabled and touched_sensitive:
         try:
             ssh = await _make_ssh_service(svc, redirector, db)
-            deploy_result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
+            deploy_result = await _deploy_stream(ssh, svc, redirector, stream)
             if deploy_result["success"]:
                 await svc.update_deployed_at(redirector)
                 await svc.update_stream(stream, {"deployed": True})
@@ -1292,15 +1341,23 @@ async def delete_stream(
     )
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     name = stream.name
+    was_sni = bool(stream.sni_hostname)
 
-    # Remove the config file from the redirector (best-effort — delete from DB even if SSH fails)
+    # Delete from the DB first so the SNI router rebuild (via deploy_all)
+    # naturally drops this stream's hostname from the map. For legacy
+    # streams we just remove the single file; for SNI we run a full
+    # redeploy on the remaining streams so the router is regenerated and
+    # the decoy conf is cleaned up if this was the last SNI stream.
+    await svc.delete_stream(stream)
     try:
         ssh = await _make_ssh_service(svc, redirector, db)
-        await run_remove_single(ssh, redirector.nginx_stream_dir, stream_id, name)
+        if was_sni:
+            remaining = await svc.list_streams(redirector_id)
+            await run_deploy_all(ssh, redirector.nginx_stream_dir, remaining)
+        else:
+            await run_remove_single(ssh, redirector.nginx_stream_dir, stream_id, name)
     except Exception as e:
         logger.warning("Failed to remove stream file from redirector during delete: %s", e)
-
-    await svc.delete_stream(stream)
 
     audit = AuditService(db)
     await audit.log(
@@ -1375,7 +1432,7 @@ async def update_stream_config(
 
     try:
         ssh = await _make_ssh_service(svc, redirector, db)
-        result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
+        result = await _deploy_stream(ssh, svc, redirector, stream)
     except SSHConnectionError as e:
         await svc.update_stream(stream, {"deployed": False})
         raise _ssh_connection_error(e)
@@ -1436,7 +1493,7 @@ async def reset_stream_config(
 
     try:
         ssh = await _make_ssh_service(svc, redirector, db)
-        result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
+        result = await _deploy_stream(ssh, svc, redirector, stream)
     except SSHConnectionError as e:
         await svc.update_stream(stream, {"deployed": False})
         raise _ssh_connection_error(e)
@@ -1495,7 +1552,7 @@ async def enable_stream(
     ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
-        result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
+        result = await _deploy_stream(ssh, svc, redirector, stream)
     except SSHConnectionError as e:
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
@@ -1553,7 +1610,7 @@ async def deploy_stream(
     ssh = await _make_ssh_service(svc, redirector, db)
 
     try:
-        result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
+        result = await _deploy_stream(ssh, svc, redirector, stream)
     except SSHConnectionError as e:
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
@@ -1602,10 +1659,15 @@ async def remove_stream_file(
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     ssh = await _make_ssh_service(svc, redirector, db)
 
+    # For SNI streams, mark disabled BEFORE the helper runs so deploy_all
+    # sees the correct state and rebuilds the per-port router file without
+    # this hostname. For legacy streams the helper uses run_remove_single
+    # and this flip is harmless (it matches what the success branch would
+    # have set below).
+    stream = await svc.update_stream(stream, {"enabled": False})
+
     try:
-        result = await run_remove_single(
-            ssh, redirector.nginx_stream_dir, stream_id, stream.name
-        )
+        result = await _remove_stream_file(ssh, svc, redirector, stream)
     except SSHConnectionError as e:
         raise _ssh_connection_error(e)
     except SSHAuthError as e:
@@ -1614,7 +1676,7 @@ async def remove_stream_file(
         raise _ssh_command_error(e)
 
     if result["success"]:
-        await svc.update_stream(stream, {"enabled": False, "deployed": False})
+        await svc.update_stream(stream, {"deployed": False})
 
     audit = AuditService(db)
     await audit.log(

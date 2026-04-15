@@ -19,6 +19,10 @@ _SAFE_PATH_RE = re.compile(r"^/[a-zA-Z0-9_./-]+$")
 _SAFE_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
 _SAFE_HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 _SAFE_CIPHER_RE = re.compile(r"^[a-zA-Z0-9_:!+\-@.]+$")
+# DNS-ish hostname for SNI routing. Matches the generator's safety regex.
+_SNI_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)[a-zA-Z0-9_]([a-zA-Z0-9_.-]*[a-zA-Z0-9_])?$"
+)
 
 _ALLOWED_SSL_PROTOCOLS = {"TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"}
 _UNSAFE_NGINX_CHARS = re.compile(r"[;\n\r{}]")
@@ -226,6 +230,23 @@ class StreamConfigCreate(BaseModel):
     cs_port: int = Field(..., ge=1, le=65535)
     access_control_enabled: bool = False
     allowed_cidrs: Optional[List[str]] = None
+    # SNI routing — when set, this stream joins the per-port SNI router and
+    # is reachable via TLS SNI matching on listen_port. Requires ssl_enabled
+    # and ssl_cert_path/ssl_key_path. The service layer allocates the
+    # internal bridge port; clients do NOT provide it.
+    sni_hostname: Optional[str] = Field(None, max_length=253)
+
+    @field_validator("sni_hostname")
+    @classmethod
+    def validate_sni_hostname(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        if not _SNI_HOSTNAME_RE.match(v):
+            raise ValueError(
+                "sni_hostname must be a valid DNS-style hostname "
+                "(letters, digits, dots, dashes, underscores; max 253 chars)."
+            )
+        return v.lower()
 
     @field_validator("name")
     @classmethod
@@ -296,6 +317,20 @@ class StreamConfigUpdate(BaseModel):
     cs_port: Optional[int] = Field(None, ge=1, le=65535)
     access_control_enabled: Optional[bool] = None
     allowed_cidrs: Optional[List[str]] = None
+    # Rename supported; legacy <-> SNI toggle is rejected in the service.
+    sni_hostname: Optional[str] = Field(None, max_length=253)
+
+    @field_validator("sni_hostname")
+    @classmethod
+    def validate_sni_hostname_update(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        if not _SNI_HOSTNAME_RE.match(v):
+            raise ValueError(
+                "sni_hostname must be a valid DNS-style hostname "
+                "(letters, digits, dots, dashes, underscores; max 253 chars)."
+            )
+        return v.lower()
 
     @field_validator("name")
     @classmethod
@@ -376,6 +411,9 @@ class StreamConfigOut(BaseModel):
     ssl_key_path: Optional[str]
     ssl_protocols: str
     ssl_ciphers: str
+    sni_hostname: Optional[str] = None
+    internal_bridge_port: Optional[int] = None
+    is_sni_routed: bool = False
     enabled: bool
     deployed: bool
     has_custom_override: bool = False
