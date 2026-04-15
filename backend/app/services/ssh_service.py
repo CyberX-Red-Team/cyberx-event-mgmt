@@ -27,6 +27,7 @@ import logging
 import shlex
 import time
 import uuid
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Tuple
 
@@ -38,6 +39,26 @@ logger = logging.getLogger(__name__)
 
 # Validates that stream/redirector IDs are safe for use in filenames
 _SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+# Where the decoy http server's conf file lives on the redirector. The
+# http-context include at /etc/nginx/conf.d/*.conf is standard on stock
+# Debian/Ubuntu/Kali nginx packages and is a documented precondition.
+DECOY_HTTP_CONF_PATH = "/etc/nginx/conf.d/cyberx_decoy.conf"
+DECOY_HTTP_CONF_FILENAME = "cyberx_decoy.conf"
+
+
+def _sni_router_filename(listen_port: int) -> str:
+    """Filename for the per-port SNI router file inside nginx_stream_dir."""
+    return f"cyberx_sni_{int(listen_port)}.conf"
+
+
+def _enabled_sni_streams_by_port(streams) -> dict:
+    """Group enabled SNI streams by listen_port for router generation."""
+    groups: dict = defaultdict(list)
+    for s in streams:
+        if s.enabled and getattr(s, "sni_hostname", None):
+            groups[int(s.listen_port)].append(s)
+    return dict(groups)
 
 # Bounded thread pool — all paramiko calls execute here
 _executor = ThreadPoolExecutor(max_workers=10)
@@ -532,15 +553,24 @@ class SSHService:
         """
         Sync all StreamConfigs for a redirector:
           1. Snapshot existing config files (for rollback)
-          2. Write enabled streams
+          2. Write enabled streams — per-stream files plus per-port SNI
+             router files whenever any SNI streams exist on a port
           3. Delete disabled streams
-          4. Remove orphaned cyberx_*.conf files not in the current set
-          5. nginx -t → systemctl reload nginx
-          6. On nginx -t failure: restore all snapshots (rollback)
+          4. Remove orphaned cyberx_*.conf / cyberx_sni_*.conf files not
+             in the current set
+          5. Write the SNI decoy http conf + self-signed cert if any SNI
+             streams exist on this redirector; remove them otherwise
+          6. nginx -t → systemctl reload nginx
+          7. On nginx -t failure: restore all snapshots (rollback)
 
         Returns a dict compatible with DeployResult schema.
         """
-        from app.services.nginx_config_service import generate_stream_config
+        from app.services.nginx_config_service import (
+            generate_stream_config,
+            generate_sni_router_config,
+            generate_decoy_http_config,
+            generate_decoy_cert_shell_command,
+        )
 
         # Validate all stream IDs before any file operations
         for s in streams:
@@ -550,6 +580,10 @@ class SSHService:
         files_written: list[str] = []
         files_deleted: list[str] = []
         use_sudo = self.username != "root"
+
+        # Which listen_ports need an SNI router file this cycle?
+        sni_ports = _enabled_sni_streams_by_port(streams)
+        has_any_sni = bool(sni_ports)
 
         client = self._connect()
         try:
@@ -567,6 +601,10 @@ class SSHService:
                 self._exec(client, f"mkdir -p {staging_dir}")
 
             known_filenames = {f"cyberx_{s.id}.conf" for s in streams}
+            # SNI router files are addressed by port, not stream id — add
+            # them to the orphan filter so they don't get cleaned up by
+            # the per-stream loop below.
+            known_filenames |= {_sni_router_filename(p) for p in sni_ports.keys()}
 
             # Snapshot existing files for rollback on nginx -t failure
             # Key = remote_path, Value = bytes (existing content) or None (file was new)
@@ -625,6 +663,121 @@ class SSHService:
                         logger.debug("Removed disabled stream file %s", remote_path)
                     except FileNotFoundError:
                         pass
+
+            # Per-port SNI router files. Regenerated from the authoritative
+            # list of enabled SNI streams on every deploy. If a port no
+            # longer has any SNI streams, its router file isn't in
+            # known_filenames and will be picked up by orphan cleanup.
+            for port, port_streams in sni_ports.items():
+                router_filename = _sni_router_filename(port)
+                router_remote = f"{stream_dir}/{router_filename}"
+                router_text = generate_sni_router_config(port, port_streams)
+
+                # Snapshot current content for rollback
+                try:
+                    if use_sudo:
+                        out, _, code = self._exec(
+                            client,
+                            f"{self._sudo_prefix}cat {shlex.quote(router_remote)} 2>/dev/null",
+                        )
+                        backup.setdefault(
+                            router_remote, out.encode() if code == 0 else None
+                        )
+                    else:
+                        try:
+                            with sftp.open(router_remote, "rb") as f:
+                                backup.setdefault(router_remote, f.read())
+                        except FileNotFoundError:
+                            backup.setdefault(router_remote, None)
+                except Exception:
+                    backup.setdefault(router_remote, None)
+
+                if use_sudo:
+                    staged_path = f"{staging_dir}/{router_filename}"
+                    sftp.putfo(io.BytesIO(router_text.encode("utf-8")), staged_path)
+                    self._exec(
+                        client,
+                        f"{self._sudo_prefix}cp {shlex.quote(staged_path)} {shlex.quote(router_remote)}",
+                    )
+                else:
+                    sftp.putfo(io.BytesIO(router_text.encode("utf-8")), router_remote)
+                files_written.append(router_filename)
+                logger.debug("Wrote SNI router %s", router_remote)
+
+            # Decoy http conf + cert. Lives in /etc/nginx/conf.d/, not
+            # stream_dir. Written when any SNI stream exists; removed
+            # otherwise so we don't leave a stale listener on 127.0.0.1.
+            if has_any_sni:
+                # Snapshot existing decoy conf for rollback
+                try:
+                    if use_sudo:
+                        out, _, code = self._exec(
+                            client,
+                            f"{self._sudo_prefix}cat {shlex.quote(DECOY_HTTP_CONF_PATH)} 2>/dev/null",
+                        )
+                        backup.setdefault(
+                            DECOY_HTTP_CONF_PATH,
+                            out.encode() if code == 0 else None,
+                        )
+                    else:
+                        try:
+                            with sftp.open(DECOY_HTTP_CONF_PATH, "rb") as f:
+                                backup.setdefault(DECOY_HTTP_CONF_PATH, f.read())
+                        except FileNotFoundError:
+                            backup.setdefault(DECOY_HTTP_CONF_PATH, None)
+                except Exception:
+                    backup.setdefault(DECOY_HTTP_CONF_PATH, None)
+
+                # Ensure the decoy self-signed cert exists. Idempotent —
+                # the shell command is a no-op when both files are present.
+                cert_cmd = generate_decoy_cert_shell_command()
+                _, _, cert_code = self._exec(client, f"{self._sudo_prefix}/bin/bash -c {shlex.quote(cert_cmd)}")
+                if cert_code != 0:
+                    logger.warning(
+                        "Decoy cert generation returned exit %d — "
+                        "nginx -t will surface any resulting error.",
+                        cert_code,
+                    )
+
+                decoy_text = generate_decoy_http_config()
+                if use_sudo:
+                    staged_decoy = f"{staging_dir}/{DECOY_HTTP_CONF_FILENAME}"
+                    sftp.putfo(io.BytesIO(decoy_text.encode("utf-8")), staged_decoy)
+                    self._exec(
+                        client,
+                        f"{self._sudo_prefix}cp {shlex.quote(staged_decoy)} {shlex.quote(DECOY_HTTP_CONF_PATH)}",
+                    )
+                else:
+                    sftp.putfo(io.BytesIO(decoy_text.encode("utf-8")), DECOY_HTTP_CONF_PATH)
+                files_written.append(DECOY_HTTP_CONF_FILENAME)
+                logger.debug("Wrote SNI decoy conf %s", DECOY_HTTP_CONF_PATH)
+            else:
+                # No SNI streams on this redirector — remove any existing
+                # decoy conf so nginx doesn't keep a loopback listener for
+                # a feature that's no longer in use.
+                try:
+                    if use_sudo:
+                        out, _, code = self._exec(
+                            client,
+                            f"{self._sudo_prefix}cat {shlex.quote(DECOY_HTTP_CONF_PATH)} 2>/dev/null",
+                        )
+                        if code == 0:
+                            backup.setdefault(DECOY_HTTP_CONF_PATH, out.encode())
+                            self._exec(
+                                client,
+                                f"{self._sudo_prefix}rm -f {shlex.quote(DECOY_HTTP_CONF_PATH)}",
+                            )
+                            files_deleted.append(DECOY_HTTP_CONF_FILENAME)
+                    else:
+                        try:
+                            with sftp.open(DECOY_HTTP_CONF_PATH, "rb") as f:
+                                backup.setdefault(DECOY_HTTP_CONF_PATH, f.read())
+                            sftp.remove(DECOY_HTTP_CONF_PATH)
+                            files_deleted.append(DECOY_HTTP_CONF_FILENAME)
+                        except FileNotFoundError:
+                            pass
+                except Exception as e:
+                    logger.debug("Decoy conf cleanup skipped: %s", e)
 
             # Orphan cleanup: remove cyberx_*.conf files that are no longer in the DB
             try:
@@ -924,6 +1077,32 @@ class SSHService:
                 "detail": "stream { include ... } block present in nginx config."
                           if stream_block_ok
                           else "No stream block in nginx config — auto-fix will add it.",
+            })
+
+            # 3b.2 http-context include for /etc/nginx/conf.d/*.conf. The SNI
+            # decoy http server lives there, so SNI routing is only usable
+            # when this include is present. Stock Debian/Ubuntu/Kali nginx
+            # ships with it by default — the check catches hand-customized
+            # nginx.conf files that dropped the line.
+            confd_out, _, _ = self._exec(
+                client,
+                "grep -rE 'include[[:space:]]+.*conf\\.d/.*\\.conf' /etc/nginx/ 2>/dev/null || true",
+            )
+            confd_include_ok = bool(confd_out.strip())
+            checks.append({
+                "id": "confd_http_include",
+                "label": "nginx conf.d/ http include",
+                "ok": confd_include_ok,
+                "detail": (
+                    "/etc/nginx/conf.d/*.conf is included in http context."
+                    if confd_include_ok
+                    else "nginx.conf does not include /etc/nginx/conf.d/*.conf "
+                         "inside its http {} block. SNI routing requires this "
+                         "so the decoy http server can be installed. Add "
+                         "'include /etc/nginx/conf.d/*.conf;' to the http {} "
+                         "block in /etc/nginx/nginx.conf (stock packages already "
+                         "have this)."
+                ),
             })
 
             # 3c. Default HTTP site disabled (sites-enabled/default absent).
