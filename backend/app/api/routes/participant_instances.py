@@ -343,6 +343,21 @@ async def update_my_instance(
         changes["visibility"] = {"old": instance.visibility, "new": visibility}
         instance.visibility = visibility
 
+        # Parity: when an instance is promoted to public, any linked redirector
+        # must also be public, otherwise collaborators silently lose visibility
+        # even though the parent instance is shared.
+        if visibility == "public":
+            redir_svc = RedirectorService(db)
+            linked = await redir_svc.get_redirector_by_instance_id(instance_id)
+            if linked is not None and linked.visibility != "public":
+                changes["redirector_visibility_auto_promoted"] = {
+                    "redirector_id": linked.id,
+                    "redirector_name": linked.name,
+                    "old": linked.visibility,
+                    "new": "public",
+                }
+                linked.visibility = "public"
+
     # Update notes if provided
     if notes is not None:
         changes["notes"] = True
