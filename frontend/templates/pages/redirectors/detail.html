@@ -397,16 +397,14 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
             <div class="modal-body">
                 <div id="previewOverrideBanner" class="alert alert-warning py-2 small d-none" role="alert">
                     <i data-feather="alert-triangle" class="me-1"></i>
-                    This stream is using a <strong>hand-edited config override</strong>.
-                    Changes made via the Edit Stream form (listen port, upstream, SSL, ACLs) will
-                    <strong>not</strong> affect what is deployed until you click
-                    <em>Reset to Generated</em>.
+                    <strong>Custom override active.</strong>
+                    Edits made from the Add/Edit Stream form (listen port, upstream, SSL, ACLs)
+                    are ignored on this stream until you click <em>Reset to Generated</em>.
                 </div>
                 <div class="mb-2 small text-muted">
-                    Edit the nginx config directly and click <strong>Save &amp; Apply</strong> to
-                    deploy it. The redirector will run <code>nginx -t</code> and reload; on failure
-                    the file is rolled back but your draft stays in the database so you can keep
-                    editing.
+                    Hand-edit the nginx config and click <strong>Save &amp; Apply</strong> to deploy it.
+                    The redirector will run <code>nginx&nbsp;-t</code> and reload; on failure the file is
+                    rolled back automatically, but your draft stays in the editor so you can fix and retry.
                 </div>
                 <textarea class="form-control font-monospace bg-dark text-light border-0"
                     id="previewContent" rows="20" spellcheck="false"></textarea>

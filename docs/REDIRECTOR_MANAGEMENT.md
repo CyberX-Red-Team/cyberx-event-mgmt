@@ -236,12 +236,18 @@ Only traffic from listed CIDRs is accepted. All other traffic is dropped.
 
 ### SSL/TLS Bridging
 
-When enabled (TCP only), the redirector **terminates** the client TLS handshake
-with a legitimate certificate stored on the redirector, then opens a **fresh
-TLS connection to the upstream** so C2 teamservers can keep using their own
-self-signed certificate. This is TLS bridging (terminate + re-origin), not
-passthrough — the public cert lives on the redirector, the CS cert lives on
-the teamserver, and nginx sits between them.
+When **SSL Enabled** is checked on a TCP stream, the redirector performs
+**TLS bridging** — it terminates the client's TLS handshake with a
+legitimate certificate stored on the redirector, then opens a fresh TLS
+connection to the upstream teamserver. This lets C2 teamservers keep
+using their own self-signed certificates while clients see a trusted
+public cert at the edge.
+
+This is bridging (terminate + re-origin), **not** passthrough:
+
+- The public cert lives on the redirector (operator-managed).
+- The teamserver's self-signed cert lives on the teamserver, unchanged.
+- nginx sits between the two and re-encrypts in both directions.
 
 ```nginx
 server {
@@ -258,41 +264,61 @@ server {
 }
 ```
 
-`proxy_ssl on;` is load-bearing — without it, nginx sends plaintext to the
-upstream TLS listener and the teamserver drops the connection immediately.
-`proxy_ssl_verify off;` is needed because CS and most C2 teamservers use
-self-signed certs that nginx has no CA chain for.
+`proxy_ssl on;` is the load-bearing directive here — without it, nginx
+sends **plaintext** to the upstream TLS listener and the teamserver
+drops the connection immediately. `proxy_ssl_verify off;` is required
+because teamservers typically use self-signed certs that nginx has no
+CA chain for; trust is asserted by the infra operator, not by PKI.
 
-Certificate and key files must already be present on the redirector.
+Prerequisites on the redirector:
+
+- The certificate and private key files must already exist at the
+  paths supplied in **SSL Certificate Path** and **SSL Key Path**.
+- The key file must be readable by the nginx user (`www-data` on
+  Debian/Ubuntu/Kali).
 
 ### Custom Config Override
 
 The **View/Edit Config** modal lets operators hand-edit the nginx config
-for a stream when the structured fields can't express what's needed
-(advanced directives, custom variables, experimental tuning). Saving an
-edit:
+for a stream when the structured fields don't cover what they need —
+advanced nginx directives, experimental tuning, or one-off tweaks that
+don't deserve their own schema field.
 
-1. Validates basic structure (non-empty, balanced braces, size ≤ 32 KB,
-   contains a `server` block).
-2. Persists the override in the database on the stream row.
-3. Immediately writes it to the redirector, runs `nginx -t`, and reloads
-   nginx. If `nginx -t` fails the on-disk file is rolled back (previous
-   content or deleted if it was new), but the DB override is kept so the
-   operator can keep editing their draft. The stream is marked
-   `deployed=false` on any failure.
+**When to use it:**
+- You need an nginx directive the wizard doesn't expose (e.g. custom
+  `proxy_buffer_size`, `real_ip_header`, or a `map` block).
+- You want to test a config change without round-tripping through a code
+  deploy.
+- You're debugging a broken stream and need to inspect exactly what the
+  generator would produce, then poke at it.
 
-While an override is active:
-- The **generator path is bypassed entirely** — structured-field edits
-  (listen_port, cs_ip, SSL options, etc.) do not affect what is deployed.
-- The UI shows a **drift banner** to warn the operator.
-- Clicking **Reset to Generated** clears the override, re-renders from
-  structured fields, and redeploys in one step.
+**When to avoid it:** if the change is expressible via the structured
+fields (ports, upstream, SSL, ACLs), use the Edit Stream form instead —
+it stays in sync with wizard validation and survives schema changes.
 
-Internally this is `custom_config_override TEXT NULL` on `stream_configs`
-and the `PUT|DELETE /api/redirectors/{id}/streams/{sid}/config` endpoints.
-Audit events: `STREAM_CONFIG_OVERRIDE_SET` and
-`STREAM_CONFIG_OVERRIDE_RESET` (override body is **not** logged, only its
-byte length).
+**Save flow:**
+
+1. Validate basic structure on the server — non-empty, balanced braces,
+   size ≤ 32 KB, contains a `server` block.
+2. Persist the override on the `stream_configs` row.
+3. SFTP the file onto the redirector, run `nginx -t`, reload nginx.
+4. On `nginx -t` failure, roll back the on-disk file (restore previous
+   content or delete if it was new) and mark the stream
+   `deployed=false`. The DB override is **kept** so the operator can
+   keep editing their broken draft instead of starting over.
+
+**While an override is active**, the generator path is bypassed
+entirely: edits to structured fields (listen_port, cs_ip, SSL options,
+ACLs) do not change what is deployed. The modal shows a drift banner
+and a **Reset to Generated** button that clears the override and
+redeploys the rendered config in one step.
+
+Backed by `custom_config_override TEXT NULL` on `stream_configs` and the
+`PUT|DELETE /api/redirectors/{id}/streams/{sid}/config` endpoints. Audit
+events `STREAM_CONFIG_OVERRIDE_SET` and `STREAM_CONFIG_OVERRIDE_RESET`
+record only the override's byte length — never its content — so
+operators can embed sensitive strings in comments without them appearing
+in audit logs.
 
 ---
 
