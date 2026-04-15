@@ -378,11 +378,22 @@ class StreamConfigOut(BaseModel):
     ssl_ciphers: str
     enabled: bool
     deployed: bool
+    has_custom_override: bool = False
     filename: str
     created_at: datetime
     updated_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
+
+
+class StreamConfigContentUpdate(BaseModel):
+    """Payload for PUT /streams/{id}/config — hand-edited nginx file body.
+
+    The content is validated by nginx_config_service.validate_custom_override
+    in the route handler, then immediately deployed (test + reload on the
+    redirector) so the DB and deployed file stay in sync.
+    """
+    content: str = Field(..., min_length=1, max_length=32768)
 
 
 # ---------------------------------------------------------------------------

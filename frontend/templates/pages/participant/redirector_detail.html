@@ -423,24 +423,43 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
 </div>
 
 <!-- ================================================================
-     Preview Modal
+     View / Edit Config Modal
      ================================================================ -->
 <div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
-                    <i data-feather="eye" class="me-2"></i>Config Preview
+                    <i data-feather="edit-3" class="me-2"></i>View / Edit Config
                     <span id="previewFilename" class="text-muted small ms-2 font-monospace"></span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div id="previewOverrideBanner" class="alert alert-warning py-2 small d-none" role="alert">
+                    <i data-feather="alert-triangle" class="me-1"></i>
+                    <strong>Custom override active.</strong>
+                    Edits made from the Add/Edit Stream form (listen port, upstream, SSL, ACLs)
+                    are ignored on this stream until you click <em>Reset to Generated</em>.
+                </div>
+                <div class="mb-2 small text-muted">
+                    Hand-edit the nginx config and click <strong>Save &amp; Apply</strong> to deploy it.
+                    The redirector will run <code>nginx&nbsp;-t</code> and reload; on failure the file is
+                    rolled back automatically, but your draft stays in the editor so you can fix and retry.
+                </div>
                 <textarea class="form-control font-monospace bg-dark text-light border-0"
-                    id="previewContent" rows="20" readonly></textarea>
+                    id="previewContent" rows="20" spellcheck="false"></textarea>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-outline-warning me-auto d-none"
+                    id="previewResetBtn" onclick="resetStreamConfig()">
+                    <i data-feather="rotate-ccw" class="me-1"></i>Reset to Generated
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="previewSaveBtn"
+                    onclick="saveStreamConfig()">
+                    <i data-feather="upload" class="me-1"></i>Save &amp; Apply
+                </button>
             </div>
         </div>
     </div>
@@ -723,15 +742,88 @@ async function disableAll() {
 // ============================================================
 // Stream operations
 // ============================================================
+// Tracks which stream the View/Edit Config modal is currently editing so
+// Save & Apply / Reset know which resource to PUT/DELETE against.
+let currentConfigStreamId = null;
+
 async function previewStream(streamId) {
+    currentConfigStreamId = streamId;
     try {
-        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}/preview`);
-        const data = await resp.json();
-        document.getElementById('previewFilename').textContent = data.filename;
-        document.getElementById('previewContent').value = data.content;
+        const [streamResp, previewResp] = await Promise.all([
+            csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}`),
+            csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}/preview`),
+        ]);
+        const stream = await streamResp.json();
+        const preview = await previewResp.json();
+        document.getElementById('previewFilename').textContent = preview.filename;
+        document.getElementById('previewContent').value = preview.content;
+
+        const hasOverride = !!stream.has_custom_override;
+        document.getElementById('previewOverrideBanner').classList.toggle('d-none', !hasOverride);
+        document.getElementById('previewResetBtn').classList.toggle('d-none', !hasOverride);
+
         previewModal.show();
+        if (window.feather) window.feather.replace();
     } catch (err) {
-        showToast(`Preview failed: ${escHtml(err.message)}`, 'danger');
+        showToast(`Load failed: ${escHtml(err.message)}`, 'danger');
+    }
+}
+
+async function saveStreamConfig() {
+    if (!currentConfigStreamId) return;
+    const content = document.getElementById('previewContent').value;
+    if (!content.trim()) {
+        showToast('Config is empty.', 'warning');
+        return;
+    }
+    const saveBtn = document.getElementById('previewSaveBtn');
+    saveBtn.disabled = true;
+    try {
+        const resp = await csrfFetch(
+            `/api/redirectors/${REDIRECTOR_ID}/streams/${currentConfigStreamId}/config`,
+            {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            }
+        );
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast(`Save failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
+            return;
+        }
+        previewModal.hide();
+        showDeployResult('Save & Apply Config', data);
+        if (data.success) {
+            await loadStreams();
+        }
+    } catch (err) {
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
+    } finally {
+        saveBtn.disabled = false;
+    }
+}
+
+async function resetStreamConfig() {
+    if (!currentConfigStreamId) return;
+    if (!confirm('Reset this stream to the generated config?\n\nThis clears the custom override and redeploys the config rendered from the stream fields.')) return;
+    try {
+        const resp = await csrfFetch(
+            `/api/redirectors/${REDIRECTOR_ID}/streams/${currentConfigStreamId}/config`,
+            { method: 'DELETE' }
+        );
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast(`Reset failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
+            return;
+        }
+        previewModal.hide();
+        showDeployResult('Reset to Generated', data);
+        if (data.success) {
+            await loadStreams();
+        }
+    } catch (err) {
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 

@@ -234,19 +234,91 @@ deny all;
 
 Only traffic from listed CIDRs is accepted. All other traffic is dropped.
 
-### SSL/TLS Termination
+### SSL/TLS Bridging
 
-When enabled (TCP only), the redirector terminates TLS and forwards plaintext to the upstream:
+When **SSL Enabled** is checked on a TCP stream, the redirector performs
+**TLS bridging** — it terminates the client's TLS handshake with a
+legitimate certificate stored on the redirector, then opens a fresh TLS
+connection to the upstream teamserver. This lets C2 teamservers keep
+using their own self-signed certificates while clients see a trusted
+public cert at the edge.
+
+This is bridging (terminate + re-origin), **not** passthrough:
+
+- The public cert lives on the redirector (operator-managed).
+- The teamserver's self-signed cert lives on the teamserver, unchanged.
+- nginx sits between the two and re-encrypts in both directions.
 
 ```nginx
-ssl_preread off;
-ssl_certificate /etc/ssl/certs/redir.pem;
-ssl_certificate_key /etc/ssl/private/redir.key;
-ssl_protocols TLSv1.2 TLSv1.3;
-ssl_ciphers HIGH:!aNULL:!MD5;
+server {
+    listen 443 ssl;
+    proxy_pass 10.32.88.189:443;
+    ssl_certificate /etc/ssl/certs/legit.pem;
+    ssl_certificate_key /etc/ssl/private/legit.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    proxy_ssl on;            # re-encrypt to upstream
+    proxy_ssl_verify off;    # accept upstream self-signed cert
+}
 ```
 
-Requires certificate and key files already present on the redirector.
+`proxy_ssl on;` is the load-bearing directive here — without it, nginx
+sends **plaintext** to the upstream TLS listener and the teamserver
+drops the connection immediately. `proxy_ssl_verify off;` is required
+because teamservers typically use self-signed certs that nginx has no
+CA chain for; trust is asserted by the infra operator, not by PKI.
+
+Prerequisites on the redirector:
+
+- The certificate and private key files must already exist at the
+  paths supplied in **SSL Certificate Path** and **SSL Key Path**.
+- The key file must be readable by the nginx user (`www-data` on
+  Debian/Ubuntu/Kali).
+
+### Custom Config Override
+
+The **View/Edit Config** modal lets operators hand-edit the nginx config
+for a stream when the structured fields don't cover what they need —
+advanced nginx directives, experimental tuning, or one-off tweaks that
+don't deserve their own schema field.
+
+**When to use it:**
+- You need an nginx directive the wizard doesn't expose (e.g. custom
+  `proxy_buffer_size`, `real_ip_header`, or a `map` block).
+- You want to test a config change without round-tripping through a code
+  deploy.
+- You're debugging a broken stream and need to inspect exactly what the
+  generator would produce, then poke at it.
+
+**When to avoid it:** if the change is expressible via the structured
+fields (ports, upstream, SSL, ACLs), use the Edit Stream form instead —
+it stays in sync with wizard validation and survives schema changes.
+
+**Save flow:**
+
+1. Validate basic structure on the server — non-empty, balanced braces,
+   size ≤ 32 KB, contains a `server` block.
+2. Persist the override on the `stream_configs` row.
+3. SFTP the file onto the redirector, run `nginx -t`, reload nginx.
+4. On `nginx -t` failure, roll back the on-disk file (restore previous
+   content or delete if it was new) and mark the stream
+   `deployed=false`. The DB override is **kept** so the operator can
+   keep editing their broken draft instead of starting over.
+
+**While an override is active**, the generator path is bypassed
+entirely: edits to structured fields (listen_port, cs_ip, SSL options,
+ACLs) do not change what is deployed. The modal shows a drift banner
+and a **Reset to Generated** button that clears the override and
+redeploys the rendered config in one step.
+
+Backed by `custom_config_override TEXT NULL` on `stream_configs` and the
+`PUT|DELETE /api/redirectors/{id}/streams/{sid}/config` endpoints. Audit
+events `STREAM_CONFIG_OVERRIDE_SET` and `STREAM_CONFIG_OVERRIDE_RESET`
+record only the override's byte length — never its content — so
+operators can embed sensitive strings in comments without them appearing
+in audit logs.
 
 ---
 
@@ -296,8 +368,16 @@ Requires certificate and key files already present on the redirector.
 | `POST /api/redirectors/{id}/streams/{sid}/deploy` | Deploy stream config to redirector |
 | `POST /api/redirectors/{id}/streams/{sid}/remove` | Remove stream config file from redirector |
 | `GET /api/redirectors/{id}/streams/{sid}/preview` | Preview generated nginx config |
+| `PUT /api/redirectors/{id}/streams/{sid}/config` | Install a hand-edited custom config override and deploy it (test + reload with rollback) |
+| `DELETE /api/redirectors/{id}/streams/{sid}/config` | Clear the custom override and redeploy the generated config |
 | `POST /api/redirectors/{id}/deploy-all` | Enable all streams + deploy |
 | `POST /api/redirectors/{id}/disable-all` | Disable all streams + remove config files |
+
+The regular `PUT /api/redirectors/{id}/streams/{sid}` auto-redeploys to the
+redirector whenever a deploy-sensitive field changes (listen port, proxy
+target, SSL options, ACLs) and the stream was already deployed. This keeps
+the on-disk config on the redirector in sync with the database and prevents
+silent drift. Cosmetic fields (name) still skip the redeploy.
 
 ---
 
@@ -360,6 +440,7 @@ All security-relevant actions are logged via `AuditService`:
 - **Stream module missing** -- install `libnginx-mod-stream` (Debian/Ubuntu) or enable in nginx build
 - **Stream directory missing** -- create `/etc/nginx/stream.d` and add `stream { include /etc/nginx/stream.d/*.conf; }` to nginx.conf
 - **sudo not available** -- the SSH user needs `NOPASSWD` sudo for nginx operations
+- **apache2 blocking ports** -- Kali preinstalls apache2 and enables it by default, which holds ports 80/443 and prevents nginx from binding them. The `apache2_not_blocking` check detects this; **Fix Prerequisites** stops and disables apache2 (without uninstalling it, so operators can re-enable manually).
 
 Use **Fix Prerequisites** to auto-resolve common issues (requires sudo).
 
