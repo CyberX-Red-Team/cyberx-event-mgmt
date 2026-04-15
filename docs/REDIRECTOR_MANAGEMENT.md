@@ -234,19 +234,190 @@ deny all;
 
 Only traffic from listed CIDRs is accepted. All other traffic is dropped.
 
-### SSL/TLS Termination
+### SSL/TLS Bridging
 
-When enabled (TCP only), the redirector terminates TLS and forwards plaintext to the upstream:
+When **SSL Enabled** is checked on a TCP stream, the redirector performs
+**TLS bridging** — it terminates the client's TLS handshake with a
+legitimate certificate stored on the redirector, then opens a fresh TLS
+connection to the upstream teamserver. This lets C2 teamservers keep
+using their own self-signed certificates while clients see a trusted
+public cert at the edge.
+
+This is bridging (terminate + re-origin), **not** passthrough:
+
+- The public cert lives on the redirector (operator-managed).
+- The teamserver's self-signed cert lives on the teamserver, unchanged.
+- nginx sits between the two and re-encrypts in both directions.
 
 ```nginx
-ssl_preread off;
-ssl_certificate /etc/ssl/certs/redir.pem;
-ssl_certificate_key /etc/ssl/private/redir.key;
-ssl_protocols TLSv1.2 TLSv1.3;
-ssl_ciphers HIGH:!aNULL:!MD5;
+server {
+    listen 443 ssl;
+    proxy_pass 10.32.88.189:443;
+    ssl_certificate /etc/ssl/certs/legit.pem;
+    ssl_certificate_key /etc/ssl/private/legit.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    proxy_ssl on;            # re-encrypt to upstream
+    proxy_ssl_verify off;    # accept upstream self-signed cert
+}
 ```
 
-Requires certificate and key files already present on the redirector.
+`proxy_ssl on;` is the load-bearing directive here — without it, nginx
+sends **plaintext** to the upstream TLS listener and the teamserver
+drops the connection immediately. `proxy_ssl_verify off;` is required
+because teamservers typically use self-signed certs that nginx has no
+CA chain for; trust is asserted by the infra operator, not by PKI.
+
+Prerequisites on the redirector:
+
+- The certificate and private key files must already exist at the
+  paths supplied in **SSL Certificate Path** and **SSL Key Path**.
+- The key file must be readable by the nginx user (`www-data` on
+  Debian/Ubuntu/Kali).
+
+### Custom Config Override
+
+The **View/Edit Config** modal lets operators hand-edit the nginx config
+for a stream when the structured fields don't cover what they need —
+advanced nginx directives, experimental tuning, or one-off tweaks that
+don't deserve their own schema field.
+
+**When to use it:**
+- You need an nginx directive the wizard doesn't expose (e.g. custom
+  `proxy_buffer_size`, `real_ip_header`, or a `map` block).
+- You want to test a config change without round-tripping through a code
+  deploy.
+- You're debugging a broken stream and need to inspect exactly what the
+  generator would produce, then poke at it.
+
+**When to avoid it:** if the change is expressible via the structured
+fields (ports, upstream, SSL, ACLs), use the Edit Stream form instead —
+it stays in sync with wizard validation and survives schema changes.
+
+**Save flow:**
+
+1. Validate basic structure on the server — non-empty, balanced braces,
+   size ≤ 32 KB, contains a `server` block.
+2. Persist the override on the `stream_configs` row.
+3. SFTP the file onto the redirector, run `nginx -t`, reload nginx.
+4. On `nginx -t` failure, roll back the on-disk file (restore previous
+   content or delete if it was new) and mark the stream
+   `deployed=false`. The DB override is **kept** so the operator can
+   keep editing their broken draft instead of starting over.
+
+**While an override is active**, the generator path is bypassed
+entirely: edits to structured fields (listen_port, cs_ip, SSL options,
+ACLs) do not change what is deployed. The modal shows a drift banner
+and a **Reset to Generated** button that clears the override and
+redeploys the rendered config in one step.
+
+Backed by `custom_config_override TEXT NULL` on `stream_configs` and the
+`PUT|DELETE /api/redirectors/{id}/streams/{sid}/config` endpoints. Audit
+events `STREAM_CONFIG_OVERRIDE_SET` and `STREAM_CONFIG_OVERRIDE_RESET`
+record only the override's byte length — never its content — so
+operators can embed sensitive strings in comments without them appearing
+in audit logs.
+
+### SNI-Based Routing (Multi-Cert on One Port)
+
+A single listen port (typically 443) can host multiple TLS streams
+differentiated by the client's Server Name Indication. Each stream has
+its own certificate and its own upstream teamserver, and the redirector
+transparently routes client connections to the right one based on the
+hostname the client asked for.
+
+This is implemented with a **two-tier topology** inside nginx:
+
+```
+client :443 ── TLS ──▶ outer preread server
+                       (reads $ssl_preread_server_name,
+                        forwards raw TCP via loopback)
+                              ▼
+                       127.0.0.1:<bridge_port>
+                              ▼
+                       inner terminator (listens on loopback
+                       with its own legit cert, bridges to CS)
+                              ▼
+                       upstream teamserver
+```
+
+**Topology details:**
+
+- The **outer block** is generated once per `(redirector, listen_port)`
+  that has any SNI streams. It uses `ssl_preread on` and an nginx
+  `map $ssl_preread_server_name` to choose the right inner terminator
+  based on the client's SNI. File: `cyberx_sni_<listen_port>.conf` in
+  the stream dir.
+- Each **inner terminator** is a regular stream `server` block listening
+  on `127.0.0.1:<internal_bridge_port>`. It terminates TLS with the
+  operator-supplied cert/key and re-encrypts to the upstream teamserver
+  (`proxy_ssl on` + `proxy_ssl_verify off`, same as TLS bridging above).
+  One file per stream, same `cyberx_<stream_id>.conf` convention.
+- **Internal bridge ports** are drawn from the loopback range
+  `10000–10998`, allocated per redirector. The allocator picks the
+  lowest free port on create and releases it on delete; clients never
+  reach the bridge ports directly because they bind to loopback only.
+
+**Unmatched SNI — the decoy maintenance page:**
+
+Clients whose SNI doesn't match any hostname in the map are routed to
+`127.0.0.1:10999`, where a self-signed HTTPS server serves a 503
+maintenance page. The page is a compact inline HTML document with
+embedded SVG flags and a notice; it's intentionally not customer-facing
+and its tone reflects that. The decoy:
+
+- Lives in `/etc/nginx/conf.d/cyberx_decoy.conf` (http context, not
+  stream context) because the stream module can't render HTTP responses.
+- Has its self-signed cert auto-generated once at deploy time via
+  `openssl req -x509 -nodes`, stored at `/etc/nginx/cyberx/decoy.{crt,key}`.
+- Binds only to `127.0.0.1` — it's never reachable except via the outer
+  preread router.
+- Is automatically removed when the last SNI stream on the redirector
+  is deleted.
+
+**Precondition:** nginx.conf must include `/etc/nginx/conf.d/*.conf` in
+its http context. Stock Debian/Ubuntu/Kali nginx packages already do
+this; the prerequisites page flags it if a hand-customized nginx.conf
+has dropped the line.
+
+**Collision rules** — a given `(redirector, listen_port)` is either:
+- hosting exactly **one** legacy (non-SNI) stream, or
+- hosting **N** SNI-routed streams, each with a distinct hostname.
+
+Trying to mix the two is rejected with HTTP 409 at create time. Toggling
+a stream between legacy and SNI via update is also rejected — the
+supported path is to delete and recreate, because the bridge port
+allocation and cert requirements are structural.
+
+**Access control** is configured on one stream per port (the first one
+with `access_control_enabled=True` wins) and applies uniformly to all
+SNI streams on that port. Per-hostname ACLs aren't supported at this
+layer because preread routing happens before the outer server block
+runs its ACL check. If you need different CIDR restrictions per
+hostname, use different listen ports.
+
+**When to use SNI routing:**
+
+- You have multiple C2 teamservers you want fronted by a single
+  redirector on port 443.
+- You want each "beacon domain" to show a different legit certificate
+  without needing multiple redirectors or custom-port hacks.
+- You want unknown clients (scanners, random traffic) to see a plausible
+  maintenance page instead of an RST.
+
+**When to avoid it:**
+
+- You only have one stream on a port — the legacy single-cert bridging
+  path is simpler and has fewer moving parts.
+- You need per-hostname ACLs (use separate listen ports instead).
+- You need UDP/DNS routing — SNI only applies to TCP/TLS streams.
+
+Backed by `sni_hostname VARCHAR(253)` and `internal_bridge_port INTEGER`
+columns on `stream_configs`. The `(redirector_id, listen_port,
+sni_hostname)` unique constraint lets multiple SNI streams share a port
+while still preventing duplicate hostnames.
 
 ---
 
@@ -296,8 +467,25 @@ Requires certificate and key files already present on the redirector.
 | `POST /api/redirectors/{id}/streams/{sid}/deploy` | Deploy stream config to redirector |
 | `POST /api/redirectors/{id}/streams/{sid}/remove` | Remove stream config file from redirector |
 | `GET /api/redirectors/{id}/streams/{sid}/preview` | Preview generated nginx config |
+| `PUT /api/redirectors/{id}/streams/{sid}/config` | Install a hand-edited custom config override and deploy it (test + reload with rollback) |
+| `DELETE /api/redirectors/{id}/streams/{sid}/config` | Clear the custom override and redeploy the generated config |
 | `POST /api/redirectors/{id}/deploy-all` | Enable all streams + deploy |
 | `POST /api/redirectors/{id}/disable-all` | Disable all streams + remove config files |
+
+The regular `PUT /api/redirectors/{id}/streams/{sid}` auto-redeploys to the
+redirector whenever a deploy-sensitive field changes (listen port, proxy
+target, SSL options, ACLs, SNI hostname) and the stream was already
+deployed. This keeps the on-disk config on the redirector in sync with
+the database and prevents silent drift. Cosmetic fields (name) still skip
+the redeploy.
+
+For **SNI-routed streams**, deploy and remove operations always rebuild
+the full per-port router file (and regenerate the decoy conf if
+needed). This means enabling or disabling one SNI stream re-runs
+`nginx -t` over the whole SNI cluster, which is intentional — the
+router and decoy must stay in sync with the complete set of SNI streams
+at all times. Legacy streams continue to use the cheaper single-file
+deploy path.
 
 ---
 
@@ -360,6 +548,8 @@ All security-relevant actions are logged via `AuditService`:
 - **Stream module missing** -- install `libnginx-mod-stream` (Debian/Ubuntu) or enable in nginx build
 - **Stream directory missing** -- create `/etc/nginx/stream.d` and add `stream { include /etc/nginx/stream.d/*.conf; }` to nginx.conf
 - **sudo not available** -- the SSH user needs `NOPASSWD` sudo for nginx operations
+- **apache2 blocking ports** -- Kali preinstalls apache2 and enables it by default, which holds ports 80/443 and prevents nginx from binding them. The `apache2_not_blocking` check detects this; **Fix Prerequisites** stops and disables apache2 (without uninstalling it, so operators can re-enable manually).
+- **`/etc/nginx/conf.d/*.conf` not included in http context** -- required for SNI routing (the decoy http server lives there). Stock packages already include it; if yours doesn't, add `include /etc/nginx/conf.d/*.conf;` inside the `http { }` block in `/etc/nginx/nginx.conf`. The `confd_http_include` check detects a missing include.
 
 Use **Fix Prerequisites** to auto-resolve common issues (requires sudo).
 

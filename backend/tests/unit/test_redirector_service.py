@@ -6,7 +6,12 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.redirector_service import RedirectorService
+from app.services.redirector_service import (
+    RedirectorService,
+    StreamSniCollisionError,
+    NoBridgePortAvailableError,
+)
+from app.services.nginx_config_service import SNI_BRIDGE_PORT_MIN, SNI_BRIDGE_PORT_MAX
 from app.utils.encryption import init_encryptor, generate_encryption_key, encrypt_field, decrypt_field
 
 
@@ -310,3 +315,214 @@ class TestRedirectorServiceStatus:
         assert redir.last_deployed_at is None
         await svc.update_deployed_at(redir)
         assert redir.last_deployed_at is not None
+
+
+# ---------------------------------------------------------------------------
+# SNI routing: allocator, collision rules, CRUD
+# ---------------------------------------------------------------------------
+
+_SNI_STREAM_COMMON = dict(
+    name="beacon",
+    listen_port=443,
+    cs_ip="10.0.0.200",
+    cs_port=443,
+    ssl_enabled=True,
+    ssl_cert_path="/etc/ssl/certs/legit.pem",
+    ssl_key_path="/etc/ssl/private/legit.key",
+)
+
+
+async def _new_redirector(svc: RedirectorService, name: str, ip: str):
+    return await svc.create_redirector({
+        "name": name,
+        "current_ip": ip,
+        "ssh_username": "debian",
+        "ssh_private_key": VALID_PEM,
+    })
+
+
+@pytest.mark.unit
+class TestSniStreamCreate:
+    """Stream create path with SNI hostname + bridge port allocation."""
+
+    @pytest.mark.asyncio
+    async def test_legacy_stream_has_no_sni_fields(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "legacy-sni-1", "10.0.0.50")
+        s = await svc.create_stream(redir.id, {
+            "name": "legacy",
+            "listen_port": 80,
+            "cs_ip": "10.0.0.100",
+            "cs_port": 80,
+        })
+        assert s.sni_hostname is None
+        assert s.internal_bridge_port is None
+        assert s.is_sni_routed is False
+
+    @pytest.mark.asyncio
+    async def test_sni_stream_gets_bridge_port_allocated(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "sni-alloc-1", "10.0.0.51")
+        s = await svc.create_stream(redir.id, {
+            **_SNI_STREAM_COMMON,
+            "sni_hostname": "beacon.example.com",
+        })
+        assert s.sni_hostname == "beacon.example.com"
+        assert s.internal_bridge_port == SNI_BRIDGE_PORT_MIN  # first free
+        assert s.is_sni_routed is True
+
+    @pytest.mark.asyncio
+    async def test_sni_stream_requires_ssl(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "sni-no-ssl", "10.0.0.52")
+        with pytest.raises(ValueError, match="ssl_enabled"):
+            await svc.create_stream(redir.id, {
+                "name": "bad-sni",
+                "listen_port": 443,
+                "cs_ip": "10.0.0.100",
+                "cs_port": 443,
+                "sni_hostname": "beacon.example.com",
+                "ssl_enabled": False,
+            })
+
+    @pytest.mark.asyncio
+    async def test_sni_stream_requires_cert_paths(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "sni-no-cert", "10.0.0.53")
+        with pytest.raises(ValueError, match="ssl_cert_path"):
+            await svc.create_stream(redir.id, {
+                "name": "bad-sni",
+                "listen_port": 443,
+                "cs_ip": "10.0.0.100",
+                "cs_port": 443,
+                "sni_hostname": "beacon.example.com",
+                "ssl_enabled": True,
+                # No cert/key paths
+            })
+
+    @pytest.mark.asyncio
+    async def test_bridge_ports_allocated_sequentially(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "sni-seq", "10.0.0.54")
+        s1 = await svc.create_stream(redir.id, {
+            **_SNI_STREAM_COMMON, "name": "a", "sni_hostname": "a.example.com",
+        })
+        s2 = await svc.create_stream(redir.id, {
+            **_SNI_STREAM_COMMON, "name": "b", "sni_hostname": "b.example.com",
+        })
+        s3 = await svc.create_stream(redir.id, {
+            **_SNI_STREAM_COMMON, "name": "c", "sni_hostname": "c.example.com",
+        })
+        ports = sorted([s1.internal_bridge_port, s2.internal_bridge_port, s3.internal_bridge_port])
+        assert ports == [SNI_BRIDGE_PORT_MIN, SNI_BRIDGE_PORT_MIN + 1, SNI_BRIDGE_PORT_MIN + 2]
+
+    @pytest.mark.asyncio
+    async def test_bridge_ports_scoped_per_redirector(self, db_session: AsyncSession):
+        """Two redirectors each get their own port pool — no global collisions."""
+        svc = RedirectorService(db_session)
+        r1 = await _new_redirector(svc, "sni-r1", "10.0.0.55")
+        r2 = await _new_redirector(svc, "sni-r2", "10.0.0.56")
+        s1 = await svc.create_stream(r1.id, {
+            **_SNI_STREAM_COMMON, "sni_hostname": "one.example.com",
+        })
+        s2 = await svc.create_stream(r2.id, {
+            **_SNI_STREAM_COMMON, "sni_hostname": "two.example.com",
+        })
+        assert s1.internal_bridge_port == SNI_BRIDGE_PORT_MIN
+        assert s2.internal_bridge_port == SNI_BRIDGE_PORT_MIN
+
+
+@pytest.mark.unit
+class TestSniCollisionRules:
+    """A given listen_port is either legacy-only or SNI-only per redirector."""
+
+    @pytest.mark.asyncio
+    async def test_legacy_blocks_new_sni_on_same_port(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "col-1", "10.0.0.60")
+        await svc.create_stream(redir.id, {
+            "name": "legacy", "listen_port": 443,
+            "cs_ip": "10.0.0.100", "cs_port": 443,
+        })
+        with pytest.raises(StreamSniCollisionError, match="non-SNI"):
+            await svc.create_stream(redir.id, {
+                **_SNI_STREAM_COMMON,
+                "sni_hostname": "beacon.example.com",
+            })
+
+    @pytest.mark.asyncio
+    async def test_sni_blocks_new_legacy_on_same_port(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "col-2", "10.0.0.61")
+        await svc.create_stream(redir.id, {
+            **_SNI_STREAM_COMMON, "sni_hostname": "beacon.example.com",
+        })
+        with pytest.raises(StreamSniCollisionError, match="SNI-routed"):
+            await svc.create_stream(redir.id, {
+                "name": "legacy-too-late", "listen_port": 443,
+                "cs_ip": "10.0.0.100", "cs_port": 443,
+            })
+
+    @pytest.mark.asyncio
+    async def test_legacy_blocks_duplicate_legacy_on_same_port(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "col-3", "10.0.0.62")
+        await svc.create_stream(redir.id, {
+            "name": "legacy-a", "listen_port": 443,
+            "cs_ip": "10.0.0.100", "cs_port": 443,
+        })
+        with pytest.raises(StreamSniCollisionError):
+            await svc.create_stream(redir.id, {
+                "name": "legacy-b", "listen_port": 443,
+                "cs_ip": "10.0.0.101", "cs_port": 443,
+            })
+
+    @pytest.mark.asyncio
+    async def test_multiple_sni_on_same_port_allowed(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "col-4", "10.0.0.63")
+        await svc.create_stream(redir.id, {
+            **_SNI_STREAM_COMMON, "sni_hostname": "alpha.example.com",
+        })
+        await svc.create_stream(redir.id, {
+            **_SNI_STREAM_COMMON, "sni_hostname": "beta.example.com",
+        })
+        streams = await svc.list_streams(redir.id)
+        assert len(streams) == 2
+        assert {s.sni_hostname for s in streams} == {"alpha.example.com", "beta.example.com"}
+
+
+@pytest.mark.unit
+class TestSniStreamUpdate:
+    @pytest.mark.asyncio
+    async def test_rename_sni_hostname_keeps_bridge_port(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "upd-1", "10.0.0.70")
+        s = await svc.create_stream(redir.id, {
+            **_SNI_STREAM_COMMON, "sni_hostname": "old.example.com",
+        })
+        original_port = s.internal_bridge_port
+        updated = await svc.update_stream(s, {"sni_hostname": "new.example.com"})
+        assert updated.sni_hostname == "new.example.com"
+        assert updated.internal_bridge_port == original_port  # port reused
+
+    @pytest.mark.asyncio
+    async def test_toggle_legacy_to_sni_rejected(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "upd-2", "10.0.0.71")
+        s = await svc.create_stream(redir.id, {
+            "name": "legacy", "listen_port": 8080,
+            "cs_ip": "10.0.0.100", "cs_port": 8080,
+        })
+        with pytest.raises(StreamSniCollisionError, match="Cannot toggle"):
+            await svc.update_stream(s, {"sni_hostname": "new.example.com"})
+
+    @pytest.mark.asyncio
+    async def test_toggle_sni_to_legacy_rejected(self, db_session: AsyncSession):
+        svc = RedirectorService(db_session)
+        redir = await _new_redirector(svc, "upd-3", "10.0.0.72")
+        s = await svc.create_stream(redir.id, {
+            **_SNI_STREAM_COMMON, "sni_hostname": "a.example.com",
+        })
+        with pytest.raises(StreamSniCollisionError, match="Cannot toggle"):
+            await svc.update_stream(s, {"sni_hostname": None})

@@ -406,6 +406,23 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
                                     <label class="form-label small">SSL Ciphers</label>
                                     <input type="text" class="form-control" id="sm_ssl_ciphers" value="HIGH:!aNULL:!MD5">
                                 </div>
+                                <div class="col-12 pt-2 border-top mt-2">
+                                    <label class="form-label small fw-semibold">
+                                        SNI Hostname <span class="text-muted">(optional)</span>
+                                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline"
+                                                data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="right"
+                                                data-bs-content="When set, this stream joins an SNI router on the same listen port. Multiple streams with distinct SNI hostnames can share one public port (e.g. 443), each terminating TLS with its own certificate. Leave blank for a regular single-cert stream on this port. Unmatched SNI hostnames receive the decoy maintenance page.">
+                                            <i data-feather="info" style="width:14px;height:14px;"></i>
+                                        </button>
+                                    </label>
+                                    <input type="text" class="form-control" id="sm_sni_hostname"
+                                        placeholder="beacon.example.com"
+                                        pattern="^[a-zA-Z0-9_]([a-zA-Z0-9_.\-]*[a-zA-Z0-9_])?$">
+                                    <div class="form-text">
+                                        Set this to share <strong>listen_port</strong> with other SNI-routed
+                                        streams on the same redirector. Requires the SSL fields above.
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -423,24 +440,43 @@ tr.stream-conflict:hover > td { background-color: rgba(220,53,69,0.22) !importan
 </div>
 
 <!-- ================================================================
-     Preview Modal
+     View / Edit Config Modal
      ================================================================ -->
 <div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
-                    <i data-feather="eye" class="me-2"></i>Config Preview
+                    <i data-feather="edit-3" class="me-2"></i>View / Edit Config
                     <span id="previewFilename" class="text-muted small ms-2 font-monospace"></span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div id="previewOverrideBanner" class="alert alert-warning py-2 small d-none" role="alert">
+                    <i data-feather="alert-triangle" class="me-1"></i>
+                    <strong>Custom override active.</strong>
+                    Edits made from the Add/Edit Stream form (listen port, upstream, SSL, ACLs)
+                    are ignored on this stream until you click <em>Reset to Generated</em>.
+                </div>
+                <div class="mb-2 small text-muted">
+                    Hand-edit the nginx config and click <strong>Save &amp; Apply</strong> to deploy it.
+                    The redirector will run <code>nginx&nbsp;-t</code> and reload; on failure the file is
+                    rolled back automatically, but your draft stays in the editor so you can fix and retry.
+                </div>
                 <textarea class="form-control font-monospace bg-dark text-light border-0"
-                    id="previewContent" rows="20" readonly></textarea>
+                    id="previewContent" rows="20" spellcheck="false"></textarea>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-outline-warning me-auto d-none"
+                    id="previewResetBtn" onclick="resetStreamConfig()">
+                    <i data-feather="rotate-ccw" class="me-1"></i>Reset to Generated
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="previewSaveBtn"
+                    onclick="saveStreamConfig()">
+                    <i data-feather="upload" class="me-1"></i>Save &amp; Apply
+                </button>
             </div>
         </div>
     </div>
@@ -723,15 +759,88 @@ async function disableAll() {
 // ============================================================
 // Stream operations
 // ============================================================
+// Tracks which stream the View/Edit Config modal is currently editing so
+// Save & Apply / Reset know which resource to PUT/DELETE against.
+let currentConfigStreamId = null;
+
 async function previewStream(streamId) {
+    currentConfigStreamId = streamId;
     try {
-        const resp = await csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}/preview`);
-        const data = await resp.json();
-        document.getElementById('previewFilename').textContent = data.filename;
-        document.getElementById('previewContent').value = data.content;
+        const [streamResp, previewResp] = await Promise.all([
+            csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}`),
+            csrfFetch(`/api/redirectors/${REDIRECTOR_ID}/streams/${streamId}/preview`),
+        ]);
+        const stream = await streamResp.json();
+        const preview = await previewResp.json();
+        document.getElementById('previewFilename').textContent = preview.filename;
+        document.getElementById('previewContent').value = preview.content;
+
+        const hasOverride = !!stream.has_custom_override;
+        document.getElementById('previewOverrideBanner').classList.toggle('d-none', !hasOverride);
+        document.getElementById('previewResetBtn').classList.toggle('d-none', !hasOverride);
+
         previewModal.show();
+        if (window.feather) window.feather.replace();
     } catch (err) {
-        showToast(`Preview failed: ${escHtml(err.message)}`, 'danger');
+        showToast(`Load failed: ${escHtml(err.message)}`, 'danger');
+    }
+}
+
+async function saveStreamConfig() {
+    if (!currentConfigStreamId) return;
+    const content = document.getElementById('previewContent').value;
+    if (!content.trim()) {
+        showToast('Config is empty.', 'warning');
+        return;
+    }
+    const saveBtn = document.getElementById('previewSaveBtn');
+    saveBtn.disabled = true;
+    try {
+        const resp = await csrfFetch(
+            `/api/redirectors/${REDIRECTOR_ID}/streams/${currentConfigStreamId}/config`,
+            {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            }
+        );
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast(`Save failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
+            return;
+        }
+        previewModal.hide();
+        showDeployResult('Save & Apply Config', data);
+        if (data.success) {
+            await loadStreams();
+        }
+    } catch (err) {
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
+    } finally {
+        saveBtn.disabled = false;
+    }
+}
+
+async function resetStreamConfig() {
+    if (!currentConfigStreamId) return;
+    if (!confirm('Reset this stream to the generated config?\n\nThis clears the custom override and redeploys the config rendered from the stream fields.')) return;
+    try {
+        const resp = await csrfFetch(
+            `/api/redirectors/${REDIRECTOR_ID}/streams/${currentConfigStreamId}/config`,
+            { method: 'DELETE' }
+        );
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast(`Reset failed: ${escHtml(data.detail || 'Unknown error')}`, 'danger');
+            return;
+        }
+        previewModal.hide();
+        showDeployResult('Reset to Generated', data);
+        if (data.success) {
+            await loadStreams();
+        }
+    } catch (err) {
+        showToast(`Request failed: ${escHtml(err.message)}`, 'danger');
     }
 }
 
@@ -795,6 +904,8 @@ function openAddStreamModal() {
     document.getElementById('sm_ssl_key').value = '';
     document.getElementById('sm_ssl_protocols').value = 'TLSv1.2 TLSv1.3';
     document.getElementById('sm_ssl_ciphers').value = 'HIGH:!aNULL:!MD5';
+    document.getElementById('sm_sni_hostname').value = '';
+    document.getElementById('sm_sni_hostname').disabled = false;
     document.getElementById('aclSection').classList.add('d-none');
     document.getElementById('sslSection').classList.add('d-none');
     document.getElementById('streamModalError').classList.add('d-none');
@@ -822,6 +933,8 @@ function openEditStreamModal(id) {
     document.getElementById('sm_ssl_key').value = s.ssl_key_path || '';
     document.getElementById('sm_ssl_protocols').value = s.ssl_protocols;
     document.getElementById('sm_ssl_ciphers').value = s.ssl_ciphers;
+    document.getElementById('sm_sni_hostname').value = s.sni_hostname || '';
+    document.getElementById('sm_sni_hostname').disabled = false;
     toggleCollapse('aclSection', s.access_control_enabled);
     toggleCollapse('sslSection', s.ssl_enabled);
     document.getElementById('streamModalError').classList.add('d-none');
@@ -837,6 +950,7 @@ async function submitStream() {
     const cidrsRaw = document.getElementById('sm_cidrs').value.trim();
     const cidrs = cidrsRaw ? cidrsRaw.split(',').map(c => c.trim()).filter(c => c) : null;
 
+    const sniHostname = document.getElementById('sm_sni_hostname').value.trim() || null;
     const payload = {
         name: document.getElementById('sm_name').value.trim(),
         protocol: document.getElementById('sm_protocol').value,
@@ -851,10 +965,17 @@ async function submitStream() {
         ssl_key_path: document.getElementById('sm_ssl_key').value.trim() || null,
         ssl_protocols: document.getElementById('sm_ssl_protocols').value.trim(),
         ssl_ciphers: document.getElementById('sm_ssl_ciphers').value.trim(),
+        sni_hostname: sniHostname,
     };
 
     if (!payload.name || !payload.cs_ip || !payload.listen_port || !payload.cs_port) {
         errEl.textContent = 'Please fill in all required fields.';
+        errEl.classList.remove('d-none');
+        return;
+    }
+
+    if (sniHostname && !payload.ssl_enabled) {
+        errEl.textContent = 'SNI routing requires SSL/TLS to be enabled with a certificate and key.';
         errEl.classList.remove('d-none');
         return;
     }
