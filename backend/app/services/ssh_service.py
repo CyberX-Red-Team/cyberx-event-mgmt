@@ -943,6 +943,47 @@ class SSHService:
                                "via sites-enabled/default — auto-fix will remove it.",
             })
 
+            # 3d. Apache2 not holding ports. Kali ships with apache2 preinstalled
+            # and enabled by default, which binds 80/443 and blocks nginx from
+            # starting. We flag it only if it's installed AND actively running
+            # or enabled-at-boot — a dormant-but-installed apache2 is harmless.
+            sudo_n_check = "" if self.username == "root" else "sudo -n "
+            _, _, inst_code = self._exec(
+                client, "dpkg -l apache2 2>/dev/null | grep -q '^ii'"
+            )
+            apache_installed = inst_code == 0
+            if apache_installed:
+                _, _, active_code = self._exec(
+                    client, f"{sudo_n_check}/bin/systemctl is-active apache2 2>/dev/null"
+                )
+                _, _, enabled_code = self._exec(
+                    client, f"{sudo_n_check}/bin/systemctl is-enabled apache2 2>/dev/null"
+                )
+                apache_running = active_code == 0
+                apache_enabled_at_boot = enabled_code == 0
+                apache_ok = not (apache_running or apache_enabled_at_boot)
+                if apache_ok:
+                    apache_detail = "apache2 installed but stopped and disabled."
+                else:
+                    states = []
+                    if apache_running:
+                        states.append("running")
+                    if apache_enabled_at_boot:
+                        states.append("enabled at boot")
+                    apache_detail = (
+                        f"apache2 is {' and '.join(states)} — it will block nginx "
+                        f"from binding ports 80/443. Auto-fix will stop and disable it."
+                    )
+            else:
+                apache_ok = True
+                apache_detail = "apache2 not installed."
+            checks.append({
+                "id": "apache2_not_blocking",
+                "label": "apache2 not blocking ports",
+                "ok": apache_ok,
+                "detail": apache_detail,
+            })
+
             # 4. nginx -t (runs nginx config test — safe, read-only)
             sudo_n = "" if self.username == "root" else "sudo -n "
             out4, _, code = self._exec(
@@ -1089,6 +1130,13 @@ class SSHService:
             "fi\n"
             "# Remove default HTTP site so nginx doesn't hold port 80\n"
             "rm -f /etc/nginx/sites-enabled/default\n"
+            "# Stop and disable apache2 if installed — it blocks nginx on 80/443.\n"
+            "# Kali preinstalls apache2 and enables it by default. We stop + disable\n"
+            "# only; we do NOT uninstall it, so operators can re-enable manually.\n"
+            "if dpkg -l apache2 2>/dev/null | grep -q '^ii'; then\n"
+            "    systemctl stop apache2 2>/dev/null || true\n"
+            "    systemctl disable apache2 2>/dev/null || true\n"
+            "fi\n"
             "# Disable systemd-resolved stub listener if it holds port 53\n"
             "if ss -tulnp 2>/dev/null | grep ':53 ' | grep -q 'systemd-resolve\\|resolved'; then\n"
             "    # Extract real DNS servers from netplan or resolv.conf\n"

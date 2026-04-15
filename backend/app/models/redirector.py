@@ -146,6 +146,13 @@ class StreamConfig(Base):
     ssl_protocols = Column(String(100), nullable=False, default="TLSv1.2 TLSv1.3")
     ssl_ciphers = Column(String(200), nullable=False, default="HIGH:!aNULL:!MD5")
 
+    # When set, the generator emits this verbatim instead of rendering from
+    # the structured fields. Used by the "View/Edit config" modal to let
+    # operators hand-edit the nginx config for advanced cases. Cleared by
+    # "Reset to Generated". The authoritative syntax check is nginx -t on
+    # the redirector — we only do cheap structural sanity in the service.
+    custom_config_override = Column(Text, nullable=True)
+
     # If False, the .conf file is removed from the remote redirector
     enabled = Column(Boolean, nullable=False, default=False)
     # True when the config file has been deployed to the remote redirector
@@ -164,6 +171,11 @@ class StreamConfig(Base):
     def filename(self) -> str:
         """Remote filename for this stream config."""
         return f"cyberx_{self.id}.conf"
+
+    @property
+    def has_custom_override(self) -> bool:
+        """True when this stream has a hand-edited config override."""
+        return bool(self.custom_config_override)
 
     def __repr__(self):
         return (

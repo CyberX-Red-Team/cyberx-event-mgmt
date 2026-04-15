@@ -249,13 +249,18 @@ class RedirectorService:
             if field in data and data[field] is not None:
                 setattr(stream, field, data[field])
 
-        # These can legitimately be falsy ([] or False) — handle separately
+        # These can legitimately be falsy ([] or False/None) — handle separately
         if "allowed_cidrs" in data:
             stream.allowed_cidrs = data["allowed_cidrs"]
         if "enabled" in data and data["enabled"] is not None:
             stream.enabled = data["enabled"]
         if "deployed" in data and data["deployed"] is not None:
             stream.deployed = data["deployed"]
+        # custom_config_override: None means "reset to generated" (clear),
+        # non-empty string means "install override". Use a distinct sentinel
+        # key in data to allow both operations.
+        if "custom_config_override" in data:
+            stream.custom_config_override = data["custom_config_override"]
 
         await self.session.commit()
         await self.session.refresh(stream)

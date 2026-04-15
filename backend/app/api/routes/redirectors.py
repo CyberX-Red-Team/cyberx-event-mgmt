@@ -37,7 +37,8 @@ from app.schemas.redirector import (
     RedirectorCreate, RedirectorUpdate, RedirectorOut, RedirectorListOut,
     RedirectorFromInstance, ProvisionRedirectorRequest,
     AvailableInstanceOut, InstanceStatusOut, RedirectorTemplateOut,
-    StreamConfigCreate, StreamConfigUpdate, StreamConfigOut,
+    StreamConfigCreate, StreamConfigUpdate, StreamConfigContentUpdate,
+    StreamConfigOut,
     DeployResult, TestConnectionResult, ConfigPreview, CheckPortRequest,
 )
 from app.services.redirector_service import RedirectorService
@@ -57,7 +58,10 @@ from app.services.ssh_service import (
     run_check_port, run_check_nginx_setup, run_fix_nginx_setup,
     run_check_prereqs, run_fix_prereqs, run_deploy_infra_key,
 )
-from app.services.nginx_config_service import generate_stream_config_preview
+from app.services.nginx_config_service import (
+    generate_stream_config_preview,
+    validate_custom_override,
+)
 from app.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
@@ -1192,6 +1196,17 @@ async def get_stream(
     return StreamConfigOut.model_validate(stream)
 
 
+# Fields on a stream whose change alters the generated nginx config and
+# therefore requires a redeploy to keep the redirector file in sync.
+_DEPLOY_SENSITIVE_FIELDS = frozenset({
+    "protocol", "listen_port", "cs_ip", "cs_port",
+    "access_control_enabled", "allowed_cidrs",
+    "ssl_enabled", "ssl_cert_path", "ssl_key_path",
+    "ssl_protocols", "ssl_ciphers",
+    "custom_config_override",
+})
+
+
 @router.put("/{redirector_id}/streams/{stream_id}", response_model=StreamConfigOut)
 async def update_stream(
     redirector_id: str,
@@ -1201,23 +1216,55 @@ async def update_stream(
     current_user: User = Depends(require_permission("redirectors.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update a stream config (does not redeploy automatically).
+    """Update a stream config. Auto-redeploys when the change affects the
+    generated nginx file AND the stream is currently deployed — this keeps
+    the redirector's on-disk file in sync with the DB and avoids silent
+    drift. Renames and notes are cosmetic and skip the redeploy.
 
     Stream-level operation: open to any viewer of the redirector.
     """
     svc = RedirectorService(db)
-    await _get_authorized_redirector(
+    redirector = await _get_authorized_redirector(
         redirector_id, current_user, svc, allow_public=True, db=db
     )
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
-    stream = await svc.update_stream(stream, payload.model_dump(exclude_unset=True))
+    changes = payload.model_dump(exclude_unset=True)
+    was_deployed = bool(stream.deployed)
+    stream = await svc.update_stream(stream, changes)
+
+    # Redeploy if this edit touched a deploy-sensitive field and the stream
+    # is currently live on the redirector. Best-effort: on SSH or nginx -t
+    # failure, the DB update stays and the stream is marked not-deployed so
+    # the UI can prompt the operator to retry.
+    deploy_result = None
+    touched_sensitive = bool(_DEPLOY_SENSITIVE_FIELDS & set(changes.keys()))
+    if was_deployed and stream.enabled and touched_sensitive:
+        try:
+            ssh = await _make_ssh_service(svc, redirector, db)
+            deploy_result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
+            if deploy_result["success"]:
+                await svc.update_deployed_at(redirector)
+                await svc.update_stream(stream, {"deployed": True})
+            else:
+                await svc.update_stream(stream, {"deployed": False})
+        except (SSHConnectionError, SSHAuthError, NginxReloadError, SSHCommandError) as e:
+            logger.warning(
+                "Auto-redeploy after stream update failed for %s: %s", stream_id, e
+            )
+            await svc.update_stream(stream, {"deployed": False})
 
     audit = AuditService(db)
     await audit.log(
         action="STREAM_UPDATE",
         user_id=current_user.id,
         resource_type="STREAM_CONFIG",
-        details={"stream_id": stream_id, "redirector_id": redirector_id},
+        details={
+            "stream_id": stream_id,
+            "redirector_id": redirector_id,
+            "fields": sorted(changes.keys()),
+            "auto_redeployed": deploy_result is not None,
+            "redeploy_success": (deploy_result or {}).get("success"),
+        },
         ip_address=request.client.host if request.client else None,
     )
 
@@ -1287,6 +1334,140 @@ async def preview_stream(
     stream = await _get_stream_or_404(stream_id, redirector_id, svc)
     content = generate_stream_config_preview(stream)
     return ConfigPreview(filename=stream.filename, content=content)
+
+
+@router.put(
+    "/{redirector_id}/streams/{stream_id}/config",
+    response_model=DeployResult,
+)
+async def update_stream_config(
+    redirector_id: str,
+    stream_id: str,
+    payload: StreamConfigContentUpdate,
+    request: Request,
+    current_user: User = Depends(require_permission("redirectors.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Install a hand-edited nginx config as a custom override and immediately
+    deploy it to the redirector.
+
+    Flow: validate → persist override in DB → SFTP write → nginx -t → reload
+    (with rollback of the on-disk file on nginx -t failure). On deploy
+    failure, the DB override is kept so the operator can keep editing, but
+    the stream is marked not-deployed.
+
+    Stream-level operation: open to any viewer of the redirector.
+    """
+    svc = RedirectorService(db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
+    stream = await _get_stream_or_404(stream_id, redirector_id, svc)
+
+    try:
+        validate_custom_override(payload.content)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+    stream = await svc.update_stream(
+        stream, {"custom_config_override": payload.content, "enabled": True}
+    )
+
+    try:
+        ssh = await _make_ssh_service(svc, redirector, db)
+        result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
+    except SSHConnectionError as e:
+        await svc.update_stream(stream, {"deployed": False})
+        raise _ssh_connection_error(e)
+    except SSHAuthError as e:
+        await svc.update_stream(stream, {"deployed": False})
+        raise _ssh_auth_error(e)
+    except (NginxReloadError, SSHCommandError) as e:
+        await svc.update_stream(stream, {"deployed": False})
+        raise _ssh_command_error(e)
+
+    if result["success"]:
+        await svc.update_deployed_at(redirector)
+        await svc.update_stream(stream, {"deployed": True})
+    else:
+        await svc.update_stream(stream, {"deployed": False})
+
+    audit = AuditService(db)
+    await audit.log(
+        action="STREAM_CONFIG_OVERRIDE_SET",
+        user_id=current_user.id,
+        resource_type="STREAM_CONFIG",
+        details={
+            "stream_id": stream_id,
+            "redirector_id": redirector_id,
+            "override_bytes": len(payload.content.encode("utf-8")),
+            "deploy_success": result["success"],
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return DeployResult(**result)
+
+
+@router.delete(
+    "/{redirector_id}/streams/{stream_id}/config",
+    response_model=DeployResult,
+)
+async def reset_stream_config(
+    redirector_id: str,
+    stream_id: str,
+    request: Request,
+    current_user: User = Depends(require_permission("redirectors.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear a stream's custom override and re-deploy the generated config
+    so the on-disk file on the redirector matches the structured fields.
+
+    Stream-level operation: open to any viewer of the redirector.
+    """
+    svc = RedirectorService(db)
+    redirector = await _get_authorized_redirector(
+        redirector_id, current_user, svc, allow_public=True, db=db
+    )
+    stream = await _get_stream_or_404(stream_id, redirector_id, svc)
+
+    had_override = bool(stream.custom_config_override)
+    stream = await svc.update_stream(stream, {"custom_config_override": None})
+
+    try:
+        ssh = await _make_ssh_service(svc, redirector, db)
+        result = await run_deploy_single(ssh, redirector.nginx_stream_dir, stream)
+    except SSHConnectionError as e:
+        await svc.update_stream(stream, {"deployed": False})
+        raise _ssh_connection_error(e)
+    except SSHAuthError as e:
+        await svc.update_stream(stream, {"deployed": False})
+        raise _ssh_auth_error(e)
+    except (NginxReloadError, SSHCommandError) as e:
+        await svc.update_stream(stream, {"deployed": False})
+        raise _ssh_command_error(e)
+
+    if result["success"]:
+        await svc.update_deployed_at(redirector)
+        await svc.update_stream(stream, {"deployed": True})
+    else:
+        await svc.update_stream(stream, {"deployed": False})
+
+    audit = AuditService(db)
+    await audit.log(
+        action="STREAM_CONFIG_OVERRIDE_RESET",
+        user_id=current_user.id,
+        resource_type="STREAM_CONFIG",
+        details={
+            "stream_id": stream_id,
+            "redirector_id": redirector_id,
+            "had_override": had_override,
+            "deploy_success": result["success"],
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return DeployResult(**result)
 
 
 @router.post("/{redirector_id}/streams/{stream_id}/enable", response_model=DeployResult)

@@ -234,19 +234,65 @@ deny all;
 
 Only traffic from listed CIDRs is accepted. All other traffic is dropped.
 
-### SSL/TLS Termination
+### SSL/TLS Bridging
 
-When enabled (TCP only), the redirector terminates TLS and forwards plaintext to the upstream:
+When enabled (TCP only), the redirector **terminates** the client TLS handshake
+with a legitimate certificate stored on the redirector, then opens a **fresh
+TLS connection to the upstream** so C2 teamservers can keep using their own
+self-signed certificate. This is TLS bridging (terminate + re-origin), not
+passthrough — the public cert lives on the redirector, the CS cert lives on
+the teamserver, and nginx sits between them.
 
 ```nginx
-ssl_preread off;
-ssl_certificate /etc/ssl/certs/redir.pem;
-ssl_certificate_key /etc/ssl/private/redir.key;
-ssl_protocols TLSv1.2 TLSv1.3;
-ssl_ciphers HIGH:!aNULL:!MD5;
+server {
+    listen 443 ssl;
+    proxy_pass 10.32.88.189:443;
+    ssl_certificate /etc/ssl/certs/legit.pem;
+    ssl_certificate_key /etc/ssl/private/legit.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    proxy_ssl on;            # re-encrypt to upstream
+    proxy_ssl_verify off;    # accept upstream self-signed cert
+}
 ```
 
-Requires certificate and key files already present on the redirector.
+`proxy_ssl on;` is load-bearing — without it, nginx sends plaintext to the
+upstream TLS listener and the teamserver drops the connection immediately.
+`proxy_ssl_verify off;` is needed because CS and most C2 teamservers use
+self-signed certs that nginx has no CA chain for.
+
+Certificate and key files must already be present on the redirector.
+
+### Custom Config Override
+
+The **View/Edit Config** modal lets operators hand-edit the nginx config
+for a stream when the structured fields can't express what's needed
+(advanced directives, custom variables, experimental tuning). Saving an
+edit:
+
+1. Validates basic structure (non-empty, balanced braces, size ≤ 32 KB,
+   contains a `server` block).
+2. Persists the override in the database on the stream row.
+3. Immediately writes it to the redirector, runs `nginx -t`, and reloads
+   nginx. If `nginx -t` fails the on-disk file is rolled back (previous
+   content or deleted if it was new), but the DB override is kept so the
+   operator can keep editing their draft. The stream is marked
+   `deployed=false` on any failure.
+
+While an override is active:
+- The **generator path is bypassed entirely** — structured-field edits
+  (listen_port, cs_ip, SSL options, etc.) do not affect what is deployed.
+- The UI shows a **drift banner** to warn the operator.
+- Clicking **Reset to Generated** clears the override, re-renders from
+  structured fields, and redeploys in one step.
+
+Internally this is `custom_config_override TEXT NULL` on `stream_configs`
+and the `PUT|DELETE /api/redirectors/{id}/streams/{sid}/config` endpoints.
+Audit events: `STREAM_CONFIG_OVERRIDE_SET` and
+`STREAM_CONFIG_OVERRIDE_RESET` (override body is **not** logged, only its
+byte length).
 
 ---
 
@@ -296,8 +342,16 @@ Requires certificate and key files already present on the redirector.
 | `POST /api/redirectors/{id}/streams/{sid}/deploy` | Deploy stream config to redirector |
 | `POST /api/redirectors/{id}/streams/{sid}/remove` | Remove stream config file from redirector |
 | `GET /api/redirectors/{id}/streams/{sid}/preview` | Preview generated nginx config |
+| `PUT /api/redirectors/{id}/streams/{sid}/config` | Install a hand-edited custom config override and deploy it (test + reload with rollback) |
+| `DELETE /api/redirectors/{id}/streams/{sid}/config` | Clear the custom override and redeploy the generated config |
 | `POST /api/redirectors/{id}/deploy-all` | Enable all streams + deploy |
 | `POST /api/redirectors/{id}/disable-all` | Disable all streams + remove config files |
+
+The regular `PUT /api/redirectors/{id}/streams/{sid}` auto-redeploys to the
+redirector whenever a deploy-sensitive field changes (listen port, proxy
+target, SSL options, ACLs) and the stream was already deployed. This keeps
+the on-disk config on the redirector in sync with the database and prevents
+silent drift. Cosmetic fields (name) still skip the redeploy.
 
 ---
 
@@ -360,6 +414,7 @@ All security-relevant actions are logged via `AuditService`:
 - **Stream module missing** -- install `libnginx-mod-stream` (Debian/Ubuntu) or enable in nginx build
 - **Stream directory missing** -- create `/etc/nginx/stream.d` and add `stream { include /etc/nginx/stream.d/*.conf; }` to nginx.conf
 - **sudo not available** -- the SSH user needs `NOPASSWD` sudo for nginx operations
+- **apache2 blocking ports** -- Kali preinstalls apache2 and enables it by default, which holds ports 80/443 and prevents nginx from binding them. The `apache2_not_blocking` check detects this; **Fix Prerequisites** stops and disables apache2 (without uninstalling it, so operators can re-enable manually).
 
 Use **Fix Prerequisites** to auto-resolve common issues (requires sudo).
 
