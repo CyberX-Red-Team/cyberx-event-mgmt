@@ -13,6 +13,7 @@ from app.models.audit_log import AuditLog
 from app.models.cpe_certificate import CPECertificate, CertificateStatus
 from app.models.event import Event, EventParticipation, ParticipationStatus
 from app.models.user import User
+from app.models.vpn import VPNCredential
 
 logger = logging.getLogger(__name__)
 
@@ -33,29 +34,19 @@ class CPECertificateService:
         """
         Check a single user's CPE eligibility for an event.
 
-        Criteria (all required for 32 CPE hours), evaluated over a window that
-        begins 7 days before event.start_date (soft start) and ends at the
-        close of event.end_date:
-        1. At least one Nextcloud login during the window
-        2. At least one PowerDNS-Admin login during the window
-        3. At least one VPN credential assigned during the window
+        Criteria (all required for 32 CPE hours):
+        1. At least one Nextcloud login during event dates
+        2. At least one PowerDNS-Admin login during event dates
+        3. At least one VPN credential assigned
 
         Returns dict with eligible flag, criteria details, and CPE hours.
         """
-        event_start = (
-            datetime.combine(event.start_date, datetime.min.time())
-            .replace(tzinfo=timezone.utc)
-            - timedelta(days=7)
-        )
-        event_end = (
-            datetime.combine(event.end_date, datetime.min.time())
-            .replace(tzinfo=timezone.utc)
-            + timedelta(days=1)
-        )
+        event_start = datetime.combine(event.start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        event_end = datetime.combine(event.end_date, datetime.min.time()).replace(tzinfo=timezone.utc) + timedelta(days=1)
 
         has_nextcloud = await self._check_login(user_id, "nextcloud", event_start, event_end)
         has_powerdns = await self._check_login(user_id, "powerdns-admin", event_start, event_end)
-        has_vpn = await self._check_vpn_assigned(user_id, event_start, event_end)
+        has_vpn = await self._check_vpn_assigned(user_id)
 
         eligible = has_nextcloud and has_powerdns and has_vpn
 
@@ -449,22 +440,11 @@ class CPECertificateService:
         count = result.scalar()
         return count > 0
 
-    async def _check_vpn_assigned(
-        self, user_id: int,
-        event_start: datetime, event_end: datetime
-    ) -> bool:
-        """Check if a VPN was assigned to the user during the window.
-
-        Queries the audit log for VPN_ASSIGN events so eligibility survives
-        later unassignment — the current VPNCredential.assigned_to_user_id
-        reflects live state and gets cleared when a VPN is pulled back.
-        """
+    async def _check_vpn_assigned(self, user_id: int) -> bool:
+        """Check if user has at least one VPN credential assigned."""
         result = await self.session.execute(
-            select(func.count(AuditLog.id)).where(
-                AuditLog.action == "VPN_ASSIGN",
-                AuditLog.details["assigned_to_user_id"].as_integer() == user_id,
-                AuditLog.created_at >= event_start,
-                AuditLog.created_at <= event_end,
+            select(func.count(VPNCredential.id)).where(
+                VPNCredential.assigned_to_user_id == user_id
             )
         )
         count = result.scalar()
