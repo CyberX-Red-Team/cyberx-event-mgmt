@@ -177,6 +177,23 @@ class EventService:
             .values(is_active=False)
         )
 
+    async def get_user_participation_history(
+        self, user_id: int
+    ) -> List[EventParticipation]:
+        """Return a user's participation across all events, newest first.
+
+        Includes archived events — this is the primary data source for the
+        participant portal's "Past Events" section.
+        """
+        result = await self.session.execute(
+            select(EventParticipation)
+            .where(EventParticipation.user_id == user_id)
+            .options(selectinload(EventParticipation.event))
+            .join(Event, Event.id == EventParticipation.event_id)
+            .order_by(Event.year.desc())
+        )
+        return list(result.scalars().all())
+
     async def get_event_statistics(self, event_id: int) -> dict:
         """
         Get participation statistics for an event.

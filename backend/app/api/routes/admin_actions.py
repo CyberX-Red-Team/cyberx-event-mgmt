@@ -464,16 +464,26 @@ async def list_actions(
     event_id: Optional[int] = None,
     action_type: Optional[str] = None,
     status: Optional[str] = None,
+    include_archived: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("actions.manage"))
 ):
-    """List all participant actions with filters."""
+    """List all participant actions with filters.
+
+    By default, actions on archived events are excluded. Pass
+    include_archived=true to include them (the UI groups them separately).
+    """
     from sqlalchemy.orm import selectinload
+    from app.models.event import Event
 
     query = select(ParticipantAction).options(selectinload(ParticipantAction.user))
 
     if event_id:
         query = query.where(ParticipantAction.event_id == event_id)
+    elif not include_archived:
+        # Filter out actions tied to archived events
+        archived_subq = select(Event.id).where(Event.is_archived == True)
+        query = query.where(~ParticipantAction.event_id.in_(archived_subq))
     if action_type:
         query = query.where(ParticipantAction.action_type == action_type)
     if status:
@@ -510,11 +520,16 @@ async def list_actions(
 async def get_action_statistics(
     event_id: Optional[int] = None,
     action_type: Optional[str] = None,
+    include_archived: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("actions.manage"))
 ):
-    """Get summary statistics for actions grouped by batch."""
+    """Get summary statistics for actions grouped by batch.
+
+    By default excludes actions from archived events.
+    """
     from sqlalchemy import func, case
+    from app.models.event import Event
 
     # Group by batch_id for clean separation of batches.
     # Falls back to action_type+title grouping for legacy actions without batch_id.
@@ -536,6 +551,9 @@ async def get_action_statistics(
 
     if event_id:
         query = query.where(ParticipantAction.event_id == event_id)
+    elif not include_archived:
+        archived_subq = select(Event.id).where(Event.is_archived == True)
+        query = query.where(~ParticipantAction.event_id.in_(archived_subq))
     if action_type:
         query = query.where(ParticipantAction.action_type == action_type)
 

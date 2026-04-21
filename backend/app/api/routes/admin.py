@@ -1779,6 +1779,7 @@ def _build_event_dict(event):
         "name": event.name,
         "is_active": event.is_active,
         "is_archived": event.is_archived,
+        "archived_at": event.archived_at.isoformat() if event.archived_at else None,
         "registration_open": event.registration_open,
         "registration_opens": event.registration_opens.isoformat() if event.registration_opens else None,
         "registration_closes": event.registration_closes.isoformat() if event.registration_closes else None,
@@ -2146,6 +2147,33 @@ async def activate_event(
     return response
 
 
+@router.get("/events/{event_id}/archive-preview")
+async def archive_event_preview(
+    event_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("events.edit"))
+):
+    """Dry-run the archive cascade and return per-step counts for the confirmation modal."""
+    from app.services.event_service import EventService
+    from app.services.event_archive_service import EventArchiveService
+
+    if current_user.role != UserRole.ADMIN.value:
+        raise forbidden("Only administrators can archive events")
+
+    service = EventService(db)
+    event = await service.get_event(event_id)
+    if not event:
+        raise not_found("Event")
+
+    archive_service = EventArchiveService(db)
+    counts = await archive_service.archive(event_id, dry_run=True)
+    return {
+        "event_id": event.id,
+        "event_year": event.year,
+        "counts": counts,
+    }
+
+
 @router.post("/events/{event_id}/archive")
 async def archive_event(
     event_id: int,
@@ -2153,8 +2181,9 @@ async def archive_event(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("events.edit"))
 ):
-    """Archive an event."""
+    """Archive an event. Runs the full cascade; see EventArchiveService."""
     from app.services.event_service import EventService
+    from app.services.event_archive_service import EventArchiveService
 
     if current_user.role != UserRole.ADMIN.value:
         raise forbidden("Only administrators can archive events")
@@ -2168,19 +2197,56 @@ async def archive_event(
     if event.is_active:
         raise bad_request("Cannot archive the active event. Deactivate it first.")
 
-    event = await service.update_event(event_id, is_archived=True)
-
-    # Audit log
     ip_address, user_agent = extract_client_metadata(request)
-    audit_service = AuditService(db)
-    await audit_service.log_event_archive(
-        user_id=current_user.id,
-        event_id=event.id,
+    archive_service = EventArchiveService(db)
+    counts = await archive_service.archive(
+        event_id,
+        actor_user_id=current_user.id,
         ip_address=ip_address,
-        user_agent=user_agent
+        user_agent=user_agent,
     )
 
-    return {"success": True, "message": f"Event {event.year} archived"}
+    return {
+        "success": True,
+        "message": f"Event {event.year} archived",
+        "counts": counts,
+    }
+
+
+@router.post("/events/{event_id}/unarchive")
+async def unarchive_event(
+    event_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("events.edit"))
+):
+    """Unarchive an event. Flag-only; destroyed infrastructure is NOT restored."""
+    from app.services.event_archive_service import EventArchiveService
+
+    if current_user.role != UserRole.ADMIN.value:
+        raise forbidden("Only administrators can unarchive events")
+
+    ip_address, user_agent = extract_client_metadata(request)
+    archive_service = EventArchiveService(db)
+    try:
+        event = await archive_service.unarchive(
+            event_id,
+            actor_user_id=current_user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+    except ValueError as e:
+        raise not_found("Event") from e
+
+    return {
+        "success": True,
+        "message": f"Event {event.year} unarchived",
+        "warning": (
+            "Event unarchived. Infrastructure (instances, VPN credentials, "
+            "TLS certificates, CA chains) was destroyed on archive and must "
+            "be re-provisioned manually."
+        ),
+    }
 
 
 # =============================================================================

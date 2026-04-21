@@ -282,16 +282,17 @@ async function loadEvents() {
             eventFilter.appendChild(option);
         });
 
-        // Populate template event dropdown
+        // Populate template event dropdown with an explicit "Unassigned" option
         const templateEvent = document.getElementById('templateEvent');
+        const unassigned = document.createElement('option');
+        unassigned.value = '';
+        unassigned.textContent = 'Unassigned (reusable)';
+        templateEvent.appendChild(unassigned);
         events.forEach(event => {
+            if (event.is_archived) return; // archived events cannot hold templates post-cascade
             const option = document.createElement('option');
             option.value = event.id;
             option.textContent = `${event.year} - ${event.name}`;
-            if (event.is_archived) {
-                option.disabled = true;
-                option.textContent += ' (Archived)';
-            }
             templateEvent.appendChild(option);
         });
     } catch (error) {
@@ -516,7 +517,7 @@ function renderTemplates(items) {
                     <strong>${t.name}</strong>
                     ${t.description ? `<br><small class="text-muted">${t.description}</small>` : ''}
                 </td>
-                <td>${t.event_name || '-'}</td>
+                <td>${t.event_name || '<span class="badge bg-light text-dark">Unassigned</span>'}</td>
                 <td>${providerBadge}</td>
                 <td>${t.cloud_init_template_name || '-'}</td>
                 <td>${t.license_product_name || '-'}</td>
@@ -613,7 +614,7 @@ async function editTemplate(templateId) {
         document.getElementById('templateId').value = template.id;
         document.getElementById('templateName').value = template.name;
         document.getElementById('templateDescription').value = template.description || '';
-        document.getElementById('templateEvent').value = template.event_id;
+        document.getElementById('templateEvent').value = template.event_id || '';
         document.getElementById('templateProvider').value = template.provider;
         document.getElementById('templateCloudInit').value = template.cloud_init_template_id || '';
         document.getElementById('templateLicense').value = template.license_product_id || '';
@@ -646,10 +647,11 @@ async function saveTemplate() {
     const templateId = document.getElementById('templateId').value;
     const provider = document.getElementById('templateProvider').value;
 
+    const selectedEventValue = document.getElementById('templateEvent').value;
     const data = {
         name: document.getElementById('templateName').value,
         description: document.getElementById('templateDescription').value || null,
-        event_id: parseInt(document.getElementById('templateEvent').value),
+        event_id: selectedEventValue ? parseInt(selectedEventValue) : null,
         provider: provider,
         cloud_init_template_id: document.getElementById('templateCloudInit').value ?
             parseInt(document.getElementById('templateCloudInit').value) : null,
@@ -679,6 +681,7 @@ async function saveTemplate() {
                 body: JSON.stringify({
                     name: data.name,
                     description: data.description,
+                    event_id: data.event_id,
                     is_redirector: data.is_redirector,
                     ssh_username: data.ssh_username,
                 })

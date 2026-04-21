@@ -82,6 +82,45 @@
     </div>
 </div>
 
+<!-- Archive Confirmation Modal -->
+<div class="modal fade" id="archiveConfirmModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i data-feather="alert-triangle" class="me-2"></i>
+                    Archive Event <span id="archiveModalYear"></span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="archivePreviewLoading" class="text-center py-4">
+                    <div class="spinner-border text-danger" role="status"></div>
+                    <p class="text-muted mt-2 mb-0">Calculating cascade impact...</p>
+                </div>
+                <div id="archivePreviewContent" class="d-none">
+                    <p class="fw-bold text-danger">Archiving this event will destroy the following resources. This action cannot be undone by unarchiving.</p>
+                    <ul class="list-group mb-3" id="archivePreviewList"></ul>
+                    <p class="small text-muted mb-2">
+                        <strong>Preserved:</strong> CPE certificates, participation history, audit logs,
+                        user identities, and completed Keycloak sync records.
+                    </p>
+                    <div class="alert alert-warning mb-0">
+                        <label class="form-label mb-1" for="archiveConfirmInput">
+                            To confirm, type the event year <strong id="archiveConfirmYearHint"></strong>:
+                        </label>
+                        <input type="text" class="form-control" id="archiveConfirmInput" autocomplete="off">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="archiveConfirmBtn" disabled>Archive event</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Create/Edit Event Modal -->
 <div class="modal fade" id="eventModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -91,6 +130,10 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div id="eventArchivedBanner" class="alert alert-secondary d-none">
+                    <i data-feather="archive" class="me-2"></i>
+                    This event is archived. Unarchive it from the events list to make edits.
+                </div>
                 <form id="eventForm">
                     <input type="hidden" id="eventId">
 
@@ -203,7 +246,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="saveEvent()">
+                <button type="button" class="btn btn-primary" id="saveEventBtn" onclick="saveEvent()">
                     <span id="saveEventBtnText">Save Event</span>
                 </button>
             </div>
@@ -247,8 +290,10 @@
 
             // Build table rows
             tableBody.innerHTML = data.events.map(event => {
+                const archivedTitle = event.archived_at ?
+                    ` title="Archived at ${new Date(event.archived_at).toLocaleString()}"` : '';
                 const statusBadge = event.is_archived ?
-                    '<span class="badge bg-secondary">Archived</span>' :
+                    `<span class="badge bg-secondary"${archivedTitle}>Archived</span>` :
                     event.is_active ?
                         '<span class="badge bg-success">Active</span>' :
                         '<span class="badge bg-warning">Inactive</span>';
@@ -284,7 +329,7 @@
                 const maxPart = event.max_participants || '<span class="text-muted">Unlimited</span>';
 
                 const actions = event.is_archived ?
-                    `<span class="text-muted">Archived</span>` :
+                    `<button class="btn btn-sm btn-outline-secondary" onclick="unarchiveEvent(${event.id}, ${event.year})">Unarchive</button>` :
                     `
                     <div class="btn-group btn-group-sm">
                         ${event.is_active ?
@@ -350,11 +395,33 @@
         document.getElementById('eventSshPrivateKey').value = '';
         document.getElementById('downloadKeysBtn').style.display = 'none';
 
+        setArchivedEditingState(false);
+
         if (!eventModal) {
             eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
         }
         eventModal.show();
     };
+
+    function setArchivedEditingState(isArchived) {
+        const banner = document.getElementById('eventArchivedBanner');
+        const saveBtn = document.getElementById('saveEventBtn');
+        const form = document.getElementById('eventForm');
+        banner.classList.toggle('d-none', !isArchived);
+        saveBtn.style.display = isArchived ? 'none' : '';
+        // Disable/enable all form controls except the read-only year field which
+        // stays in its existing disabled state when editing.
+        form.querySelectorAll('input, textarea, button').forEach(el => {
+            if (el.id === 'eventYear') return;
+            if (isArchived) {
+                el.setAttribute('data-archive-disabled', '1');
+                el.disabled = true;
+            } else if (el.getAttribute('data-archive-disabled') === '1') {
+                el.removeAttribute('data-archive-disabled');
+                el.disabled = false;
+            }
+        });
+    }
 
     window.editEvent = async function(eventId) {
         try {
@@ -388,6 +455,8 @@
             // Show download button if keys exist
             const hasKeys = event.ssh_public_key && event.ssh_private_key;
             document.getElementById('downloadKeysBtn').style.display = hasKeys ? 'inline-block' : 'none';
+
+            setArchivedEditingState(event.is_archived);
 
             if (!eventModal) {
                 eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
@@ -503,26 +572,117 @@
         }
     };
 
+    const CASCADE_LINES = [
+        ['jobs_cancelled', 'scheduled invitation jobs will be cancelled'],
+        ['instances_terminated', 'cloud instances will be <strong>terminated</strong> (not recoverable)'],
+        ['vpn_creds_deleted', 'VPN credentials will be <strong>permanently deleted</strong> (DB + R2 wipe)'],
+        ['tls_certs_deleted', 'TLS certificates will be <strong>permanently deleted</strong> (bundles + keys wiped from R2)'],
+        ['ca_chains_destroyed', 'Certificate Authorities will be <strong>torn down</strong> (Render services + R2 signing keys)'],
+        ['emails_purged', 'queued emails will be purged'],
+        ['invites_nulled_used', 'used Discord invites will be nulled (already consumed)'],
+        ['invites_queued_for_bot', 'unused Discord invites will be queued for bot revocation'],
+        ['users_reset', 'participants will have their workflow state reset'],
+        ['sync_queue_cleared', 'pending Keycloak sync entries will be cleared'],
+        ['templates_detached', 'instance templates will be detached (reusable for future events)'],
+    ];
+
     window.archiveEvent = async function(eventId, year) {
-        if (!confirm(`Are you sure you want to archive the ${year} event? This action can be reversed by editing the event directly in the database.`)) {
+        const modalEl = document.getElementById('archiveConfirmModal');
+        const yearEls = [
+            document.getElementById('archiveModalYear'),
+            document.getElementById('archiveConfirmYearHint'),
+        ];
+        yearEls.forEach(el => { el.textContent = year; });
+
+        const loading = document.getElementById('archivePreviewLoading');
+        const content = document.getElementById('archivePreviewContent');
+        const list = document.getElementById('archivePreviewList');
+        const input = document.getElementById('archiveConfirmInput');
+        const btn = document.getElementById('archiveConfirmBtn');
+
+        loading.classList.remove('d-none');
+        content.classList.add('d-none');
+        list.innerHTML = '';
+        input.value = '';
+        btn.disabled = true;
+
+        const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        bsModal.show();
+
+        let counts = {};
+        try {
+            const response = await csrfFetch(`/api/admin/events/${eventId}/archive-preview`);
+            if (!response.ok) {
+                throw new Error('Failed to load archive preview');
+            }
+            const data = await response.json();
+            counts = data.counts || {};
+        } catch (err) {
+            console.error(err);
+            showToast(err.message || 'Failed to load archive preview', 'danger');
+            bsModal.hide();
             return;
         }
 
+        list.innerHTML = CASCADE_LINES.map(([key, label]) => {
+            const n = counts[key] || 0;
+            const muted = n === 0 ? 'text-muted' : '';
+            return `<li class="list-group-item ${muted}"><strong>${n}</strong> ${label}</li>`;
+        }).join('');
+
+        loading.classList.add('d-none');
+        content.classList.remove('d-none');
+
+        input.oninput = () => {
+            btn.disabled = input.value.trim() !== String(year);
+        };
+
+        btn.onclick = async () => {
+            btn.disabled = true;
+            btn.textContent = 'Archiving...';
+            try {
+                const response = await csrfFetch(`/api/admin/events/${eventId}/archive`, {
+                    method: 'POST'
+                });
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to archive event');
+                }
+                const result = await response.json();
+                bsModal.hide();
+                showToast(result.message || `Event ${year} archived`, 'success');
+                await loadEvents();
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Failed to archive event', 'danger');
+                btn.disabled = false;
+                btn.textContent = 'Archive event';
+            }
+        };
+    };
+
+    window.unarchiveEvent = async function(eventId, year) {
+        if (!confirm(
+            `Unarchive event ${year}?\n\n` +
+            `Note: destroyed infrastructure (instances, VPN credentials, TLS certificates, ` +
+            `CA chains) will NOT be restored and must be re-provisioned manually.`
+        )) {
+            return;
+        }
         try {
-            const response = await csrfFetch(`/api/admin/events/${eventId}/archive`, {
+            const response = await csrfFetch(`/api/admin/events/${eventId}/unarchive`, {
                 method: 'POST'
             });
-
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.detail || 'Failed to archive event');
+                throw new Error(error.detail || 'Failed to unarchive event');
             }
-
+            const result = await response.json();
+            showToast(result.warning || result.message || `Event ${year} unarchived`, 'warning');
             await loadEvents();
-
-        } catch (error) {
-            console.error('Error archiving event:', error);
-            showToast(error.message || 'Failed to archive event', 'danger');
+        } catch (err) {
+            console.error(err);
+            showToast(err.message || 'Failed to unarchive event', 'danger');
         }
     };
 

@@ -957,6 +957,16 @@
             </div>
 
             <!-- Help Card -->
+            <div class="card shadow-sm mb-4" id="pastEventsCard" style="display:none;">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="clock" class="me-2"></i>Past Events</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">Read-only view of events you were invited to.</p>
+                    <div class="list-group" id="pastEventsList"></div>
+                </div>
+            </div>
+
             <div class="card shadow-sm">
                 <div class="card-header">
                     <h5 class="mb-0"><i data-feather="help-circle" class="me-2"></i>Need Help?</h5>
@@ -2713,10 +2723,59 @@ document.addEventListener('DOMContentLoaded', async function() {
         await loadMyInstances();
     }
 
+    // Load past events history
+    loadPastEvents();
+
     // Ensure icons are rendered after initial load
     setTimeout(function() {
         refreshFeatherIcons();
     }, 100);
 });
+
+async function loadPastEvents() {
+    try {
+        const response = await fetch('/api/events/my/history', {
+            credentials: 'same-origin'
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const history = data.history || [];
+        // The route response doesn't embed event.is_archived; we know the current
+        // active event is excluded via status-based heuristics, so surface only
+        // rows whose event_year is older than the currently active one.
+        const activeYear = (typeof currentEvent !== 'undefined' && currentEvent && currentEvent.year) ? currentEvent.year : null;
+        const past = history.filter(function(p) {
+            return activeYear === null || (p.event_year && p.event_year !== activeYear);
+        });
+        if (past.length === 0) return;
+
+        const card = document.getElementById('pastEventsCard');
+        const list = document.getElementById('pastEventsList');
+        list.innerHTML = past.map(function(p) {
+            const status = (p.status || 'unknown').toLowerCase();
+            const badgeClass = {
+                confirmed: 'bg-success',
+                declined: 'bg-secondary',
+                invited: 'bg-info',
+                no_response: 'bg-warning'
+            }[status] || 'bg-secondary';
+            return (
+                '<div class="list-group-item d-flex justify-content-between align-items-start">' +
+                '  <div>' +
+                '    <div class="fw-bold">' + (p.event_year || '') + ' &middot; ' + (p.event_name || '') + '</div>' +
+                '    <div class="text-muted small">' +
+                '      Status: <span class="badge ' + badgeClass + '">' + status + '</span>' +
+                (p.confirmed_at ? ' &middot; Confirmed ' + new Date(p.confirmed_at).toLocaleDateString() : '') +
+                '    </div>' +
+                '  </div>' +
+                '</div>'
+            );
+        }).join('');
+        card.style.display = 'block';
+        refreshFeatherIcons();
+    } catch (err) {
+        console.error('Failed to load past events', err);
+    }
+}
 </script>
 {% endblock %}

@@ -184,14 +184,17 @@ class InstanceTemplateService:
         if not template:
             return None
 
-        # Validate event is not archived if changing event_id
+        # Validate event is not archived if changing event_id.
+        # None is explicitly allowed — it detaches the template for reuse.
         if 'event_id' in kwargs and kwargs['event_id'] != template.event_id:
-            event_result = await self.session.execute(
-                select(Event).where(Event.id == kwargs['event_id'])
-            )
-            event = event_result.scalar_one_or_none()
-            if not event or event.is_archived:
-                raise ValueError("Cannot assign template to archived event")
+            new_event_id = kwargs['event_id']
+            if new_event_id is not None:
+                event_result = await self.session.execute(
+                    select(Event).where(Event.id == new_event_id)
+                )
+                event = event_result.scalar_one_or_none()
+                if not event or event.is_archived:
+                    raise ValueError("Cannot assign template to archived event")
 
         # Update fields
         for key, value in kwargs.items():

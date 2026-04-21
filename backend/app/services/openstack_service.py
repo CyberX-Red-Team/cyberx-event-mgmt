@@ -225,7 +225,12 @@ class OpenStackService:
         return data["server"]
 
     async def delete_instance_on_openstack(self, openstack_id: str) -> bool:
-        """Delete a VM via Nova API."""
+        """Delete a VM via Nova API. 404 is treated as success."""
+        from app.utils.external_stubs import externals_stubbed
+        if externals_stubbed():
+            logger.info("[STUB] would delete OpenStack instance %s", openstack_id)
+            return True
+
         await self._ensure_authenticated()
 
         async with httpx.AsyncClient(verify=True, timeout=30) as client:

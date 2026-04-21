@@ -497,15 +497,56 @@ class AuditService:
         user_id: int,
         event_id: int,
         ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None
+        user_agent: Optional[str] = None,
+        extra_details: Optional[dict] = None,
     ) -> AuditLog:
-        """Log event archival."""
+        """Log event archival with optional cascade counts in extra_details."""
+        details = {"action": "archive"}
+        if extra_details:
+            details.update(extra_details)
         return await self.log(
             action="EVENT_ARCHIVE",
             user_id=user_id,
             resource_type="EVENT",
             resource_id=event_id,
-            details={"action": "archive"},
+            details=details,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_event_unarchive(
+        self,
+        user_id: int,
+        event_id: int,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> AuditLog:
+        """Log event un-archival."""
+        return await self.log(
+            action="EVENT_UNARCHIVE",
+            user_id=user_id,
+            resource_type="EVENT",
+            resource_id=event_id,
+            details={"action": "unarchive"},
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+
+    async def log_discord_invite_revoked(
+        self,
+        actor_id: Optional[int],
+        invite_code: str,
+        event_id: Optional[int] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> AuditLog:
+        """Log a bot-driven Discord invite revocation callback."""
+        return await self.log(
+            action="DISCORD_INVITE_REVOKED",
+            user_id=actor_id,
+            resource_type="INVITE",
+            resource_id=None,
+            details={"invite_code": invite_code, "event_id": event_id},
             ip_address=ip_address,
             user_agent=user_agent
         )

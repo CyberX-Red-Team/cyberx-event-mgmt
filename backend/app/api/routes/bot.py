@@ -422,3 +422,110 @@ async def admin_link_discord(
         user_name=f"{user.first_name} {user.last_name}".strip(),
         message="Discord account linked successfully (admin override)",
     )
+
+
+# ─── Invite revocation (called by the external bot after archive) ────
+
+class PendingInviteRevocation(BaseModel):
+    event_id: int
+    event_year: int
+    participation_id: int
+    invite_code: str
+    generated_at: datetime | None
+
+
+class InviteRevokedResponse(BaseModel):
+    nulled: bool
+    message: str
+
+
+@router.get(
+    "/invites/pending-revocation",
+    response_model=list[PendingInviteRevocation],
+)
+async def list_pending_invite_revocations(
+    db: AsyncSession = Depends(get_db),
+    api_key: ServiceAPIKey | None = Depends(require_service_api_key),
+):
+    """Return invite codes on archived events that the bot should revoke.
+
+    Criteria:
+      - event.is_archived = True
+      - EventParticipation.discord_invite_code IS NOT NULL
+      - EventParticipation.discord_verified_at IS NULL (never used)
+
+    The bot polls this, calls Discord's DELETE /invites/{code}, then POSTs
+    back to /api/bot/invites/{code}/revoked so the platform can null the
+    stored code.
+    """
+    _check_scope(api_key, "bot.manage_invites")
+
+    result = await db.execute(
+        select(EventParticipation, Event)
+        .join(Event, Event.id == EventParticipation.event_id)
+        .where(
+            Event.is_archived == True,
+            EventParticipation.discord_invite_code.is_not(None),
+            EventParticipation.discord_verified_at.is_(None),
+        )
+        .order_by(Event.year.desc(), EventParticipation.id)
+    )
+
+    return [
+        PendingInviteRevocation(
+            event_id=event.id,
+            event_year=event.year,
+            participation_id=participation.id,
+            invite_code=participation.discord_invite_code,
+            generated_at=participation.discord_invite_generated_at,
+        )
+        for participation, event in result.all()
+    ]
+
+
+@router.post(
+    "/invites/{invite_code}/revoked",
+    response_model=InviteRevokedResponse,
+)
+async def mark_invite_revoked(
+    invite_code: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    api_key: ServiceAPIKey | None = Depends(require_service_api_key),
+):
+    """Bot callback: Discord invite was successfully revoked (or confirmed 404)."""
+    _check_scope(api_key, "bot.manage_invites")
+
+    result = await db.execute(
+        select(EventParticipation).where(
+            EventParticipation.discord_invite_code == invite_code
+        )
+    )
+    participation = result.scalar_one_or_none()
+
+    if not participation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No participation found with that invite code",
+        )
+
+    event_id = participation.event_id
+    participation.discord_invite_code = None
+    await db.commit()
+
+    from app.services.audit_service import AuditService
+    audit = AuditService(db)
+    ip = request.client.host if request.client else None
+    actor_name = api_key.name if api_key else "env-fallback"
+    await audit.log_discord_invite_revoked(
+        actor_id=None,
+        invite_code=invite_code,
+        event_id=event_id,
+        ip_address=ip,
+        user_agent=f"bot:{actor_name}",
+    )
+
+    return InviteRevokedResponse(
+        nulled=True,
+        message=f"Invite code {invite_code} marked revoked; DB reference cleared.",
+    )

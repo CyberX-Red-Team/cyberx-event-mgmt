@@ -43,11 +43,23 @@
 
     <!-- Redirectors Table -->
     <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="showIsolatedToggle" onchange="renderTable(_redirectors)">
+                <label class="form-check-label small" for="showIsolatedToggle">Show isolated</label>
+            </div>
+            <div id="bulkDeleteWrap" class="d-none">
+                <button class="btn btn-sm btn-outline-danger" onclick="bulkDeleteSelectedIsolated()">
+                    <i data-feather="trash-2" class="me-1"></i>Delete selected (<span id="bulkDeleteCount">0</span>)
+                </button>
+            </div>
+        </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0" id="redirectorsTable">
                     <thead>
                         <tr>
+                            <th style="width:30px;"><input type="checkbox" class="form-check-input d-none" id="selectAllIsolated" onchange="toggleSelectAllIsolated()"></th>
                             <th>Name</th>
                             <th>IP Address</th>
                             <th>SSH User:Port</th>
@@ -60,7 +72,7 @@
                     </thead>
                     <tbody id="redirectorsBody">
                         <tr id="loadingRow">
-                            <td colspan="8" class="text-center text-muted py-4">
+                            <td colspan="9" class="text-center text-muted py-4">
                                 <div class="spinner-border spinner-border-sm me-2" role="status"></div>
                                 Loading redirectors...
                             </td>
@@ -443,14 +455,27 @@ async function loadRedirectors() {
 
 function renderTable(redirectors) {
     const tbody = document.getElementById('redirectorsBody');
-    if (!redirectors.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-5">
+    const showIsolated = document.getElementById('showIsolatedToggle').checked;
+    const visible = showIsolated ? redirectors : redirectors.filter(r => (r.status || '').toLowerCase() !== 'isolated');
+    const selectAllCheckbox = document.getElementById('selectAllIsolated');
+    const bulkWrap = document.getElementById('bulkDeleteWrap');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.classList.toggle('d-none', !showIsolated);
+        selectAllCheckbox.checked = false;
+    }
+    if (bulkWrap) {
+        bulkWrap.classList.toggle('d-none', !showIsolated);
+        document.getElementById('bulkDeleteCount').textContent = '0';
+    }
+
+    if (!visible.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-5">
             No redirectors yet. Click <strong>Add Redirector</strong> to get started.
         </td></tr>`;
         feather.replace();
         return;
     }
-    tbody.innerHTML = redirectors.map(r => {
+    tbody.innerHTML = visible.map(r => {
         const typeBadge = r.instance_id
             ? '<span class="badge bg-info ms-1" title="CyberX provisioned">CyberX</span>'
             : '<span class="badge bg-secondary ms-1" title="Bring Your Own Device">BYOD</span>';
@@ -459,8 +484,14 @@ function renderTable(redirectors) {
         const ownerSuffix = (visibility !== 'private' && r.owner_username)
             ? `<br><small class="text-muted">by ${escHtml(r.owner_username)}</small>`
             : '';
+        const isIsolated = (r.status || '').toLowerCase() === 'isolated';
+        const rowCls = isIsolated ? ' class="text-muted bg-light-subtle"' : '';
+        const selectCell = showIsolated && isIsolated
+            ? `<input type="checkbox" class="form-check-input isolated-select" data-id="${r.id}" onchange="updateBulkDeleteCount()">`
+            : '';
         return `
-        <tr>
+        <tr${rowCls}>
+            <td>${selectCell}</td>
             <td>
                 <a href="{{ url_prefix }}/redirectors/${r.id}" class="fw-semibold text-decoration-none redir-name-link">
                     ${escHtml(r.name)}
@@ -488,6 +519,38 @@ function renderTable(redirectors) {
         </tr>`;
     }).join('');
     feather.replace();
+}
+
+function toggleSelectAllIsolated() {
+    const master = document.getElementById('selectAllIsolated');
+    document.querySelectorAll('.isolated-select').forEach(cb => { cb.checked = master.checked; });
+    updateBulkDeleteCount();
+}
+
+function updateBulkDeleteCount() {
+    const count = document.querySelectorAll('.isolated-select:checked').length;
+    document.getElementById('bulkDeleteCount').textContent = String(count);
+}
+
+async function bulkDeleteSelectedIsolated() {
+    const ids = Array.from(document.querySelectorAll('.isolated-select:checked')).map(cb => cb.dataset.id);
+    if (!ids.length) return;
+    if (!confirm(
+        `Delete ${ids.length} isolated redirector(s)?\n\n` +
+        `Note: remote nginx configuration files on the redirector host are NOT removed by this action. ` +
+        `Coordinate with ops if the host is being decommissioned.`
+    )) return;
+    let ok = 0, failed = 0;
+    for (const id of ids) {
+        try {
+            const resp = await csrfFetch(`/api/redirectors/${id}`, { method: 'DELETE' });
+            if (resp.ok) ok++; else failed++;
+        } catch (_) { failed++; }
+    }
+    if (typeof showToast === 'function') {
+        showToast(`Deleted ${ok} redirector(s)` + (failed ? `, ${failed} failed` : ''), failed ? 'warning' : 'success');
+    }
+    await loadRedirectors();
 }
 
 function statusBadge(status) {

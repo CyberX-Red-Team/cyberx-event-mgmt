@@ -22,7 +22,7 @@ class InstanceTemplateCreate(BaseModel):
     image_id: str
     cloud_init_template_id: Optional[int] = None
     license_product_id: Optional[int] = None
-    event_id: int
+    event_id: Optional[int] = None
     is_redirector: bool = False
     ssh_username: str = Field(default="root", max_length=50)
 
@@ -34,6 +34,8 @@ class InstanceTemplateUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_redirector: Optional[bool] = None
     ssh_username: Optional[str] = Field(None, max_length=50)
+    # event_id: None detaches; int assigns (must be a non-archived event)
+    event_id: Optional[int] = None
 
 
 class InstanceTemplateResponse(BaseModel):
@@ -51,7 +53,7 @@ class InstanceTemplateResponse(BaseModel):
     cloud_init_template_name: Optional[str] = None  # Computed
     license_product_id: Optional[int]
     license_product_name: Optional[str] = None  # Computed
-    event_id: int
+    event_id: Optional[int] = None
     event_name: Optional[str] = None  # Computed
     created_by_user_id: Optional[int]
     created_by_username: Optional[str] = None  # Computed

@@ -851,12 +851,23 @@ class StepCAService:
             return None
 
     def delete_from_r2(self, key: str) -> bool:
-        """Delete an object from R2."""
+        """Delete an object from R2. Idempotent — missing keys count as success."""
+        from app.utils.external_stubs import externals_stubbed
+        if externals_stubbed():
+            logger.info(f"[STUB] would delete R2 key={key}")
+            return True
         try:
             s3 = self._get_r2_client()
             s3.delete_object(Bucket=self.settings.R2_BUCKET, Key=key)
             return True
         except Exception as e:
+            code = None
+            response = getattr(e, "response", None)
+            if isinstance(response, dict):
+                code = response.get("Error", {}).get("Code")
+            if code in ("NoSuchKey", "404"):
+                logger.info(f"R2 key already absent: {key}")
+                return True
             logger.error(f"R2 delete failed for {key}: {e}")
             return False
 

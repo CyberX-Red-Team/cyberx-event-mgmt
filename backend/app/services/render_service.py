@@ -443,7 +443,12 @@ class RenderServiceManager:
                 return None
 
     async def delete_service(self, service_id: str) -> bool:
-        """Delete a Render service permanently."""
+        """Delete a Render service permanently. Idempotent — 404 counts as success."""
+        from app.utils.external_stubs import externals_stubbed
+        if externals_stubbed():
+            logger.info(f"[STUB] would delete Render service {service_id}")
+            return True
+
         if not self.api_key:
             logger.error("Render API key not configured, cannot delete service")
             return False
@@ -457,9 +462,11 @@ class RenderServiceManager:
             if resp.status_code in (200, 204):
                 logger.info(f"Deleted Render service {service_id}")
                 return True
-            else:
-                logger.error(f"Failed to delete service {service_id}: {resp.status_code} {resp.text}")
-                return False
+            if resp.status_code == 404:
+                logger.info(f"Render service {service_id} already absent")
+                return True
+            logger.error(f"Failed to delete service {service_id}: {resp.status_code} {resp.text}")
+            return False
 
     async def update_service_env_vars(self, service_id: str, env_vars: list[dict]) -> bool:
         """Update environment variables for a Render service.

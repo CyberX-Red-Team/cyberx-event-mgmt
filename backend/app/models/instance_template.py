@@ -48,11 +48,12 @@ class InstanceTemplate(Base):
         nullable=True
     )
 
-    # Event association (required - templates are scoped to events)
+    # Event association (nullable - templates are detached from events on archive
+    # so they can be reassigned to a future event)
     event_id = Column(
         Integer,
         ForeignKey("events.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True
     )
 

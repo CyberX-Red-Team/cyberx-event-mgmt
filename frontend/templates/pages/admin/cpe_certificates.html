@@ -41,9 +41,15 @@
                     <div class="page-header-subtitle">Manage CPE certificate eligibility, issuance, and PDF generation</div>
                 </div>
                 <div class="col-auto mt-4">
-                    <select class="form-select" id="eventSelector" onchange="onEventChange()">
-                        <option value="">Select an event...</option>
-                    </select>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="form-check form-switch mb-0 text-white-75">
+                            <input class="form-check-input" type="checkbox" id="cpeIncludeArchivedToggle" onchange="loadEvents()">
+                            <label class="form-check-label small" for="cpeIncludeArchivedToggle">Include archived</label>
+                        </div>
+                        <select class="form-select" id="eventSelector" onchange="onEventChange()">
+                            <option value="">Select an event...</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
@@ -114,6 +120,12 @@
             <i data-feather="calendar" style="width: 48px; height: 48px;" class="text-muted mb-3"></i>
             <h5 class="text-muted">Select an event to manage CPE certificates</h5>
         </div>
+    </div>
+
+    <!-- Archived event banner -->
+    <div id="cpeArchivedBanner" class="alert alert-secondary" style="display: none;">
+        <i data-feather="archive" class="me-2"></i>
+        This event is archived. Certificates are read-only.
     </div>
 
     <!-- Tabs (hidden until event selected) -->
@@ -273,32 +285,68 @@ document.addEventListener('DOMContentLoaded', function() {
 // =============================================================================
 // Event Loading
 // =============================================================================
+var eventsById = {};
+
 async function loadEvents() {
     try {
-        var response = await csrfFetch('/api/admin/events');
+        var includeArchived = document.getElementById('cpeIncludeArchivedToggle').checked;
+        var url = '/api/admin/events' + (includeArchived ? '?include_archived=true' : '');
+        var response = await csrfFetch(url);
         if (!response.ok) return;
         var data = await response.json();
         var events = data.events || data;
 
+        eventsById = {};
         var selector = document.getElementById('eventSelector');
-        // Keep the default option
+        // Reset to default option only
+        selector.innerHTML = '<option value="">Select an event...</option>';
         for (var i = 0; i < events.length; i++) {
             var evt = events[i];
-            if (evt.is_archived) continue;
+            eventsById[evt.id] = evt;
             var option = document.createElement('option');
             option.value = evt.id;
-            option.textContent = evt.name + ' (' + (evt.year || '') + ')';
+            var label = evt.name + ' (' + (evt.year || '') + ')';
+            if (evt.is_archived) label = '[Archived] ' + label;
+            option.textContent = label;
             selector.appendChild(option);
         }
 
-        // Auto-select if only one event
-        if (selector.options.length === 2) {
+        // Auto-select if only one non-archived event (don't auto-pick archived)
+        if (selector.options.length === 2 && !events[0].is_archived) {
             selector.selectedIndex = 1;
             onEventChange();
         }
     } catch (error) {
         console.error('Failed to load events:', error);
     }
+}
+
+function isCurrentEventArchived() {
+    if (!currentEventId) return false;
+    var e = eventsById[currentEventId];
+    return !!(e && e.is_archived);
+}
+
+function applyArchivedReadOnlyUI(isArchived) {
+    document.getElementById('cpeArchivedBanner').style.display = isArchived ? 'block' : 'none';
+    // Mutation controls: eligibility tab
+    var mutationButtons = [
+        'issueSelectedBtn',
+        // Buttons without explicit IDs: find by onclick selector
+    ];
+    mutationButtons.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = isArchived ? 'none' : '';
+    });
+    document.querySelectorAll(
+        '#eligibilityTab button[onclick="issueAllEligible()"],' +
+        '#certificatesTab button[onclick="bulkRegeneratePdfs()"]'
+    ).forEach(function(el) {
+        el.style.display = isArchived ? 'none' : '';
+    });
+    // Skip-eligibility-check toggle: disabled on archived (it feeds issuance)
+    var skip = document.getElementById('skipEligibilityCheck');
+    if (skip) skip.disabled = isArchived;
 }
 
 function onEventChange() {
@@ -308,11 +356,13 @@ function onEventChange() {
     if (currentEventId) {
         document.getElementById('noEventMessage').style.display = 'none';
         document.getElementById('cpeContent').style.display = 'block';
+        applyArchivedReadOnlyUI(isCurrentEventArchived());
         loadEligibility();
         loadCertificates();
     } else {
         document.getElementById('noEventMessage').style.display = 'block';
         document.getElementById('cpeContent').style.display = 'none';
+        applyArchivedReadOnlyUI(false);
         resetStats();
     }
     if (typeof feather !== 'undefined') feather.replace();
@@ -375,7 +425,7 @@ function renderEligibilityTable() {
         }
 
         var actionBtn = '';
-        if (!hasActiveCert) {
+        if (!hasActiveCert && !isCurrentEventArchived()) {
             actionBtn = '<button class="btn btn-sm btn-outline-success" onclick="issueSingle(' + p.user_id + ')" title="Issue certificate"><i data-feather="plus-circle"></i></button>';
         }
 
@@ -562,12 +612,15 @@ function renderCertificatesTable() {
         var issuedDate = cert.created_at ? formatDateTime(cert.created_at, { hideSeconds: true }) : '-';
 
         var actions = '';
-        if (!isRevoked) {
+        var archived = isCurrentEventArchived();
+        if (!isRevoked && !archived) {
             actions += '<button class="btn btn-sm btn-outline-warning me-1" onclick="regeneratePdf(' + cert.id + ')" title="Regenerate PDF"><i data-feather="refresh-cw"></i></button>';
             actions += '<button class="btn btn-sm btn-outline-danger" onclick="openRevokeModal(' + cert.id + ', \'' + escapeHtml(cert.certificate_number) + '\')" title="Revoke"><i data-feather="x-circle"></i></button>';
-        } else {
+        } else if (isRevoked && !archived) {
             actions = '<button class="btn btn-sm btn-outline-success me-1" onclick="reinstateCert(' + cert.id + ')" title="Reinstate"><i data-feather="rotate-ccw"></i></button>';
             actions += '<span class="small text-muted ms-1">' + escapeHtml(cert.revocation_reason || '') + '</span>';
+        } else if (archived && isRevoked) {
+            actions = '<span class="small text-muted">' + escapeHtml(cert.revocation_reason || '') + '</span>';
         }
 
         row.innerHTML =

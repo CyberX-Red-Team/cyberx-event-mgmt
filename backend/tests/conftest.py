@@ -40,10 +40,16 @@ def test_settings() -> Settings:
     """
     Provide test-specific settings.
 
-    Uses in-memory SQLite database for tests.
+    Uses in-memory SQLite by default; set TEST_DATABASE_URL to point at
+    a PostgreSQL instance for PG-parity runs (e.g. the v1.6.1 JSON
+    predicate regression wouldn't have been caught on SQLite).
     """
+    database_url = os.getenv(
+        "TEST_DATABASE_URL",
+        "sqlite+aiosqlite:///:memory:",
+    )
     return Settings(
-        DATABASE_URL="sqlite+aiosqlite:///:memory:",
+        DATABASE_URL=database_url,
         SECRET_KEY="test-secret-key-for-testing-only",
         CSRF_SECRET_KEY="test-csrf-key-for-testing-only",
         ENCRYPTION_KEY=generate_encryption_key(),
@@ -86,20 +92,21 @@ async def async_engine(test_settings: Settings):
     Uses in-memory SQLite with StaticPool to ensure all connections
     share the same in-memory database.
     """
-    engine = create_async_engine(
-        test_settings.DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-        echo=False,
-    )
+    is_sqlite = test_settings.DATABASE_URL.startswith("sqlite")
+    engine_kwargs = {"echo": False}
+    if is_sqlite:
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+        engine_kwargs["poolclass"] = StaticPool
+    engine = create_async_engine(test_settings.DATABASE_URL, **engine_kwargs)
 
-    # Create all tables
+    # Drop first (in case a prior run left tables behind in a durable PG DB),
+    # then create fresh.
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine
 
-    # Drop all tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
