@@ -105,11 +105,13 @@
                         <strong>Preserved:</strong> CPE certificates, participation history, audit logs,
                         user identities, and completed Keycloak sync records.
                     </p>
-                    <div class="alert alert-warning mb-0">
-                        <label class="form-label mb-1" for="archiveConfirmInput">
-                            To confirm, type the event year <strong id="archiveConfirmYearHint"></strong>:
+                    <div class="border rounded p-3 mb-0">
+                        <label class="d-block mb-2 fw-semibold" for="archiveConfirmInput">
+                            To confirm, type the event year
+                            <span class="text-danger fw-bold" id="archiveConfirmYearHint"></span>
                         </label>
-                        <input type="text" class="form-control" id="archiveConfirmInput" autocomplete="off">
+                        <input type="text" class="form-control" id="archiveConfirmInput"
+                               autocomplete="off" placeholder="Type the year to enable archiving">
                     </div>
                 </div>
             </div>
