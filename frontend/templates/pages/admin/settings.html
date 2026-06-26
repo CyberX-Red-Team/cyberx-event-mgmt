@@ -286,6 +286,8 @@ const AVAILABLE_SCOPES = [
     { value: 'bot.lookup', label: 'Bot: Look Up Participants' },
     { value: 'bot.update', label: 'Bot: Update Participant Data' },
     { value: 'bot.admin_link', label: 'Bot: Admin Link Discord (bypass invite code)' },
+    { value: 'bot.manage_invites', label: 'Bot: Manage Discord Invites (revoke unused on archive)' },
+    { value: 'bot.manage_roles', label: 'Bot: Manage Verified Role (reconcile against active-event roster)' },
 ];
 
 async function loadApiKeys() {
