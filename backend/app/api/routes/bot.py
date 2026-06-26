@@ -529,3 +529,69 @@ async def mark_invite_revoked(
         nulled=True,
         message=f"Invite code {invite_code} marked revoked; DB reference cleared.",
     )
+
+
+# ─── Verified-role reconciliation roster ─────────────────────────────
+
+class VerifiedRosterResponse(BaseModel):
+    active_event: dict | None  # {id, year, name} or null between seasons
+    verified_discord_ids: list[str]
+    count: int
+
+
+@router.get("/verified-roster", response_model=VerifiedRosterResponse)
+async def verified_roster(
+    db: AsyncSession = Depends(get_db),
+    api_key: ServiceAPIKey | None = Depends(require_service_api_key),
+):
+    """Snowflake IDs that SHOULD currently hold the verified Discord role.
+
+    Definition: users linked to Discord (snowflake_id set) who have verified
+    (discord_verified_at) for the currently ACTIVE event. The bot reconciles
+    the role against this set — removing it from anyone holding it who isn't
+    listed, optionally adding it to listed members who lack it.
+
+    When there is NO active event (e.g. between seasons after an archive),
+    active_event is null and the list is empty — the bot treats that as a
+    legitimate signal to clear the role for everyone. A failed call (non-200)
+    must NOT be treated that way; the bot skips reconciliation on error so a
+    transient outage can't strip every verified member.
+    """
+    _check_scope(api_key, "bot.manage_roles")
+
+    active_event = (
+        await db.execute(
+            select(Event)
+            .where(Event.is_active == True)  # noqa: E712
+            .order_by(Event.year.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    if active_event is None:
+        return VerifiedRosterResponse(
+            active_event=None, verified_discord_ids=[], count=0
+        )
+
+    rows = (
+        await db.execute(
+            select(User.snowflake_id)
+            .join(EventParticipation, EventParticipation.user_id == User.id)
+            .where(
+                EventParticipation.event_id == active_event.id,
+                EventParticipation.discord_verified_at.is_not(None),
+                User.snowflake_id.is_not(None),
+            )
+        )
+    ).scalars().all()
+
+    ids = [s for s in rows if s]
+    return VerifiedRosterResponse(
+        active_event={
+            "id": active_event.id,
+            "year": active_event.year,
+            "name": active_event.name,
+        },
+        verified_discord_ids=ids,
+        count=len(ids),
+    )
