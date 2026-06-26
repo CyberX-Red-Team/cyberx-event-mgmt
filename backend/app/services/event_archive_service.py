@@ -82,13 +82,17 @@ class EventArchiveService:
         if not event:
             raise ValueError(f"Event {event_id} not found")
 
-        # Snapshot participants before any mutation.
-        part_rows = (
-            await self.session.execute(
-                select(EventParticipation).where(EventParticipation.event_id == event_id)
-            )
-        ).scalars().all()
-        participant_user_ids = [p.user_id for p in part_rows]
+        # Snapshot participant ids (plain ints) before any mutation, so we
+        # don't depend on ORM objects that a mid-cascade rollback could detach.
+        participant_user_ids = list(
+            (
+                await self.session.execute(
+                    select(EventParticipation.user_id).where(
+                        EventParticipation.event_id == event_id
+                    )
+                )
+            ).scalars().all()
+        )
 
         counts = {
             "jobs_cancelled": 0,
@@ -105,62 +109,47 @@ class EventArchiveService:
             "participant_count": len(participant_user_ids),
         }
 
-        # 1. APScheduler jobs
-        counts["jobs_cancelled"] = await self._cancel_scheduler_jobs(event_id, dry_run)
+        # Every step is best-effort: _safe logs the failure, rolls back any
+        # poisoned transaction, and returns a default so the cascade always
+        # proceeds to the archive-flag + audit steps. This prevents a single
+        # step crash from leaving infra deleted but the event un-archived.
+        counts["jobs_cancelled"] = await self._safe(
+            "jobs", self._cancel_scheduler_jobs(event_id, dry_run))
 
-        # 2. Cloud instances
-        instance_ids = [
-            i.id
-            for i in (
-                await self.session.execute(
-                    select(Instance).where(
-                        Instance.event_id == event_id,
-                        Instance.status != "DELETED",
-                    )
-                )
-            ).scalars().all()
-        ]
-        counts["instances_terminated"] = await self._terminate_instances(
-            instance_ids, dry_run
-        )
+        instance_ids = await self._safe(
+            "collect_instances", self._collect_instance_ids(event_id), default=[])
+        counts["instances_terminated"] = await self._safe(
+            "instances", self._terminate_instances(instance_ids, dry_run))
 
-        # 3. VPN credentials (after instance termination)
-        vpn_ids = await self._collect_vpn_ids(instance_ids, participant_user_ids)
-        counts["vpn_creds_deleted"] = await self._delete_vpn_credentials(vpn_ids, dry_run)
+        vpn_ids = await self._safe(
+            "collect_vpn", self._collect_vpn_ids(instance_ids, participant_user_ids),
+            default=[])
+        counts["vpn_creds_deleted"] = await self._safe(
+            "vpn", self._delete_vpn_credentials(vpn_ids, dry_run))
 
-        # 4. TLS certificates
-        counts["tls_certs_deleted"] = await self._delete_tls_certificates(event_id, dry_run)
+        counts["tls_certs_deleted"] = await self._safe(
+            "tls", self._delete_tls_certificates(event_id, dry_run))
+        counts["ca_chains_destroyed"] = await self._safe(
+            "ca", self._teardown_ca_chains(event_id, dry_run))
+        counts["emails_purged"] = await self._safe(
+            "emails", self._purge_email_queue(participant_user_ids, dry_run))
 
-        # 5. CA chains
-        counts["ca_chains_destroyed"] = await self._teardown_ca_chains(event_id, dry_run)
-
-        # 6. Email queue
-        counts["emails_purged"] = await self._purge_email_queue(
-            participant_user_ids, dry_run
-        )
-
-        # 7. Discord invites (split used vs unused)
-        nulled_used, queued_for_bot = await self._handle_discord_invites(
-            part_rows, dry_run
-        )
+        nulled_used, queued_for_bot = await self._safe(
+            "discord", self._handle_discord_invites(event_id, dry_run), default=(0, 0))
         counts["invites_nulled_used"] = nulled_used
         counts["invites_queued_for_bot"] = queued_for_bot
 
-        # 8. Participant workflow reset
-        counts["users_reset"] = await self._reset_participants(
-            participant_user_ids, dry_run
-        )
+        counts["users_reset"] = await self._safe(
+            "reset", self._reset_participants(participant_user_ids, dry_run))
+        counts["sync_queue_cleared"] = await self._safe(
+            "sync", self._clear_keycloak_sync(participant_user_ids, dry_run))
+        counts["templates_detached"] = await self._safe(
+            "templates", self._detach_templates(event_id, dry_run))
 
-        # 9. Keycloak sync queue + counters
-        counts["sync_queue_cleared"] = await self._clear_keycloak_sync(
-            participant_user_ids, dry_run
-        )
-
-        # 9b. Detach instance templates
-        counts["templates_detached"] = await self._detach_templates(event_id, dry_run)
-
-        # 10. Archive flags + audit (skipped on dry_run)
+        # 10. Archive flags + audit (skipped on dry_run). Re-fetch the event in
+        # case an earlier step's rollback expired the original instance.
         if not dry_run:
+            event = await self.session.get(Event, event_id)
             event.is_archived = True
             event.archived_at = datetime.now(timezone.utc)
             await self.session.commit()
@@ -178,6 +167,31 @@ class EventArchiveService:
             )
 
         return counts
+
+    async def _safe(self, label: str, coro, default=0):
+        """Await a step coroutine; on failure log, roll back any poisoned
+        transaction so later steps can still commit, and return default."""
+        try:
+            return await coro
+        except Exception as e:
+            logger.error("Archive step '%s' failed: %s", label, e)
+            try:
+                await self.session.rollback()
+            except Exception:
+                pass
+            return default
+
+    async def _collect_instance_ids(self, event_id: int) -> list[int]:
+        return list(
+            (
+                await self.session.execute(
+                    select(Instance.id).where(
+                        Instance.event_id == event_id,
+                        Instance.status != "DELETED",
+                    )
+                )
+            ).scalars().all()
+        )
 
     # ------------------------------------------------------------------
     # Step helpers. Each wraps its body in try/except: a step's failure
@@ -265,7 +279,7 @@ class EventArchiveService:
         if dry_run:
             return len(certs)
         try:
-            stepca = StepCAService(self.session)
+            stepca = StepCAService()
             deleted = 0
             for cert in certs:
                 if cert.cert_bundle_r2_key:
@@ -291,7 +305,7 @@ class EventArchiveService:
         if dry_run:
             return len(chains)
         destroyed = 0
-        stepca = StepCAService(self.session)
+        stepca = StepCAService()
         for chain in chains:
             try:
                 await stepca.delete_instance(chain, self.session)
@@ -338,13 +352,19 @@ class EventArchiveService:
             return 0
 
     async def _handle_discord_invites(
-        self, participations: list, dry_run: bool
+        self, event_id: int, dry_run: bool
     ) -> tuple[int, int]:
+        parts = (
+            await self.session.execute(
+                select(EventParticipation).where(
+                    EventParticipation.event_id == event_id,
+                    EventParticipation.discord_invite_code.is_not(None),
+                )
+            )
+        ).scalars().all()
         nulled_used = 0
         queued_for_bot = 0
-        for p in participations:
-            if not p.discord_invite_code:
-                continue
+        for p in parts:
             if p.discord_verified_at is not None:
                 nulled_used += 1
                 if not dry_run:
@@ -359,6 +379,7 @@ class EventArchiveService:
                 await self.session.commit()
             except Exception as e:
                 logger.error("Discord invite null commit failed: %s", e)
+                await self.session.rollback()
         return nulled_used, queued_for_bot
 
     async def _reset_participants(

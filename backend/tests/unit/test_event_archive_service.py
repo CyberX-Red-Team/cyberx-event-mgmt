@@ -313,6 +313,16 @@ class TestEventArchiveCascade:
             stub.delete_instance = AsyncMock(return_value=True)
             counts = await service.archive(event.id)
 
+        # Constructor must be called with NO args — StepCAService takes only
+        # `self` and its methods receive the session as a parameter. (A prior
+        # bug passed `self.session` here and crashed prod; mocking the whole
+        # class hid it, so assert the call signature explicitly.)
+        assert StepCAStub.call_count >= 1
+        for call in StepCAStub.call_args_list:
+            assert call.args == () and call.kwargs == {}, (
+                f"StepCAService constructed with args {call}; it takes no parameters"
+            )
+
         # 2 R2 keys per cert + 3 R2 keys per CA chain = 5 calls here
         assert stub.delete_from_r2.call_count == 5
         stub.delete_instance.assert_awaited_once()
