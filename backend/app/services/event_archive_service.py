@@ -16,11 +16,20 @@ Archiving an event is a destructive multi-step operation that:
     User.keycloak_synced=False on those users
   - detaches instance templates by nulling their event_id (templates become
     reusable across events)
+  - removes redirectors tied to the event so they drop out of every UI:
+    platform-provisioned ones (linked to an instance this cascade terminated)
+    and BYOD ones (owned by an event participant). DB records only — the
+    StreamConfig children cascade and the stored Fernet SSH keys go with the
+    row. NO remote SSH/nginx teardown is performed: a platform redirector's
+    box is the instance already destroyed above, and a BYOD redirector's box
+    belongs to the participant and must never be touched.
 
 Preserved on archive:
   - CPECertificate, ParticipantAction, AuditLog, InstanceTemplate (row kept),
-    Redirector, EventParticipation rows, PasswordSyncQueue(synced=True),
-    User identity fields.
+    EventParticipation rows, PasswordSyncQueue(synced=True), User identity
+    fields. Redirectors NOT tied to the event (no event-instance link and not
+    owned by a participant — e.g. standalone admin infrastructure) are left
+    intact.
 
 Every external call wraps its own idempotency (404/NoSuchKey → success) and
 honors STAGING_STUB_EXTERNALS which short-circuits the real API call while
@@ -31,14 +40,16 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.email_queue import EmailQueue, EmailQueueStatus
 from app.models.event import Event, EventParticipation
 from app.models.instance import Instance
 from app.models.instance_template import InstanceTemplate
 from app.models.password_sync_queue import PasswordSyncQueue
+from app.models.redirector import Redirector
 from app.models.tls_certificate import CAChain, TLSCertificate
 from app.models.user import User
 from app.models.vpn import VPNCredential
@@ -106,6 +117,8 @@ class EventArchiveService:
             "users_reset": 0,
             "sync_queue_cleared": 0,
             "templates_detached": 0,
+            "redirectors_removed_platform": 0,
+            "redirectors_removed_byod": 0,
             "participant_count": len(participant_user_ids),
         }
 
@@ -145,6 +158,14 @@ class EventArchiveService:
             "sync", self._clear_keycloak_sync(participant_user_ids, dry_run))
         counts["templates_detached"] = await self._safe(
             "templates", self._detach_templates(event_id, dry_run))
+
+        plat_removed, byod_removed = await self._safe(
+            "redirectors",
+            self._remove_redirectors(event_id, participant_user_ids, dry_run),
+            default=(0, 0),
+        )
+        counts["redirectors_removed_platform"] = plat_removed
+        counts["redirectors_removed_byod"] = byod_removed
 
         # 10. Archive flags + audit (skipped on dry_run). Re-fetch the event in
         # case an earlier step's rollback expired the original instance.
@@ -469,6 +490,71 @@ class EventArchiveService:
         except Exception as e:
             logger.error("Template detach failed: %s", e)
             return 0
+
+    async def _remove_redirectors(
+        self, event_id: int, participant_user_ids: list[int], dry_run: bool
+    ) -> tuple[int, int]:
+        """Delete redirector DB records tied to the event so they leave every UI.
+
+        Two classes are in scope:
+          - platform-provisioned: ``instance_id`` points at one of THIS event's
+            instances (the box this cascade already terminated).
+          - BYOD: ``instance_id IS NULL`` and ``owner_id`` is an event
+            participant (the participant's own box).
+
+        Deletion is DB-only and DB-agnostic: we eager-load ``stream_configs`` and
+        ORM-delete each row so the ``all, delete-orphan`` cascade removes the
+        children (and the row carries off its Fernet-encrypted SSH key). No
+        remote SSH/nginx call is ever made — platform boxes are already gone and
+        BYOD boxes must not be touched, so STAGING_STUB_EXTERNALS is irrelevant
+        here. Returns ``(platform_removed, byod_removed)``.
+        """
+        event_instance_ids = list(
+            (
+                await self.session.execute(
+                    select(Instance.id).where(Instance.event_id == event_id)
+                )
+            ).scalars().all()
+        )
+
+        conds = []
+        if event_instance_ids:
+            conds.append(Redirector.instance_id.in_(event_instance_ids))
+        if participant_user_ids:
+            conds.append(
+                and_(
+                    Redirector.instance_id.is_(None),
+                    Redirector.owner_id.in_(participant_user_ids),
+                )
+            )
+        if not conds:
+            return (0, 0)
+
+        try:
+            redirectors = (
+                await self.session.execute(
+                    select(Redirector)
+                    .options(selectinload(Redirector.stream_configs))
+                    .where(or_(*conds))
+                )
+            ).scalars().all()
+            if not redirectors:
+                return (0, 0)
+
+            # instance_id present ⇒ platform-provisioned; NULL ⇒ BYOD. The two
+            # WHERE branches are mutually exclusive, so this classification is exact.
+            platform = sum(1 for r in redirectors if r.instance_id is not None)
+            byod = len(redirectors) - platform
+            if dry_run:
+                return (platform, byod)
+
+            for r in redirectors:
+                await self.session.delete(r)
+            await self.session.commit()
+            return (platform, byod)
+        except Exception as e:
+            logger.error("Redirector removal failed: %s", e)
+            return (0, 0)
 
     # ------------------------------------------------------------------
     # Unarchive: flag-only. Cannot restore torn-down infrastructure.

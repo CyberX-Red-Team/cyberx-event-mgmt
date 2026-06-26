@@ -279,6 +279,139 @@ class TestEventArchiveCascade:
         await db_session.refresh(tpl)
         assert tpl.event_id is None
 
+    async def test_platform_redirector_removed_on_archive(
+        self, db_session: AsyncSession
+    ):
+        """A redirector linked to one of the event's instances is deleted."""
+        from app.models.redirector import Redirector
+
+        event, user = await _seed_archivable_event(db_session)
+        inst = Instance(
+            name="cs-box", image_id="ubuntu-22", event_id=event.id,
+            assigned_to_user_id=user.id,
+        )
+        db_session.add(inst)
+        await db_session.flush()
+        redir = Redirector(
+            name="platform-redir", current_ip="10.0.0.5", ssh_username="root",
+            instance_id=inst.id, owner_id=user.id,
+        )
+        db_session.add(redir)
+        await db_session.commit()
+        redir_id = redir.id
+
+        service = EventArchiveService(db_session)
+        counts = await service.archive(event.id)
+
+        assert counts["redirectors_removed_platform"] == 1
+        assert counts["redirectors_removed_byod"] == 0
+        gone = (
+            await db_session.execute(
+                select(Redirector).where(Redirector.id == redir_id)
+            )
+        ).scalar_one_or_none()
+        assert gone is None
+
+    async def test_byod_redirector_removed_with_streams_cascade(
+        self, db_session: AsyncSession
+    ):
+        """A participant-owned BYOD redirector (no instance) and its stream
+        configs are deleted; no remote SSH is involved."""
+        from app.models.redirector import Redirector, StreamConfig
+
+        event, user = await _seed_archivable_event(db_session)
+        redir = Redirector(
+            name="byod-redir", current_ip="203.0.113.9", ssh_username="ubuntu",
+            instance_id=None, owner_id=user.id,
+        )
+        db_session.add(redir)
+        await db_session.flush()
+        stream = StreamConfig(
+            redirector_id=redir.id, name="cs-https", listen_port=443,
+            cs_ip="10.1.1.1", cs_port=50050,
+        )
+        db_session.add(stream)
+        await db_session.commit()
+        redir_id, stream_id = redir.id, stream.id
+
+        service = EventArchiveService(db_session)
+        counts = await service.archive(event.id)
+
+        assert counts["redirectors_removed_byod"] == 1
+        assert counts["redirectors_removed_platform"] == 0
+        assert (
+            await db_session.execute(
+                select(Redirector).where(Redirector.id == redir_id)
+            )
+        ).scalar_one_or_none() is None
+        # stream config cascade-deleted with the redirector
+        assert (
+            await db_session.execute(
+                select(StreamConfig).where(StreamConfig.id == stream_id)
+            )
+        ).scalar_one_or_none() is None
+
+    async def test_unrelated_redirector_preserved_on_archive(
+        self, db_session: AsyncSession
+    ):
+        """A BYOD redirector owned by a non-participant (e.g. standalone admin
+        infrastructure) is NOT touched by the archive."""
+        from app.models.redirector import Redirector
+
+        event, _ = await _seed_archivable_event(db_session)
+        admin = User(
+            email="admin-infra@example.com",
+            email_normalized="admin-infra@example.com",
+            first_name="Infra", last_name="Admin", country="USA",
+            password_hash=hash_password("x" * 12), role=UserRole.ADMIN.value,
+            is_active=True,
+        )
+        db_session.add(admin)
+        await db_session.flush()
+        redir = Redirector(
+            name="standalone-redir", current_ip="198.51.100.7",
+            ssh_username="ops", instance_id=None, owner_id=admin.id,
+        )
+        db_session.add(redir)
+        await db_session.commit()
+        redir_id = redir.id
+
+        service = EventArchiveService(db_session)
+        counts = await service.archive(event.id)
+
+        assert counts["redirectors_removed_platform"] == 0
+        assert counts["redirectors_removed_byod"] == 0
+        assert (
+            await db_session.execute(
+                select(Redirector).where(Redirector.id == redir_id)
+            )
+        ).scalar_one_or_none() is not None
+
+    async def test_dry_run_counts_redirectors_without_deleting(
+        self, db_session: AsyncSession
+    ):
+        from app.models.redirector import Redirector
+
+        event, user = await _seed_archivable_event(db_session)
+        redir = Redirector(
+            name="dry-redir", current_ip="192.0.2.50", ssh_username="ubuntu",
+            instance_id=None, owner_id=user.id,
+        )
+        db_session.add(redir)
+        await db_session.commit()
+        redir_id = redir.id
+
+        service = EventArchiveService(db_session)
+        counts = await service.archive(event.id, dry_run=True)
+
+        assert counts["redirectors_removed_byod"] == 1
+        # nothing deleted on dry-run
+        assert (
+            await db_session.execute(
+                select(Redirector).where(Redirector.id == redir_id)
+            )
+        ).scalar_one_or_none() is not None
+
     async def test_tls_and_ca_destroyed_calls_delete_from_r2(
         self, db_session: AsyncSession
     ):

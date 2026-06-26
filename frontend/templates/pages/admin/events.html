@@ -586,6 +586,8 @@
         ['users_reset', 'participants will have their workflow state reset'],
         ['sync_queue_cleared', 'pending Keycloak sync entries will be cleared'],
         ['templates_detached', 'instance templates will be detached (reusable for future events)'],
+        ['redirectors_removed_platform', 'platform-provisioned redirectors will be <strong>removed</strong> (config deleted; box already terminated)'],
+        ['redirectors_removed_byod', 'BYOD redirector records will be <strong>removed</strong> (platform data only — your servers are not touched)'],
     ];
 
     window.archiveEvent = async function(eventId, year) {
