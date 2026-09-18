@@ -286,9 +286,11 @@ async def update_my_invitee(
     Update an invitee's information.
 
     Sponsors can only update limited fields:
-    - email, first_name, last_name, country, confirmed, discord_username
+    - email, first_name, last_name, country, role_id, discord_username
 
-    Cannot update: role, sponsor_id, pandas_username, is_admin, email_status
+    Cannot update: role, sponsor_id, pandas_username, is_admin, is_active,
+    email_status, pandas_password, confirmed. role_id is restricted to
+    invitee-type roles the sponsor is allowed to assign.
     """
     logger.info(f"Sponsor {current_user.id} updating invitee {invitee_id}")
 

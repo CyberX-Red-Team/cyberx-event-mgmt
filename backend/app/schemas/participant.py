@@ -274,14 +274,18 @@ class InviteeUpdateRequest(BaseModel):
     Sponsor updates invitee - limited fields only.
 
     EXCLUDED fields (sponsors cannot change):
-    - role, sponsor_id, pandas_username, is_admin, email_status
+    - role, sponsor_id, pandas_username, is_admin, is_active, email_status,
+      pandas_password
+    - 'confirmed': confirmation status can ONLY change through
+      /confirm/accept or /confirm/decline, which run the proper workflow
+      (credential generation, terms acceptance, audit logging). It was removed
+      from ParticipantUpdate for the same reason.
     """
 
     email: Optional[EmailStr] = None
     first_name: Optional[str] = Field(None, min_length=1, max_length=255)
     last_name: Optional[str] = Field(None, min_length=1, max_length=255)
     country: Optional[str] = Field(None, max_length=100)
-    confirmed: Optional[str] = None
     role_id: Optional[int] = None
     discord_username: Optional[str] = None
 
