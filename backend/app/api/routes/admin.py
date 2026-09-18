@@ -85,9 +85,14 @@ async def list_participants(
     """
     List participants with filtering and pagination.
 
-    - Admins and sponsors can see all participants
-    - Sponsors can only edit/delete participants they sponsor
+    - participants.view_all sees every participant
+    - participants.view alone is scoped to the caller's own invitees
     """
+    # Scope to own invitees unless the caller may see everyone. Overrides any
+    # sponsor_id supplied by the client.
+    if not current_user.has_permission("participants.view_all"):
+        sponsor_id = current_user.id
+
     participants, total = await service.list_participants(
         page=page,
         page_size=page_size,
@@ -139,9 +144,13 @@ async def get_participant_stats(
     """
     Get participant statistics for the dashboard.
 
-    Both admins and sponsors see stats for all participants.
+    Scoped the same way as the participant list: participants.view_all sees
+    totals for everyone, participants.view alone sees only its own invitees.
     """
-    stats = await service.get_statistics()
+    scope_sponsor_id = (
+        None if current_user.has_permission("participants.view_all") else current_user.id
+    )
+    stats = await service.get_statistics(sponsor_id=scope_sponsor_id)
     return ParticipantStats(**stats)
 
 
@@ -154,9 +163,13 @@ async def get_dashboard(
     """
     Get combined dashboard statistics.
 
-    Both admins and sponsors see all stats.
+    Participant counts are scoped to the caller's own invitees unless they have
+    participants.view_all. NOTE: the VPN pool counts are still global.
     """
-    participant_stats = await participant_service.get_statistics()
+    scope_sponsor_id = (
+        None if current_user.has_permission("participants.view_all") else current_user.id
+    )
+    participant_stats = await participant_service.get_statistics(sponsor_id=scope_sponsor_id)
     vpn_stats = await vpn_service.get_statistics()
 
     return DashboardResponse(
@@ -413,15 +426,20 @@ async def update_participant(
     participant_id: int,
     data: ParticipantUpdate,
     request: Request,
-    current_user: User = Depends(require_permission("participants.edit")),
+    current_user: User = Depends(require_permission("participants.edit", "participants.view_all")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Update a participant.
+    Update any participant. Admin-level only.
 
-    - Admins can update any participant
-    - Sponsors can update participants they sponsor (except role and sponsor_id)
+    This schema accepts fields that change authentication and role state
+    (pandas_password, role_id, is_admin, is_active), so it requires
+    participants.view_all in addition to participants.edit.
+
+    Sponsors edit their own invitees through
+    PUT /api/sponsors/my-invitees/{invitee_id}, which enforces ownership and
+    accepts a restricted field set.
 
     NOTE: Username (pandas_username) is auto-generated and cannot be manually edited.
     """
@@ -559,14 +577,15 @@ async def delete_participant(
 async def bulk_action(
     data: BulkActionRequest,
     request: Request,
-    current_user: User = Depends(require_permission("participants.edit")),
+    current_user: User = Depends(require_permission("participants.edit", "participants.view_all")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Perform bulk actions on participants.
+    Perform bulk actions on participants. Admin-level only.
 
-    Requires admin role.
+    The participant_ids are acted on without any ownership scoping, so this
+    requires participants.view_all.
     """
     audit_service = AuditService(db)
 
@@ -940,7 +959,7 @@ async def update_participant_role(
     participant_id: int,
     data: RoleUpdateRequest,
     request: Request,
-    current_user: User = Depends(require_permission("participants.edit")),
+    current_user: User = Depends(require_permission("participants.edit", "participants.view_all")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -995,14 +1014,16 @@ async def update_participant_role(
 async def assign_participant_sponsor(
     participant_id: int,
     data: SponsorAssignRequest,
-    current_user: User = Depends(require_permission("participants.edit")),
+    current_user: User = Depends(require_permission("participants.edit", "participants.view_all")),
     service: ParticipantService = Depends(get_participant_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Assign a sponsor to a participant.
+    Assign a sponsor to a participant. Admin-level only.
 
-    Requires admin role.
+    Sponsorship decides who may edit a participant, so a caller who could
+    reassign it could grant themselves edit rights over any account. Requires
+    participants.view_all.
     """
     if data.participant_id != participant_id:
         raise bad_request("Participant ID in URL does not match request body")

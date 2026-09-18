@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.main import app
 from app.database import Base, get_db
+from app.dependencies import get_db as dependencies_get_db
 from app.models.user import User, UserRole
 from app.models.event import Event
 from app.config import Settings, get_settings
@@ -138,8 +139,9 @@ async def client(async_engine, db_session: AsyncSession, test_settings: Settings
     init_encryptor(test_settings.ENCRYPTION_KEY)
 
     # Clear rate limit cache for tests
+    # (renamed from _login_rate_limit_cache when the limiter was made generic)
     from app.api.routes import auth
-    auth._login_rate_limit_cache.clear()
+    auth._rate_limit_cache.clear()
 
     # Override database session dependency to return THE SAME session
     # This is critical - we can't create new sessions or the data won't be visible
@@ -154,7 +156,12 @@ async def client(async_engine, db_session: AsyncSession, test_settings: Settings
     def override_get_settings():
         return test_settings
 
+    # NOTE: there are two distinct get_db callables - app.database.get_db and
+    # app.dependencies.get_db - and routes use both. Overriding only one leaves
+    # the other pointing at the real DATABASE_URL, which is what caused the
+    # "database session isolation issues" that got the integration tests skipped.
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[dependencies_get_db] = override_get_db
     app.dependency_overrides[get_settings] = override_get_settings
 
     # Disable CSRF middleware for integration tests by making _is_exempt always return True
@@ -166,10 +173,21 @@ async def client(async_engine, db_session: AsyncSession, test_settings: Settings
     original_is_exempt = CSRFMiddleware._is_exempt
     CSRFMiddleware._is_exempt = lambda self, path: True
 
-    # Create client
+    # In production every request gets a fresh session, so a route's
+    # selectinload() actually populates relationships. Here the app shares the
+    # test's session, so fixture-created objects sit in the identity map and the
+    # eager load is skipped - later access to e.g. User.event_participations
+    # then lazy-loads and raises MissingGreenlet. Clearing the identity map
+    # before each request reproduces per-request session behaviour.
+    async def _expunge_identity_map(request):
+        db_session.expunge_all()
+
+    # raise_app_exceptions=False so an unhandled 500 arrives as a response the
+    # test can assert on, instead of exploding inside the test body.
     async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+        event_hooks={"request": [_expunge_identity_map]},
     ) as client:
         yield client
 
@@ -180,7 +198,7 @@ async def client(async_engine, db_session: AsyncSession, test_settings: Settings
     app.dependency_overrides.clear()
 
     # Clear rate limit cache after test
-    auth._login_rate_limit_cache.clear()
+    auth._rate_limit_cache.clear()
 
 
 # ============================================================================
@@ -368,6 +386,28 @@ async def authenticated_admin_client(client: AsyncClient, admin_session_token: s
     Provide client authenticated as admin.
     """
     client.cookies.set("session_token", admin_session_token)
+    return client
+
+
+@pytest_asyncio.fixture
+async def authenticated_sponsor_client(client: AsyncClient, sponsor_session_token: str) -> AsyncClient:
+    """
+    Provide client authenticated as a sponsor.
+
+    Used by authorization tests to check what a sponsor can reach.
+    """
+    client.cookies.set("session_token", sponsor_session_token)
+    return client
+
+
+@pytest_asyncio.fixture
+async def authenticated_invitee_client(client: AsyncClient, invitee_session_token: str) -> AsyncClient:
+    """
+    Provide client authenticated as an invitee.
+
+    Used by authorization tests to check what a participant can reach.
+    """
+    client.cookies.set("session_token", invitee_session_token)
     return client
 
 
