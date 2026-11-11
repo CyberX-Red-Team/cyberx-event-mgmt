@@ -108,6 +108,7 @@ class EventArchiveService:
         counts = {
             "jobs_cancelled": 0,
             "instances_terminated": 0,
+            "instances_failed": 0,
             "vpn_creds_deleted": 0,
             "tls_certs_deleted": 0,
             "ca_chains_destroyed": 0,
@@ -131,8 +132,10 @@ class EventArchiveService:
 
         instance_ids = await self._safe(
             "collect_instances", self._collect_instance_ids(event_id), default=[])
-        counts["instances_terminated"] = await self._safe(
-            "instances", self._terminate_instances(instance_ids, dry_run))
+        terminated, instance_failures = await self._safe(
+            "instances", self._terminate_instances(instance_ids, dry_run), default=(0, []))
+        counts["instances_terminated"] = terminated
+        counts["instances_failed"] = len(instance_failures)
 
         vpn_ids = await self._safe(
             "collect_vpn", self._collect_vpn_ids(instance_ids, participant_user_ids),
@@ -179,6 +182,11 @@ class EventArchiveService:
             extra = dict(counts)
             if externals_stubbed():
                 extra["externals_stubbed"] = True
+            if instance_failures:
+                # Instances the provider would not confirm deleted. Their rows
+                # are left in place and may still be running - check the cloud
+                # console, then delete them individually (force if needed).
+                extra["instance_failures"] = instance_failures
             await audit.log_event_archive(
                 user_id=actor_user_id or 0,
                 event_id=event_id,
@@ -239,20 +247,22 @@ class EventArchiveService:
 
     async def _terminate_instances(
         self, instance_ids: list[int], dry_run: bool
-    ) -> int:
+    ) -> tuple[int, list[str]]:
+        """Returns (terminated, failures). A failure is an instance the
+        provider did not confirm deleted; its row is left in place."""
         if not instance_ids:
-            return 0
+            return 0, []
         if dry_run:
-            return len(instance_ids)
+            return len(instance_ids), []
         try:
             service = InstanceService(self.session)
             successes, errors = await service.bulk_delete_instances(instance_ids)
             for err in errors:
                 logger.warning("Instance termination error during archive: %s", err)
-            return successes
+            return successes, errors
         except Exception as e:
             logger.error("Instance termination failed: %s", e)
-            return 0
+            return 0, [f"instance termination step failed: {e}"]
 
     async def _collect_vpn_ids(
         self, instance_ids: list[int], participant_user_ids: list[int]
