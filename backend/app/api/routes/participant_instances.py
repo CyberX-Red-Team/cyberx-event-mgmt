@@ -14,7 +14,7 @@ from app.services.audit_service import AuditService
 from app.models.user import User
 from app.models.event import Event
 from app.models.instance import Instance
-from app.services.instance_service import InstanceService
+from app.services.instance_service import InstanceDeletionError, InstanceService
 from app.services.instance_template_service import InstanceTemplateService
 from app.schemas.instance_template import (
     InstanceTemplateResponse,
@@ -276,8 +276,17 @@ async def delete_my_instance(
     instance_name = instance.name
     instance_provider = instance.provider
 
-    # Delete
-    ok = await service.delete_and_track_instance(instance_id)
+    # Delete. The row is only marked deleted once the provider confirms it.
+    try:
+        ok = await service.delete_and_track_instance(instance_id)
+    except InstanceDeletionError:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "The cloud provider did not confirm the instance was deleted. "
+                "It has been left in place; please try again or contact an admin."
+            ),
+        )
     if not ok:
         raise server_error("Failed to delete instance")
 
