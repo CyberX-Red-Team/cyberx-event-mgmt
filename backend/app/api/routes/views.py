@@ -463,22 +463,6 @@ async def participant_portal_page(
     )
 
 
-@router.get("/portal/vpn", response_class=HTMLResponse)
-async def participant_vpn_page(
-    request: Request,
-    current_user: User = Depends(get_current_active_user)
-):
-    """Render participant VPN page."""
-    return templates.TemplateResponse(
-        "pages/participant/vpn.html",
-        {
-            "request": request,
-            "current_user": current_user,
-            "now": datetime.now()
-        }
-    )
-
-
 @router.get("/portal/ssh-key", response_class=HTMLResponse)
 async def participant_ssh_key_page(
     request: Request,
