@@ -212,28 +212,26 @@ class User(Base):
         effective = self.get_effective_permissions()
         return any(p in effective for p in perms)
 
-    # Participation tracking properties
+    # Participation tracking properties.
+    # These read self.event_participations, so under async SQLAlchemy the
+    # relationship must already be loaded (selectinload) or access raises
+    # MissingGreenlet. Callers holding participation rows without that load
+    # (e.g. the session-loaded current user) should call
+    # participation_summary() on the rows directly.
     @property
     def years_invited(self) -> int:
         """Count how many years this user has been invited."""
-        if not self.event_participations:
-            return 0
-        return len(self.event_participations)
+        return participation_summary(self.event_participations)["years_invited"]
 
     @property
     def years_participated(self) -> int:
         """Count how many years this user has confirmed participation."""
-        if not self.event_participations:
-            return 0
-        from app.models.event import ParticipationStatus
-        return sum(1 for p in self.event_participations if p.status == ParticipationStatus.CONFIRMED.value)
+        return participation_summary(self.event_participations)["years_participated"]
 
     @property
     def participation_rate(self) -> float:
         """Calculate participation rate as a percentage."""
-        if self.years_invited == 0:
-            return 0.0
-        return (self.years_participated / self.years_invited) * 100
+        return participation_summary(self.event_participations)["participation_rate"]
 
     @property
     def is_chronic_non_participant(self) -> bool:
@@ -242,7 +240,7 @@ class User(Base):
 
         Criteria: Invited 3+ years and never participated.
         """
-        return self.years_invited >= 3 and self.years_participated == 0
+        return participation_summary(self.event_participations)["is_chronic_non_participant"]
 
     @property
     def should_recommend_removal(self) -> bool:
@@ -253,11 +251,7 @@ class User(Base):
         - Invited 3+ years with 0 participations, OR
         - Invited 5+ years with participation rate < 20%
         """
-        if self.years_invited >= 3 and self.years_participated == 0:
-            return True
-        if self.years_invited >= 5 and self.participation_rate < 20:
-            return True
-        return False
+        return participation_summary(self.event_participations)["should_recommend_removal"]
 
     # Event-specific confirmation helpers
     async def get_participation_for_event(self, event_id: int, session) -> Optional["EventParticipation"]:
@@ -437,3 +431,21 @@ def normalize_user_email(mapper, connection, target):
     if target.email and not target.email_normalized:
         from app.api.utils.validation import normalize_email
         target.email_normalized = normalize_email(target.email)
+
+
+def participation_summary(participations) -> dict:
+    """Participation totals and removal flags for a list of EventParticipation rows."""
+    from app.models.event import ParticipationStatus
+
+    participations = participations or []
+    invited = len(participations)
+    participated = sum(1 for p in participations if p.status == ParticipationStatus.CONFIRMED.value)
+    rate = (participated / invited) * 100 if invited else 0.0
+    chronic = invited >= 3 and participated == 0
+    return {
+        "years_invited": invited,
+        "years_participated": participated,
+        "participation_rate": rate,
+        "is_chronic_non_participant": chronic,
+        "should_recommend_removal": chronic or (invited >= 5 and rate < 20),
+    }

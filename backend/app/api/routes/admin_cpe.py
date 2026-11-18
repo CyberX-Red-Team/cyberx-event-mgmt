@@ -19,6 +19,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/cpe", tags=["Admin - CPE Certificates"])
 
 
+async def _reject_if_event_archived(db: AsyncSession, event_id: int) -> None:
+    """400 if the given event is archived — mutations are blocked post-archive."""
+    event = await db.get(Event, event_id)
+    if event and event.is_archived:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot modify certificates on an archived event.",
+        )
+
+
+async def _reject_if_certificate_event_archived(db: AsyncSession, certificate_id: int) -> None:
+    """400 if the cert's parent event is archived."""
+    cert = await db.get(CPECertificate, certificate_id)
+    if cert:
+        await _reject_if_event_archived(db, cert.event_id)
+
+
 # --- Request/Response Models ---
 
 class IssueCertificateRequest(BaseModel):
@@ -120,6 +137,8 @@ async def issue_certificate(
     """
     from app.services.render_service import RenderServiceManager
 
+    await _reject_if_event_archived(db, request_body.event_id)
+
     render = RenderServiceManager()
     service = CPECertificateService(db)
     audit = AuditService(db)
@@ -184,6 +203,8 @@ async def bulk_issue_certificates(
     Automatically manages the Gotenberg service on Render for PDF generation.
     """
     from app.services.render_service import RenderServiceManager
+
+    await _reject_if_event_archived(db, request_body.event_id)
 
     render = RenderServiceManager()
     service = CPECertificateService(db)
@@ -295,6 +316,8 @@ async def revoke_certificate(
     current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """Revoke an issued certificate."""
+    await _reject_if_certificate_event_archived(db, certificate_id)
+
     service = CPECertificateService(db)
     audit = AuditService(db)
 
@@ -332,6 +355,8 @@ async def reinstate_certificate(
     current_user: User = Depends(require_permission("cpe.manage")),
 ):
     """Reinstate a revoked certificate (undo revocation)."""
+    await _reject_if_certificate_event_archived(db, certificate_id)
+
     service = CPECertificateService(db)
     audit = AuditService(db)
 
@@ -378,6 +403,8 @@ async def regenerate_certificate_pdf(
     """
     from app.services.render_service import RenderServiceManager
 
+    await _reject_if_certificate_event_archived(db, certificate_id)
+
     render = RenderServiceManager()
     service = CPECertificateService(db)
 
@@ -416,11 +443,14 @@ async def bulk_regenerate_pdfs(
     """
     Bulk regenerate PDFs for certificates.
 
-    Automatically manages the Gotenberg service on Render:
-    scales to Standard, resumes, waits for ready, then suspends after.
+    Automatically manages the Gotenberg service on Render: scales to
+    Standard, resumes, waits for ready, then suspends after.
 
-    If certificate_ids is omitted, regenerates all ISSUED certs missing PDFs for the event.
+    If certificate_ids is omitted, regenerates all ISSUED certs missing
+    PDFs for the event.
     """
+    await _reject_if_event_archived(db, request_body.event_id)
+
     from app.services.render_service import RenderServiceManager
 
     render = RenderServiceManager()

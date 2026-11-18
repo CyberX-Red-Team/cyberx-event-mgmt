@@ -73,10 +73,21 @@ class R2Client:
             return None
 
     def delete_object(self, key: str) -> bool:
-        """Delete an R2 object. Returns True on success."""
+        """Delete an R2 object. Idempotent — missing keys count as success."""
+        from app.utils.external_stubs import externals_stubbed
+        if externals_stubbed():
+            logger.info("[STUB] would delete R2 key=%s", key)
+            return True
         try:
             self._get_boto_client().delete_object(Bucket=self.bucket, Key=key)
             return True
         except Exception as e:
+            code = None
+            response = getattr(e, "response", None)
+            if isinstance(response, dict):
+                code = response.get("Error", {}).get("Code")
+            if code in ("NoSuchKey", "404"):
+                logger.info("R2 key already absent: %s", key)
+                return True
             logger.error("R2 delete_object failed for %s: %s", key, e)
             return False

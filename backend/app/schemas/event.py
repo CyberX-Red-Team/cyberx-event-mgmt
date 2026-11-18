@@ -61,6 +61,8 @@ class EventResponse(BaseModel):
     event_location: Optional[str] = None
     terms_version: Optional[str] = None
     is_active: bool
+    is_archived: bool = False
+    archived_at: Optional[datetime] = None
     vpn_available: bool = False
     test_mode: bool = False
     ssh_public_key: Optional[str] = None

@@ -149,7 +149,12 @@ class DigitalOceanService:
             return None
 
     async def delete_instance(self, droplet_id: str) -> bool:
-        """Delete a Droplet via DigitalOcean API."""
+        """Delete a Droplet via DigitalOcean API. 404 is treated as success."""
+        from app.utils.external_stubs import externals_stubbed
+        if externals_stubbed():
+            logger.info("[STUB] would delete DigitalOcean droplet %s", droplet_id)
+            return True
+
         self._check_configured()
 
         try:

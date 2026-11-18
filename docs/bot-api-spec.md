@@ -246,6 +246,63 @@ Either `email` or `user_id` must be provided (not both required):
 
 ---
 
+## Archive lifecycle endpoints
+
+These power cleanup after an event is archived. They are polled/called by the bot, never by users.
+
+### GET /api/bot/invites/pending-revocation
+
+**Scope required:** `bot.manage_invites`
+
+Returns unused Discord invites on **archived** events (`discord_invite_code IS NOT NULL AND discord_verified_at IS NULL`) that the bot should revoke via Discord's `DELETE /invites/{code}`. Used invites are nulled by the platform on archive and never appear here.
+
+#### Response `200 OK`
+
+```json
+[
+  {
+    "event_id": 2,
+    "event_year": 2026,
+    "participation_id": 1234,
+    "invite_code": "abCdEf",
+    "generated_at": "2026-05-01T12:00:00Z"
+  }
+]
+```
+
+### POST /api/bot/invites/{invite_code}/revoked
+
+**Scope required:** `bot.manage_invites`
+
+Bot callback after it has revoked the invite on Discord (or confirmed a 404). The platform nulls `EventParticipation.discord_invite_code` and writes a `DISCORD_INVITE_REVOKED` audit row. Returns `404` if no participation holds that code.
+
+---
+
+### GET /api/bot/verified-roster
+
+**Scope required:** `bot.manage_roles`
+
+Returns the snowflake IDs that **should** currently hold the verified Discord role: users linked to Discord who have verified (`discord_verified_at`) for the currently **active** event. The bot reconciles the verified role against this set — removing it from anyone holding it who isn't listed (and optionally adding it to listed members who lack it).
+
+#### Response `200 OK`
+
+```json
+{
+  "active_event": { "id": 3, "year": 2027, "name": "CyberX 2027" },
+  "verified_discord_ids": ["111111111111111111", "222222222222222222"],
+  "count": 2
+}
+```
+
+#### Notes
+
+- **Between seasons** (no active event), `active_event` is `null` and `verified_discord_ids` is `[]`. The bot treats this as a legitimate signal to clear the verified role for everyone — this is how roles are torn down after an archive once the old event is no longer active.
+- A **non-200** response must **not** be treated as an empty roster. The bot skips reconciliation on any error so a transient outage can't strip every verified member.
+- **Cloudflare safety:** the bot throttles role edits and caps changes per cycle, spreading a large end-of-season sweep across cycles to stay under Discord's edge rate limit (error 1015). Reconciliation is eventually-consistent, not real-time.
+- Returning participants keep the role automatically: once they re-verify for the new active event they appear on the roster, so they're never stripped.
+
+---
+
 ## Auto-Role Mapping Example
 
 The bot can use the lookup response to assign Discord roles:

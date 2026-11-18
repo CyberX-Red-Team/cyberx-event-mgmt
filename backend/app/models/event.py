@@ -76,6 +76,7 @@ class Event(Base):
     # Status
     is_active = Column(Boolean, default=False, index=True)
     is_archived = Column(Boolean, default=False)
+    archived_at = Column(TIMESTAMP(timezone=True), nullable=True)
     # Controls when users can request VPNs
     vpn_available = Column(Boolean, default=False, nullable=False)
     # Allows sponsors to test VPN and Keycloak sync

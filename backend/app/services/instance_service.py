@@ -17,6 +17,16 @@ from app.services.cloud_provider_factory import CloudProviderFactory
 logger = logging.getLogger(__name__)
 
 
+class InstanceDeletionError(Exception):
+    """The cloud provider did not confirm an instance was deleted.
+
+    Raised instead of soft-deleting, so a VM that may still be running is not
+    marked DELETED and dropped from every view while it keeps billing. An
+    instance that was already gone (e.g. torn down by hand) is not an error:
+    providers report a 404 as a successful delete.
+    """
+
+
 class InstanceService:
     """Provider-agnostic instance management service."""
 
@@ -624,10 +634,20 @@ class InstanceService:
 
         return instance
 
-    async def delete_and_track_instance(self, instance_id: int) -> bool:
+    async def delete_and_track_instance(self, instance_id: int, *, force: bool = False) -> bool:
         """Delete an instance from its cloud provider and soft-delete the DB record.
 
         Works with any cloud provider (OpenStack, DigitalOcean, etc.).
+
+        The row is only marked DELETED once the provider confirms the VM is
+        gone. Providers treat a 404 as success, so an instance that was already
+        torn down by hand is still soft-deleted normally.
+
+        Returns False if the instance is not tracked. Raises
+        InstanceDeletionError if the provider does not confirm, leaving the row
+        untouched so it stays visible and can be retried. ``force=True`` soft-
+        deletes anyway, for rows whose provider can never confirm (e.g. the
+        account or credentials no longer exist).
         """
         instance = await self.get_tracked_instance(instance_id)
         if not instance:
@@ -635,24 +655,38 @@ class InstanceService:
 
         # Delete from cloud provider if it has a provider instance ID
         if instance.provider_instance_id:
+            confirmed = False
+            failure: Exception | None = None
             try:
-                # Get appropriate provider service
                 provider_service = CloudProviderFactory.get_provider(
                     instance.provider, self.session
                 )
+                confirmed = await provider_service.delete_instance(instance.provider_instance_id)
+            except Exception as e:
+                failure = e
 
-                # Delete from provider
-                await provider_service.delete_instance(instance.provider_instance_id)
+            if confirmed:
                 logger.info(
-                    "Deleted instance %s (id=%d) from %s provider",
+                    "Deleted instance %s (id=%d) from %s provider (or it was already gone)",
                     instance.name, instance.id, instance.provider
                 )
-            except Exception as e:
-                logger.error(
-                    "Failed to delete instance %d from %s: %s",
-                    instance.id, instance.provider, e
+            else:
+                reason = (
+                    f"{instance.provider} did not confirm deletion of "
+                    f"{instance.provider_instance_id}"
                 )
-                # Continue with soft-delete anyway
+                if failure is not None:
+                    reason += f": {failure}"
+                if not force:
+                    logger.error(
+                        "Instance %s (id=%d) NOT deleted, row left in place: %s",
+                        instance.name, instance.id, reason
+                    )
+                    raise InstanceDeletionError(reason) from failure
+                logger.warning(
+                    "Force soft-deleting instance %s (id=%d) despite: %s",
+                    instance.name, instance.id, reason
+                )
 
         # Soft-delete in database
         instance.status = "DELETED"

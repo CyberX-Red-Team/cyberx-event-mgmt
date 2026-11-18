@@ -182,7 +182,11 @@
                         <i data-feather="list" class="me-2"></i>
                         Action Groups
                     </div>
-                    <div class="col-auto">
+                    <div class="col-auto d-flex align-items-center gap-2">
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" id="includeArchivedActions" onchange="loadActionStatistics()">
+                            <label class="form-check-label small" for="includeArchivedActions">Include archived events</label>
+                        </div>
                         <select class="form-select form-select-sm" id="filterActionType">
                             <option value="">All Types</option>
                             <option value="in_person_attendance">In-Person Attendance</option>
@@ -271,9 +275,12 @@ let assignSelectedUsers = new Map(); // id -> {name, email}
 // Load action statistics
 async function loadActionStatistics() {
     try {
+        const toggle = document.getElementById('includeArchivedActions');
+        const includeArchived = toggle && toggle.checked ? 'true' : 'false';
+        const qs = `?include_archived=${includeArchived}`;
         const [statsResponse, actionsResponse] = await Promise.all([
-            csrfFetch('/api/admin/actions/statistics'),
-            csrfFetch('/api/admin/actions')
+            csrfFetch('/api/admin/actions/statistics' + qs),
+            csrfFetch('/api/admin/actions' + qs)
         ]);
 
         actionStatistics = await statsResponse.json();

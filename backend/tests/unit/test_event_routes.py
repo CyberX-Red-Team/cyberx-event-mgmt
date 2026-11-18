@@ -533,11 +533,11 @@ class TestParticipantSelfServiceRoutes:
         mock_user.last_name = "User"
         mock_user.country = "USA"
         mock_user.role = UserRole.INVITEE.value
-        mock_user.years_invited = 3
-        mock_user.years_participated = 2
-        mock_user.participation_rate = 0.67
-        mock_user.is_chronic_non_participant = False
-        mock_user.should_recommend_removal = False
+        # Deliberately wrong: the route must summarise the history rows it
+        # loaded, not the user's participation properties (which lazy-load
+        # event_participations on the session user and 500 in production).
+        mock_user.years_invited = 99
+        mock_user.years_participated = 99
 
         mock_event = Mock()
         mock_event.id = 1
@@ -565,8 +565,11 @@ class TestParticipantSelfServiceRoutes:
         result = await get_my_participation_history(current_user=mock_user, service=mock_service)
 
         assert result.user_id == 1
-        assert result.total_years_invited == 3
-        assert result.total_years_participated == 2
+        assert result.total_years_invited == 1
+        assert result.total_years_participated == 1
+        assert result.participation_rate == 100.0
+        assert result.is_chronic_non_participant is False
+        assert result.should_recommend_removal is False
         assert len(result.history) == 1
 
     async def test_confirm_participation_success(self, mocker):

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission
-from app.api.exceptions import not_found, bad_request, server_error
+from app.api.exceptions import not_found, bad_request, forbidden, server_error
 from app.services.audit_service import AuditService
 from app.api.utils.dependencies import (
     get_openstack_service,
@@ -16,7 +16,7 @@ from app.api.utils.dependencies import (
 from app.models.user import User
 from app.services.openstack_service import OpenStackService
 from app.services.digitalocean_service import DigitalOceanService
-from app.services.instance_service import InstanceService
+from app.services.instance_service import InstanceDeletionError, InstanceService
 from app.services.redirector_service import RedirectorService
 from app.models.redirector import RedirectorStatus
 from app.schemas.instance import (
@@ -389,15 +389,32 @@ async def get_instance_redirector_status(
 async def delete_instance(
     instance_id: int,
     request: Request,
+    force: bool = Query(
+        False,
+        description=(
+            "Mark the instance deleted even if the cloud provider does not "
+            "confirm it, for instances whose provider account or credentials "
+            "no longer exist. Requires instances.view_all."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("instances.delete")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Delete (terminate) an instance from its cloud provider.
 
+    The instance is only marked deleted once the provider confirms it is gone;
+    a VM that was already deleted counts as confirmed. Otherwise this returns
+    502 and leaves the instance, and any linked redirector, untouched.
+
     If the instance is under redirector management, the linked redirector
-    is set to 'isolated' status (admin only).
+    is set to 'isolated' status once the instance is deleted (admin only).
     """
+    # instances.delete is held by participants too; overriding the provider
+    # check is an admin-only action.
+    if force and not current_user.has_permission("instances.view_all"):
+        raise forbidden("force requires the instances.view_all permission")
+
     instance = await service.get_tracked_instance(instance_id)
     if not instance:
         raise not_found("Instance", instance_id)
@@ -405,12 +422,25 @@ async def delete_instance(
     # Check if instance is under redirector management
     redir_svc = RedirectorService(db)
     redirector = await redir_svc.get_redirector_by_instance_id(instance_id)
-    if redirector:
-        await redir_svc.update_status(redirector, RedirectorStatus.ISOLATED.value)
 
-    ok = await service.delete_and_track_instance(instance_id)
+    try:
+        ok = await service.delete_and_track_instance(instance_id, force=force)
+    except InstanceDeletionError:
+        # Full reason is logged by the service; provider errors can include
+        # internal endpoints, so the client gets a generic message.
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "The cloud provider did not confirm the instance was deleted. "
+                "It has been left in place and may still be running."
+            ),
+        )
     if not ok:
         raise server_error("Failed to delete instance")
+
+    # Isolate the linked redirector only once the instance is really gone.
+    if redirector:
+        await redir_svc.update_status(redirector, RedirectorStatus.ISOLATED.value)
 
     audit = AuditService(db)
     await audit.log_instance_delete(
@@ -422,6 +452,7 @@ async def delete_instance(
             "status": instance.status,
             "assigned_to_email": instance.assigned_to_email,
             "redirector_isolated": redirector.name if redirector else None,
+            "forced": force,
         },
         ip_address=request.client.host if request.client else None,
     )

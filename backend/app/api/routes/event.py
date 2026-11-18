@@ -12,7 +12,7 @@ from app.dependencies import (
 from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
 from app.api.utils.pagination import calculate_pagination
 from app.api.utils.dependencies import get_event_service
-from app.models.user import User
+from app.models.user import User, participation_summary
 from app.models.event import generate_slug
 from app.services.event_service import EventService
 from app.schemas.event import (
@@ -439,13 +439,18 @@ async def get_my_participation_history(
             event_name=p.event.name if p.event else None
         ))
 
+    # Summarise from the rows already loaded above. current_user comes from the
+    # session loader without event_participations, so its participation
+    # properties would lazy-load and raise MissingGreenlet.
+    summary = participation_summary(history)
+
     return ParticipationHistoryResponse(
         user_id=current_user.id,
-        total_years_invited=current_user.years_invited,
-        total_years_participated=current_user.years_participated,
-        participation_rate=current_user.participation_rate,
-        is_chronic_non_participant=current_user.is_chronic_non_participant,
-        should_recommend_removal=current_user.should_recommend_removal,
+        total_years_invited=summary["years_invited"],
+        total_years_participated=summary["years_participated"],
+        participation_rate=summary["participation_rate"],
+        is_chronic_non_participant=summary["is_chronic_non_participant"],
+        should_recommend_removal=summary["should_recommend_removal"],
         history=items
     )
 
