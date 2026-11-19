@@ -1,6 +1,5 @@
 """Audit logging model."""
 from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey, Text, Index, JSON
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, validates
 from app.database import Base

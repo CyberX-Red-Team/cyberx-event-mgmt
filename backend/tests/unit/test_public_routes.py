@@ -5,8 +5,7 @@ All service dependencies are mocked to isolate route behavior.
 """
 
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock
 
 from app.api.routes.public import (
     generate_username,
@@ -17,8 +16,6 @@ from app.api.routes.public import (
     decline_participation,
     get_countries
 )
-from app.models.user import User, UserRole
-from app.models.event import Event
 
 
 @pytest.mark.unit

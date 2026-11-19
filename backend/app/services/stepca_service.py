@@ -10,13 +10,12 @@ import logging
 import re
 import time
 import uuid
-from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa, utils
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
@@ -26,7 +25,6 @@ from jose.constants import Algorithms
 
 from app.config import get_settings
 from app.services.render_service import RenderServiceManager
-from app.utils.encryption import encrypt_field, decrypt_field
 
 logger = logging.getLogger(__name__)
 

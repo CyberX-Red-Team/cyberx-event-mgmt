@@ -22,8 +22,7 @@ from app.api.routes import redirectors as redirectors_routes
 from app.api.routes import redirectors_pages
 from app.api.routes import admin_pages
 from app.tasks import start_scheduler, stop_scheduler
-from app.utils.encryption import init_encryptor, generate_encryption_key
-from cryptography.fernet import Fernet
+from app.utils.encryption import init_encryptor
 import base64
 
 

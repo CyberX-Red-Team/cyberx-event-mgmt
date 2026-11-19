@@ -10,7 +10,6 @@ Integration in main.py:
     app.include_router(redirectors_pages.router)
 """
 from datetime import datetime
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse

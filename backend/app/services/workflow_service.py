@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.email_workflow import EmailWorkflow, WorkflowTriggerEvent
+from app.models.email_workflow import EmailWorkflow
 from app.models.user import User
 from app.models.event import Event
 from app.services.email_queue_service import EmailQueueService

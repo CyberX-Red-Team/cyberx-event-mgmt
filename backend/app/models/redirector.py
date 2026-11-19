@@ -3,7 +3,7 @@ import enum
 import uuid
 
 from sqlalchemy import (
-    Column, String, Boolean, Integer, TIMESTAMP, Text, ForeignKey, Index, JSON,
+    Column, String, Boolean, Integer, TIMESTAMP, Text, ForeignKey, JSON,
     UniqueConstraint,
 )
 from sqlalchemy.sql import func

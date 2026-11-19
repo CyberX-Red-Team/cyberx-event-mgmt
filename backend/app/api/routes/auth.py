@@ -1,7 +1,6 @@
 """Authentication API routes."""
 from datetime import datetime, timezone, timedelta
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from fastapi import APIRouter, Depends, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -14,13 +13,11 @@ from app.dependencies import (
 from app.services.auth_service import AuthService
 from app.services.audit_service import AuditService
 from app.models.user import User
-from app.models.vpn import VPNCredential
 from app.api.utils.validation import normalize_email
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     LogoutResponse,
-    UserResponse,
     SessionInfo,
     PasswordChangeRequest,
     PasswordChangeResponse,
@@ -32,7 +29,7 @@ from app.schemas.auth import (
 from app.config import get_settings
 from app.api.utils.request import extract_client_metadata
 from app.api.utils.response_builders import build_auth_user_response
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error, rate_limited
+from app.api.exceptions import bad_request, unauthorized, rate_limited
 
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -586,7 +583,7 @@ async def complete_password_reset(
             lockout_type="Password Reset Token Brute-Force",
             ip_address=ip_address,
             user_agent=user_agent,
-            details=f"IP exceeded 5 password reset completion attempts in 15 minutes. Possible token guessing attack.",
+            details="IP exceeded 5 password reset completion attempts in 15 minutes. Possible token guessing attack.",
         )
 
         raise rate_limited(

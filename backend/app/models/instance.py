@@ -1,5 +1,5 @@
 """OpenStack Instance model."""
-from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, TIMESTAMP, ForeignKey, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base

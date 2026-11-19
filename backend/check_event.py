@@ -21,7 +21,7 @@ async def check_events():
     if database_url.startswith("postgresql://"):
         database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-    print(f"Connecting to database...")
+    print("Connecting to database...")
     print(f"URL (masked): {database_url.split('@')[1] if '@' in database_url else 'localhost'}\n")
 
     # Create engine

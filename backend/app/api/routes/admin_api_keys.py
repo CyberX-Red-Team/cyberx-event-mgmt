@@ -1,7 +1,7 @@
 """Admin routes for managing service API keys."""
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel

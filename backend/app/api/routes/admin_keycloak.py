@@ -11,7 +11,6 @@ from app.models.user import User
 from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
 from app.services.keycloak_sync_service import KeycloakSyncService
 from app.config import get_settings
-from app.utils.encryption import encrypt_field
 
 logger = logging.getLogger(__name__)
 

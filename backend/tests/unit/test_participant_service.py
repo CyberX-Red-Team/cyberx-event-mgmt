@@ -6,7 +6,7 @@ list, and business logic.
 """
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.participant_service import ParticipantService
@@ -1244,7 +1244,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating participant with active event and registration open sends invitation."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.workflow_service import WorkflowService
 
         # Create active event with registration open
@@ -1290,7 +1289,6 @@ class TestParticipantServiceEventIntegration:
         Credentials are sent via user_confirmed workflow after confirmation.
         """
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.workflow_service import WorkflowService
 
         # Create active event with registration open
@@ -1332,7 +1330,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating invitee with test mode enabled blocks invitation."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.audit_service import AuditService
 
         # Create active event with test mode enabled
@@ -1378,7 +1375,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating sponsor with test mode generates confirmation code but defers credentials."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.workflow_service import WorkflowService
 
         # Create active event with test mode enabled
@@ -1420,7 +1416,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating participant with inactive event does not send invitation."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
 
         # Create inactive event
         event = Event(
@@ -1452,7 +1447,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating sponsor with inactive event defers credentials until confirmation."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.email_queue_service import EmailQueueService
 
         # Create inactive event
@@ -1492,7 +1486,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating confirmed invitee with active event triggers workflow."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.workflow_service import WorkflowService
 
         # Create active event
@@ -1535,7 +1528,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating confirmed invitee without active event skips password email."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.email_queue_service import EmailQueueService
 
         # Create inactive event
@@ -1728,7 +1720,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating pre-confirmed participant handles workflow trigger errors gracefully."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.workflow_service import WorkflowService
 
         # Create active event
@@ -1770,7 +1761,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating pre-confirmed sponsor handles credentials email errors gracefully."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.email_queue_service import EmailQueueService
 
         # Create inactive event (no invitation, but confirmed=YES triggers credentials email)
@@ -1906,7 +1896,6 @@ class TestParticipantServiceEventIntegration:
     ):
         """Test creating invitee without credentials logs skip message."""
         service = ParticipantService(db_session)
-        from app.models.event import Event
         from app.services.workflow_service import WorkflowService
 
         # Create active event

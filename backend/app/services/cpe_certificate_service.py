@@ -479,7 +479,7 @@ class CPECertificateService:
             if result.scalar() == 0:
                 return cert_number
 
-        raise RuntimeError(f"Failed to generate unique certificate number after 10 attempts")
+        raise RuntimeError("Failed to generate unique certificate number after 10 attempts")
 
     async def _generate_and_upload_pdf(
         self, certificate: CPECertificate, user: User, event: Event

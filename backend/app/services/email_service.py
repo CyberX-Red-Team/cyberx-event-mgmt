@@ -4,7 +4,7 @@ import logging
 import string
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Tuple, Dict, Any
-from sqlalchemy import select, func, and_, or_, desc, cast, Date, text
+from sqlalchemy import select, func, or_, desc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Email, To, Content, Attachment, FileContent, FileName, FileType, Disposition, MailSettings, SandBoxMode

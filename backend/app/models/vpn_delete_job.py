@@ -2,7 +2,6 @@
 import enum
 
 from sqlalchemy import Column, ForeignKey, Index, Integer, String, TIMESTAMP, Text
-from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.sql import func
 
 from app.database import Base

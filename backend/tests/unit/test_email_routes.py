@@ -5,8 +5,7 @@ All service dependencies are mocked to isolate route behavior.
 """
 
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock
 
 from app.api.routes.email import (
     send_email,
@@ -17,7 +16,6 @@ from app.api.routes.email import (
 from app.schemas.email import (
     SendEmailRequest,
     BulkEmailRequest,
-    SendCustomEmailRequest,
     SendTestEmailRequest
 )
 from app.models.user import User, UserRole

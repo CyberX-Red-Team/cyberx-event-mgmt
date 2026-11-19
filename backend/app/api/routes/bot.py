@@ -15,7 +15,6 @@ from app.api.utils.validation import normalize_email
 from app.config import get_settings
 from app.dependencies import get_db
 from app.models.event import Event, EventParticipation
-from app.models.role import Role
 from app.models.service_api_key import ServiceAPIKey
 from app.models.user import User
 

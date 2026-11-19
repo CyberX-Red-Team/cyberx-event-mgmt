@@ -3,9 +3,8 @@
 Tests the logic of key loading, command construction, error mapping,
 and infrastructure key deployment without any network I/O.
 """
-import io
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 from app.services.ssh_service import (
     SSHService,

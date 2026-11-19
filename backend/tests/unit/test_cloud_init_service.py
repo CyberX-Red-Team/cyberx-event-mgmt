@@ -4,7 +4,6 @@ Unit tests for CloudInitService.
 Tests template rendering and R2 URL placeholder resolution.
 """
 
-import pytest
 from unittest.mock import patch, MagicMock
 
 from app.services.cloud_init_service import CloudInitService

@@ -1,7 +1,5 @@
 """Unit tests for User permission methods."""
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User, UserRole
 from app.utils.permissions import ALL_PERMISSIONS, ROLE_PERMISSIONS

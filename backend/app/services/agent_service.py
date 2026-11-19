@@ -3,13 +3,12 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.agent_task import AgentTask
 from app.models.instance import Instance
-from app.models.vpn import VPNCredential
 from app.services.vpn_service import VPNService
 
 logger = logging.getLogger(__name__)

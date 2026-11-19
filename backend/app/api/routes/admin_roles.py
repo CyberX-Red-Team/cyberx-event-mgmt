@@ -4,14 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import AsyncSessionLocal
 from app.dependencies import get_db, get_current_active_user, require_permission
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.role import (
-    RoleResponse, RoleCreate, RoleUpdate, PermissionGroup, slugify,
+    RoleCreate, RoleUpdate, PermissionGroup, slugify,
 )
-from app.utils.permissions import ALL_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 

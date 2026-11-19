@@ -1,7 +1,7 @@
 """VPN management API routes."""
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Request
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -12,7 +12,7 @@ from app.dependencies import (
     require_permission,
     permissions
 )
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error, rate_limited
+from app.api.exceptions import not_found, forbidden, bad_request, server_error, rate_limited
 from app.api.utils.request import extract_client_metadata
 from app.api.utils.dependencies import (
     get_vpn_service,
@@ -28,8 +28,8 @@ from app.services.vpn_service import VPNService
 from app.services.vpn_import_service import VPNImportService
 from app.services.vpn_delete_service import VPNDeleteService
 from app.services.participant_service import ParticipantService
-from app.models.vpn_import_job import VPNImportJob, VPNImportJobStatus
-from app.models.vpn_delete_job import VPNDeleteJob, VPNDeleteJobStatus
+from app.models.vpn_import_job import VPNImportJob
+from app.models.vpn_delete_job import VPNDeleteJob
 from app.schemas.vpn import (
     VPNCredentialResponse,
     VPNCredentialListResponse,
@@ -795,7 +795,7 @@ async def download_all_my_vpn_configs(
         zip_buffer,
         media_type="application/zip",
         headers={
-            "Content-Disposition": f"attachment; filename=my_vpn_configs.zip"
+            "Content-Disposition": "attachment; filename=my_vpn_configs.zip"
         }
     )
 

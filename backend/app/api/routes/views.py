@@ -10,8 +10,8 @@ from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
-from app.dependencies import get_optional_user, get_current_active_user, get_current_admin_user, get_current_sponsor_user, get_db, require_permission
+from app.api.exceptions import forbidden
+from app.dependencies import get_optional_user, get_current_active_user, get_current_sponsor_user, get_db, require_permission
 from app.api.utils.dependencies import get_event_service
 from app.models.user import User
 from app.models.event import EventParticipation

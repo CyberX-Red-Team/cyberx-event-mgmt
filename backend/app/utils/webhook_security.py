@@ -5,7 +5,6 @@ import logging
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
-from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from cryptography.exceptions import InvalidSignature
 
 logger = logging.getLogger(__name__)

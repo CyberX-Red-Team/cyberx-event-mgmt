@@ -1062,7 +1062,7 @@ class SSHService:
                 "label": f"Stream directory ({stream_dir})",
                 "ok": dir_ok,
                 "detail": "Directory exists." if dir_ok
-                          else f"Directory missing — fix will create it.",
+                          else "Directory missing — fix will create it.",
             })
 
             # 3b. Stream block in nginx.conf
