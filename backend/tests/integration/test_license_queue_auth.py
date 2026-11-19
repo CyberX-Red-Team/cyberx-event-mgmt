@@ -91,16 +91,41 @@ class TestLicenseQueueAuthorization:
         assert response.status_code == 401
         assert await _slot_count(db_session) == 0
 
-    async def test_expired_token_cannot_acquire(self, client, db_session, products):
-        product, _ = products
+    async def test_token_past_its_queue_window_cannot_acquire(
+        self, client, db_session, products,
+    ):
+        product, _ = products   # slot_ttl defaults to 7200
         token = await _token(db_session, product)
         row = (await db_session.execute(select(LicenseToken))).scalars().one()
-        row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=product.slot_ttl + 1)
         await db_session.commit()
 
         response = await _acquire(client, token, product.id)
         assert response.status_code == 401
         assert await _slot_count(db_session) == 0
+
+    async def test_vm_waiting_past_token_expiry_still_gets_a_slot(
+        self, client, db_session, products,
+    ):
+        # Fill the queue, then a third VM polls after its blob token expired.
+        product, _ = products   # max_concurrent=2
+        holders = [await _token(db_session, product) for _ in range(2)]
+        slots = [(await _acquire(client, t, product.id, f"vm-{i}")).json()["slot_id"]
+                 for i, t in enumerate(holders)]
+        waiter = await _token(db_session, product)
+        assert (await _acquire(client, waiter, product.id, "vm-wait")).json()["status"] == "wait"
+
+        db_session.expire_all()
+        row = (await db_session.execute(
+            select(LicenseToken).order_by(LicenseToken.id.desc())
+        )).scalars().first()
+        row.expires_at = datetime.now(timezone.utc) - timedelta(minutes=30)  # past token_ttl
+        await db_session.commit()
+
+        assert (await _release(client, holders[0], slots[0])).status_code == 200
+        granted = await _acquire(client, waiter, product.id, "vm-wait")
+        assert granted.status_code == 200, granted.text
+        assert granted.json()["status"] == "granted"
 
     async def test_one_token_cannot_fill_the_queue(self, client, db_session, products):
         product, _ = products
@@ -165,3 +190,61 @@ class TestLicenseQueueAuthorization:
         token = await _token(db_session, product)
         assert (await client.get("/api/license/blob", headers=_bearer(token))).status_code == 200
         assert (await client.get("/api/license/blob", headers=_bearer(token))).status_code == 401
+
+
+@pytest.mark.asyncio
+class TestHexioSetupWireFormat:
+    """Replays hexio_setup.py's requests and checks the fields it reads."""
+
+    async def test_script_acquire_and_release_round_trip(self, client, db_session, products):
+        product, _ = products
+        token = await _token(db_session, product)
+        headers = {**_bearer(token), "Content-Type": "application/json",
+                   "User-Agent": "hexio-setup/1.0"}
+
+        # acquire_queue_slot(): payload is {"hostname": hostname} -- no product_id
+        acquired = await client.post(
+            "/api/license/queue/acquire", headers=headers, json={"hostname": "ts-01"},
+        )
+        assert acquired.status_code == 200, acquired.text
+        body = acquired.json()
+        assert body["status"] == "granted"
+        slot_id = body["slot_id"]
+        # The script logs body["slot_id"][:8], body["active"], body["max"]
+        assert isinstance(slot_id, str) and len(slot_id) >= 8
+        assert body["active"] == 1 and body["max"] == product.max_concurrent
+
+        # release_queue_slot(): payload uses "elapsed", reads body["active"/"max"]
+        released = await client.post(
+            "/api/license/queue/release", headers=headers,
+            json={"slot_id": slot_id, "result": "success", "elapsed": 321},
+        )
+        assert released.status_code == 200, released.text
+        assert released.json()["active"] == 0
+        assert released.json()["max"] == product.max_concurrent
+
+        db_session.expire_all()
+        slot = (await db_session.execute(select(LicenseSlot))).scalars().one()
+        assert slot.elapsed_seconds == 321      # "elapsed" accepted
+        assert slot.result == "success"
+
+    async def test_script_wait_response_has_the_fields_it_reads(
+        self, client, db_session, products,
+    ):
+        product, _ = products   # max_concurrent=2
+        for i in range(2):
+            await client.post(
+                "/api/license/queue/acquire",
+                headers=_bearer(await _token(db_session, product)),
+                json={"hostname": f"ts-{i}"},
+            )
+        waiting = await client.post(
+            "/api/license/queue/acquire",
+            headers=_bearer(await _token(db_session, product)),
+            json={"hostname": "ts-wait"},
+        )
+        body = waiting.json()
+        # The script reads body["retry_after"], body["active"], body["max"]
+        assert body["status"] == "wait"
+        assert body["active"] == 2 and body["max"] == 2
+        assert body["retry_after"] > 0

@@ -197,6 +197,9 @@ async def acquire_slot(
         slot_id=result.get("slot_id"),
         position=result.get("position"),
         message=result.get("message"),
+        active=result.get("active"),
+        max=result.get("max"),
+        retry_after=result.get("retry_after"),
     )
 
 
@@ -221,12 +224,15 @@ async def release_slot(
         token=token,
     )
 
-    if outcome == "not_found":
+    if outcome["outcome"] == "not_found":
         raise not_found("Slot not found")
-    if outcome == "forbidden":
+    if outcome["outcome"] == "forbidden":
         raise forbidden("Slot is held by a different license token")
 
-    return QueueReleaseResponse(status="success", message="Slot released")
+    return QueueReleaseResponse(
+        status="success", message="Slot released",
+        active=outcome.get("active"), max=outcome.get("max"),
+    )
 
 
 # ── Admin Dashboard Endpoints (session auth) ───────────────
