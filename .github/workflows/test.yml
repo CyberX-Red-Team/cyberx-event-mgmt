@@ -1,11 +1,21 @@
 name: Run Tests
 
 on:
+  # No push trigger for main: merges into main already passed these checks on
+  # their PR, and tagging a release re-runs them on the exact commit via
+  # workflow_call from deploy-production.yml. A push trigger here ran the full
+  # suite twice in parallel on every release.
   push:
-    branches: [ main, staging, develop ]
+    branches: [ staging ]   # gates the automatic staging deploy
   pull_request:
-    branches: [ main, staging, develop ]
+    branches: [ main, staging ]
   workflow_call:  # Allow this workflow to be called by other workflows
+
+# A new push to a PR supersedes its in-flight run. Only PR runs are cancelled:
+# staging pushes gate deploys, and release (workflow_call) runs gate production.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
