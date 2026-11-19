@@ -237,6 +237,66 @@ class TestEmailQueueScrub:
         assert row.custom_vars == SECRET_VARS
 
 
+# ── Staging reset-link log ────────────────────────────────────────────────
+
+def _settings(environment, sandbox):
+    from types import SimpleNamespace
+    return SimpleNamespace(ENVIRONMENT=environment, SENDGRID_SANDBOX_MODE=sandbox)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestSandboxResetLinkLog:
+    LINK = "https://staging.example/reset-password?token=tok-abc"
+
+    async def _send(self, db_session, user, monkeypatch, caplog, environment, sandbox):
+        from app.services import email_service as es
+        monkeypatch.setattr(es, "get_settings", lambda: _settings(environment, sandbox))
+        caplog.set_level("INFO", logger=es.logger.name)
+        # Template lookup fails (none seeded); the link is logged before that.
+        await es.EmailService(db_session).send_email(
+            user=user, template_name="password_reset",
+            custom_vars={"reset_url": self.LINK, "first_name": "Ada"},
+        )
+        return [r.getMessage() for r in caplog.records if "[SANDBOX]" in r.getMessage()]
+
+    async def test_logged_on_sandboxed_staging(self, db_session, user, monkeypatch, caplog):
+        lines = await self._send(db_session, user, monkeypatch, caplog, "staging", True)
+        assert len(lines) == 1 and self.LINK in lines[0]
+
+    @pytest.mark.parametrize("environment,sandbox", [
+        ("production", True),    # never in production, even if sandboxed
+        ("production", False),
+        ("staging", False),      # real delivery: the email itself carries the link
+    ])
+    async def test_not_logged_otherwise(
+        self, db_session, user, monkeypatch, caplog, environment, sandbox,
+    ):
+        assert await self._send(
+            db_session, user, monkeypatch, caplog, environment, sandbox,
+        ) == []
+
+    async def test_queued_reset_email_logs_link_then_stores_redacted_copy(
+        self, db_session, user, monkeypatch, caplog, mocker,
+    ):
+        from app.services import email_service as es
+        monkeypatch.setattr(es, "get_settings", lambda: _settings("staging", True))
+        caplog.set_level("INFO", logger=es.logger.name)
+        mocker.patch.object(
+            es.EmailService, "_send_email_with_template",
+            return_value=(True, "ok", "msg-1"),
+        )
+        mocker.patch.object(es.EmailService, "get_template_by_name", return_value=object())
+        email = await EmailQueueService(db_session).enqueue_email(
+            user.id, "password_reset", custom_vars={"reset_url": self.LINK},
+        )
+        await EmailQueueService(db_session).process_batch(batch_size=10)
+
+        assert any(self.LINK in r.getMessage() for r in caplog.records)
+        row = await _reload(db_session, email.id)
+        assert row.custom_vars == {"reset_url": REDACTED}
+
+
 # ── Migration ─────────────────────────────────────────────────────────────
 
 def _load_migration():
