@@ -54,6 +54,7 @@ async def redirectors_list_page(
 ):
     """Render the redirectors list page."""
     return templates.TemplateResponse(
+        request,
         "pages/redirectors/list.html",
         {
             "request": request,
@@ -85,6 +86,7 @@ async def redirector_detail_page(
         instance_visibility = linked.visibility if linked else None
 
     return templates.TemplateResponse(
+        request,
         "pages/redirectors/detail.html",
         {
             "request": request,
@@ -118,6 +120,7 @@ async def participant_redirector_detail_page(
         instance_visibility = linked.visibility if linked else None
 
     return templates.TemplateResponse(
+        request,
         "pages/participant/redirector_detail.html",
         {
             "request": request,

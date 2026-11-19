@@ -27,6 +27,7 @@ async def logs_page(
 ):
     """Render the application error log viewer page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/logs.html",
         {
             "request": request,
