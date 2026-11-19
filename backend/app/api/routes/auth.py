@@ -399,6 +399,12 @@ async def change_password(
         )
         current_user.keycloak_synced = False
 
+    # End the user's other sessions; keep this one so they stay logged in here.
+    from app.services.session_revocation import revoke_user_sessions
+    await revoke_user_sessions(
+        db, [current_user.id], keep_token=request.cookies.get("session_token"),
+    )
+
     await db.commit()
 
     # Log password change
@@ -598,7 +604,11 @@ async def complete_password_reset(
         raise bad_request("Invalid or expired password reset token")
 
     # Check if token is expired
-    if user.password_reset_expires and user.password_reset_expires < datetime.now(timezone.utc):
+    # Ensure timezone-aware (SQLite may return naive datetimes; PostgreSQL doesn't)
+    reset_expires = user.password_reset_expires
+    if reset_expires is not None and reset_expires.tzinfo is None:
+        reset_expires = reset_expires.replace(tzinfo=timezone.utc)
+    if reset_expires and reset_expires < datetime.now(timezone.utc):
         # Clear expired token
         user.password_reset_token = None
         user.password_reset_expires = None
@@ -631,6 +641,10 @@ async def complete_password_reset(
             operation=SyncOperation.UPDATE_PASSWORD
         )
         user.keycloak_synced = False
+
+    # A reset is how a user recovers a compromised account: end every session.
+    from app.services.session_revocation import revoke_user_sessions
+    await revoke_user_sessions(db, [user.id])
 
     await db.commit()
 

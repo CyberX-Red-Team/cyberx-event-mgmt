@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 # ── Product schemas ─────────────────────────────────────────
@@ -58,7 +58,9 @@ class LicenseProductListResponse(BaseModel):
 # ── Queue schemas ───────────────────────────────────────────
 
 class QueueAcquireRequest(BaseModel):
-    product_id: int
+    # Optional: the license token already identifies its product. When sent,
+    # it must match the token's product.
+    product_id: Optional[int] = None
     hostname: Optional[str] = None
     ip_address: Optional[str] = None
 
@@ -66,7 +68,10 @@ class QueueAcquireRequest(BaseModel):
 class QueueReleaseRequest(BaseModel):
     slot_id: str
     result: str = "unknown"
-    elapsed_seconds: int = 0
+    # hexio_setup.py sends "elapsed"; accept both spellings.
+    elapsed_seconds: int = Field(
+        0, validation_alias=AliasChoices("elapsed_seconds", "elapsed"),
+    )
 
 
 class LicenseQueueStatus(BaseModel):
@@ -124,12 +129,18 @@ class QueueAcquireResponse(BaseModel):
     slot_id: Optional[str] = None
     position: Optional[int] = None
     message: Optional[str] = None
+    # Queue occupancy, read by hexio_setup.py for its log lines.
+    active: Optional[int] = None
+    max: Optional[int] = None
+    retry_after: Optional[int] = None
 
 
 class QueueReleaseResponse(BaseModel):
     """Response from POST /api/license/queue/release."""
     status: str
     message: str
+    active: Optional[int] = None
+    max: Optional[int] = None
 
 
 class LicenseSlotResponse(BaseModel):

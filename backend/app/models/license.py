@@ -75,6 +75,11 @@ class LicenseSlot(Base):
     # Product association (concurrency is per-product)
     product_id = Column(Integer, ForeignKey("license_products.id", ondelete="CASCADE"), nullable=False, index=True)
 
+    # License token that acquired the slot. Only that token may release it,
+    # and a token holds at most one active slot. Nullable for slots created
+    # before tokens were bound.
+    token_id = Column(Integer, ForeignKey("license_tokens.id", ondelete="SET NULL"), nullable=True, index=True)
+
     hostname = Column(String(255), nullable=True)
     ip_address = Column(String(50), nullable=True)
     acquired_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
