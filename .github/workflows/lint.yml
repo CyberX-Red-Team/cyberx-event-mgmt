@@ -2,9 +2,9 @@ name: Code Quality
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, staging ]
 
 jobs:
   lint:
@@ -143,6 +143,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Pin Python: without this the job uses the runner default (3.14), for
+      # which pinned wheels like pydantic-core don't exist and pip fails.
+      # 3.12 matches production (render.yaml PYTHON_VERSION) and test.yml.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
 
       - name: Check for required documentation
         run: |
