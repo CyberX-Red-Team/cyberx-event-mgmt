@@ -15,10 +15,14 @@ jobs:
   deploy-staging:
     name: Deploy to Staging Environment
     runs-on: ubuntu-latest
-    # Only deploy if tests passed on staging branch (or if manually triggered)
+    # Only deploy if tests passed on a push to staging (or if manually
+    # triggered). A release PR from staging into main also runs "Run Tests"
+    # with head_branch == 'staging'; without the event check it redeployed
+    # staging for no code change.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'staging')
     environment:
       name: staging
