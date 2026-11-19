@@ -9,10 +9,3 @@ PYSEC-2026-1325  # ecdsa 0.19.2 (GHSA-wj6h-64fc-37mp,CVE-2024-23342)
 
 # --- python-jose: no fixed release; only signs step-ca provisioner tokens with our own key and never verifies untrusted tokens. Replace with PyJWT later
 PYSEC-2026-4298  # python-jose 3.5.0 (GHSA-3qf3-8w2g-rqmx,CVE-2026-85394)
-
-# --- starlette: fixes need starlette >=1.3.1, which needs FastAPI >=0.133; upgrade scheduled (blocked on the TemplateResponse rewrite)
-PYSEC-2026-161  # starlette 0.49.3 (CVE-2026-48710,X41-2026-002,GHSA-86qp-5c8j-p5mr)
-PYSEC-2026-2280  # starlette 0.49.3 (GHSA-x746-7m8f-x49c,CVE-2026-48817)
-PYSEC-2026-2281  # starlette 0.49.3 (GHSA-wqp7-x3pw-xc5r,CVE-2026-48818)
-PYSEC-2026-248  # starlette 0.49.3 (CVE-2026-54282,GHSA-jp82-jpqv-5vv3)
-PYSEC-2026-249  # starlette 0.49.3 (GHSA-82w8-qh3p-5jfq,CVE-2026-54283)
