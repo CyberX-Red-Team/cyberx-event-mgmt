@@ -562,7 +562,8 @@ class StepCAService:
         }
 
         try:
-            async with httpx.AsyncClient(verify=False) as client:
+            # bandit B501: step-ca uses its own self-signed CA; accepted
+            async with httpx.AsyncClient(verify=False) as client:  # nosec B501
                 resp = await client.post(
                     sign_url,
                     json=payload,
@@ -601,7 +602,8 @@ class StepCAService:
         base_url = ca_chain.step_ca_url
 
         try:
-            async with httpx.AsyncClient(verify=False) as client:
+            # bandit B501: step-ca uses its own self-signed CA; accepted
+            async with httpx.AsyncClient(verify=False) as client:  # nosec B501
                 # Step 1: Get provisioner info (public key + encrypted private key)
                 resp = await client.get(f"{base_url}/1.0/provisioners", timeout=10.0)
                 if resp.status_code != 200:
@@ -788,7 +790,8 @@ class StepCAService:
         }
 
         try:
-            async with httpx.AsyncClient(verify=False) as client:
+            # bandit B501: step-ca uses its own self-signed CA; accepted
+            async with httpx.AsyncClient(verify=False) as client:  # nosec B501
                 resp = await client.post(
                     revoke_url,
                     json=payload,

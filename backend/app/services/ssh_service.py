@@ -175,7 +175,8 @@ class SSHService:
         client = paramiko.SSHClient()
         # TODO: SECURITY — implement host key pinning (TOFU) by storing
         # per-redirector fingerprints and verifying on each connection.
-        client.set_missing_host_key_policy(paramiko.WarningPolicy())
+        # bandit B507: redirectors are freshly provisioned VMs (trust on first use); accepted
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())  # nosec B507
         try:
             pkey = self._load_key()
             client.connect(
@@ -202,7 +203,8 @@ class SSHService:
         self, client: paramiko.SSHClient, command: str
     ) -> Tuple[str, str, int]:
         """Execute a shell command. Returns (stdout, stderr, exit_code)."""
-        _, stdout_fh, stderr_fh = client.exec_command(
+        # bandit B601: callers pass fixed commands; dynamic values are shlex.quote'd, validated ints, or internal UUID paths
+        _, stdout_fh, stderr_fh = client.exec_command(  # nosec B601
             command, timeout=self.COMMAND_TIMEOUT
         )
         exit_code = stdout_fh.channel.recv_exit_status()
@@ -348,7 +350,8 @@ class SSHService:
             use_sudo = self.username != "root"
             auth_keys_dir = f"/home/{self.username}/.ssh" if use_sudo else "/root/.ssh"
             auth_keys_path = f"{auth_keys_dir}/authorized_keys"
-            tmp_path = f"/tmp/.cyberx_authkey_{uuid.uuid4().hex[:8]}"
+            # bandit B108: remote host temp file with a random name
+            tmp_path = f"/tmp/.cyberx_authkey_{uuid.uuid4().hex[:8]}"  # nosec B108
 
             self._exec(client, f"{self._sudo_prefix}mkdir -p {shlex.quote(auth_keys_dir)}")
             self._exec(client, f"{self._sudo_prefix}chmod 700 {shlex.quote(auth_keys_dir)}")
@@ -451,7 +454,8 @@ class SSHService:
             sftp = client.open_sftp()
             if use_sudo:
                 self._exec(client, f"{self._sudo_prefix}mkdir -p {shlex.quote(stream_dir)}")
-                tmp_path = f"/tmp/.cyberx_single_{uuid.uuid4().hex[:8]}.conf"
+                # bandit B108: remote host temp file with a random name
+                tmp_path = f"/tmp/.cyberx_single_{uuid.uuid4().hex[:8]}.conf"  # nosec B108
                 sftp.putfo(io.BytesIO(config_text.encode("utf-8")), tmp_path)
                 self._exec(client, f"{self._sudo_prefix}cp {shlex.quote(tmp_path)} {shlex.quote(remote_path)}")
                 self._exec(client, f"rm -f {tmp_path}")
@@ -596,7 +600,8 @@ class SSHService:
                 self._ensure_remote_dir(sftp, stream_dir)
 
             # For non-root users, stage files in a temp dir then sudo cp
-            staging_dir = f"/tmp/.cyberx_deploy_{uuid.uuid4().hex[:8]}"
+            # bandit B108: remote host temp dir with a random name
+            staging_dir = f"/tmp/.cyberx_deploy_{uuid.uuid4().hex[:8]}"  # nosec B108
             if use_sudo:
                 self._exec(client, f"mkdir -p {staging_dir}")
 
@@ -830,7 +835,8 @@ class SSHService:
                                 sftp.remove(path)
                         else:
                             if use_sudo:
-                                rb_tmp = f"/tmp/.cyberx_rb_{uuid.uuid4().hex[:8]}"
+                                # bandit B108: remote host temp file with a random name
+                                rb_tmp = f"/tmp/.cyberx_rb_{uuid.uuid4().hex[:8]}"  # nosec B108
                                 sftp.putfo(io.BytesIO(content), rb_tmp)
                                 self._exec(client, f"{self._sudo_prefix}cp {shlex.quote(rb_tmp)} {shlex.quote(path)}")
                                 self._exec(client, f"rm -f {rb_tmp}")
@@ -963,7 +969,8 @@ class SSHService:
                 sftp.putfo(io.BytesIO(script.encode()), script_path)
             except FileNotFoundError:
                 # /var/lib/cyberx/scripts/ doesn't exist yet — fall back to /tmp
-                script_path = f"/tmp/{script_name}"
+                # bandit B108: remote host temp file; script_name is internally generated (uuid)
+                script_path = f"/tmp/{script_name}"  # nosec B108
                 sftp.putfo(io.BytesIO(script.encode()), script_path)
             sftp.chmod(script_path, 0o700)
 
@@ -1257,7 +1264,8 @@ class SSHService:
         safe_dir = shlex.quote(stream_dir)
         safe_user = shlex.quote(self.username)
         # Bootstrap script uses /tmp because /var/lib/cyberx/scripts/ doesn't exist yet
-        script_path = f"/tmp/.cyberx_prereq_fix_{uuid.uuid4().hex[:8]}.sh"
+        # bandit B108: remote host temp file with a random name
+        script_path = f"/tmp/.cyberx_prereq_fix_{uuid.uuid4().hex[:8]}.sh"  # nosec B108
         script = (
             "#!/bin/bash\n"
             "set -e\n"

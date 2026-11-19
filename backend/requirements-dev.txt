@@ -12,3 +12,7 @@ pytest-mock==3.14.0
 
 # Test Database
 aiosqlite==0.22.1  # For in-memory SQLite test database
+
+# Linters run by .github/workflows/lint.yml (pinned so CI results are reproducible)
+ruff==0.17.6
+bandit==1.9.4
