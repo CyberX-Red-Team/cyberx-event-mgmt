@@ -44,6 +44,12 @@ jobs:
       url: https://events.cyberxredteam.org
 
     steps:
+      - name: Record the commit that is live before deploying
+        run: |
+          before=$(curl -fsS --max-time 10 "https://events.cyberxredteam.org/health" 2>/dev/null | jq -r '.commit // empty' 2>/dev/null || true)
+          echo "LIVE_BEFORE=${before}" >> "$GITHUB_ENV"
+          echo "Live before deploy: ${before:-unknown}"
+
       - name: Trigger Render Deploy via Deploy Hook
         env:
           PRODUCTION_DEPLOY_HOOK_URL: ${{ secrets.PRODUCTION_DEPLOY_HOOK_URL }}
@@ -69,39 +75,41 @@ jobs:
             exit 1
           fi
 
-      - name: Wait for deployment
+      - name: Wait for the new build to go live
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          HEALTH_URL: https://events.cyberxredteam.org/health
         run: |
-          echo "⏳ Waiting for deployment to complete..."
-          echo "Render is building and deploying the application..."
-
-          # Wait 2 minutes for Render to build and start deploying
-          sleep 120
-
-      - name: Run health check
-        run: |
-          echo "🏥 Running production health check..."
-
-          MAX_RETRIES=10
-          RETRY_DELAY=15
-
-          for i in $(seq 1 $MAX_RETRIES); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-              https://events.cyberxredteam.org/health)
-
-            if [ "$HTTP_CODE" -eq 200 ]; then
-              echo "✅ Health check passed!"
-
-              # Get detailed health info
-              HEALTH=$(curl -s https://events.cyberxredteam.org/health)
-              echo "Health details: $HEALTH"
+          # Poll /health until it reports the commit being deployed (replaces a
+          # fixed sleep, which passed whether or not the new build was live).
+          expected="${EXPECTED_SHA:0:7}"
+          echo "⏳ Waiting for ${HEALTH_URL} to report commit ${expected} (was ${LIVE_BEFORE:-unknown}) ..."
+          deadline=$(( $(date +%s) + 1200 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            body=$(curl -fsS --max-time 10 "$HEALTH_URL" 2>/dev/null || true)
+            commit=$(echo "$body" | jq -r '.commit // empty' 2>/dev/null || true)
+            version=$(echo "$body" | jq -r '.version // empty' 2>/dev/null || true)
+            if [ -n "$body" ] && [ -z "$commit" ]; then
+              # Build doesn't report its commit (older build or RENDER_GIT_COMMIT
+              # unset): fall back to the old behaviour rather than fail.
+              echo "::warning::/health does not report a commit; falling back to a 2-minute wait + HTTP 200 check"
+              sleep 120
+              curl -fsS --max-time 10 "$HEALTH_URL" && exit 0
+              echo "❌ Health check failed"; exit 1
+            fi
+            if [ "$commit" = "$expected" ]; then
+              echo "✅ Live: version ${version}, commit ${commit}"
               exit 0
             fi
-
-            echo "⏳ Attempt $i/$MAX_RETRIES failed (HTTP $HTTP_CODE), retrying in ${RETRY_DELAY}s..."
-            sleep $RETRY_DELAY
+            if [ -n "$commit" ] && [ -n "$LIVE_BEFORE" ] && [ "$commit" != "$LIVE_BEFORE" ]; then
+              # Render deploys the branch head; a newer push can supersede this one.
+              echo "::warning::A different new build is live (commit ${commit}, expected ${expected}) -- likely a newer push"
+              exit 0
+            fi
+            echo "  live: ${commit:-unreachable} (version ${version:-?}), waiting ..."
+            sleep 15
           done
-
-          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          echo "❌ Commit ${expected} was not live after 20 minutes"
           exit 1
 
       - name: Run production smoke tests

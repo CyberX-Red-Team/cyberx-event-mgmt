@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 import logging
+import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -314,8 +315,19 @@ app.include_router(views.router)
 # Health check endpoint
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+    """Health check endpoint.
+
+    Reports the app version and the deployed git commit (Render sets
+    RENDER_GIT_COMMIT) so deploy workflows can confirm the new build is live.
+    Both are already public: the version is in the page footer and the
+    repository is public.
+    """
+    from app.version import VERSION
+    return {
+        "status": "healthy",
+        "version": VERSION,
+        "commit": os.environ.get("RENDER_GIT_COMMIT", "")[:7],
+    }
 
 
 # Redirect unauthenticated browser requests to login
