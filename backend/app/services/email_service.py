@@ -19,6 +19,26 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _log_sandboxed_reset_link(user, template_name: str, custom_vars) -> None:
+    """Staging aid: log password-reset links when emails can't be delivered.
+
+    Staging runs SendGrid in sandbox mode, so reset emails never arrive; this
+    puts the link in the service log so reset flows can still be exercised.
+    Requires BOTH sandbox mode and a non-production environment, so it can
+    never fire in production. The stored copy of the link is redacted once the
+    email finishes; this log line is the intended way to retrieve it.
+    """
+    current = get_settings()
+    if not current.SENDGRID_SANDBOX_MODE or current.ENVIRONMENT == "production":
+        return
+    reset_url = (custom_vars or {}).get("reset_url")
+    if reset_url:
+        logger.info(
+            "[SANDBOX] password reset link for user %s (template=%s): %s",
+            getattr(user, "id", "?"), template_name, reset_url,
+        )
+
+
 class SafeFormatter(string.Formatter):
     """String formatter that blocks attribute/index access (e.g. {foo.__class__})."""
 
@@ -613,6 +633,8 @@ class EmailService:
         Returns:
             Tuple of (success, message, message_id)
         """
+        _log_sandboxed_reset_link(user, template_name, custom_vars)
+
         template = await self.get_template_by_name(template_name)
         if not template:
             return False, f"Template '{template_name}' not found", None

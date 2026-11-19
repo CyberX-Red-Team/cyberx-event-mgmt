@@ -10,9 +10,22 @@ from sqlalchemy.orm import selectinload
 from app.models.email_queue import EmailQueue, EmailBatchLog, EmailQueueStatus
 from app.models.user import User
 from app.services.email_service import EmailService
+from app.utils.redaction import redact_secrets
 
 
 logger = logging.getLogger(__name__)
+
+
+def scrub_finished_email(email: EmailQueue) -> None:
+    """Mask secrets in a finished email's template variables.
+
+    Credential and password-reset emails carry the password / reset token as
+    template variables. Once an email is sent, failed for good, or cancelled,
+    nothing reads them again (no retry-from-failed path), so keep only a
+    redacted copy at rest. Assigns a new dict so the JSON column is flushed.
+    """
+    if email.custom_vars:
+        email.custom_vars = redact_secrets(email.custom_vars)
 
 
 class EmailQueueService:
@@ -237,6 +250,7 @@ class EmailQueueService:
                     if not user:
                         email_queue.status = EmailQueueStatus.FAILED
                         email_queue.error_message = "User not found"
+                        scrub_finished_email(email_queue)
                         failed_count += 1
                         continue
 
@@ -259,6 +273,7 @@ class EmailQueueService:
                     if success:
                         email_queue.status = EmailQueueStatus.SENT
                         email_queue.sendgrid_message_id = message_id
+                        scrub_finished_email(email_queue)
                         email_queue.sent_at = datetime.now(timezone.utc)
                         email_queue.processed_at = datetime.now(timezone.utc)
                         sent_count += 1
@@ -269,6 +284,7 @@ class EmailQueueService:
                         # Check if max attempts reached
                         if email_queue.attempts >= email_queue.max_attempts:
                             email_queue.status = EmailQueueStatus.FAILED
+                            scrub_finished_email(email_queue)
                             logger.error(
                                 f"Email to {user.email} failed after {email_queue.attempts} attempts: {message}"
                             )
@@ -290,6 +306,7 @@ class EmailQueueService:
 
                     if email_queue.attempts >= email_queue.max_attempts:
                         email_queue.status = EmailQueueStatus.FAILED
+                        scrub_finished_email(email_queue)
                     else:
                         email_queue.status = EmailQueueStatus.PENDING
 
@@ -334,6 +351,7 @@ class EmailQueueService:
 
         email.status = EmailQueueStatus.CANCELLED
         email.processed_at = datetime.now(timezone.utc)
+        scrub_finished_email(email)
         await self.session.commit()
 
         return True
@@ -355,6 +373,7 @@ class EmailQueueService:
             if email.status == EmailQueueStatus.PENDING:
                 email.status = EmailQueueStatus.CANCELLED
                 email.processed_at = now
+                scrub_finished_email(email)
                 cancelled_ids.add(email.id)
 
         failed_ids = [eid for eid in email_ids if eid not in cancelled_ids]
