@@ -188,19 +188,55 @@ class LicenseService:
 
     # ── Concurrency Queue ───────────────────────────────────────
 
+    async def get_queue_token(self, raw_token: str) -> Optional[LicenseToken]:
+        """Look up the license token presented to the install queue.
+
+        The VM fetches its license blob first (which consumes the token) and
+        then uses the same token for the queue, so a used token is accepted
+        here; callers check product and expiry.
+        """
+        if not raw_token:
+            return None
+        q = select(LicenseToken).where(LicenseToken.token_hash == _hash_token(raw_token))
+        return (await self.session.execute(q)).scalar_one_or_none()
+
     async def acquire_slot(
-        self, product_id: int, hostname: str, ip: str
+        self, product_id: int, hostname: str, ip: str, token: LicenseToken
     ) -> dict:
         """Try to acquire an install slot for a product.
 
-        Returns {"status": "granted", "slot_id": ...} or {"status": "wait", ...}.
+        ``token`` must be a license token for this product that has not
+        expired. A token holds at most one active slot: asking again returns
+        the same slot (safe for client retries).
+
+        Returns {"status": "granted", "slot_id": ...}, {"status": "wait", ...},
+        or {"status": "unauthorized"} / {"status": "error"}.
         """
+        if token.product_id != product_id:
+            logger.warning("Queue acquire refused: token is for another product")
+            return {"status": "unauthorized"}
+        expires_at = token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires_at:
+            logger.warning("Queue acquire refused: token expired")
+            return {"status": "unauthorized"}
+
         product = await self.get_product(product_id)
         if not product:
             return {"status": "error", "message": f"Product {product_id} not found"}
 
         # Reap expired slots first
         await self._reap_expired_slots_for_product(product)
+
+        # One active slot per token: a retry gets its existing slot back.
+        existing = (await self.session.execute(
+            select(LicenseSlot).where(
+                and_(LicenseSlot.token_id == token.id, LicenseSlot.is_active == True)
+            )
+        )).scalars().first()
+        if existing:
+            return {"status": "granted", "slot_id": existing.slot_id}
 
         # Count active slots for this product
         count_q = select(func.count(LicenseSlot.id)).where(
@@ -216,6 +252,7 @@ class LicenseService:
             slot = LicenseSlot(
                 slot_id=slot_id,
                 product_id=product_id,
+                token_id=token.id,
                 hostname=hostname,
                 ip_address=ip,
             )
@@ -244,14 +281,29 @@ class LicenseService:
             "retry_after": 30,
         }
 
-    async def release_slot(self, slot_id: str, result: str, elapsed: int) -> bool:
-        """Release an install slot."""
+    async def release_slot(
+        self, slot_id: str, result: str, elapsed: int, token: LicenseToken
+    ) -> str:
+        """Release an install slot. Returns "released", "not_found" or "forbidden".
+
+        Only the token that acquired the slot may release it. No expiry check:
+        an install can outlast the token's lifetime. Slots from before tokens
+        were bound (token_id NULL) accept any token for the same product.
+        """
         q = select(LicenseSlot).where(LicenseSlot.slot_id == slot_id)
         slot = (await self.session.execute(q)).scalar_one_or_none()
 
         if not slot:
             logger.warning("Attempted to release unknown slot: %s", slot_id)
-            return False
+            return "not_found"
+
+        if slot.token_id is not None:
+            allowed = slot.token_id == token.id
+        else:
+            allowed = slot.product_id == token.product_id
+        if not allowed:
+            logger.warning("Queue release refused: slot %s held by another token", slot_id)
+            return "forbidden"
 
         slot.is_active = False
         slot.released_at = datetime.now(timezone.utc)
@@ -260,7 +312,7 @@ class LicenseService:
         await self.session.commit()
 
         logger.info("Slot released: %s (result=%s, elapsed=%ds)", slot_id, result, elapsed)
-        return True
+        return "released"
 
     async def reap_expired_slots(self) -> int:
         """Clean up all expired slots across all products. Returns count reaped."""
