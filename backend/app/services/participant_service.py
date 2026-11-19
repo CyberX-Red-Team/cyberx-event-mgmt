@@ -621,7 +621,9 @@ class ParticipantService:
                 EmailQueue.user_id == participant_id,
                 EmailQueue.status.in_([EmailQueueStatus.PENDING, EmailQueueStatus.PROCESSING])
             )
-            .values(status=EmailQueueStatus.CANCELLED)
+            # The user is being deleted; their template variables (which can
+            # hold credentials) are never needed again.
+            .values(status=EmailQueueStatus.CANCELLED, custom_vars=None)
         )
 
         # Step 4: Clean up Keycloak sync queue and queue deletion

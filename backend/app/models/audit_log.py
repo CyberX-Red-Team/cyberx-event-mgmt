@@ -2,8 +2,9 @@
 from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey, Text, Index, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from app.database import Base
+from app.utils.redaction import redact_secrets
 
 
 class AuditLog(Base):
@@ -44,6 +45,12 @@ class AuditLog(Base):
         Index('idx_audit_logs_action', 'action'),
         Index('idx_audit_logs_created_at', 'created_at'),
     )
+
+    @validates("details")
+    def _redact_details(self, key, value):
+        # Every writer goes through here (AuditService and direct AuditLog()
+        # construction alike), so secrets never reach the table in plaintext.
+        return redact_secrets(value)
 
     def __repr__(self):
         return f"<AuditLog(id={self.id}, action={self.action}, user_id={self.user_id})>"
