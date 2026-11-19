@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, get_current_active_user, require_permission
+from app.dependencies import get_db, require_permission
 from app.models.user import User
 from app.models.cpe_certificate import CertificateStatus
 from app.services.cpe_certificate_service import CPECertificateService

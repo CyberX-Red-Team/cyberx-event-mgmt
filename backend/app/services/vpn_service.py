@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from typing import Optional, List, Tuple
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.user import User
 from app.models.vpn import VPNCredential
@@ -1013,7 +1012,6 @@ PublicKey = {final_public_key}
         Returns:
             List of dicts with batch_id, requested_at, and count
         """
-        from sqlalchemy import distinct
 
         # Get distinct batch IDs with their timestamps and counts
         result = await self.session.execute(

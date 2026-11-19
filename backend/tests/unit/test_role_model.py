@@ -1,6 +1,5 @@
 """Unit tests for the Role model."""
 import pytest
-import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 

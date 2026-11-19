@@ -5,13 +5,11 @@ using httpx instead of requests and backed by PostgreSQL for instance tracking.
 """
 import base64
 import logging
-import secrets
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import urlparse, urlunparse
 
 import httpx
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -392,7 +390,6 @@ class OpenStackService:
         if template_id and not user_data:
             from app.services.cloud_init_service import CloudInitService
             from app.services.license_service import LicenseService
-            from app.services.download_service import DownloadService
             from app.models.event import Event
 
             cloud_init_svc = CloudInitService(self.session)

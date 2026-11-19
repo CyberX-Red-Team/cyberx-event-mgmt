@@ -6,16 +6,11 @@ All service dependencies are mocked to isolate route behavior.
 
 import pytest
 from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock, AsyncMock, patch
 from fastapi import Request, Response
-from fastapi.responses import JSONResponse
 
 from app.api.routes.auth import (
     check_login_rate_limit,
     clear_login_rate_limit,
-    check_rate_limit,
-    clear_rate_limit,
-    get_rate_limit_count,
     _rate_limit_cache,
     login,
     logout,

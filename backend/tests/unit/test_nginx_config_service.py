@@ -15,8 +15,6 @@ from app.services.nginx_config_service import (
     generate_decoy_html,
     generate_decoy_cert_shell_command,
     validate_custom_override,
-    SNI_BRIDGE_PORT_MIN,
-    SNI_BRIDGE_PORT_MAX,
     SNI_DECOY_PORT,
     SNI_LOOPBACK_IP,
 )

@@ -16,7 +16,6 @@ from app.models.user import User
 
 @pytest.mark.integration
 @pytest.mark.auth
-@pytest.mark.skip(reason="Database session isolation issues in CI - needs investigation")
 class TestAuthenticationEndpoints:
     """Test authentication API endpoints."""
 
@@ -150,7 +149,6 @@ class TestAuthenticationEndpoints:
 @pytest.mark.integration
 @pytest.mark.auth
 @pytest.mark.security
-@pytest.mark.skip(reason="Database session isolation issues in CI - needs investigation")
 class TestAuthorizationRoles:
     """Test role-based authorization."""
 
@@ -168,17 +166,24 @@ class TestAuthorizationRoles:
         assert response.status_code in [200, 422]
 
     @pytest.mark.asyncio
-    async def test_sponsor_cannot_access_admin_endpoint(
-        self, client: AsyncClient, sponsor_session_token: str
+    async def test_sponsor_sees_only_own_invitees_on_admin_list(
+        self, client: AsyncClient, sponsor_session_token: str,
+        sponsor_user: User, invitee_user: User, admin_user: User,
     ):
-        """Test that sponsor cannot access admin-only endpoints."""
+        """Sponsors may list participants, scoped to their own invitees (v1.6.3).
+
+        Full write-route authorization is covered by
+        tests/integration/test_participant_authorization.py.
+        """
         response = await client.get(
             "/api/admin/participants",
             cookies={"session_token": sponsor_session_token}
         )
 
-        # Should return 403 Forbidden
-        assert response.status_code == 403
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()["items"]}
+        assert invitee_user.id in ids          # sponsored by this sponsor
+        assert admin_user.id not in ids        # not theirs
 
     @pytest.mark.asyncio
     async def test_invitee_cannot_access_admin_endpoint(
@@ -199,7 +204,7 @@ class TestAuthorizationRoles:
     ):
         """Test that sponsor can access sponsor endpoints."""
         response = await client.get(
-            "/api/sponsor/invitees",
+            "/api/sponsors/my-invitees",
             cookies={"session_token": sponsor_session_token}
         )
 

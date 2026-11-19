@@ -1,6 +1,5 @@
 """Email template model for dynamic email templates."""
 from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, Index, JSON
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base

@@ -10,8 +10,8 @@ from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
-from app.dependencies import get_optional_user, get_current_active_user, get_current_admin_user, get_current_sponsor_user, get_db, require_permission
+from app.api.exceptions import forbidden
+from app.dependencies import get_optional_user, get_current_active_user, get_current_sponsor_user, get_db, require_permission
 from app.api.utils.dependencies import get_event_service
 from app.models.user import User
 from app.models.event import EventParticipation
@@ -48,6 +48,7 @@ async def login_page(
         return RedirectResponse(url="/portal", status_code=302)
 
     return templates.TemplateResponse(
+        request,
         "pages/auth/login.html",
         {"request": request, "now": datetime.now()}
     )
@@ -65,6 +66,7 @@ async def forgot_password_page(
         return RedirectResponse(url="/portal", status_code=302)
 
     return templates.TemplateResponse(
+        request,
         "pages/auth/forgot_password.html",
         {"request": request, "now": datetime.now()}
     )
@@ -82,6 +84,7 @@ async def reset_password_page(
         return RedirectResponse(url="/portal", status_code=302)
 
     return templates.TemplateResponse(
+        request,
         "pages/auth/reset_password.html",
         {"request": request, "now": datetime.now()}
     )
@@ -93,6 +96,7 @@ async def confirmation_page(
 ):
     """Render public confirmation page (no authentication required)."""
     return templates.TemplateResponse(
+        request,
         "pages/public/confirm.html",
         {"request": request, "now": datetime.now()}
     )
@@ -121,6 +125,7 @@ async def admin_dashboard_page(
 ):
     """Render admin dashboard."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/dashboard.html",
         {
             "request": request,
@@ -163,6 +168,7 @@ async def admin_vpn_page(
 ):
     """Render VPN management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/vpn.html",
         {
             "request": request,
@@ -180,6 +186,7 @@ async def admin_cpe_certificates_page(
 ):
     """Render CPE certificate management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/cpe_certificates.html",
         {
             "request": request,
@@ -197,6 +204,7 @@ async def admin_email_page(
 ):
     """Render email management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/email.html",
         {
             "request": request,
@@ -214,6 +222,7 @@ async def admin_users_page(
 ):
     """Render user management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/users.html",
         {
             "request": request,
@@ -231,6 +240,7 @@ async def admin_audit_page(
 ):
     """Render audit log page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/audit.html",
         {
             "request": request,
@@ -248,6 +258,7 @@ async def admin_workflows_page(
 ):
     """Render email workflows management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/workflows.html",
         {
             "request": request,
@@ -265,6 +276,7 @@ async def admin_events_page(
 ):
     """Render events management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/events.html",
         {
             "request": request,
@@ -282,6 +294,7 @@ async def admin_instances_page(
 ):
     """Render instance management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/instances.html",
         {
             "request": request,
@@ -299,6 +312,7 @@ async def admin_instance_templates_page(
 ):
     """Render instance templates management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/instance_templates.html",
         {
             "request": request,
@@ -316,6 +330,7 @@ async def admin_roles_page(
 ):
     """Render roles & permissions management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/roles.html",
         {
             "request": request,
@@ -333,6 +348,7 @@ async def admin_settings_page(
 ):
     """Render system settings page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/settings.html",
         {
             "request": request,
@@ -350,6 +366,7 @@ async def admin_cloud_init_page(
 ):
     """Render cloud-init template management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/cloud_init.html",
         {
             "request": request,
@@ -367,6 +384,7 @@ async def admin_licenses_page(
 ):
     """Render license products management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/license_products.html",
         {
             "request": request,
@@ -384,6 +402,7 @@ async def admin_tls_certificates_page(
 ):
     """Render TLS certificate management page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/tls_certificates.html",
         {
             "request": request,
@@ -401,6 +420,7 @@ async def admin_action_responses_page(
 ):
     """Render action responses page."""
     return templates.TemplateResponse(
+        request,
         "pages/admin/action_responses.html",
         {
             "request": request,
@@ -419,6 +439,7 @@ async def sponsor_invitees_page(
 ):
     """Render sponsor invitees management page."""
     return templates.TemplateResponse(
+        request,
         "pages/sponsor/invitees.html",
         {
             "request": request,
@@ -436,6 +457,7 @@ async def profile_page(
 ):
     """Render user profile/settings page."""
     return templates.TemplateResponse(
+        request,
         "pages/profile.html",
         {
             "request": request,
@@ -454,6 +476,7 @@ async def participant_portal_page(
 ):
     """Render participant portal dashboard."""
     return templates.TemplateResponse(
+        request,
         "pages/participant/portal.html",
         {
             "request": request,
@@ -503,6 +526,7 @@ async def participant_ssh_key_page(
             raise forbidden("You must be a confirmed participant to access the SSH key")
 
     return templates.TemplateResponse(
+        request,
         "pages/participant/ssh_key.html",
         {
             "request": request,

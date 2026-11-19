@@ -1,15 +1,13 @@
 """Unit tests for role CRUD operations and schemas."""
 import pytest
-import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.role import Role, BaseType
 from app.models.user import User, UserRole
 from app.schemas.role import (
     RoleCreate, RoleUpdate, PermissionOverrideUpdate, RoleAssignRequest, slugify,
 )
-from app.utils.permissions import ALL_PERMISSIONS, ROLE_PERMISSIONS
+from app.utils.permissions import ROLE_PERMISSIONS
 from app.utils.security import hash_password
 from app.api.utils.validation import normalize_email
 

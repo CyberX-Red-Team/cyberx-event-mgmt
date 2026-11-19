@@ -2,10 +2,9 @@
 import logging
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.dependencies import get_db, require_permission
 from app.models.user import User

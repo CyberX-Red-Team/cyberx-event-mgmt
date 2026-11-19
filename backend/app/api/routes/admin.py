@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
+from app.api.exceptions import not_found, forbidden, bad_request, conflict, server_error
 
 from app.dependencies import (
     get_db,
@@ -23,7 +23,6 @@ from app.api.utils.dependencies import (
     get_vpn_service
 )
 from app.models.user import User, UserRole
-from app.models.vpn import VPNCredential
 from app.services.participant_service import ParticipantService
 from app.services.audit_service import AuditService
 from app.schemas.participant import (
@@ -34,10 +33,7 @@ from app.schemas.participant import (
     ParticipantStats,
     BulkActionRequest,
     BulkActionResponse,
-    PasswordResetRequest,
     PasswordResetResponse,
-    SponsorInfo,
-    UserRoleEnum,
     RoleUpdateRequest,
     SponsorAssignRequest,
     MySponsoredParticipantsResponse,
@@ -52,7 +48,7 @@ from app.schemas.audit import (
     AuditLogStats
 )
 from app.models.audit_log import AuditLog
-from app.models.email_queue import EmailQueue, EmailBatchLog, EmailQueueStatus
+from app.models.email_queue import EmailQueue, EmailBatchLog
 from app.services.email_queue_service import EmailQueueService
 from datetime import datetime, timedelta, timezone, date
 from app.services.vpn_service import VPNService
@@ -648,7 +644,6 @@ async def reset_participant_password(
     - Admins can reset any participant's password
     - Sponsors can only reset passwords for participants they sponsor
     """
-    import secrets
     from datetime import timedelta
     from app.services.workflow_service import WorkflowService
     from app.models.email_workflow import WorkflowTriggerEvent
@@ -2860,7 +2855,6 @@ async def assign_participant_role(
             )
 
     old_role = participant.role
-    old_role_id = participant.role_id
 
     # Update role fields
     participant.role_id = role.id

@@ -1,0 +1,13 @@
+# Ruff: correctness checks only -- syntax errors (E9) and pyflakes (F): unused
+# or undefined names, redefinitions, broken f-strings. Style rules and
+# formatting are deliberately not enforced.
+target-version = "py312"
+extend-exclude = ["migrations", "scripts", "backups", "htmlcov"]
+
+[lint]
+select = ["E9", "F"]
+
+[lint.per-file-ignores]
+# Tests keep `with pytest.raises(...) as exc_info:` and fixture objects
+# created only for their side effects.
+"tests/**" = ["F841"]

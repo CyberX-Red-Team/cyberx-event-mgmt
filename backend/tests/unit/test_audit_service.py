@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.audit_service import AuditService
-from app.models.audit_log import AuditLog
 
 
 @pytest.mark.unit

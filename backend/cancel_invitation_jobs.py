@@ -1,5 +1,4 @@
 """Utility script to cancel all scheduled invitation email jobs."""
-import asyncio
 import sys
 from pathlib import Path
 
@@ -16,7 +15,7 @@ def cancel_all_invitation_jobs():
     # Get all jobs
     all_jobs = scheduler.get_jobs()
 
-    print(f"\n=== Current Scheduled Jobs ===")
+    print("\n=== Current Scheduled Jobs ===")
     print(f"Total jobs: {len(all_jobs)}\n")
 
     for job in all_jobs:

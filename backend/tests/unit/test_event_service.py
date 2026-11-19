@@ -6,7 +6,7 @@ and invitation control logic.
 """
 
 import pytest
-from datetime import datetime, timezone, date
+from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.event_service import EventService
