@@ -98,7 +98,7 @@ async def create_instance(
     data: InstanceCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("instances.provision")),
+    current_user: User = Depends(require_permission("instances.provision", "instances.view_all")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Create a single instance on any cloud provider."""
@@ -148,7 +148,7 @@ async def bulk_create_instances(
     data: InstanceBulkCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("instances.provision")),
+    current_user: User = Depends(require_permission("instances.provision", "instances.view_all")),
     service: OpenStackService = Depends(get_openstack_service),
 ):
     """Bulk create instances."""
@@ -369,7 +369,7 @@ async def update_instance(
 async def get_instance_redirector_status(
     instance_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("instances.delete")),
+    current_user: User = Depends(require_permission("instances.delete", "instances.view_all")),
 ):
     """Check if an instance is under redirector management."""
     redir_svc = RedirectorService(db)
@@ -398,7 +398,7 @@ async def delete_instance(
         ),
     ),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("instances.delete")),
+    current_user: User = Depends(require_permission("instances.delete", "instances.view_all")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Delete (terminate) an instance from its cloud provider.
@@ -410,8 +410,8 @@ async def delete_instance(
     If the instance is under redirector management, the linked redirector
     is set to 'isolated' status once the instance is deleted (admin only).
     """
-    # instances.delete is held by participants too; overriding the provider
-    # check is an admin-only action.
+    # The route already requires instances.view_all; kept so force stays
+    # admin-only if the route guard ever changes.
     if force and not current_user.has_permission("instances.view_all"):
         raise forbidden("force requires the instances.view_all permission")
 
@@ -478,7 +478,7 @@ async def bulk_delete_instances(
     data: BulkDeleteRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("instances.delete")),
+    current_user: User = Depends(require_permission("instances.delete", "instances.view_all")),
     service: InstanceService = Depends(get_instance_service),
 ):
     """Bulk delete instances from their cloud providers."""
