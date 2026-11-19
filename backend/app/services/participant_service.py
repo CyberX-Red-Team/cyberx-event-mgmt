@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.models.user import User, UserRole
 from app.models.vpn import VPNCredential
 from app.models.session import Session
+from app.services.session_revocation import revoke_user_sessions
 from app.models.event import EventParticipation
 from app.utils.security import hash_password
 from app.services.email_queue_service import EmailQueueService
@@ -508,6 +509,7 @@ class ParticipantService:
             # Generate phonetic password for the new password
             from app.api.routes.public import generate_phonetic_password
             participant.password_phonetic = generate_phonetic_password(new_password)
+            await revoke_user_sessions(self.session, [participant.id])
             # Remove from kwargs so we don't set it again in the loop below
             kwargs = {k: v for k, v in kwargs.items() if k != 'pandas_password'}
 
@@ -676,6 +678,7 @@ class ParticipantService:
         participant.password_phonetic = generate_phonetic_password(new_password)
         participant.keycloak_synced = False
         participant.updated_at = datetime.now(timezone.utc)
+        await revoke_user_sessions(self.session, [participant.id])
 
         # Queue password sync to Keycloak
         if participant.pandas_username:
@@ -974,6 +977,7 @@ class ParticipantService:
             participant.pandas_password = None
             participant.password_hash = None
             participant.password_phonetic = None
+            await revoke_user_sessions(self.session, [participant.id])
             # Keep pandas_username — returning participants keep their username
             logger.info(
                 f"Cleared credentials for invitee {participant_id} "
@@ -1085,6 +1089,7 @@ class ParticipantService:
         now = datetime.now(timezone.utc)
         breakdown = {}
         affected_ids = []
+        credentials_cleared_ids = []
 
         for user in users:
             user.confirmation_code = secrets.token_urlsafe(32)
@@ -1111,11 +1116,15 @@ class ParticipantService:
                 user.pandas_password = None
                 user.password_hash = None
                 user.password_phonetic = None
+                credentials_cleared_ids.append(user.id)
 
             user.updated_at = now
 
             breakdown[user.role] = breakdown.get(user.role, 0) + 1
             affected_ids.append(user.id)
+
+        # Users whose password was just cleared must not stay logged in.
+        await revoke_user_sessions(self.session, credentials_cleared_ids)
 
         # Bulk delete EventParticipation records for current event
         if reset_event_participation:

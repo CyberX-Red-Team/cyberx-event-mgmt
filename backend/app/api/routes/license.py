@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_permission
-from app.api.exceptions import not_found, bad_request, conflict, unauthorized, server_error
+from app.api.exceptions import not_found, bad_request, conflict, unauthorized, server_error, forbidden
 from app.api.utils.dependencies import get_license_service
 from app.models.user import User
 from app.services.license_service import LicenseService
@@ -175,15 +175,20 @@ async def acquire_slot(
     Called by VMs to enter the concurrency-limited installation queue.
     Returns {status: "granted", slot_id} or {status: "wait", retry_after}.
     """
-    _extract_bearer_token(authorization)
+    token = await service.get_queue_token(_extract_bearer_token(authorization))
+    if not token:
+        raise unauthorized("Invalid license token")
     client_ip = request.client.host if request.client else "unknown"
 
     result = await service.acquire_slot(
         product_id=data.product_id,
         hostname=data.hostname or "unknown",
         ip=data.ip_address or client_ip,
+        token=token,
     )
 
+    if result["status"] == "unauthorized":
+        raise unauthorized("Invalid, expired, or wrong-product license token")
     if result["status"] == "error":
         raise bad_request(result.get("message", "Failed to acquire slot"))
 
@@ -192,6 +197,9 @@ async def acquire_slot(
         slot_id=result.get("slot_id"),
         position=result.get("position"),
         message=result.get("message"),
+        active=result.get("active"),
+        max=result.get("max"),
+        retry_after=result.get("retry_after"),
     )
 
 
@@ -205,18 +213,26 @@ async def release_slot(
 
     Called by VMs when installation finishes (success or failure).
     """
-    _extract_bearer_token(authorization)
+    token = await service.get_queue_token(_extract_bearer_token(authorization))
+    if not token:
+        raise unauthorized("Invalid license token")
 
-    ok = await service.release_slot(
+    outcome = await service.release_slot(
         slot_id=data.slot_id,
         result=data.result,
         elapsed=data.elapsed_seconds,
+        token=token,
     )
 
-    if not ok:
+    if outcome["outcome"] == "not_found":
         raise not_found("Slot not found")
+    if outcome["outcome"] == "forbidden":
+        raise forbidden("Slot is held by a different license token")
 
-    return QueueReleaseResponse(status="success", message="Slot released")
+    return QueueReleaseResponse(
+        status="success", message="Slot released",
+        active=outcome.get("active"), max=outcome.get("max"),
+    )
 
 
 # ── Admin Dashboard Endpoints (session auth) ───────────────

@@ -271,6 +271,10 @@ async def confirm_participation(
         user.password_phonetic = generate_phonetic_password(password)  # For easy communication
         user.keycloak_synced = False  # Reset sync status on credential change
 
+        # New credentials: sessions from the old password must not survive.
+        from app.services.session_revocation import revoke_user_sessions
+        await revoke_user_sessions(db, [user.id])
+
         # Queue Keycloak sync
         from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
         from app.utils.encryption import encrypt_field
