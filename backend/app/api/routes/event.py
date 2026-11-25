@@ -1,7 +1,7 @@
 """Event API routes for event and participation management."""
 import logging
-from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import Optional
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
@@ -9,7 +9,7 @@ from app.dependencies import (
     get_current_active_user,
     require_permission,
 )
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
+from app.api.exceptions import not_found, forbidden, bad_request
 from app.api.utils.pagination import calculate_pagination
 from app.api.utils.dependencies import get_event_service
 from app.models.user import User, participation_summary

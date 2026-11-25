@@ -1,5 +1,5 @@
 """Public API endpoints (no authentication required)."""
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -10,7 +10,7 @@ from app.services.event_service import EventService
 from app.models.email_workflow import WorkflowTriggerEvent
 from app.dependencies import get_db
 from app.config import get_settings
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
+from app.api.exceptions import not_found, bad_request, conflict
 import secrets
 import string
 import logging

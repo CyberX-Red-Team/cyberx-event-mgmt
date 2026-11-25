@@ -44,7 +44,7 @@ async def main():
 
         # Log summary
         duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-        logger.info(f"\n=== Processing Complete ===")
+        logger.info("\n=== Processing Complete ===")
         logger.info(f"Batch ID: {batch_log.batch_id}")
         logger.info(f"Total processed: {batch_log.total_processed}")
         logger.info(f"Successfully sent: {batch_log.total_sent}")

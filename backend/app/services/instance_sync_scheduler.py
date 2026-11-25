@@ -1,6 +1,5 @@
 """Background scheduler for periodic instance status synchronization."""
 import logging
-import asyncio
 from datetime import datetime
 from typing import Optional
 

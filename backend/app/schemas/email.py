@@ -1,7 +1,7 @@
 """Pydantic schemas for email operations."""
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 
 # =============================================================================

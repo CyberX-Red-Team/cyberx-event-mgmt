@@ -16,7 +16,6 @@ Notes:
     should be run separately.
 """
 
-import os
 from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,7 +30,6 @@ from app.models.tls_certificate import CAChain, TLSCertificate
 from app.models.instance import Instance
 from app.models.instance_template import InstanceTemplate
 from app.models.user import User, UserRole
-from app.models.vpn import VPNCredential
 from app.services.event_archive_service import EventArchiveService
 from app.utils.security import hash_password
 

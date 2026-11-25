@@ -1,14 +1,10 @@
 """Unit tests for require_permission dependency and updated PermissionChecker."""
 import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 from app.dependencies import require_permission, PermissionChecker
-from app.models.user import User, UserRole
-from app.utils.permissions import ALL_PERMISSIONS, ROLE_PERMISSIONS
-from app.utils.security import hash_password
-from app.api.utils.validation import normalize_email
+from app.models.user import User
 
 
 @pytest.mark.unit

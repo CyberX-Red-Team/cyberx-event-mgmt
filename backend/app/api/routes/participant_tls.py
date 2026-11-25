@@ -17,7 +17,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.event import Event
 from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, TLSCertificateStatus
-from app.dependencies import get_current_active_user, require_permission
+from app.dependencies import require_permission
 from app.services.stepca_service import StepCAService
 from app.services.powerdns_service import PowerDNSService
 from app.services.audit_service import AuditService

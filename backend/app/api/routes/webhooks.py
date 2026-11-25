@@ -132,13 +132,10 @@ async def sendgrid_inbound_webhook(
         form = await request.form()
 
         from_email = form.get("from")
-        to_email = form.get("to")
         subject = form.get("subject")
-        text = form.get("text")
-        html = form.get("html")
 
         # Log inbound email for processing
-        # TODO: Implement inbound email processing logic
+        # TODO: Implement inbound email processing logic (to/text/html fields)
 
         return {"status": "ok", "from": from_email, "subject": subject}
 
@@ -163,21 +160,17 @@ async def discord_webhook(
     try:
         data = await request.json()
 
-        event_type = data.get("t")  # Event type
-        event_data = data.get("d")  # Event data
+        event_type = data.get("t")  # Event type; event data is data["d"]
 
         if event_type == "GUILD_MEMBER_ADD":
             # New member joined
-            user_id = event_data.get("user", {}).get("id")
-            username = event_data.get("user", {}).get("username")
-
-            # TODO: Update user record with Discord info
+            # TODO: Update user record with Discord info (data["d"]["user"])
+            pass
 
         elif event_type == "GUILD_MEMBER_REMOVE":
             # Member left
-            user_id = event_data.get("user", {}).get("id")
-
-            # TODO: Update user record
+            # TODO: Update user record (data["d"]["user"]["id"])
+            pass
 
         return {"status": "ok", "event": event_type}
 
@@ -246,8 +239,7 @@ async def keycloak_webhook(
         client_id = auth_details.get("clientId")
         session_id = auth_details.get("sessionId")
 
-        # details is a sibling key-value map with extra context
-        details = data.get("details") or {}
+        # (data["details"] carries extra context; not used yet)
 
         realm = data.get("realmId", "")
         realm_name = data.get("realmName", "")

@@ -120,7 +120,7 @@ async def create_bulk_action(
         notification_vars = {
             "action_title": data.title,
             "action_description": data.description or "",
-            "action_url": f"https://staging.events.cyberxredteam.org/portal#actions",
+            "action_url": "https://staging.events.cyberxredteam.org/portal#actions",
             "deadline": str(data.deadline) if data.deadline else "No deadline",
             "event_name": event.name
         }
@@ -203,7 +203,6 @@ async def assign_action_to_participants(
     Copies action_type, title, description, deadline, and email_template_id
     from the existing batch. Skips users who already have this action.
     """
-    from sqlalchemy import and_
 
     # Find an existing action in this batch to copy properties from
     result = await db.execute(
@@ -273,7 +272,7 @@ async def assign_action_to_participants(
         notification_vars = {
             "action_title": reference_action.title,
             "action_description": reference_action.description or "",
-            "action_url": f"https://staging.events.cyberxredteam.org/portal#actions",
+            "action_url": "https://staging.events.cyberxredteam.org/portal#actions",
             "deadline": str(reference_action.deadline) if reference_action.deadline else "No deadline",
             "event_name": event.name if event else "",
         }

@@ -7,7 +7,6 @@ error handling, retry, cleanup, and the dispatcher task.
 import io
 import zipfile
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select

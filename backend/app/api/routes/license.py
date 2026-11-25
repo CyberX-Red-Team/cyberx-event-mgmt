@@ -8,10 +8,9 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, require_permission
-from app.api.exceptions import not_found, bad_request, conflict, unauthorized, server_error, forbidden
+from app.dependencies import require_permission
+from app.api.exceptions import not_found, bad_request, conflict, unauthorized, forbidden
 from app.api.utils.dependencies import get_license_service
 from app.models.user import User
 from app.services.license_service import LicenseService

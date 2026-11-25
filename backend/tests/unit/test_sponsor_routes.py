@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException
 
 from app.api.routes.sponsor import delete_my_invitee
-from app.models.user import User, UserRole
+from app.models.user import User
 
 
 def _make_sponsor(user_id=1, perms=None):

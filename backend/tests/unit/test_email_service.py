@@ -1192,8 +1192,6 @@ class TestEmailServiceEventLogging:
     async def test_process_webhook_event_bounce(self, db_session: AsyncSession):
         """Test processing a bounce event updates user status."""
         from app.models.user import User, UserRole
-        from app.models.audit_log import EmailEvent
-        from sqlalchemy import select
 
         service = EmailService(db_session)
 

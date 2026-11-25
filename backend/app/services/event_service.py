@@ -1,11 +1,9 @@
 """Event service for managing events and participation tracking."""
-from datetime import datetime, timezone
-from typing import Optional, List, Tuple
+from typing import Optional, List
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.user import User
 from app.models.event import Event, EventParticipation, ParticipationStatus
 
 

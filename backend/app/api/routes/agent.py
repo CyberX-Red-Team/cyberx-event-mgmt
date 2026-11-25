@@ -1,9 +1,8 @@
 """Agent API routes — agent-facing, participant-facing, and admin-facing."""
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession

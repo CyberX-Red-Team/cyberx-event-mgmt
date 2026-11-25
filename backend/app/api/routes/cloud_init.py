@@ -1,11 +1,9 @@
 """Cloud-init template management API routes."""
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, require_permission
+from app.dependencies import require_permission
 from app.api.exceptions import not_found, bad_request, conflict
 from app.api.utils.dependencies import get_cloud_init_service
 from app.models.user import User

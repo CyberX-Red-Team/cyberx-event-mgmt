@@ -2,11 +2,11 @@
 import logging
 from typing import Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
+from app.api.exceptions import not_found, forbidden, bad_request, conflict, server_error
 from app.dependencies import get_db, require_permission, PermissionChecker
 from app.api.utils.request import extract_client_metadata
 from app.api.utils.pagination import calculate_pagination
@@ -552,9 +552,7 @@ async def resend_invitee_invitation(
 
     # Get active event for email context
     from app.models.event import Event
-    from sqlalchemy import select, update
-    import secrets
-    from datetime import datetime, timezone
+    from sqlalchemy import select
 
     event_result = await db.execute(
         select(Event).where(Event.is_active == True)

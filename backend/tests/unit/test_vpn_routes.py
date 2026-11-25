@@ -1,7 +1,7 @@
 """Unit tests for VPN routes - focused on coverage."""
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 from app.models.user import User, UserRole
 from app.api.routes.vpn import (
     list_vpn_credentials,

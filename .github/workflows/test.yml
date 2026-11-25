@@ -118,14 +118,6 @@ jobs:
             --cov-report=html \
             --junit-xml=test-results.xml
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: backend/coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()

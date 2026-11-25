@@ -5,10 +5,10 @@ from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_db, get_current_active_user, require_permission
+from app.dependencies import get_db, require_permission
 from app.api.exceptions import not_found, bad_request, forbidden, server_error
 from app.services.audit_service import AuditService
 from app.models.user import User

@@ -2,10 +2,9 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.dependencies import get_db, require_permission
-from app.api.exceptions import not_found, forbidden, bad_request, conflict, unauthorized, server_error
+from app.api.exceptions import not_found, bad_request
 from app.api.utils.pagination import calculate_pagination
 from app.api.utils.validation import validate_bulk_email_permissions
 from app.api.utils.dependencies import (

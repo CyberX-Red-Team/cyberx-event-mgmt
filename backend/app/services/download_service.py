@@ -98,7 +98,8 @@ class DownloadService:
 
         # nginx secure_link_md5: MD5(secret + uri + expires) -> binary -> base64url
         raw = f"{secret}{uri}{expires}"
-        md5_binary = hashlib.md5(raw.encode()).digest()
+        # bandit B324: nginx secure_link_md5 requires MD5; not a password hash
+        md5_binary = hashlib.md5(raw.encode()).digest()  # nosec B324
         hash_b64 = base64.urlsafe_b64encode(md5_binary).rstrip(b"=").decode()
 
         logger.info("Generated nginx download link for %s (expires in %ds)", filename, expires_in)

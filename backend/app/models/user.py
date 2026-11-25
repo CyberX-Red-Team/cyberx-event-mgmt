@@ -1,11 +1,14 @@
 """User/Invitee model."""
-from sqlalchemy import Column, Integer, String, Boolean, BigInteger, TIMESTAMP, Index, ForeignKey, Enum, JSON
+from sqlalchemy import Column, Integer, String, Boolean, BigInteger, TIMESTAMP, Index, ForeignKey, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 import enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from app.database import Base
+
+if TYPE_CHECKING:  # annotations only; avoids a runtime import cycle
+    from app.models.event import EventParticipation
 
 
 class UserRole(str, enum.Enum):

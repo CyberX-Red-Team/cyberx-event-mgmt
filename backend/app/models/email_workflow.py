@@ -1,6 +1,5 @@
 """Email workflow configuration model."""
 from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, Text, Index, JSON
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.database import Base
 

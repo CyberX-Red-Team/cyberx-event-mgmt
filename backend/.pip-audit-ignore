@@ -1,0 +1,11 @@
+# pip-audit baseline: advisories reviewed and accepted (or scheduled) as of 2026-11-19.
+# CI runs pip-audit with --ignore-vuln for each ID below and FAILS on any advisory not
+# listed, so a new vulnerability in a dependency breaks the build.
+# Remove an entry when the package is upgraded past the fix (CI will pass without it).
+# Format: <advisory-id>  # <package> <version>: <reason>
+
+# --- ecdsa: no fixed release; transitive (python-jose). With the [cryptography] extra, signing uses cryptography, not ecdsa
+PYSEC-2026-1325  # ecdsa 0.19.2 (GHSA-wj6h-64fc-37mp,CVE-2024-23342)
+
+# --- python-jose: no fixed release; only signs step-ca provisioner tokens with our own key and never verifies untrusted tokens. Replace with PyJWT later
+PYSEC-2026-4298  # python-jose 3.5.0 (GHSA-3qf3-8w2g-rqmx,CVE-2026-85394)

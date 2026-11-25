@@ -4,7 +4,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.executors.asyncio import AsyncIOExecutor
 
-from app.config import get_settings
 
 
 # Configure logging
@@ -18,8 +17,6 @@ def get_scheduler() -> AsyncIOScheduler:
     """Get the global scheduler instance, creating it if necessary."""
     global scheduler
     if scheduler is None:
-        settings = get_settings()
-
         # Configure job stores and executors
         jobstores = {
             'default': MemoryJobStore()
@@ -180,7 +177,6 @@ async def update_scheduler_status():
 if __name__ == "__main__":
     """Entry point when running as a module."""
     import asyncio
-    import signal
     import sys
 
     # Configure logging

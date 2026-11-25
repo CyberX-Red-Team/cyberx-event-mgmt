@@ -4,7 +4,7 @@ import secrets
 import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -352,7 +352,6 @@ class InstanceService:
         """
         from app.models.event import Event
         from app.services.vpn_service import VPNService
-        from app.services.cloud_init_service import CloudInitService
 
         # Fetch event to check vpn_available flag
         event_result = await self.session.execute(
@@ -519,7 +518,6 @@ class InstanceService:
         group_by: str | None = None,
     ) -> tuple[list[Instance], int]:
         """List tracked instances with filtering and pagination (all providers)."""
-        from sqlalchemy.orm import selectinload
 
         conditions = [Instance.deleted_at.is_(None)]
 

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.dependencies import get_db, require_permission
-from app.api.exceptions import not_found, bad_request
+from app.api.exceptions import not_found
 from app.models.user import User
 from app.models.app_setting import AppSetting
 
