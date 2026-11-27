@@ -124,3 +124,43 @@ async def test_bulk_optional_email_skips_people_without_consent(authenticated_ad
     assert [uid for uid, _ in sent_to] == [yes.id]
     assert sent_to[0][1]["future_contact_withdraw_url"]
     assert "1 skipped" in resp.json()["message"]
+
+
+def test_one_click_unsubscribe_headers_only_with_withdraw_link():
+    from sendgrid.helpers.mail import Mail
+    from app.services.email_service import add_one_click_unsubscribe
+    url = "https://staging.example/future-contact/withdraw?token=abc"
+    optional = Mail(from_email="a@example.org", to_emails="b@example.org", subject="s", html_content="x")
+    add_one_click_unsubscribe(optional, url)
+    assert optional.get()["headers"] == {
+        "List-Unsubscribe": f"<{url}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+    essential = Mail(from_email="a@example.org", to_emails="b@example.org", subject="s", html_content="x")
+    add_one_click_unsubscribe(essential, None)
+    assert "headers" not in essential.get()
+
+
+async def test_sent_optional_email_carries_headers(db_session, monkeypatch):
+    """End to end through _send_email_with_template: headers on optional, none on essential."""
+    from app.models.email_template import EmailTemplate
+    from app.services.email_service import EmailService, optional_email_vars
+
+    tmpl = EmailTemplate(name="announcement", display_name="A", subject="S",
+                         html_content="<body>x</body>", is_active=True)
+    db_session.add(tmpl)
+    user = await make_user(db_session, "fan@example.org", future_contact_consent=True)
+    await db_session.commit()
+
+    sent = []
+
+    class FakeClient:
+        def send(self, message):
+            sent.append(message.get())
+            return SimpleNamespace(status_code=202, headers={})
+
+    service = EmailService(db_session)
+    monkeypatch.setattr(service, "client", FakeClient())
+    await service._send_email_with_template(user, tmpl, custom_vars=optional_email_vars(user))
+    await service._send_email_with_template(user, tmpl, custom_vars={"x": 1})
+    assert "List-Unsubscribe" in sent[0]["headers"]
+    assert "headers" not in sent[1]

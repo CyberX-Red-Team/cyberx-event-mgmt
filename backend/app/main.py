@@ -249,6 +249,7 @@ csrf_exempt_urls = [
     "/api/webhooks/keycloak",  # Keycloak event listener webhook
     "/api/public/confirm",     # Public confirmation endpoint
     "/api/public/decline",     # Public decline endpoint
+    "/future-contact/withdraw",  # Consent withdrawal: signed token; mail clients' one-click POST has no CSRF cookie
     "/health",                 # Health check
     "/api/license/blob",       # VM-facing license endpoint (Bearer token auth)
     "/api/license/queue/acquire",  # VM-facing queue acquire (Bearer token auth)

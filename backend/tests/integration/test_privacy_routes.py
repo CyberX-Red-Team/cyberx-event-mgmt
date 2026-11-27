@@ -131,18 +131,59 @@ async def test_admin_can_add_and_remove_suppression(authenticated_admin_client, 
 
 # --------------------------------------------------------- consent withdrawal
 
-async def test_withdraw_link_turns_consent_off(client, db_session):
+async def test_opening_withdraw_link_only_asks(client, db_session):
+    """A GET (what email scanners and link previews do) changes nothing."""
     user = await make_user(db_session, "fan@example.org", future_contact_consent=True)
-    resp = await client.get(f"/future-contact/withdraw?token={make_withdraw_token(user.id)}")
+    token = make_withdraw_token(user.id)
+    resp = await client.get(f"/future-contact/withdraw?token={token}")
+    assert resp.status_code == 200
+    assert "Stop these emails" in resp.text and f'value="{token}"' in resp.text
+    assert (await _reload(db_session, user.id)).future_contact_consent is True
+
+
+async def test_confirm_button_withdraws(client, db_session):
+    user = await make_user(db_session, "fan@example.org", future_contact_consent=True)
+    resp = await client.post("/future-contact/withdraw", data={"token": make_withdraw_token(user.id)})
+    assert resp.status_code == 200 and "Done." in resp.text
+    assert (await _reload(db_session, user.id)).future_contact_consent is False
+    entries = (await db_session.execute(
+        select(AuditLog).where(AuditLog.action == "PRIVACY_CHOICES_RECORDED")
+    )).scalars().all()
+    assert [e.details["source"] for e in entries] == ["withdraw_link"]
+
+
+async def test_mail_client_one_click_post_withdraws(client, db_session):
+    """RFC 8058: the client POSTs 'List-Unsubscribe=One-Click' to the URL (token in the query)."""
+    user = await make_user(db_session, "fan@example.org", future_contact_consent=True)
+    resp = await client.post(
+        f"/future-contact/withdraw?token={make_withdraw_token(user.id)}",
+        content="List-Unsubscribe=One-Click",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
     assert resp.status_code == 200
     assert (await _reload(db_session, user.id)).future_contact_consent is False
 
 
-async def test_withdraw_link_rejects_forged_token(client, db_session):
+async def test_withdraw_rejects_forged_token(client, db_session):
     user = await make_user(db_session, "fan@example.org", future_contact_consent=True)
-    resp = await client.get(f"/future-contact/withdraw?token=eyJ1Ijo{user.id}fQ.forged")
-    assert resp.status_code == 400
+    forged = f"eyJ1Ijo{user.id}fQ.forged"
+    assert (await client.get(f"/future-contact/withdraw?token={forged}")).status_code == 400
+    assert (await client.post("/future-contact/withdraw", data={"token": forged})).status_code == 400
     assert (await _reload(db_session, user.id)).future_contact_consent is True
+
+
+async def test_withdraw_page_when_already_off(client, db_session):
+    user = await make_user(db_session, "fan@example.org", future_contact_consent=False)
+    resp = await client.get(f"/future-contact/withdraw?token={make_withdraw_token(user.id)}")
+    assert resp.status_code == 200
+    assert "Stop these emails" not in resp.text and "You're not receiving" in resp.text
+
+
+def test_withdraw_post_is_csrf_exempt():
+    """Mail clients' one-click POST carries no CSRF cookie; the signed token authorizes it.
+    (The test client disables CSRF entirely, so check the exemption list itself.)"""
+    from app.main import csrf_exempt_urls
+    assert "/future-contact/withdraw" in csrf_exempt_urls
 
 
 async def test_profile_privacy_toggle(authenticated_invitee_client, db_session, invitee_user):
