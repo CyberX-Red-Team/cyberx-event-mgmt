@@ -293,6 +293,8 @@ class TestConfirmParticipationRoute:
         mock_user.pandas_username = None
         mock_user.pandas_password = None
         mock_user.get_effective_permissions.return_value = {"discord.view", "instances.view"}
+        mock_user.adult_on = None  # adult: no under-18 record
+        mock_user.guardian_email_pending = None
 
         mock_event = Mock()
         mock_event.id = 1
@@ -319,6 +321,7 @@ class TestConfirmParticipationRoute:
         mock_workflow = mocker.Mock()
         mock_workflow.trigger_workflow = mocker.AsyncMock()
         mocker.patch('app.api.routes.public.WorkflowService', return_value=mock_workflow)
+        mocker.patch('app.services.minor_service.link_waiting_minors', return_value=[])
         # Activation (credentials email) lives in ParticipantService now
         mocker.patch('app.services.workflow_service.WorkflowService', return_value=mock_workflow)
 
@@ -357,6 +360,8 @@ class TestConfirmParticipationRoute:
         mock_user.pandas_username = "tsponsor"
         mock_user.pandas_password = "existing_password"
         mock_user.get_effective_permissions.return_value = {"discord.view", "participants.view"}
+        mock_user.adult_on = None  # adult: no under-18 record
+        mock_user.guardian_email_pending = None
 
         mock_event = Mock()
         mock_event.id = 1
@@ -383,6 +388,7 @@ class TestConfirmParticipationRoute:
         mock_workflow = mocker.Mock()
         mock_workflow.trigger_workflow = mocker.AsyncMock()
         mocker.patch('app.api.routes.public.WorkflowService', return_value=mock_workflow)
+        mocker.patch('app.services.minor_service.link_waiting_minors', return_value=[])
 
         data = {
             "confirmation_code": "code123",
@@ -486,6 +492,7 @@ class TestDeclineParticipationRoute:
         mock_workflow = mocker.Mock()
         mock_workflow.trigger_workflow = mocker.AsyncMock(return_value=0)
         mocker.patch('app.api.routes.public.WorkflowService', return_value=mock_workflow)
+        mocker.patch('app.services.minor_service.link_waiting_minors', return_value=[])
 
         data = {
             "confirmation_code": "code123",
@@ -539,6 +546,7 @@ class TestDeclineParticipationRoute:
         mock_workflow = mocker.Mock()
         mock_workflow.trigger_workflow = mocker.AsyncMock(return_value=0)
         mocker.patch('app.api.routes.public.WorkflowService', return_value=mock_workflow)
+        mocker.patch('app.services.minor_service.link_waiting_minors', return_value=[])
 
         data = {"confirmation_code": "code123"}
 

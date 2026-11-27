@@ -1,0 +1,183 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Your minors{% endblock %}
+
+{% block content %}
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <h1 class="page-header-title">
+                <div class="page-header-icon"><i data-feather="users"></i></div>
+                Your minors
+            </h1>
+            <div class="page-header-subtitle">Participants under 18 who named you as their parent or guardian</div>
+        </div>
+    </div>
+</header>
+
+<div class="container-xl px-4 mt-n10">
+    <div id="minorsEmpty" class="card mb-4 d-none">
+        <div class="card-body text-muted">No participants under 18 are linked to your account.</div>
+    </div>
+    <div id="minorsList"></div>
+    <p class="small text-muted">
+        You can see and manage only the participants linked to you. To get a copy of a linked
+        participant's data, correct it, or delete it, email
+        <a href="mailto:hello@cyberxredteam.org">hello@cyberxredteam.org</a>.
+        <a href="https://cyberxredteam.org/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+    </p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+'use strict';
+
+function el(tag, attrs, text) {
+    const e = document.createElement(tag);
+    Object.entries(attrs || {}).forEach(([k, v]) => e.setAttribute(k, v));
+    if (text !== undefined) e.textContent = text;
+    return e;
+}
+
+function statusRow(table, label, value) {
+    const tr = table.insertRow();
+    tr.insertCell().textContent = label;
+    tr.insertCell().textContent = value;
+}
+
+function renderMinor(m) {
+    const card = el('div', { class: 'card mb-4' });
+    const header = el('div', { class: 'card-header' }, m.name);
+    card.appendChild(header);
+    const body = el('div', { class: 'card-body' });
+    card.appendChild(body);
+
+    if (!m.consent.given && m.event) {
+        body.appendChild(el('div', { class: 'alert alert-warning' },
+            `Consent needed for ${m.name} to take part in ${m.event.name}.`));
+    }
+
+    const table = el('table', { class: 'table table-sm mb-3' });
+    const o = m.onboarding;
+    statusRow(table, 'Registered for the event', o.registered ? 'Yes' : 'Not yet');
+    statusRow(table, 'Account set up', o.suspended ? 'Suspended' : (o.activated ? 'Yes' : 'Waiting for consent'));
+    statusRow(table, 'Event-service username', o.event_service_username || '—');
+    statusRow(table, 'Discord', o.discord_username || '—');
+    statusRow(table, 'Attending in person', o.in_person ? 'Yes' : 'No');
+    statusRow(table, 'Turns 18', m.adult_on || '—');
+    body.appendChild(table);
+
+    if (!m.event) {
+        body.appendChild(el('p', { class: 'text-muted' }, 'There is no active event.'));
+        return card;
+    }
+
+    if (m.consent.given) {
+        body.appendChild(el('p', {}, `Consent given ${new Date(m.consent.consented_at).toLocaleString()}.`));
+        const w = el('button', { class: 'btn btn-outline-danger btn-sm' }, 'Withdraw consent');
+        w.addEventListener('click', () => withdraw(m));
+        body.appendChild(w);
+        return card;
+    }
+
+    if (!m.you_are_confirmed_for_event) {
+        body.appendChild(el('div', { class: 'alert alert-info' },
+            'You need to be a confirmed participant in this event before you can give consent.'));
+    }
+
+    const form = el('form', {});
+    form.innerHTML = `
+        <div class="mb-3">
+            <label class="form-label">Your relationship</label>
+            <select class="form-select" name="relationship" required>
+                <option value="">Choose…</option>
+                <option value="parent">Parent</option>
+                <option value="legal_guardian">Legal guardian</option>
+            </select>
+        </div>
+        <div class="mb-2 fw-bold">Event terms (accepted on their behalf)</div>
+        <div class="border rounded p-2 mb-3 small terms" style="max-height: 240px; overflow: auto;"></div>
+        <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="accept_terms" id="terms-${m.id}">
+            <label class="form-check-label" for="terms-${m.id}">I accept the event terms above on their behalf, including the assumption of risk and monitoring.</label>
+        </div>
+        <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="confirm_consent" id="consent-${m.id}">
+            <label class="form-check-label consent-text" for="consent-${m.id}"></label>
+        </div>
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="optional_email_consent" id="optional-${m.id}">
+            <label class="form-check-label" for="optional-${m.id}"></label>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Type your full name to sign</label>
+            <input type="text" class="form-control" name="guardian_name_typed" required minlength="3">
+        </div>
+        <button type="submit" class="btn btn-primary">Give consent</button>
+        <button type="button" class="btn btn-link text-danger reject">I'm not this person's parent or guardian</button>
+        <div class="alert d-none mt-3 result"></div>`;
+    form.querySelector('.terms').textContent = m.event.terms_content || '(No terms text)';
+    form.querySelector('.consent-text').textContent = m.consent_text;
+    form.querySelector(`label[for="optional-${m.id}"]`).textContent =
+        `Send ${m.name.split(' ')[0]} announcements and future invitations (optional).`;
+    form.addEventListener('submit', (e) => { e.preventDefault(); submitConsent(m, form); });
+    form.querySelector('.reject').addEventListener('click', () => reject(m));
+    body.appendChild(form);
+    return card;
+}
+
+async function submitConsent(m, form) {
+    const out = form.querySelector('.result');
+    const f = new FormData(form);
+    try {
+        const response = await csrfFetch(`/api/guardian/minors/${m.id}/consent`, {
+            method: 'POST',
+            body: {
+                relationship: f.get('relationship'),
+                accept_terms: form.querySelector('[name=accept_terms]').checked,
+                confirm_consent: form.querySelector('[name=confirm_consent]').checked,
+                optional_email_consent: form.querySelector('[name=optional_email_consent]').checked,
+                guardian_name_typed: (f.get('guardian_name_typed') || '').trim()
+            }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Could not record consent');
+        await load();
+    } catch (error) {
+        out.className = 'alert alert-danger mt-3 result';
+        out.textContent = error.message;
+    }
+}
+
+async function withdraw(m) {
+    if (!confirm(`Withdraw consent for ${m.name}? Their event access will be suspended.`)) return;
+    const response = await csrfFetch(`/api/guardian/minors/${m.id}/withdraw`, { method: 'POST' });
+    if (!response.ok) { showToast('Could not withdraw consent', 'danger'); return; }
+    await load();
+}
+
+async function reject(m) {
+    if (!confirm(`Tell the organizers you're not ${m.name}'s parent or guardian?`)) return;
+    const response = await csrfFetch(`/api/guardian/minors/${m.id}/reject`, { method: 'POST' });
+    if (!response.ok) { showToast('Something went wrong', 'danger'); return; }
+    await load();
+}
+
+async function load() {
+    const list = document.getElementById('minorsList');
+    list.innerHTML = '';
+    const response = await fetch('/api/guardian/minors', { credentials: 'include' });
+    if (!response.ok) return;
+    const data = await response.json();
+    document.getElementById('minorsEmpty').classList.toggle('d-none', data.minors.length > 0);
+    data.minors.forEach(m => list.appendChild(renderMinor(m)));
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+document.addEventListener('DOMContentLoaded', load);
+})();
+</script>
+{% endblock %}

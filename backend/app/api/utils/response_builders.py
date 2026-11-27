@@ -148,6 +148,12 @@ async def build_participant_response(
         event_participation_status = participation.status
         event_participation_id = participation.id
 
+    awaiting_guardian_consent = bool(
+        user.adult_on is not None and user.is_minor and participation is not None
+        and participation.status == "confirmed"
+        and (participation.activated_at is None or participation.suspended_at is not None)
+    )
+
     return ParticipantResponse(
         id=user.id,
         email=user.email,
@@ -182,7 +188,8 @@ async def build_participant_response(
         participation_rate=user.participation_rate,
         is_chronic_non_participant=user.is_chronic_non_participant,
         should_recommend_removal=user.should_recommend_removal,
-        confirmed_at=user.confirmed_at
+        confirmed_at=user.confirmed_at,
+        awaiting_guardian_consent=awaiting_guardian_consent,
     )
 
 

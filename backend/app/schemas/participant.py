@@ -145,6 +145,10 @@ class ParticipantResponse(BaseModel):
     should_recommend_removal: bool = False
     confirmed_at: Optional[datetime] = None  # From audit log PARTICIPATION_CONFIRM
 
+    # Registered but event access waits for (or lost) parent/guardian consent.
+    # A status only: nothing about age is exposed.
+    awaiting_guardian_consent: bool = False
+
     model_config = {
         "from_attributes": True
     }
@@ -260,6 +264,9 @@ class InviteeCreateRequest(BaseModel):
     confirmed: str = Field(default="UNKNOWN")
     role_id: Optional[int] = None
     discord_username: Optional[str] = None
+    # Convenience: the referrer is this under-18 invitee's parent/guardian.
+    # Creates a pending guardian link only; grants no role or permission.
+    referrer_is_guardian: bool = False
 
     @field_validator("first_name", "last_name", mode="before")
     @classmethod

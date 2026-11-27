@@ -23,6 +23,7 @@ from app.api.routes import redirectors as redirectors_routes
 from app.api.routes import redirectors_pages
 from app.api.routes import admin_pages
 from app.api.routes import admin_privacy
+from app.api.routes import guardian as guardian_routes
 from app.tasks import start_scheduler, stop_scheduler
 from app.utils.encryption import init_encryptor
 import base64
@@ -309,6 +310,8 @@ app.include_router(redirectors_routes.router)   # Redirector REST API
 app.include_router(redirectors_pages.router)    # Redirector web UI pages
 app.include_router(admin_pages.router)           # Admin pages (logs, etc.)
 app.include_router(admin_privacy.router)         # Admin privacy: retention, deletion requests, do-not-invite
+app.include_router(guardian_routes.router)       # Parent/guardian pages for linked minors (relationship-based)
+app.include_router(guardian_routes.admin_router) # Admin minors view and guardian linking
 
 # Include view routes (HTML pages)
 app.include_router(views.router)

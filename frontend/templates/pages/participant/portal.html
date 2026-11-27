@@ -148,6 +148,14 @@
 <div class="container py-5">
     <div class="row justify-content-center">
         <div class="col-lg-8">
+            <!-- Parent/guardian: linked participants under 18 needing consent -->
+            <div class="alert alert-warning d-none" id="guardianConsentBanner" role="alert">
+                <strong>Consent needed:</strong> <span id="guardianConsentNames"></span>
+                <a href="/portal/minors" class="alert-link ms-1">Review and give consent</a>
+            </div>
+            <div class="small mb-3 d-none" id="guardianMinorsLink">
+                <a href="/portal/minors">Your minors</a>
+            </div>
             <!-- Welcome Card -->
             <div class="card shadow-sm mb-4">
                 <div class="card-body text-center py-5">
@@ -2777,5 +2785,23 @@ async function loadPastEvents() {
         console.error('Failed to load past events', err);
     }
 }
+
+// Parent/guardian banner (relationship-based; nothing shows without a linked minor)
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        const response = await fetch('/api/guardian/minors', { credentials: 'include' });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data.minors.length) return;
+        document.getElementById('guardianMinorsLink').classList.remove('d-none');
+        const needing = data.minors.filter(m => m.event && !m.consent.given);
+        if (needing.length) {
+            document.getElementById('guardianConsentNames').textContent = needing.map(m => m.name).join(', ');
+            document.getElementById('guardianConsentBanner').classList.remove('d-none');
+        }
+    } catch (err) {
+        console.error('Failed to load linked minors', err);
+    }
+});
 </script>
 {% endblock %}

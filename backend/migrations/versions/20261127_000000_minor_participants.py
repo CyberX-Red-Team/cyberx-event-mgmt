@@ -2,7 +2,7 @@
 
 Adds nullable users columns birth_year_month, adult_on, guardian_user_id
 (FK users, SET NULL), guardian_link_status, guardian_email_pending (+ _at);
-event_participations.activated_at; and the guardian_consents table.
+event_participations.activated_at and suspended_at; and the guardian_consents table.
 
 Purely additive. Existing confirmed participations are marked activated
 (they were activated on accepting, as adults still are).
@@ -35,6 +35,7 @@ def upgrade():
 
     with op.batch_alter_table("event_participations") as batch:
         batch.add_column(sa.Column("activated_at", sa.TIMESTAMP(timezone=True), nullable=True))
+        batch.add_column(sa.Column("suspended_at", sa.TIMESTAMP(timezone=True), nullable=True))
 
     op.execute(
         "UPDATE event_participations SET activated_at = COALESCE(confirmed_at, updated_at) "
@@ -68,6 +69,7 @@ def upgrade():
 def downgrade():
     op.drop_table("guardian_consents")
     with op.batch_alter_table("event_participations") as batch:
+        batch.drop_column("suspended_at")
         batch.drop_column("activated_at")
     with op.batch_alter_table("users") as batch:
         batch.drop_index("ix_users_guardian_user_id")

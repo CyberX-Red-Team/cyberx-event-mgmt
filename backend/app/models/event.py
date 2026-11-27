@@ -183,6 +183,8 @@ class EventParticipation(Base):
     # When event access was set up (credentials, Keycloak sync, Discord invite).
     # Adults are activated on accepting; a minor only once guardian consent is recorded.
     activated_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    # Access suspended (participant under 18 whose guardian consent became invalid)
+    suspended_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # Timestamps
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

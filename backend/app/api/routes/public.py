@@ -194,14 +194,39 @@ async def confirm_participation(
     code = data.get("confirmation_code")
     terms_accepted = data.get("terms_accepted")
     terms_version = data.get("terms_version")
-    age_attested = data.get("age_attested") is True
+    is_adult = data.get("is_adult")
+    if is_adult is None and data.get("age_attested") is True:
+        # Earlier confirm page: a single "18 or older (or 16-17 with consent)" checkbox
+        is_adult = True
     future_contact = data.get("future_contact_consent") is True
 
     if not code or not terms_accepted:
         raise bad_request("Confirmation code and terms required")
 
-    if not age_attested:
-        raise bad_request("Please confirm the age statement to continue")
+    if is_adult not in (True, False):
+        raise bad_request("Please tell us whether you're 18 or older")
+
+    # Under 18: birth month/year only. Checked before anything is stored, so an
+    # under-16 submission leaves the invitation record exactly as it was.
+    from app.services import minor_service
+    birth_year_month = None
+    guardian_email = None
+    if is_adult is False:
+        try:
+            birth_year_month = minor_service.first_of_month(
+                int(data.get("birth_year") or 0), int(data.get("birth_month") or 0)
+            )
+        except (TypeError, ValueError):
+            raise bad_request("Enter a valid birth month and year.")
+        except minor_service.MinorRuleError as e:
+            raise bad_request(str(e))
+        from datetime import date as _date
+        bracket = minor_service.age_bracket(birth_year_month, _date.today())
+        if bracket == "under_16":
+            raise bad_request(minor_service.UNDER_16_MESSAGE)
+        if bracket == "adult":
+            raise bad_request("That date means you're 18 or older. Choose \"Yes\" instead.")
+        guardian_email = (data.get("guardian_email") or "").strip()
 
     result = await db.execute(
         select(User)
@@ -216,6 +241,10 @@ async def confirm_participation(
     if user.confirmed == 'YES':
         raise conflict("Already confirmed")
 
+    from datetime import date as _today_cls
+    if is_adult is True and user.adult_on and user.adult_on > _today_cls.today():
+        raise bad_request("Our records show you're under 18. Choose \"No\" and enter your birth month and year.")
+
     # Update user confirmation and terms
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
@@ -227,9 +256,14 @@ async def confirm_participation(
     user.terms_version = terms_version
 
     # Privacy choices recorded with the registration
-    from app.services.consent_service import AGE_ATTESTATION_V1, set_future_contact_consent
-    user.age_attestation = AGE_ATTESTATION_V1
+    from app.services.consent_service import set_future_contact_consent
+    user.age_attestation = (
+        minor_service.AGE_ATTESTATION_ADULT if is_adult else minor_service.AGE_ATTESTATION_MINOR
+    )
     user.age_attested_at = now
+    if birth_year_month is not None:
+        user.birth_year_month = birth_year_month
+        user.adult_on = minor_service.turns(birth_year_month, minor_service.ADULT_AGE)
     set_future_contact_consent(user, future_contact, now)
 
     # Update EventParticipation status to confirmed
@@ -253,9 +287,42 @@ async def confirm_participation(
             participation.terms_accepted_at = now
             participation.terms_version_accepted = terms_version
 
-    # Set up event access (credentials, Keycloak sync, Discord invite, credentials email)
-    from app.services.participant_service import ParticipantService
-    await ParticipantService(db).activate_participation(user, event, participation, now)
+    # 16/17: terms accepted, but event access waits for guardian consent.
+    awaiting_guardian = event is not None and minor_service.is_minor_for_event(user, event)
+    guardian_linked = False
+    if awaiting_guardian:
+        try:
+            if guardian_email:
+                guardian_linked = await minor_service.link_guardian_by_email(db, user, event, guardian_email)
+            elif user.guardian_user_id:
+                # Already linked (e.g. their referrer is their parent/guardian)
+                guardian_linked = True
+            else:
+                raise minor_service.MinorRuleError(
+                    "Enter the email address of your parent or guardian taking part in the event."
+                )
+        except minor_service.MinorRuleError as e:
+            await db.rollback()
+            raise bad_request(str(e))
+        await db.commit()
+        await db.refresh(user)
+        if guardian_linked:
+            guardian = await db.get(User, user.guardian_user_id)
+            await minor_service.notify_guardian_consent_needed(db, user, guardian, event)
+        else:
+            await minor_service.notify_admins(db, "guardian_not_registered", user)
+    else:
+        # Set up event access (credentials, Keycloak sync, Discord invite, credentials email)
+        from app.services.participant_service import ParticipantService
+        await ParticipantService(db).activate_participation(user, event, participation, now)
+        # A newly confirmed participant may be the parent/guardian a minor named
+        if event is not None:
+            waiting = await minor_service.link_waiting_minors(db, user, event)
+            if waiting:
+                await db.commit()
+                for minor_id in waiting:
+                    minor = await db.get(User, minor_id)
+                    await minor_service.notify_guardian_consent_needed(db, minor, user, event)
 
     # Audit log (reuse event from above)
     audit_service = AuditService(db)
@@ -280,6 +347,21 @@ async def confirm_participation(
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
     )
+
+    if awaiting_guardian:
+        return {
+            "success": True,
+            "awaiting_guardian_consent": True,
+            "guardian_linked": guardian_linked,
+            "message": (
+                "Thanks. Your parent or guardian needs to give consent in their portal "
+                "before your account is activated."
+                if guardian_linked else
+                "Thanks. Your parent or guardian needs to be registered for this event first. "
+                "Once they are, they can give consent in their portal."
+            ),
+            "user": {"first_name": user.first_name, "email": user.email},
+        }
 
     return {
         "success": True,
@@ -323,6 +405,7 @@ async def decline_participation(
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
+    was_confirmed = user.confirmed == 'YES'
     user.confirmed = 'NO'
     user.confirmed_at = now
     user.decline_reason = reason if reason else None
@@ -354,6 +437,11 @@ async def decline_participation(
 
     await db.commit()
     await db.refresh(user)
+
+    # A guardian who withdraws from the event: their minors' consent is void
+    if was_confirmed and event:
+        from app.services import minor_service
+        await minor_service.guardian_participation_changed(db, user, event, "guardian_declined")
 
     # Audit log
     audit_service = AuditService(db)

@@ -225,6 +225,12 @@ async def create_my_invitee(
         discord_username=data.discord_username
     )
 
+    if data.referrer_is_guardian:
+        from app.models.guardian_consent import GuardianLinkStatus
+        invitee.guardian_user_id = current_user.id
+        invitee.guardian_link_status = GuardianLinkStatus.PENDING.value
+        await db.commit()
+
     # Reload with relationships
     invitee = await service.get_participant(invitee.id)
     logger.info(f"Created invitee {invitee.id} with role_id={invitee.role_id}")
