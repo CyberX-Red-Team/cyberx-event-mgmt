@@ -168,6 +168,7 @@ class TestSendEmailRoute:
 
         mock_email_service = mocker.Mock()
         mock_email_service.get_template_by_id = mocker.AsyncMock(return_value=mock_template)
+        mock_email_service.send_guardian_copy = mocker.AsyncMock(return_value=False)  # adult: no copy
         mock_email_service.send_email_with_template_id = mocker.AsyncMock(
             return_value=(True, "Email sent", "msg_123")
         )

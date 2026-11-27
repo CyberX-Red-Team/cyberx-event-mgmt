@@ -93,6 +93,11 @@ async def send_email(
         custom_subject=data.custom_subject,
         custom_vars=data.custom_variables
     )
+    if success:
+        # Participant under 18: their guardian gets a separate copy
+        await email_service.send_guardian_copy(
+            participant, template, data.custom_subject, data.custom_variables
+        )
 
     # Log email send to audit log
     if success:
@@ -292,6 +297,15 @@ async def send_custom_emails(
             text_body=text_body,
             list_unsubscribe_url=unsubscribe_url,
         )
+        if success and not data.optional_email:
+            # Participant under 18: their guardian gets a separate copy
+            from app.services.minor_service import guardian_for_copies
+            guardian = await guardian_for_copies(db, user)
+            if guardian is not None:
+                await email_service.send_custom_email(
+                    user=user, subject=data.subject, html_body=html_body,
+                    text_body=text_body, recipient=guardian,
+                )
 
         if success:
             sent_count += 1

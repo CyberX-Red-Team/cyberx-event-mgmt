@@ -22,10 +22,6 @@ from app.schemas.event import (
     EventListResponse,
     EventParticipationResponse,
     EventParticipationListResponse,
-    BulkInviteRequest,
-    BulkInviteResponse,
-    ConfirmParticipationRequest,
-    ConfirmParticipationResponse,
     ParticipationHistoryResponse,
     SSHKeyPairResponse,
     EventSSHPrivateKeyResponse,
@@ -382,36 +378,6 @@ async def list_event_participants(
     )
 
 
-@router.post("/{event_id}/invite", response_model=BulkInviteResponse)
-async def bulk_invite_to_event(
-    event_id: int,
-    data: BulkInviteRequest,
-    current_user: User = Depends(require_permission("events.edit")),
-    service: EventService = Depends(get_event_service)
-):
-    """Bulk invite users to an event. Admin only."""
-    if data.event_id != event_id:
-        raise bad_request("Event ID in URL does not match request body")
-
-    event = await service.get_event(event_id)
-    if not event:
-        raise not_found("Event not found")
-
-    invited_count, already_invited_count, failed_ids = await service.bulk_invite_to_event(
-        user_ids=data.user_ids,
-        event_id=event_id
-    )
-
-    return BulkInviteResponse(
-        success=True,
-        message=f"Invited {invited_count} users, {already_invited_count} already invited",
-        invited_count=invited_count,
-        already_invited_count=already_invited_count,
-        failed_ids=failed_ids
-    )
-
-
-# ============== Participant Self-Service ==============
 
 @router.get("/my/history", response_model=ParticipationHistoryResponse)
 async def get_my_participation_history(
@@ -455,59 +421,10 @@ async def get_my_participation_history(
     )
 
 
-@router.post("/my/confirm", response_model=ConfirmParticipationResponse)
-async def confirm_my_participation(
-    data: ConfirmParticipationRequest,
-    current_user: User = Depends(get_current_active_user),
-    service: EventService = Depends(get_event_service)
-):
-    """Confirm participation for an event."""
-    success, message, participation = await service.confirm_participation(
-        user_id=current_user.id,
-        event_id=data.event_id,
-        accept_terms=data.accept_terms
-    )
-
-    if not success:
-        raise bad_request(message)
-
-    return ConfirmParticipationResponse(
-        success=True,
-        message=message,
-        participation=EventParticipationResponse(
-            id=participation.id,
-            user_id=participation.user_id,
-            event_id=participation.event_id,
-            status=participation.status,
-            invited_at=participation.invited_at,
-            terms_accepted_at=participation.terms_accepted_at,
-            confirmed_at=participation.confirmed_at,
-            declined_at=participation.declined_at,
-            declined_reason=participation.declined_reason,
-            created_at=participation.created_at,
-            updated_at=participation.updated_at
-        ) if participation else None
-    )
-
-
-@router.post("/my/decline")
-async def decline_my_participation(
-    event_id: int,
-    reason: Optional[str] = Query(None, description="Reason for declining"),
-    current_user: User = Depends(get_current_active_user),
-    service: EventService = Depends(get_event_service)
-):
-    """Decline participation for an event."""
-    success, message, participation = await service.decline_participation(
-        user_id=current_user.id,
-        event_id=event_id,
-        reason=reason
-    )
-
-    if not success:
-        raise bad_request(message)
-
-    return {"success": True, "message": message}
+# Participation is confirmed or declined only through the invitation link
+# (/api/public/confirm/accept and /decline), which applies the age, consent and
+# guardian rules. Earlier API-only confirm/decline/bulk-invite routes here called
+# service methods that never existed and were removed.
 
 
 # ============== Admin Reports ==============

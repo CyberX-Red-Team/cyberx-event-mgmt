@@ -745,6 +745,7 @@ class EmailService:
         Returns:
             Tuple of (success, message, message_id)
         """
+        delivered_to = user.email  # updated below for a guardian's copy
         try:
             # Extract sender overrides from custom_vars (reserved keys)
             # These are injected by workflow_service / queue helpers and should
@@ -764,6 +765,7 @@ class EmailService:
             privacy_footer = bool(send_vars.pop(PRIVACY_FOOTER_FLAG, False))
             recipient_override = send_vars.pop(RECIPIENT_EMAIL_KEY, None)
             recipient_name_override = send_vars.pop(RECIPIENT_NAME_KEY, None)
+            delivered_to = recipient_override or user.email
             custom_vars = send_vars if send_vars else None
 
             # Resolve sender address (workflow override → env default)
@@ -868,7 +870,7 @@ class EmailService:
 
             # Log the email event
             await self._log_email_event(
-                email=user.email,
+                email=delivered_to,
                 user_id=user.id,
                 event_type="sent",
                 message_id=message_id,
@@ -890,7 +892,7 @@ class EmailService:
 
             # Log failed attempt
             await self._log_email_event(
-                email=user.email,
+                email=delivered_to,
                 user_id=user.id,
                 event_type="failed",
                 message_id=None,
@@ -900,6 +902,29 @@ class EmailService:
 
             return False, f"Failed to send email: {error_msg}", None
 
+    async def send_guardian_copy(
+        self,
+        user: User,
+        template: EmailTemplate,
+        custom_subject: Optional[str] = None,
+        custom_vars: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Send the linked guardian a separate copy of an essential email to a
+        participant under 18 (see minor_service.guardian_for_copies). True if sent."""
+        from app.services.minor_service import guardian_for_copies
+        guardian = await guardian_for_copies(self.session, user, custom_vars)
+        if guardian is None:
+            return False
+        vars = {
+            **(custom_vars or {}),
+            RECIPIENT_EMAIL_KEY: guardian.email,
+            RECIPIENT_NAME_KEY: f"{guardian.first_name} {guardian.last_name}",
+        }
+        ok, _, _ = await self._send_email_with_template(
+            user=user, template=template, custom_subject=custom_subject, custom_vars=vars,
+        )
+        return ok
+
     async def send_custom_email(
         self,
         user: User,
@@ -907,19 +932,23 @@ class EmailService:
         html_body: str,
         text_body: Optional[str] = None,
         list_unsubscribe_url: Optional[str] = None,
+        recipient: Optional[User] = None,
     ) -> Tuple[bool, str, Optional[str]]:
         """
         Send a custom freeform email.
 
         list_unsubscribe_url: for optional emails, adds one-click unsubscribe headers.
+        recipient: deliver to this person instead of `user` (a guardian's copy);
+        the record stays attached to `user`.
 
         Returns:
             Tuple of (success, message, message_id)
         """
         try:
             # Determine recipient email (with test override support)
-            recipient_email = user.email
-            recipient_name = f"{user.first_name} {user.last_name}"
+            to = recipient or user
+            recipient_email = to.email
+            recipient_name = f"{to.first_name} {to.last_name}"
             email_subject = subject
 
             if settings.TEST_EMAIL_OVERRIDE:
@@ -955,7 +984,7 @@ class EmailService:
 
             # Log the email event
             await self._log_email_event(
-                email=user.email,
+                email=(recipient or user).email,
                 user_id=user.id,
                 event_type="sent",
                 message_id=message_id,
@@ -970,7 +999,7 @@ class EmailService:
 
             # Log failed attempt
             await self._log_email_event(
-                email=user.email,
+                email=(recipient or user).email,
                 user_id=user.id,
                 event_type="failed",
                 message_id=None,
@@ -1154,6 +1183,7 @@ From: CyberX Red Team"""
             )
 
             if success:
+                await self.send_guardian_copy(user, template, custom_subject, user_vars)
                 sent_count += 1
             else:
                 failed_count += 1
