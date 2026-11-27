@@ -127,7 +127,7 @@ A daily job (`app/tasks/data_retention.py`) applies the retention periods publis
 | `RETENTION_BATCH_SIZE` | No | Yes | Yes | `5000` | Rows per `DELETE` statement when purging logs, to avoid long locks. |
 
 **Notes:**
-- Each run writes one `DATA_RETENTION_RUN` audit entry holding counts only. Admin > Settings > Privacy & Data Retention shows the latest run and has a "Dry run now" button (`POST /api/admin/retention/dry-run`).
+- Each run writes one `DATA_RETENTION_RUN` audit entry holding counts only, and each person it deletes gets a `RETENTION_DELETE` entry holding only their user ID and the rule (`never_registered_invitees` or `inactive_accounts`). Both are kept past `RETENTION_LOG_DAYS`. Admin > Settings > Privacy & Data Retention shows the latest run and has a "Dry run now" button (`POST /api/admin/retention/dry-run`).
 - Review a dry run against a copy of production data before setting `RETENTION_ENABLED=true`.
 - Participant deletion (manual, data-deletion request, or retention) always removes the person's email/name copies from other tables. CPE certificate records keep the printed name so certificates stay verifiable.
 

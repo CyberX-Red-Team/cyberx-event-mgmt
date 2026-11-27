@@ -34,6 +34,7 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 RUN_ACTION = "DATA_RETENTION_RUN"
+DELETE_ACTION = "RETENTION_DELETE"  # one per deleted person: user ID + rule only
 CLOSEOUT_REMINDER_ACTION = "EVENT_CLOSEOUT_REMINDER"
 CLOSEOUT_REMINDER_EVERY_DAYS = 7
 EXEMPT_ROLES = ("admin", "sponsor")  # organizers/referrers (decided 2026-11-26)
@@ -134,14 +135,25 @@ class RetentionService:
         )
         return [self._describe(u) for u in result.scalars().all()]
 
-    async def _delete_users(self, users: Iterable[User]) -> int:
+    async def _delete_users(self, users: Iterable[User], rule: str) -> int:
+        """Delete each person and record a RETENTION_DELETE audit entry holding only
+        their (now unlinkable) user ID and the rule, so "was this person deleted,
+        and when?" can be answered later. Kept like DATA_RETENTION_RUN entries."""
+        from app.services.audit_service import AuditService
         from app.services.participant_service import ParticipantService
         service = ParticipantService(self.session)
+        audit = AuditService(self.session)
         deleted = 0
         for user_id in [u.id for u in users]:  # ids first: commits expire loaded rows
             try:
                 if await service.delete_participant(user_id):
                     deleted += 1
+                    await audit.log(
+                        action=DELETE_ACTION,
+                        resource_type="USER",
+                        resource_id=user_id,
+                        details={"target_user_id": user_id, "rule": rule},
+                    )
             except Exception:
                 logger.exception("Retention deletion failed for user %s", user_id)
                 await self.session.rollback()
@@ -168,7 +180,8 @@ class RetentionService:
     async def purge_never_registered_invitees(self, dry_run: bool) -> dict:
         candidates = await self.never_registered_candidates()
         # A dry run reports what a real run would delete right now.
-        deleted = len(candidates) if dry_run else await self._delete_users(candidates)
+        deleted = len(candidates) if dry_run else await self._delete_users(
+            candidates, rule="never_registered_invitees")
         return {"candidates": len(candidates), "deleted": deleted}
 
     # --------------------------------------------------- rule: inactive accounts
@@ -228,7 +241,7 @@ class RetentionService:
             user.deletion_warning_sent_at = None
         await self.session.commit()
 
-        counts["deleted"] = await self._delete_users(to_delete)
+        counts["deleted"] = await self._delete_users(to_delete, rule="inactive_accounts")
 
         sent = 0
         for user_id, first_name in warn:
@@ -270,7 +283,9 @@ class RetentionService:
     def _log_targets(self, cutoff: datetime):
         final = (EmailQueueStatus.SENT, EmailQueueStatus.FAILED, EmailQueueStatus.CANCELLED)
         return [
-            ("audit_logs", AuditLog, (AuditLog.created_at < cutoff, AuditLog.action != RUN_ACTION)),
+            ("audit_logs", AuditLog, (
+                AuditLog.created_at < cutoff, AuditLog.action.notin_((RUN_ACTION, DELETE_ACTION)),
+            )),
             ("email_events", EmailEvent, (EmailEvent.created_at < cutoff,)),
             ("vpn_requests", VPNRequest, (VPNRequest.requested_at < cutoff,)),
             ("email_queue", EmailQueue, (EmailQueue.created_at < cutoff, EmailQueue.status.in_(final))),

@@ -278,3 +278,46 @@ async def test_real_run_is_idempotent(db_session, test_settings, past_event):
 def test_months_before_clamps_day():
     assert months_before(datetime(2027, 3, 31, tzinfo=timezone.utc), 1).day == 28
     assert months_before(datetime(2027, 1, 15, tzinfo=timezone.utc), 12).year == 2026
+
+
+# ------------------------------------------------- per-deletion audit trail
+
+async def test_each_retention_deletion_records_id_and_rule_only(db_session, test_settings, past_event):
+    from app.services.retention_service import DELETE_ACTION
+    old = months_before(NOW, 12) - DAY
+    gone = await _invitee(db_session, "gone@example.org", past_event, old)
+    op = await _operator(db_session, "op@example.org", 900)
+
+    await svc(db_session, test_settings).run_all(dry_run=True)
+    assert (await db_session.execute(
+        select(func.count()).select_from(AuditLog).where(AuditLog.action == DELETE_ACTION)
+    )).scalar() == 0  # dry runs delete nothing and record nothing per person
+
+    await svc(db_session, test_settings).run_all(dry_run=False)  # deletes invitee, warns operator
+    await svc(db_session, test_settings, now=NOW + 31 * DAY).process_inactive_accounts(False)
+
+    entries = (await db_session.execute(
+        select(AuditLog).where(AuditLog.action == DELETE_ACTION).order_by(AuditLog.id)
+    )).scalars().all()
+    assert [e.details for e in entries] == [
+        {"target_user_id": gone.id, "rule": "never_registered_invitees"},
+        {"target_user_id": op.id, "rule": "inactive_accounts"},
+    ]
+    for e in entries:
+        assert e.resource_type == "USER" and e.resource_id == e.details["target_user_id"]
+        assert e.user_email is None and e.user_name is None and e.ip_address is None
+        assert "example.org" not in str(e.details)
+
+
+async def test_log_purge_keeps_retention_delete_entries(db_session, test_settings):
+    from app.services.retention_service import DELETE_ACTION
+    old = NOW - timedelta(days=400)
+    db_session.add_all([
+        AuditLog(action=DELETE_ACTION, created_at=old, details={"target_user_id": 1, "rule": "x"}),
+        AuditLog(action="LOGIN_SUCCESS", created_at=old),
+    ])
+    await db_session.commit()
+    result = await svc(db_session, test_settings).purge_old_logs(dry_run=False)
+    assert result["audit_logs"] == 1
+    remaining = (await db_session.execute(select(AuditLog.action))).scalars().all()
+    assert remaining == [DELETE_ACTION]
