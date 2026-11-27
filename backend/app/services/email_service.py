@@ -7,7 +7,7 @@ from typing import Optional, List, Tuple, Dict, Any
 from sqlalchemy import select, func, or_, desc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Email, To, Content, Attachment, FileContent, FileName, FileType, Disposition, MailSettings, SandBoxMode
+from sendgrid.helpers.mail import Mail, Email, To, Content, Attachment, FileContent, FileName, FileType, Disposition, MailSettings, SandBoxMode, Header
 
 from app.models.user import User
 from app.models.audit_log import EmailEvent
@@ -111,6 +111,15 @@ def optional_email_vars(user: User) -> Dict[str, Any]:
         "future_contact_withdraw_url": withdraw_url(user.id),
         PRIVACY_FOOTER_FLAG: True,
     }
+
+
+def add_one_click_unsubscribe(message: Mail, withdraw_url: Optional[str]) -> None:
+    """RFC 8058 one-click unsubscribe headers, for optional emails only (those that
+    carry a consent-withdrawal link). The mail client POSTs to the URL itself."""
+    if not withdraw_url:
+        return
+    message.add_header(Header("List-Unsubscribe", f"<{withdraw_url}>"))
+    message.add_header(Header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click"))
 
 
 def append_privacy_footer(html: str, text: str, vars: Dict[str, Any]) -> Tuple[str, str]:
@@ -807,6 +816,8 @@ class EmailService:
                     plain_text_content=Content("text/plain", text_content)
                 )
 
+            add_one_click_unsubscribe(message, (custom_vars or {}).get("future_contact_withdraw_url"))
+
             # Enable sandbox mode if configured (emails validated but not delivered)
             if settings.SENDGRID_SANDBOX_MODE:
                 message.mail_settings = MailSettings()
@@ -880,10 +891,13 @@ class EmailService:
         user: User,
         subject: str,
         html_body: str,
-        text_body: Optional[str] = None
+        text_body: Optional[str] = None,
+        list_unsubscribe_url: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[str]]:
         """
         Send a custom freeform email.
+
+        list_unsubscribe_url: for optional emails, adds one-click unsubscribe headers.
 
         Returns:
             Tuple of (success, message, message_id)
@@ -909,6 +923,8 @@ class EmailService:
                 html_content=Content("text/html", html_body),
                 plain_text_content=Content("text/plain", text_body or "")
             )
+
+            add_one_click_unsubscribe(message, list_unsubscribe_url)
 
             # Enable sandbox mode if configured
             if settings.SENDGRID_SANDBOX_MODE:

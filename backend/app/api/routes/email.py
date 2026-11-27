@@ -279,15 +279,17 @@ async def send_custom_emails(
 
     for user in users:
         html_body, text_body = data.html_body, data.text_body
+        unsubscribe_url = None
         if data.optional_email:
-            html_body, text_body = append_privacy_footer(
-                html_body, text_body or "", optional_email_vars(user)
-            )
+            vars = optional_email_vars(user)
+            unsubscribe_url = vars["future_contact_withdraw_url"]
+            html_body, text_body = append_privacy_footer(html_body, text_body or "", vars)
         success, message, _ = await email_service.send_custom_email(
             user=user,
             subject=data.subject,
             html_body=html_body,
-            text_body=text_body
+            text_body=text_body,
+            list_unsubscribe_url=unsubscribe_url,
         )
 
         if success:
