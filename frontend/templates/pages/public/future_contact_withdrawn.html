@@ -12,10 +12,23 @@
                         <img src="/static/img/cyberx-star-logo.svg" alt="CyberX" style="width: 48px; height: 48px;" class="mb-3 cyber-logo">
                         <h3 class="cyber-title">Future invitations</h3>
                     </div>
-                    {% if ok %}
+                    {% if state == "confirm" %}
+                    <p style="color: #e0e0e0;">Stop announcements and invitations to future CyberX events?</p>
+                    <form method="post" action="/future-contact/withdraw" class="text-center mt-4">
+                        <input type="hidden" name="token" value="{{ token }}">
+                        <button type="submit" class="btn btn-cyber btn-lg">Stop these emails</button>
+                    </form>
+                    <p class="small mt-3 mb-0" style="color: rgba(255,255,255,0.5);">
+                        A referrer can still invite you to a future event. You'll still get essential emails if you're taking part in an event.
+                    </p>
+                    {% elif state == "done" %}
                     <div class="alert alert-success" role="alert">
                         <strong>Done.</strong>
                         <p class="mb-0 mt-2">We won't send you announcements or invitations to future events. A referrer can still invite you to a future event.</p>
+                    </div>
+                    {% elif state == "already" %}
+                    <div class="alert alert-success" role="alert">
+                        <p class="mb-0">You're not receiving announcements or invitations to future events. A referrer can still invite you to a future event.</p>
                     </div>
                     {% else %}
                     <div class="alert alert-danger" role="alert">

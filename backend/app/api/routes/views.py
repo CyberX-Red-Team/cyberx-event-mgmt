@@ -109,18 +109,47 @@ async def withdraw_future_contact_page(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    One-click withdrawal of future-contact consent (link in announcements and
-    future-event invitations). A GET that changes state on purpose: an email
-    scanner following the link can only ever turn optional emails off.
+    Link in announcements and future-event invitations. Opening it only shows a
+    confirmation with one button: email scanners and link previews fetch links
+    but don't submit forms, so they can't withdraw anyone's consent.
+    """
+    from app.services.consent_service import read_withdraw_token
+
+    user_id = read_withdraw_token(token) if token else None
+    user = await db.get(User, user_id) if user_id else None
+    if user is None:
+        state = "invalid"
+    elif user.future_contact_consent is False:
+        state = "already"
+    else:
+        state = "confirm"
+    return _withdraw_page(request, state, token)
+
+
+@router.post("/future-contact/withdraw", response_class=HTMLResponse)
+async def withdraw_future_contact(
+    request: Request,
+    token: str = "",
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Withdraw future-contact consent. Reached from the confirmation button, or
+    directly by a mail client's one-click unsubscribe (RFC 8058 List-Unsubscribe-Post,
+    body "List-Unsubscribe=One-Click", token in the URL). CSRF-exempt: the signed
+    token authorizes it, and it can only turn optional emails off.
     """
     from datetime import timezone
     from app.services.consent_service import read_withdraw_token, set_future_contact_consent
     from app.services.audit_service import AuditService
 
+    if not token:
+        form = await request.form()
+        token = str(form.get("token") or "")
     user_id = read_withdraw_token(token) if token else None
     user = await db.get(User, user_id) if user_id else None
-    ok = user is not None
-    if ok and user.future_contact_consent is not False:
+    if user is None:
+        return _withdraw_page(request, "invalid", "")
+    if user.future_contact_consent is not False:
         set_future_contact_consent(user, False, datetime.now(timezone.utc))
         await db.commit()
         await AuditService(db).log(
@@ -130,12 +159,17 @@ async def withdraw_future_contact_page(
             resource_id=user.id,
             details={"source": "withdraw_link", "future_contact_consent": False},
         )
+    return _withdraw_page(request, "done", "")
+
+
+def _withdraw_page(request: Request, state: str, token: str):
     return templates.TemplateResponse(
         request,
         "pages/public/future_contact_withdrawn.html",
-        {"request": request, "ok": ok, "privacy_url": _settings.PRIVACY_POLICY_URL,
+        {"request": request, "state": state, "token": token,
+         "privacy_url": _settings.PRIVACY_POLICY_URL,
          "contact_email": _settings.PRIVACY_CONTACT_EMAIL},
-        status_code=200 if ok else 400,
+        status_code=400 if state == "invalid" else 200,
     )
 
 
