@@ -1,0 +1,101 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Minors{% endblock %}
+
+{% block content %}
+<header class="page-header page-header-dark bg-gradient-primary-to-secondary pb-10">
+    <div class="container-xl px-4">
+        <div class="page-header-content pt-4">
+            <h1 class="page-header-title">
+                <div class="page-header-icon"><i data-feather="shield"></i></div>
+                Participants under 18
+            </h1>
+            <div class="page-header-subtitle">Admins only. Never shown to other participants.</div>
+        </div>
+    </div>
+</header>
+
+<div class="container-xl px-4 mt-n10">
+    <div class="card mb-4">
+        <div class="card-header">Event: <span id="minorsEvent">—</span></div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead>
+                        <tr>
+                            <th>Participant</th><th>Turns 18</th><th>Guardian</th><th>Link</th>
+                            <th>Consent / access</th><th>In person</th><th>Link a guardian</th>
+                        </tr>
+                    </thead>
+                    <tbody id="minorsBody"><tr><td colspan="7" class="text-muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+'use strict';
+
+async function setGuardian(minorId, input) {
+    const raw = input.value.trim();
+    const response = await csrfFetch(`/api/admin/participants/${minorId}/guardian`, {
+        method: 'PUT',
+        body: { guardian_user_id: raw ? parseInt(raw, 10) : null }
+    });
+    const data = await response.json();
+    if (!response.ok) { showToast(data.detail || 'Could not update guardian', 'danger'); return; }
+    showToast(raw ? 'Guardian linked (pending their consent)' : 'Guardian unlinked', 'success');
+    load();
+}
+
+async function load() {
+    const response = await fetch('/api/admin/minors', { credentials: 'include' });
+    const body = document.getElementById('minorsBody');
+    body.innerHTML = '';
+    if (!response.ok) {
+        body.innerHTML = '<tr><td colspan="7" class="text-danger">Could not load.</td></tr>';
+        return;
+    }
+    const data = await response.json();
+    document.getElementById('minorsEvent').textContent = data.event || 'none active';
+    if (!data.minors.length) {
+        body.innerHTML = '<tr><td colspan="7" class="text-muted">No participants under 18.</td></tr>';
+        return;
+    }
+    data.minors.forEach(m => {
+        const tr = body.insertRow();
+        tr.insertCell().textContent = `${m.name} (#${m.id})`;
+        tr.insertCell().textContent = m.adult_on || '—';
+        tr.insertCell().textContent = m.guardian ? `${m.guardian.name} (#${m.guardian.id})`
+            : (m.guardian_email_pending ? 'Named, not yet registered' : '—');
+        tr.insertCell().textContent = m.guardian_link_status || '—';
+        tr.insertCell().textContent = m.cleared_for_event === null ? '—'
+            : (m.cleared_for_event ? 'Cleared' : 'Awaiting consent / suspended');
+        const inPerson = tr.insertCell();
+        inPerson.textContent = m.in_person ? 'Yes' : 'No';
+        if (m.in_person && !(m.guardian && m.guardian.in_person)) {
+            inPerson.innerHTML += ' <span class="badge bg-warning text-dark">guardian not in person</span>';
+        }
+        const cell = tr.insertCell();
+        const input = document.createElement('input');
+        input.className = 'form-control form-control-sm d-inline-block';
+        input.style.width = '7rem';
+        input.placeholder = 'User ID';
+        input.value = m.guardian ? m.guardian.id : '';
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-sm btn-outline-primary ms-1';
+        btn.textContent = 'Save';
+        btn.addEventListener('click', () => setGuardian(m.id, input));
+        cell.append(input, btn);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', load);
+})();
+</script>
+{% endblock %}

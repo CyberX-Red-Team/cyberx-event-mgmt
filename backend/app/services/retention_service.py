@@ -372,6 +372,37 @@ class RetentionService:
             )
         return counts
 
+    # ------------------------------------------------------- rule: minors
+
+    async def minor_housekeeping(self, dry_run: bool) -> dict:
+        """Turning 18 clears birth month/year; unmatched guardian emails go after
+        30 days; consent signature IP/user agent go after the log period."""
+        from sqlalchemy import update
+        from app.models.guardian_consent import GuardianConsent
+        from app.services import minor_service
+
+        cutoff = self.now - timedelta(days=self.settings.RETENTION_LOG_DAYS)
+        evidence_ids = (await self.session.execute(
+            select(GuardianConsent.id).where(
+                GuardianConsent.consented_at < cutoff,
+                (GuardianConsent.ip_address.isnot(None)) | (GuardianConsent.user_agent.isnot(None)),
+            )
+        )).scalars().all()
+        if evidence_ids and not dry_run:
+            await self.session.execute(
+                update(GuardianConsent).where(GuardianConsent.id.in_(evidence_ids))
+                .values(ip_address=None, user_agent=None)
+                .execution_options(synchronize_session=False)
+            )
+            await self.session.commit()
+        return {
+            "turned_18": await minor_service.clear_birth_month_for_adults(
+                self.session, self.today, dry_run),
+            "guardian_emails_discarded": await minor_service.discard_stale_guardian_emails(
+                self.session, self.now, dry_run),
+            "consent_evidence_scrubbed": len(evidence_ids),
+        }
+
     # --------------------------------------------------------------- all rules
 
     async def run_all(self, dry_run: bool) -> dict:
@@ -382,6 +413,7 @@ class RetentionService:
             ("inactive_accounts", self.process_inactive_accounts),
             ("logs", self.purge_old_logs),
             ("event_closeout", self.event_closeout_reminders),
+            ("minors", self.minor_housekeeping),
         )
         for key, step in steps:
             try:

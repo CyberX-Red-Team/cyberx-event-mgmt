@@ -523,6 +523,35 @@ async def participant_portal_page(
     )
 
 
+@router.get("/portal/minors", response_class=HTMLResponse)
+async def guardian_minors_page(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Parent/guardian page for linked participants under 18 (data via /api/guardian,
+    which checks the relationship; the page itself shows nothing without a link)."""
+    return templates.TemplateResponse(
+        request,
+        "pages/participant/minors.html",
+        {"request": request, "current_user": current_user, "active_page": "minors",
+         "now": datetime.now()}
+    )
+
+
+@router.get("/admin/minors", response_class=HTMLResponse)
+async def admin_minors_page(
+    request: Request,
+    current_user: User = Depends(require_permission("participants.view_all"))
+):
+    """Render admin view of participants under 18."""
+    return templates.TemplateResponse(
+        request,
+        "pages/admin/minors.html",
+        {"request": request, "current_user": current_user, "active_page": "minors",
+         "now": datetime.now()}
+    )
+
+
 @router.get("/portal/ssh-key", response_class=HTMLResponse)
 async def participant_ssh_key_page(
     request: Request,

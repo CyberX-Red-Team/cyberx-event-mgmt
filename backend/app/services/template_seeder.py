@@ -161,6 +161,105 @@ This reminder repeats weekly until the event is archived.""",
         ],
         "is_active": True,
     },
+    {
+        "name": "guardian_consent_needed",
+        "display_name": "Guardian Consent Needed",
+        "description": "Sent to a parent/guardian when a participant under 18 names them.",
+        "subject": "Consent needed for {minor_name} to take part in {event_name}",
+        "html_content": """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Guardian Consent Needed</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
+    <div style="border: 1px solid #e5e7eb; border-radius: 4px; padding: 30px;">
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Hi {first_name},</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">{minor_name} named you as their parent or guardian for {event_name}. People aged 16 or 17 can take part only with written consent from a parent or guardian who is also taking part in the event.</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Review and give consent (or tell us you're not their parent or guardian) in the <a href="{portal_url}">participant portal</a>.</p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+        <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">CyberX Red Team &mdash; <a href="https://cyberxredteam.org/privacy" style="color: #94a3b8;">Privacy Policy</a></p>
+    </div>
+</body>
+</html>""",
+        "text_content": """Hi {first_name},
+
+{minor_name} named you as their parent or guardian for {event_name}. People aged 16 or 17 can take part only with written consent from a parent or guardian who is also taking part in the event.
+
+Review and give consent (or tell us you're not their parent or guardian) in the participant portal: {portal_url}.""",
+        "available_variables": ['first_name', 'minor_name', 'event_name', 'portal_url'],
+        "is_active": True,
+    },
+    {
+        "name": "minor_access_suspended",
+        "display_name": "Minor Access Suspended",
+        "description": "Sent to a participant under 18 (and copied to their guardian) when guardian consent stops being valid.",
+        "subject": "Your event access for {event_name} is paused",
+        "html_content": """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Minor Access Suspended</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
+    <div style="border: 1px solid #e5e7eb; border-radius: 4px; padding: 30px;">
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Hi {first_name},</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Your access for {event_name} is paused because the consent from your parent or guardian is no longer in place (for example, it was withdrawn, or they're no longer taking part).</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Your parent or guardian can give consent again in their participant portal. Questions: hello@cyberxredteam.org.</p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+        <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">CyberX Red Team &mdash; <a href="https://cyberxredteam.org/privacy" style="color: #94a3b8;">Privacy Policy</a></p>
+    </div>
+</body>
+</html>""",
+        "text_content": """Hi {first_name},
+
+Your access for {event_name} is paused because the consent from your parent or guardian is no longer in place (for example, it was withdrawn, or they're no longer taking part).
+
+Your parent or guardian can give consent again in their participant portal. Questions: hello@cyberxredteam.org.""",
+        "available_variables": ['first_name', 'event_name'],
+        "is_active": True,
+    },
+    {
+        "name": "minor_in_person_cancelled",
+        "display_name": "Minor In-Person Attendance Cancelled",
+        "description": "Sent to a participant under 18 (and copied to their guardian) when their in-person attendance is cancelled because their guardian isn't attending in person.",
+        "subject": "In-person attendance for {event_name} cancelled",
+        "html_content": """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Minor In-Person Attendance Cancelled</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
+    <div style="border: 1px solid #e5e7eb; border-radius: 4px; padding: 30px;">
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Hi {first_name},</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">You can attend {event_name} in person only if your parent or guardian also attends in person. They're no longer attending in person, so we've cancelled your in-person attendance. You can still take part remotely.</p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+        <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">CyberX Red Team &mdash; <a href="https://cyberxredteam.org/privacy" style="color: #94a3b8;">Privacy Policy</a></p>
+    </div>
+</body>
+</html>""",
+        "text_content": """Hi {first_name},
+
+You can attend {event_name} in person only if your parent or guardian also attends in person. They're no longer attending in person, so we've cancelled your in-person attendance. You can still take part remotely.""",
+        "available_variables": ['first_name', 'event_name'],
+        "is_active": True,
+    },
+    {
+        "name": "admin_minor_alert",
+        "display_name": "Admin Alert: Participant Under 18",
+        "description": "Sent to admins when a participant under 18 needs attention (guardian not registered, link rejected, access suspended).",
+        "subject": "Participant under 18 needs attention: {reason}",
+        "html_content": """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Admin Alert: Participant Under 18</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
+    <div style="border: 1px solid #e5e7eb; border-radius: 4px; padding: 30px;">
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Hi {first_name},</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Participant #{minor_user_id} (under 18) needs attention: <strong>{reason}</strong>.</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">See the <a href="{minors_url}">Minors page</a>.</p>
+    </div>
+</body>
+</html>""",
+        "text_content": """Hi {first_name},
+
+Participant #{minor_user_id} (under 18) needs attention: {reason}.
+
+See the Minors page: {minors_url}.""",
+        "available_variables": ['first_name', 'reason', 'minor_user_id', 'minors_url'],
+        "is_active": True,
+    },
 ]
 
 

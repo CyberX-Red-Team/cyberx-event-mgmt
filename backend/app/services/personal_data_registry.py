@@ -34,6 +34,7 @@ from app.models.email_queue import EmailQueue
 from app.models.email_template import EmailTemplate
 from app.models.email_workflow import EmailWorkflow
 from app.models.event import EventParticipation
+from app.models.guardian_consent import GuardianConsent
 from app.models.instance import Instance
 from app.models.instance_template import InstanceTemplate
 from app.models.agent_task import AgentTask
@@ -95,10 +96,13 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         model=User,
         on_delete="delete",
         subject_columns=("id",),
-        other_person_columns=("sponsor_id",),
-        # Legacy copy of the referrer's email on the invitee's row.
-        other_person_email_columns=("sponsor_email",),
-        notes="The account itself. sponsor_* identify the referrer, not this person.",
+        other_person_columns=("sponsor_id", "guardian_user_id", "guardian_link_status"),
+        # Legacy copy of the referrer's email, and the guardian email a minor typed.
+        other_person_email_columns=("sponsor_email", "guardian_email_pending"),
+        notes=(
+            "The account itself. sponsor_* identify the referrer and guardian_* the "
+            "parent/guardian, not this person."
+        ),
     ),
     PersonalDataSource(
         key="event_participations",
@@ -217,6 +221,18 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
             "issued_by_user_id", "issued_by_name", "revoked_by_user_id", "revoked_by_name",
         ),
         notes="user_name is deliberately kept for certificate verification.",
+    ),
+    PersonalDataSource(
+        key="guardian_consents",
+        model=GuardianConsent,
+        on_delete="scrub",
+        # About both people: the minor (subject of the consent) and the guardian
+        # (who signed it). Rows go with the minor's account (FK cascade); if the
+        # guardian is deleted the consent is void and their signature details go.
+        subject_columns=("minor_user_id", "guardian_user_id"),
+        name_columns=("guardian_name_typed",),
+        extra_scrub={"ip_address": None, "user_agent": None},
+        notes="Per-event written consent for a participant under 18.",
     ),
     PersonalDataSource(
         key="redirectors",

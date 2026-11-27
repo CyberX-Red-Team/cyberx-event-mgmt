@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 
+from app.api.utils.clearance import require_cleared
 from app.dependencies import get_db, require_permission
 from app.api.exceptions import not_found, bad_request, forbidden, server_error
 from app.services.audit_service import AuditService
@@ -102,7 +103,7 @@ async def list_available_templates(
 async def provision_instance(
     data: InstanceFromTemplateRequest,
     request: Request,
-    current_user: User = Depends(require_permission("instances.provision")),
+    current_user: User = Depends(require_cleared("instances.provision")),
     db: AsyncSession = Depends(get_db),
     instance_service: InstanceService = Depends(get_instance_service),
     template_service: InstanceTemplateService = Depends(get_template_service),

@@ -47,7 +47,8 @@ class ParticipantService:
             select(User)
             .options(
                 selectinload(User.sponsor),
-                selectinload(User.event_participations)
+                selectinload(User.event_participations),
+                selectinload(User.guarded_minors),
             )
             .where(User.id == participant_id)
         )
@@ -594,6 +595,18 @@ class ParticipantService:
         if not participant:
             return False
 
+        # Step 0: a parent/guardian being removed voids their minors' consent
+        # (suspends them). Done first: it commits, so it must not run mid-delete.
+        if participant.guarded_minors:
+            from app.services.event_service import EventService
+            from app.services import minor_service
+            current_event = await EventService(self.session).get_current_event()
+            if current_event is not None:
+                await minor_service.guardian_participation_changed(
+                    self.session, participant, current_event, "guardian_removed"
+                )
+            participant = await self.get_participant(participant_id)
+
         # Step 1: Delete transient records that should not survive user deletion.
         # Sessions and event participations have CASCADE + NOT NULL on user_id,
         # so they must be removed explicitly (SQLAlchemy ORM tries SET NULL before
@@ -660,6 +673,127 @@ class ParticipantService:
         await self.session.commit()
 
         return True
+
+    async def activate_participation(self, user: User, event, participation, now=None) -> bool:
+        """
+        Set up a confirmed participant's event access: event-service credentials,
+        Keycloak sync, Discord invite, and the credentials email.
+
+        Adults are activated as soon as they accept. A participant under 18 is
+        activated only once valid guardian consent is recorded. Marks the
+        participation activated; returns True if new credentials were issued.
+        """
+        from app.api.routes.public import (
+            generate_password, generate_phonetic_password, generate_username, pwd_context,
+        )
+        from app.models.email_workflow import WorkflowTriggerEvent
+        from app.services.workflow_service import WorkflowService
+
+        db = self.session
+        now = now or datetime.now(timezone.utc)
+
+        # Generate credentials if not already set
+        # Username: Only generate if missing (returning participants keep their existing username)
+        if not user.pandas_username:
+            user.pandas_username = await generate_username(user.first_name, user.last_name, db)
+
+        # Password: Different behavior based on role
+        # - Invitees: Always generate new password each year (for security)
+        # - Sponsors: Keep existing password across years (only generate if missing)
+        should_generate_password = False
+        password_generation_reason = None
+
+        if user.role == 'invitee':
+            should_generate_password = True  # Always generate new password for invitees
+            password_generation_reason = "invitee role (always regenerate)"
+        elif not user.pandas_password:
+            should_generate_password = True  # Generate for sponsors only if missing
+            password_generation_reason = f"missing password (role: {user.role}, has_encrypted: {user._pandas_password_encrypted is not None})"
+
+        if should_generate_password:
+            logger.info(
+                f"Generating password during confirmation for user {user.id} ({user.email}, role: {user.role}). "
+                f"Reason: {password_generation_reason}"
+            )
+            password = generate_password(12)
+            user.pandas_password = password  # Store plaintext for email (will be synced to Keycloak)
+            user.password_hash = pwd_context.hash(password)  # Store hash for local auth
+            user.password_phonetic = generate_phonetic_password(password)  # For easy communication
+            user.keycloak_synced = False  # Reset sync status on credential change
+
+            # New credentials: sessions from the old password must not survive.
+            await revoke_user_sessions(db, [user.id])
+
+            # Queue Keycloak sync
+            from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+            from app.utils.encryption import encrypt_field
+            queue_entry = PasswordSyncQueue(
+                user_id=user.id,
+                username=user.pandas_username,
+                encrypted_password=encrypt_field(password),
+                operation=SyncOperation.CREATE_USER.value
+            )
+            db.add(queue_entry)
+        else:
+            logger.info(
+                f"Keeping existing password for user {user.id} ({user.email}, role: {user.role}) "
+                f"during confirmation"
+            )
+            # Still sync existing credentials to Keycloak if not already synced
+            if not user.keycloak_synced and user.pandas_username and user.pandas_password:
+                from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
+                from app.utils.encryption import encrypt_field
+                queue_entry = PasswordSyncQueue(
+                    user_id=user.id,
+                    username=user.pandas_username,
+                    encrypted_password=encrypt_field(user.pandas_password),
+                    operation=SyncOperation.CREATE_USER.value
+                )
+                db.add(queue_entry)
+
+        # Generate Discord invite if configured and user has discord.view permission
+        user_perms = user.get_effective_permissions()
+        if event and event.discord_channel_id and participation and "discord.view" in user_perms:
+            settings = get_settings()
+            if settings.DISCORD_INVITE_ENABLED and settings.DISCORD_BOT_TOKEN:
+                try:
+                    from app.services.discord_invite_service import DiscordInviteService
+                    discord_service = DiscordInviteService()
+                    invite_code = await discord_service.generate_invite(event.discord_channel_id)
+                    if invite_code:
+                        participation.discord_invite_code = invite_code
+                        participation.discord_invite_generated_at = now
+                        logger.info(f"Generated Discord invite for user {user.id}: {invite_code}")
+                except Exception as e:
+                    logger.warning(f"Failed to generate Discord invite for user {user.id}: {e}")
+
+        if participation is not None:
+            participation.activated_at = now
+
+        await db.commit()
+        await db.refresh(user)
+
+        # Credentials email. Sponsors/admins already received credentials at
+        # account creation; only send when new credentials were generated.
+        if should_generate_password:
+            await WorkflowService(db).trigger_workflow(
+                trigger_event=WorkflowTriggerEvent.USER_CONFIRMED,
+                user_id=user.id,
+                custom_vars={
+                    "login_url": f"{get_settings().FRONTEND_URL}/login",
+                    "event_name": event.name if event else "CyberX 2026",
+                    "pandas_username": user.pandas_username,
+                    "pandas_password": user.pandas_password,
+                    "password_phonetic": user.password_phonetic
+                },
+                force=True  # Bypass 24h dedup — user just confirmed, always send credentials
+            )
+        else:
+            logger.info(
+                f"Skipping credential email for {user.role} {user.id} on confirmation — "
+                f"credentials already sent at account creation"
+            )
+        return should_generate_password
 
     async def reset_password(
         self,

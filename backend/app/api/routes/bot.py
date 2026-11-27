@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy.orm import selectinload
@@ -446,10 +446,10 @@ async def list_pending_invite_revocations(
     db: AsyncSession = Depends(get_db),
     api_key: ServiceAPIKey | None = Depends(require_service_api_key),
 ):
-    """Return invite codes on archived events that the bot should revoke.
+    """Return invite codes the bot should revoke.
 
     Criteria:
-      - event.is_archived = True
+      - event.is_archived = True, or the participation is suspended
       - EventParticipation.discord_invite_code IS NOT NULL
       - EventParticipation.discord_verified_at IS NULL (never used)
 
@@ -463,7 +463,9 @@ async def list_pending_invite_revocations(
         select(EventParticipation, Event)
         .join(Event, Event.id == EventParticipation.event_id)
         .where(
-            Event.is_archived == True,
+            # Archived events, or a suspended participation (e.g. a participant
+            # under 18 whose guardian consent was withdrawn).
+            or_(Event.is_archived == True, EventParticipation.suspended_at.is_not(None)),
             EventParticipation.discord_invite_code.is_not(None),
             EventParticipation.discord_verified_at.is_(None),
         )

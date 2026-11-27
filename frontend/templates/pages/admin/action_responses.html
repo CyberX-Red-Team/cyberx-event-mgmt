@@ -867,6 +867,9 @@ window.submitAssignMore = async function() {
 
         if (result.success) {
             showToast(`Assigned action to ${result.actions_created} participant(s)`, 'success');
+            if (result.warnings && result.warnings.length) {
+                showToast(result.warnings.join(' '), 'warning');
+            }
             bootstrap.Modal.getInstance(document.getElementById('responseDetailsModal')).hide();
             await loadActionStatistics();
         } else {

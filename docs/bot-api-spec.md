@@ -254,7 +254,7 @@ These power cleanup after an event is archived. They are polled/called by the bo
 
 **Scope required:** `bot.manage_invites`
 
-Returns unused Discord invites on **archived** events (`discord_invite_code IS NOT NULL AND discord_verified_at IS NULL`) that the bot should revoke via Discord's `DELETE /invites/{code}`. Used invites are nulled by the platform on archive and never appear here.
+Returns unused Discord invites on **archived** events, or on **suspended** participations (for example a participant under 18 whose guardian consent was withdrawn), where `discord_invite_code IS NOT NULL AND discord_verified_at IS NULL`, that the bot should revoke via Discord's `DELETE /invites/{code}`. Used invites are nulled by the platform on archive and never appear here.
 
 #### Response `200 OK`
 

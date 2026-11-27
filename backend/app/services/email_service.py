@@ -88,6 +88,10 @@ def build_event_template_vars(event) -> Dict[str, str]:
 # Reserved custom_vars key: append the privacy footer when rendering locally.
 # (SendGrid dynamic templates get {{privacy_policy_url}} and must link it themselves.)
 PRIVACY_FOOTER_FLAG = "__privacy_footer"
+# Reserved custom_vars keys: deliver to a different address than the user's own
+# (a parent/guardian's copy of a minor's essential email).
+RECIPIENT_EMAIL_KEY = "__recipient_email"
+RECIPIENT_NAME_KEY = "__recipient_name"
 
 
 def privacy_email_vars(user: User) -> Dict[str, Any]:
@@ -741,6 +745,8 @@ class EmailService:
             override_from_email = send_vars.pop("__from_email", None)
             override_from_name = send_vars.pop("__from_name", None)
             privacy_footer = bool(send_vars.pop(PRIVACY_FOOTER_FLAG, False))
+            recipient_override = send_vars.pop(RECIPIENT_EMAIL_KEY, None)
+            recipient_name_override = send_vars.pop(RECIPIENT_NAME_KEY, None)
             custom_vars = send_vars if send_vars else None
 
             # Resolve sender address (workflow override → env default)
@@ -756,8 +762,8 @@ class EmailService:
                 )
 
             # Determine recipient email (with test override support)
-            recipient_email = user.email
-            recipient_name = f"{user.first_name} {user.last_name}"
+            recipient_email = recipient_override or user.email
+            recipient_name = recipient_name_override or f"{user.first_name} {user.last_name}"
 
             if settings.TEST_EMAIL_OVERRIDE:
                 # Override recipient for testing

@@ -1255,6 +1255,9 @@ function getRoleBadge(user) {
 }
 
 function getConfirmedBadge(user) {
+    if (user.awaiting_guardian_consent) {
+        return '<span class="badge bg-warning text-dark">Awaiting guardian consent</span>';
+    }
     // Prefer event_participation_status (new), fall back to confirmed (legacy)
     const status = user.event_participation_status || user.confirmed;
 
@@ -2108,6 +2111,9 @@ window.submitAssignAction = async function() {
         if (response.ok) {
             const result = await response.json();
             showToast(`Assigned action to ${result.actions_created} participants`, 'success');
+            if (result.warnings && result.warnings.length) {
+                showToast(result.warnings.join(' '), 'warning');
+            }
             bootstrap.Modal.getInstance(document.getElementById('assignActionModal')).hide();
             document.getElementById('assignActionForm').reset();
             document.getElementById('assignActionError').classList.add('d-none');

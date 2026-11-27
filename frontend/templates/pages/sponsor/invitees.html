@@ -258,6 +258,12 @@
                             <option value="">Loading countries...</option>
                         </select>
                     </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="addReferrerIsGuardian">
+                        <label class="form-check-label" for="addReferrerIsGuardian">
+                            This person is under 18 and I'm their parent or guardian
+                        </label>
+                    </div>
                     <div class="mb-3" id="addRoleSection" style="display: none;">
                         <label for="addInviteeRole" class="form-label">Invitee Type</label>
                         <select class="form-select" id="addInviteeRole">
@@ -657,7 +663,8 @@ async function submitAddInvitee() {
         last_name: document.getElementById('addLastName').value.trim(),
         email: document.getElementById('addEmail').value.trim(),
         country: document.getElementById('addCountry').value || 'United States',
-        role_id: selectedRoleId || undefined
+        role_id: selectedRoleId || undefined,
+        referrer_is_guardian: document.getElementById('addReferrerIsGuardian').checked
     };
 
     // Hide any previous errors
@@ -838,6 +845,9 @@ function showLoading(show) {
 }
 
 function renderStatusBadge(invitee) {
+    if (invitee.awaiting_guardian_consent) {
+        return '<span class="badge bg-warning text-dark">Awaiting guardian consent</span>';
+    }
     // Prefer event_participation_status (new), fall back to confirmed (legacy)
     const status = invitee.event_participation_status || invitee.confirmed;
 

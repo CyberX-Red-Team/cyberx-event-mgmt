@@ -6,6 +6,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
+from app.api.utils.clearance import require_cleared
 from app.dependencies import (
     get_db,
     get_current_active_user,
@@ -269,6 +270,10 @@ async def assign_vpn(
     # Check permission to assign VPN to this participant
     permissions.can_assign_vpn_to_participant(current_user, participant)
 
+    # A participant under 18 gets access only with valid guardian consent
+    from app.api.utils.clearance import ensure_cleared
+    await ensure_cleared(vpn_service.session, participant)
+
     # Assign requested number of VPNs
     count, message, vpns = await vpn_service.request_vpns(
         user_id=data.participant_id,
@@ -301,6 +306,17 @@ async def bulk_assign_vpn(
         if not participant:
             failed_ids.append(participant_id)
             errors.append(f"Participant {participant_id} not found")
+            continue
+
+        # Skip (and report) participants under 18 without valid guardian consent
+        from app.services.event_service import EventService
+        from app.services.minor_service import participant_is_cleared
+        if not await participant_is_cleared(
+            vpn_service.session, participant,
+            await EventService(vpn_service.session).get_current_event(),
+        ):
+            failed_ids.append(participant_id)
+            errors.append(f"Participant {participant_id}: awaiting guardian consent")
             continue
 
         count, message, _ = await vpn_service.request_vpns(
@@ -581,7 +597,7 @@ async def download_participant_vpn_configs(
 async def request_vpn_credentials(
     data: VPNRequestRequest,
     request: Request,
-    current_user: User = Depends(require_permission("vpn.request")),
+    current_user: User = Depends(require_cleared("vpn.request")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -700,7 +716,7 @@ async def get_my_vpn_credentials(
 
 @router.get("/my-config", response_model=VPNConfigResponse)
 async def get_my_vpn_config(
-    current_user: User = Depends(require_permission("vpn.download")),
+    current_user: User = Depends(require_cleared("vpn.download")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Get current user's first WireGuard configuration (for backwards compatibility)."""
@@ -717,7 +733,7 @@ async def get_my_vpn_config(
 @router.get("/my-config/download")
 async def download_my_vpn_config(
     vpn_id: Optional[int] = Query(None, description="Specific VPN ID to download"),
-    current_user: User = Depends(require_permission("vpn.download")),
+    current_user: User = Depends(require_cleared("vpn.download")),
     service: VPNService = Depends(get_vpn_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -759,7 +775,7 @@ async def download_my_vpn_config(
 @router.get("/my-configs/download")
 async def download_all_my_vpn_configs(
     naming_pattern: str = Query("simnet_{ipv4_address}.conf", description="Filename pattern"),
-    current_user: User = Depends(require_permission("vpn.download")),
+    current_user: User = Depends(require_cleared("vpn.download")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Download all WireGuard configs for current user as ZIP with SHA256 hash file."""
@@ -828,7 +844,7 @@ async def get_my_request_batches(
 async def download_batch_configs(
     batch_id: str,
     naming_pattern: str = Query("simnet_{ipv4_address}.conf", description="Filename pattern"),
-    current_user: User = Depends(require_permission("vpn.download")),
+    current_user: User = Depends(require_cleared("vpn.download")),
     service: VPNService = Depends(get_vpn_service)
 ):
     """Download all VPN configs from a specific request batch as ZIP with SHA256 hash file."""

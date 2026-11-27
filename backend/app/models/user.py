@@ -1,5 +1,5 @@
 """User/Invitee model."""
-from sqlalchemy import Column, Integer, String, Boolean, BigInteger, TIMESTAMP, Index, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Boolean, BigInteger, Date, TIMESTAMP, Index, ForeignKey, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -123,6 +123,19 @@ class User(Base):
     retention_hold_until = Column(TIMESTAMP(timezone=True), nullable=True)  # Admin "keep" flag
     deletion_warning_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)  # Inactive-account notice
 
+    # Participants under 18. birth_year_month (1st of the month, no day) is only
+    # collected when someone says they're under 18, is used to compute adult_on,
+    # and is cleared once they turn 18.
+    birth_year_month = Column(Date, nullable=True)
+    adult_on = Column(Date, nullable=True)  # First day of the month they turn 18
+    # Guardian link: a relationship between two accounts, never a role or permission.
+    guardian_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+    guardian_link_status = Column(String(20), nullable=True)  # pending / confirmed / rejected
+    # Guardian email typed by the minor when it matched no confirmed participant;
+    # kept only until it matches or for 30 days.
+    guardian_email_pending = Column(String(255), nullable=True)
+    guardian_email_pending_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
     # System Fields
     is_admin = Column(Boolean, default=False)  # Legacy - use role instead
     is_active = Column(Boolean, default=True)
@@ -148,6 +161,11 @@ class User(Base):
         "Role",
         back_populates="users",
         foreign_keys=[role_id]
+    )
+
+    # Guardian (parent/legal guardian) of a participant under 18
+    guardian = relationship(
+        "User", remote_side=[id], foreign_keys=[guardian_user_id], backref="guarded_minors"
     )
 
     # Indexes
@@ -186,6 +204,12 @@ class User(Base):
     def can_send_bulk_emails(self) -> bool:
         """Check if user can send bulk emails to all invitees."""
         return self.is_admin_role
+
+    @property
+    def is_minor(self) -> bool:
+        """Under 18 today (computed from adult_on; nothing stored)."""
+        from datetime import date
+        return self.adult_on is not None and self.adult_on > date.today()
 
     @property
     def full_name(self) -> str:

@@ -113,6 +113,12 @@
                         <span>Action Responses</span>
                     </a>
                     {% endif %}
+                    {% if 'participants.view_all' in perms %}
+                    <a class="nav-link {% if active_page == 'minors' %}active{% endif %}" href="/admin/minors">
+                        <i data-feather="shield"></i>
+                        <span>Minors</span>
+                    </a>
+                    {% endif %}
                     {% endif %}
 
                     <!-- VPN Management -->

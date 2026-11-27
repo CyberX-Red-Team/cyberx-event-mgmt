@@ -92,11 +92,42 @@
                             </label>
                         </div>
 
-                        <div class="confirm-checkbox-box mb-3">
-                            <input class="form-check-input mt-0 flex-shrink-0" type="checkbox" id="ageAttest" required style="width: 1.5em; height: 1.5em; margin-right: 0.75rem;">
-                            <label class="fw-bold" for="ageAttest" style="cursor: pointer; user-select: none; color: #e0e0e0;">
-                                I'm 18 or older, or I'm 16 or 17 and have written consent from a parent or guardian who is also taking part.
-                            </label>
+                        <div class="confirm-option-box mb-3 d-block">
+                            <div class="fw-bold mb-2" style="color: #e0e0e0;">Are you 18 or older?</div>
+                            <div class="d-flex gap-4">
+                                <label class="d-flex align-items-center gap-2" style="cursor: pointer; color: #e0e0e0;">
+                                    <input class="form-check-input mt-0" type="radio" name="isAdult" value="yes"> Yes
+                                </label>
+                                <label class="d-flex align-items-center gap-2" style="cursor: pointer; color: #e0e0e0;">
+                                    <input class="form-check-input mt-0" type="radio" name="isAdult" value="no"> No
+                                </label>
+                            </div>
+                            <div id="minorFields" class="d-none mt-3">
+                                <p class="small mb-2" style="color: rgba(255,255,255,0.6);">
+                                    People aged 16 or 17 can take part with consent from a parent or guardian who is also taking part in this event.
+                                </p>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-7">
+                                        <label class="form-label small" for="birthMonth" style="color: rgba(255,255,255,0.6);">Birth month</label>
+                                        <select class="form-select form-select-sm" id="birthMonth">
+                                            <option value="">Month</option>
+                                            <option value="1">January</option><option value="2">February</option>
+                                            <option value="3">March</option><option value="4">April</option>
+                                            <option value="5">May</option><option value="6">June</option>
+                                            <option value="7">July</option><option value="8">August</option>
+                                            <option value="9">September</option><option value="10">October</option>
+                                            <option value="11">November</option><option value="12">December</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-5">
+                                        <label class="form-label small" for="birthYear" style="color: rgba(255,255,255,0.6);">Birth year</label>
+                                        <input type="number" class="form-control form-control-sm" id="birthYear" min="1900" max="2100" placeholder="YYYY">
+                                    </div>
+                                </div>
+                                <label class="form-label small" for="guardianEmail" style="color: rgba(255,255,255,0.6);">Email address of your parent or guardian taking part in the event</label>
+                                <input type="email" class="form-control form-control-sm" id="guardianEmail" autocomplete="off">
+                                <p class="small mt-2 mb-0" style="color: rgba(255,255,255,0.5);">We only use your birth month and year to work out when you turn 18.</p>
+                            </div>
                         </div>
 
                         <div class="confirm-option-box mb-4">
@@ -183,10 +214,10 @@
                     <div id="successState" class="d-none">
                         <div class="alert alert-success" role="alert">
                             <i data-feather="check-circle" class="me-2"></i>
-                            <strong>Participation Confirmed!</strong>
-                            <p class="mb-0 mt-2">Thank you for confirming your participation. You will receive an email with your login credentials shortly.</p>
+                            <strong id="successTitle">Participation Confirmed!</strong>
+                            <p class="mb-0 mt-2" id="successMessage">Thank you for confirming your participation. You will receive an email with your login credentials shortly.</p>
                         </div>
-                        <div class="text-center mt-4">
+                        <div class="text-center mt-4" id="successLoginLink">
                             <a href="/login" class="btn btn-cyber btn-lg">
                                 <i data-feather="log-in" class="me-2"></i>
                                 Go to Login
@@ -419,7 +450,11 @@
 
     // Form elements
     const acceptTermsCheckbox = document.getElementById('acceptTerms');
-    const ageAttestCheckbox = document.getElementById('ageAttest');
+    const minorFields = document.getElementById('minorFields');
+    function isAdultChoice() {
+        const el = document.querySelector('input[name="isAdult"]:checked');
+        return el ? el.value : null;
+    }
     const futureContactCheckbox = document.getElementById('futureContact');
     const declineSubmitBtn = document.getElementById('declineSubmitBtn');
     const declineBackBtn = document.getElementById('declineBackBtn');
@@ -528,17 +563,24 @@
 
     // Both the terms and the age statement are required to confirm
     function updateConfirmEnabled() {
-        confirmBtn.disabled = !(acceptTermsCheckbox.checked && ageAttestCheckbox.checked);
+        confirmBtn.disabled = !(acceptTermsCheckbox.checked && isAdultChoice() !== null);
+        minorFields.classList.toggle('d-none', isAdultChoice() !== 'no');
     }
     acceptTermsCheckbox.addEventListener('change', updateConfirmEnabled);
-    ageAttestCheckbox.addEventListener('change', updateConfirmEnabled);
+    document.querySelectorAll('input[name="isAdult"]').forEach(el => el.addEventListener('change', updateConfirmEnabled));
 
     // Handle confirmation submission
     confirmBtn.addEventListener('click', async function() {
-        if (!acceptTermsCheckbox.checked || !ageAttestCheckbox.checked) {
-            alert('Please accept the terms and confirm the age statement to continue.');
+        if (!acceptTermsCheckbox.checked || isAdultChoice() === null) {
+            alert('Please accept the terms and tell us whether you are 18 or older.');
             return;
         }
+        const isAdult = isAdultChoice() === 'yes';
+        const ageFields = isAdult ? {} : {
+            birth_month: parseInt(document.getElementById('birthMonth').value || '0', 10),
+            birth_year: parseInt(document.getElementById('birthYear').value || '0', 10),
+            guardian_email: document.getElementById('guardianEmail').value.trim()
+        };
 
         confirmBtn.disabled = true;
         confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
@@ -550,7 +592,8 @@
                     confirmation_code: confirmationCode,
                     terms_accepted: true,
                     terms_version: termsVersion,
-                    age_attested: ageAttestCheckbox.checked,
+                    is_adult: isAdult,
+                    ...ageFields,
                     future_contact_consent: futureContactCheckbox.checked
                 }
             });
@@ -561,6 +604,11 @@
                 throw new Error(data.detail || 'Failed to confirm participation');
             }
 
+            if (data.awaiting_guardian_consent) {
+                document.getElementById('successTitle').textContent = 'Almost there';
+                document.getElementById('successMessage').textContent = data.message;
+                document.getElementById('successLoginLink').classList.add('d-none');
+            }
             showState('success');
         } catch (error) {
             console.error('Error confirming participation:', error);

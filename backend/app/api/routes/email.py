@@ -163,12 +163,13 @@ async def send_vpn_config_email(
     )
 
 
-def _filter_optional_recipients(users, optional_email: bool):
-    """Announcements / future-event emails only go to people who asked for them."""
+async def _filter_optional_recipients(db, users, optional_email: bool):
+    """Announcements / future-event emails only go to people who asked for them
+    (for a participant under 18, their guardian must have agreed too)."""
     if not optional_email:
         return users, 0
-    from app.services.consent_service import may_receive_optional_email
-    kept = [u for u in users if may_receive_optional_email(u)]
+    from app.services.minor_service import optional_email_allowed
+    kept = [u for u in users if await optional_email_allowed(db, u)]
     return kept, len(users) - len(kept)
 
 
@@ -210,7 +211,7 @@ async def send_bulk_emails(
     # Validate bulk email permissions (test mode, registration open, etc.)
     await validate_bulk_email_permissions(users, db, "bulk emails")
 
-    users, skipped = _filter_optional_recipients(users, data.optional_email)
+    users, skipped = await _filter_optional_recipients(db, users, data.optional_email)
     if not users:
         raise bad_request("None of the selected people asked for announcements or future invitations")
 
@@ -267,7 +268,7 @@ async def send_custom_emails(
     # Validate bulk email permissions (test mode, registration open, etc.)
     await validate_bulk_email_permissions(users, db, "custom emails")
 
-    users, skipped = _filter_optional_recipients(users, data.optional_email)
+    users, skipped = await _filter_optional_recipients(db, users, data.optional_email)
     if not users:
         raise bad_request("None of the selected people asked for announcements or future invitations")
 
