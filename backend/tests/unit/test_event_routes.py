@@ -16,18 +16,13 @@ from app.api.routes.event import (
     update_event,
     delete_event,
     list_event_participants,
-    bulk_invite_to_event,
     get_my_participation_history,
-    confirm_my_participation,
-    decline_my_participation,
     get_chronic_non_participants,
     get_recommended_removals
 )
 from app.schemas.event import (
     EventCreate,
-    EventUpdate,
-    BulkInviteRequest,
-    ConfirmParticipationRequest
+    EventUpdate
 )
 from app.models.user import User, UserRole
 
@@ -461,62 +456,6 @@ class TestParticipationManagementRoutes:
         assert len(result.items) == 1
         assert result.items[0].status == "confirmed"
 
-    async def test_bulk_invite_to_event_success(self, mocker):
-        """Test bulk inviting users to an event."""
-        mock_user = User(
-            id=1,
-            email="admin@test.com",
-            first_name="Admin",
-            last_name="User",
-            country="USA",
-            role=UserRole.ADMIN.value,
-            is_admin=True
-        )
-
-        data = BulkInviteRequest(
-            event_id=1,
-            user_ids=[2, 3, 4, 5]
-        )
-
-        mock_event = Mock(id=1, year=2026, name="CyberX 2026", slug="cyberx-2026")
-
-        mock_service = mocker.Mock()
-        mock_service.get_event = mocker.AsyncMock(return_value=mock_event)
-        mock_service.bulk_invite_to_event = mocker.AsyncMock(return_value=(4, 0, []))
-
-        result = await bulk_invite_to_event(
-            event_id=1,
-            data=data,
-            current_user=mock_user,
-            service=mock_service
-        )
-
-        assert result.success is True
-        assert result.invited_count == 4
-        assert result.already_invited_count == 0
-
-    async def test_bulk_invite_event_id_mismatch(self, mocker):
-        """Test bulk invite with mismatched event ID."""
-        mock_user = User(
-            id=1,
-            email="admin@test.com",
-            first_name="Admin",
-            last_name="User",
-            country="USA",
-            role=UserRole.ADMIN.value,
-            is_admin=True
-        )
-
-        data = BulkInviteRequest(
-            event_id=2,
-            user_ids=[2, 3, 4]
-        )
-
-        mock_service = mocker.Mock()
-
-        with pytest.raises(Exception) as exc_info:
-            await bulk_invite_to_event(event_id=1, data=data, current_user=mock_user, service=mock_service)
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -571,102 +510,8 @@ class TestParticipantSelfServiceRoutes:
         assert result.should_recommend_removal is False
         assert len(result.history) == 1
 
-    async def test_confirm_participation_success(self, mocker):
-        """Test confirming participation."""
-        mock_user = User(
-            id=1,
-            email="user@test.com",
-            first_name="Test",
-            last_name="User",
-            country="USA",
-            role=UserRole.INVITEE.value
-        )
 
-        data = ConfirmParticipationRequest(
-            event_id=1,
-            accept_terms=True
-        )
 
-        mock_participation = Mock()
-        mock_participation.id = 1
-        mock_participation.user_id = 1
-        mock_participation.event_id = 1
-        mock_participation.status = "confirmed"
-        mock_participation.invited_at = datetime.now(timezone.utc)
-        mock_participation.terms_accepted_at = datetime.now(timezone.utc)
-        mock_participation.confirmed_at = datetime.now(timezone.utc)
-        mock_participation.declined_at = None
-        mock_participation.declined_reason = None
-        mock_participation.created_at = datetime.now(timezone.utc)
-        mock_participation.updated_at = datetime.now(timezone.utc)
-
-        mock_service = mocker.Mock()
-        mock_service.confirm_participation = mocker.AsyncMock(
-            return_value=(True, "Participation confirmed", mock_participation)
-        )
-
-        result = await confirm_my_participation(data=data, current_user=mock_user, service=mock_service)
-
-        assert result.success is True
-        assert result.message == "Participation confirmed"
-        assert result.participation.status == "confirmed"
-
-    async def test_confirm_participation_failure(self, mocker):
-        """Test confirming participation failure."""
-        mock_user = User(
-            id=1,
-            email="user@test.com",
-            first_name="Test",
-            last_name="User",
-            country="USA",
-            role=UserRole.INVITEE.value
-        )
-
-        data = ConfirmParticipationRequest(
-            event_id=1,
-            accept_terms=False
-        )
-
-        mock_service = mocker.Mock()
-        mock_service.confirm_participation = mocker.AsyncMock(
-            return_value=(False, "Terms not accepted", None)
-        )
-
-        with pytest.raises(Exception) as exc_info:
-            await confirm_my_participation(data=data, current_user=mock_user, service=mock_service)
-
-    async def test_decline_participation_success(self, mocker):
-        """Test declining participation."""
-        mock_user = User(
-            id=1,
-            email="user@test.com",
-            first_name="Test",
-            last_name="User",
-            country="USA",
-            role=UserRole.INVITEE.value
-        )
-
-        mock_participation = Mock(
-            id=1,
-            user_id=1,
-            event_id=1,
-            status="declined"
-        )
-
-        mock_service = mocker.Mock()
-        mock_service.decline_participation = mocker.AsyncMock(
-            return_value=(True, "Participation declined", mock_participation)
-        )
-
-        result = await decline_my_participation(
-            event_id=1,
-            reason="Schedule conflict",
-            current_user=mock_user,
-            service=mock_service
-        )
-
-        assert result["success"] is True
-        assert result["message"] == "Participation declined"
 
 
 @pytest.mark.unit

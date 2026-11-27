@@ -43,13 +43,10 @@ class EmailQueueService:
         Optional emails (future invitations, announcements) aren't copied.
         """
         from app.services.email_service import RECIPIENT_EMAIL_KEY, RECIPIENT_NAME_KEY
-        if not user.guardian_user_id or not user.is_minor:
-            return None
+        from app.services.minor_service import guardian_for_copies
         vars = dict(entry.custom_vars or {})
-        if "future_contact_withdraw_url" in vars:
-            return None
-        guardian = await self.session.get(User, user.guardian_user_id)
-        if guardian is None or not guardian.email:
+        guardian = await guardian_for_copies(self.session, user, vars)
+        if guardian is None:
             return None
         guardian_name = f"{guardian.first_name} {guardian.last_name}"
         return EmailQueue(

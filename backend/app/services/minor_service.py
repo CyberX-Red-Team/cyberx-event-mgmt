@@ -519,3 +519,22 @@ async def in_person_guardian_warnings(db: AsyncSession, event_id: int, user_ids:
                 f"{m.guardian_user_id}) isn't assigned in-person attendance."
             )
     return warnings
+
+
+async def guardian_for_copies(db: AsyncSession, user: User, custom_vars: Optional[dict] = None,
+                              has_attachment: bool = False) -> Optional[User]:
+    """
+    Who gets a copy of this email to `user`, if anyone: the linked parent/guardian
+    of a participant under 18, for essential emails only. Optional emails
+    (announcements, future invitations: those carrying a withdrawal link) aren't
+    copied, and neither are emails with attachments (e.g. VPN configuration
+    files, which are the participant's own access).
+    """
+    if not user.guardian_user_id or not user.is_minor or has_attachment:
+        return None
+    if "future_contact_withdraw_url" in (custom_vars or {}):
+        return None
+    guardian = await db.get(User, user.guardian_user_id)
+    if guardian is None or not guardian.email:
+        return None
+    return guardian
