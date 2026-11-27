@@ -17,6 +17,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.event import Event
 from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, TLSCertificateStatus
+from app.api.utils.clearance import require_cleared
 from app.dependencies import require_permission
 from app.services.stepca_service import StepCAService
 from app.services.powerdns_service import PowerDNSService
@@ -101,7 +102,7 @@ async def request_certificate(
     data: CertificateRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("tls.request")),
+    current_user: User = Depends(require_cleared("tls.request")),
 ):
     """Request a TLS certificate for a domain.
 
@@ -302,7 +303,7 @@ async def download_certificate(
     cert_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("tls.download")),
+    current_user: User = Depends(require_cleared("tls.download")),
 ):
     """Download certificate bundle as a zip file.
 

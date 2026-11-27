@@ -47,7 +47,8 @@ class ParticipantService:
             select(User)
             .options(
                 selectinload(User.sponsor),
-                selectinload(User.event_participations)
+                selectinload(User.event_participations),
+                selectinload(User.guarded_minors),
             )
             .where(User.id == participant_id)
         )
@@ -593,6 +594,18 @@ class ParticipantService:
         participant = await self.get_participant(participant_id)
         if not participant:
             return False
+
+        # Step 0: a parent/guardian being removed voids their minors' consent
+        # (suspends them). Done first: it commits, so it must not run mid-delete.
+        if participant.guarded_minors:
+            from app.services.event_service import EventService
+            from app.services import minor_service
+            current_event = await EventService(self.session).get_current_event()
+            if current_event is not None:
+                await minor_service.guardian_participation_changed(
+                    self.session, participant, current_event, "guardian_removed"
+                )
+            participant = await self.get_participant(participant_id)
 
         # Step 1: Delete transient records that should not survive user deletion.
         # Sessions and event participations have CASCADE + NOT NULL on user_id,

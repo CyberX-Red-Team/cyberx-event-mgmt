@@ -112,10 +112,15 @@ async def send_invitations_to_unknown_participants(event_id: int, event_name: st
                 .distinct()
             )
             invited_elsewhere = set(prior_result.scalars().all())
-            allowed = [
-                p for p in participants
-                if auto_invite_allowed(p, p.id in invited_elsewhere)
-            ]
+            from app.services.minor_service import optional_email_allowed
+            allowed = []
+            for p in participants:
+                if not auto_invite_allowed(p, p.id in invited_elsewhere):
+                    continue
+                # A minor's future invitations also need their guardian's agreement
+                if p.is_minor and p.id in invited_elsewhere and not await optional_email_allowed(session, p):
+                    continue
+                allowed.append(p)
             if len(allowed) != len(participants):
                 logger.info(
                     "Skipped %d automatic invitation(s) without future-contact consent "

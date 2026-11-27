@@ -49,16 +49,27 @@ class CPECertificateService:
         has_vpn = await self._check_vpn_assigned(user_id)
 
         eligible = has_nextcloud and has_powerdns and has_vpn
+        criteria = {
+            "has_nextcloud_login": has_nextcloud,
+            "has_powerdns_login": has_powerdns,
+            "has_vpn_assigned": has_vpn,
+        }
+
+        # A participant under 18 without valid guardian consent isn't eligible.
+        # (Criterion only added for minors, so adults' results are unchanged.)
+        from app.models.user import User
+        from app.services import minor_service
+        user = await self.session.get(User, user_id)
+        if user is not None and minor_service.is_minor_for_event(user, event):
+            cleared = await minor_service.participant_is_cleared(self.session, user, event)
+            criteria["guardian_consent"] = cleared
+            eligible = eligible and cleared
 
         return {
             "user_id": user_id,
             "eligible": eligible,
             "cpe_hours": self.settings.CPE_HOURS_DEFAULT if eligible else 0,
-            "criteria": {
-                "has_nextcloud_login": has_nextcloud,
-                "has_powerdns_login": has_powerdns,
-                "has_vpn_assigned": has_vpn,
-            }
+            "criteria": criteria,
         }
 
     async def bulk_check_eligibility(self, event: Event) -> list[dict]:

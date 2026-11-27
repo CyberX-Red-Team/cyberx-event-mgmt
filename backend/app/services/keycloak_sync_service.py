@@ -130,7 +130,9 @@ class KeycloakSyncService:
                     synced_count += 1
 
                     # Update user's keycloak_synced flag
-                    if entry.operation != SyncOperation.DELETE_USER.value:
+                    if entry.operation in (
+                        SyncOperation.CREATE_USER.value, SyncOperation.UPDATE_PASSWORD.value
+                    ):
                         user_result = await self.session.execute(
                             select(User).where(User.id == entry.user_id)
                         )
@@ -191,6 +193,10 @@ class KeycloakSyncService:
             return await self._update_keycloak_password(entry, admin_token)
         elif entry.operation == SyncOperation.DELETE_USER.value:
             return await self._delete_keycloak_user(entry, admin_token)
+        elif entry.operation in (SyncOperation.DISABLE_USER.value, SyncOperation.ENABLE_USER.value):
+            return await self._set_keycloak_enabled(
+                entry, admin_token, entry.operation == SyncOperation.ENABLE_USER.value
+            )
         else:
             logger.error(f"Unknown sync operation: {entry.operation}")
             return False
@@ -359,6 +365,30 @@ class KeycloakSyncService:
                     f"{response.status_code} {response.text}"
                 )
                 return False
+
+    async def _set_keycloak_enabled(
+        self, entry: PasswordSyncQueue, admin_token: str, enabled: bool
+    ) -> bool:
+        """Enable or disable a Keycloak user (account kept, sign-in blocked when disabled)."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            kc_user_id = await self._find_keycloak_user(client, admin_token, entry.username)
+            if not kc_user_id:
+                logger.info(f"User {entry.username} not found in Keycloak, nothing to "
+                            f"{'enable' if enabled else 'disable'}")
+                return True
+            response = await client.put(
+                f"{self.settings.KEYCLOAK_URL}/admin/realms/"
+                f"{self.settings.KEYCLOAK_REALM}/users/{kc_user_id}",
+                headers={"Authorization": f"Bearer {admin_token}"},
+                json={"enabled": enabled},
+            )
+            if response.status_code == 204:
+                return True
+            logger.error(
+                f"Failed to set enabled={enabled} for Keycloak user {entry.username}: "
+                f"{response.status_code} {response.text}"
+            )
+            return False
 
     async def _find_keycloak_group(
         self,

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from app.database import get_db
 from app.models.user import User
+from app.models.event import Event
 from app.models.participant_action import ParticipantAction, ActionStatus
 from app.dependencies import get_current_user
 from app.services.audit_service import AuditService
@@ -107,6 +108,14 @@ async def respond_to_action(
     if data.status not in [ActionStatus.CONFIRMED.value, ActionStatus.DECLINED.value]:
         raise HTTPException(status_code=400, detail="Invalid status")
 
+    # A participant under 18 may attend in person only with their guardian
+    from app.services import minor_service
+    if (action.action_type == "in_person_attendance"
+            and data.status == ActionStatus.CONFIRMED.value
+            and current_user.is_minor
+            and not await minor_service.guardian_attends_in_person(db, current_user)):
+        raise HTTPException(status_code=400, detail=minor_service.IN_PERSON_MESSAGE)
+
     # Update action
     action.status = data.status
     action.responded_at = datetime.now(timezone.utc)
@@ -120,6 +129,13 @@ async def respond_to_action(
             current_user.confirmed_in_person = False
 
     await db.commit()
+
+    # A guardian who drops in-person attendance: their minors can't attend in person
+    if (action.action_type == "in_person_attendance"
+            and data.status == ActionStatus.DECLINED.value):
+        event = await db.get(Event, action.event_id)
+        if event is not None:
+            await minor_service.guardian_left_in_person(db, current_user, event)
 
     # Audit log
     audit_service = AuditService(db)

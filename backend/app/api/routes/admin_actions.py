@@ -177,11 +177,17 @@ async def create_bulk_action(
         details={"message": f"Created {len(created_actions)} actions of type {data.action_type}"}
     )
 
-    return {
+    response = {
         "success": True,
         "actions_created": len(created_actions),
         "message": f"Successfully created {len(created_actions)} actions"
     }
+    if data.action_type == "in_person_attendance":
+        from app.services.minor_service import in_person_guardian_warnings
+        warnings = await in_person_guardian_warnings(db, event.id, [u.id for u in target_users])
+        if warnings:
+            response["warnings"] = warnings
+    return response
 
 
 class BulkActionAssign(BaseModel):
@@ -331,11 +337,19 @@ async def assign_action_to_participants(
         }
     )
 
-    return {
+    response = {
         "success": True,
         "actions_created": len(created_actions),
         "message": f"Assigned action to {len(created_actions)} additional participant(s)"
     }
+    if reference_action.action_type == "in_person_attendance":
+        from app.services.minor_service import in_person_guardian_warnings
+        warnings = await in_person_guardian_warnings(
+            db, reference_action.event_id, [u.id for u in target_users]
+        )
+        if warnings:
+            response["warnings"] = warnings
+    return response
 
 
 class BulkActionRevoke(BaseModel):

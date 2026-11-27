@@ -35,6 +35,34 @@ class EmailQueueService:
         """Initialize email queue service."""
         self.session = session
 
+    async def _guardian_copy(self, user: User, entry: "EmailQueue") -> Optional["EmailQueue"]:
+        """
+        A participant under 18: their parent/guardian gets a copy of essential
+        emails (registration, account setup, logistics, suspension), as a
+        separate message so neither address is shown to the other.
+        Optional emails (future invitations, announcements) aren't copied.
+        """
+        from app.services.email_service import RECIPIENT_EMAIL_KEY, RECIPIENT_NAME_KEY
+        if not user.guardian_user_id or not user.is_minor:
+            return None
+        vars = dict(entry.custom_vars or {})
+        if "future_contact_withdraw_url" in vars:
+            return None
+        guardian = await self.session.get(User, user.guardian_user_id)
+        if guardian is None or not guardian.email:
+            return None
+        guardian_name = f"{guardian.first_name} {guardian.last_name}"
+        return EmailQueue(
+            user_id=user.id,
+            template_name=entry.template_name,
+            recipient_email=guardian.email,
+            recipient_name=guardian_name,
+            custom_vars={**vars, RECIPIENT_EMAIL_KEY: guardian.email, RECIPIENT_NAME_KEY: guardian_name},
+            priority=entry.priority,
+            status=EmailQueueStatus.PENDING,
+            scheduled_for=entry.scheduled_for,
+        )
+
     async def enqueue_email(
         self,
         user_id: int,
@@ -72,6 +100,7 @@ class EmailQueueService:
             select(EmailQueue).where(
                 and_(
                     EmailQueue.user_id == user_id,
+                    EmailQueue.recipient_email == user.email,  # not a guardian copy
                     EmailQueue.template_name == template_name,
                     EmailQueue.status == EmailQueueStatus.PENDING
                 )
@@ -95,6 +124,7 @@ class EmailQueueService:
                 select(EmailQueue).where(
                     and_(
                         EmailQueue.user_id == user_id,
+                        EmailQueue.recipient_email == user.email,  # not a guardian copy
                         EmailQueue.template_name == template_name,
                         EmailQueue.status.in_([EmailQueueStatus.SENT, EmailQueueStatus.PROCESSING]),
                         EmailQueue.created_at >= recent_cutoff
@@ -130,6 +160,9 @@ class EmailQueueService:
         )
 
         self.session.add(email_queue)
+        guardian_copy = await self._guardian_copy(user, email_queue)
+        if guardian_copy is not None:
+            self.session.add(guardian_copy)
         await self.session.commit()
         await self.session.refresh(email_queue)
 

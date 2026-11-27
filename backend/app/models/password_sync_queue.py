@@ -10,6 +10,8 @@ class SyncOperation(str, enum.Enum):
     CREATE_USER = "create_user"
     UPDATE_PASSWORD = "update_password"
     DELETE_USER = "delete_user"
+    DISABLE_USER = "disable_user"  # e.g. a minor whose guardian consent was withdrawn
+    ENABLE_USER = "enable_user"
 
 
 class PasswordSyncQueue(Base):
