@@ -15,6 +15,13 @@ from app.models.invite_suppression import InviteSuppression
 SUPPRESSED_MESSAGE = "This person asked not to be invited again."
 
 
+class InvitationSuppressed(Exception):
+    """Raised when an invitation would go to someone on the do-not-invite list."""
+
+    def __init__(self):
+        super().__init__(SUPPRESSED_MESSAGE)
+
+
 def _key() -> bytes:
     settings = get_settings()
     if settings.INVITE_SUPPRESSION_KEY:

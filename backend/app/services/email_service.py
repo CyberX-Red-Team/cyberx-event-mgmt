@@ -170,6 +170,14 @@ async def queue_invitation_email_for_user(
     import secrets
     from sqlalchemy import update
     from app.services.email_queue_service import EmailQueueService
+    from app.services.invite_suppression_service import (
+        InvitationSuppressed, InviteSuppressionService,
+    )
+
+    # Every invitation (new referral, resend, workflow reset, automatic run)
+    # passes through here: never invite someone who asked not to be invited.
+    if await InviteSuppressionService(session).is_suppressed(user.email):
+        raise InvitationSuppressed()
 
     # Generate confirmation code
     confirmation_code = secrets.token_urlsafe(32)
