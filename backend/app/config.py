@@ -172,6 +172,27 @@ class Settings(BaseSettings):
     REMINDER_3_DAYS_BEFORE_EVENT: int = 3  # Final reminder: 3 days before event starts
     REMINDER_CHECK_INTERVAL_HOURS: int = 24  # How often to check for reminders to send
 
+    # Data retention (periods match the public Privacy Policy; change both together)
+    RETENTION_ENABLED: bool = False  # False = the daily job runs as a dry run (counts only)
+    RETENTION_INVITEE_MONTHS: int = 12  # Never-registered invitees, after their latest invitation
+    RETENTION_INACTIVE_ACCOUNT_MONTHS: int = 24  # Accounts without taking part in an event
+    RETENTION_INACTIVE_WARNING_DAYS: int = 30  # Notice sent this long before an inactive account is deleted
+    RETENTION_LOG_DAYS: int = 365  # Security logs and email records
+    RETENTION_EVENT_CLOSEOUT_DAYS: int = 30  # Remind admins to close out an event this long after it ends
+    RETENTION_JOB_HOUR_UTC: int = 3  # Daily retention job time (off-hours)
+    RETENTION_BATCH_SIZE: int = 5000  # Rows per DELETE statement for log purges
+
+    # Privacy / consent
+    PRIVACY_POLICY_URL: str = "https://cyberxredteam.org/privacy"
+    PRIVACY_CONTACT_EMAIL: str = "hello@cyberxredteam.org"
+    # Transition for the 2027 event: people whose records predate consent collection
+    # (no future-contact choice recorded) still get automatic next-event invitations.
+    # Turn off once those people have had a chance to record a choice.
+    LEGACY_FUTURE_INVITES_ENABLED: bool = True
+    # Optional dedicated key for the do-not-invite list hashes. Empty = derived from SECRET_KEY.
+    # Changing it (or SECRET_KEY when this is empty) makes existing entries unmatchable.
+    INVITE_SUPPRESSION_KEY: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True

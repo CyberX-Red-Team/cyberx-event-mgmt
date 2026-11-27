@@ -20,6 +20,7 @@ from app.models.cpe_certificate import CPECertificate, CertificateStatus
 from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, TLSCertificateStatus
 from app.models.agent_task import AgentTask
 from app.models.service_api_key import ServiceAPIKey
+from app.models.invite_suppression import InviteSuppression
 from app.models.redirector import (  # noqa: F401
     Redirector, StreamConfig, RedirectorStatus, StreamProtocol,
 )
@@ -65,6 +66,7 @@ __all__ = [
     "TLSCertificateStatus",
     "AgentTask",
     "ServiceAPIKey",
+    "InviteSuppression",
     "Redirector",
     "StreamConfig",
     "RedirectorStatus",
