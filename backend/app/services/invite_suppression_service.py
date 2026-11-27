@@ -15,6 +15,13 @@ from app.models.invite_suppression import InviteSuppression
 SUPPRESSED_MESSAGE = "This person asked not to be invited again."
 
 
+class InvitationSuppressed(Exception):
+    """Raised when an invitation would go to someone on the do-not-invite list."""
+
+    def __init__(self):
+        super().__init__(SUPPRESSED_MESSAGE)
+
+
 def _key() -> bytes:
     settings = get_settings()
     if settings.INVITE_SUPPRESSION_KEY:
@@ -25,9 +32,29 @@ def _key() -> bytes:
     ).digest()
 
 
+_GMAIL_ALIASES = {"googlemail.com": "gmail.com"}
+
+
+def suppression_key(email: str) -> str:
+    """
+    The form of an address the do-not-invite list matches on. Stricter than
+    account normalization (normalize_email): it also drops any +tag and treats
+    googlemail.com as gmail.com, because those all deliver to the same inbox.
+    Erring towards blocking is fine here: only the inbox that asked is affected.
+    """
+    normalized = normalize_email(email or "")
+    if "@" not in normalized:
+        return normalized
+    local, domain = normalized.rsplit("@", 1)
+    local = local.split("+", 1)[0]
+    domain = _GMAIL_ALIASES.get(domain, domain)
+    return f"{local}@{domain}"
+
+
 def email_hmac(email: str) -> str:
-    """HMAC-SHA256 hex of the normalized email (stable across case/whitespace/Gmail dots)."""
-    return hmac.new(_key(), normalize_email(email).encode(), hashlib.sha256).hexdigest()
+    """HMAC-SHA256 hex of suppression_key(email): stable across case, whitespace,
+    Gmail dots, +tags and googlemail.com."""
+    return hmac.new(_key(), suppression_key(email).encode(), hashlib.sha256).hexdigest()
 
 
 class InviteSuppressionService:

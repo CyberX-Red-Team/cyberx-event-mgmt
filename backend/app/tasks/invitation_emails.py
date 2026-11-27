@@ -184,6 +184,8 @@ async def send_invitations_to_unknown_participants(event_id: int, event_name: st
             queued_count = 0
             duplicate_count = 0
             failed_count = 0
+            suppressed_count = 0
+            from app.services.invite_suppression_service import InvitationSuppressed
 
             for participant in participants:
                 try:
@@ -202,6 +204,8 @@ async def send_invitations_to_unknown_participants(event_id: int, event_name: st
                     else:
                         duplicate_count += 1
 
+                except InvitationSuppressed:
+                    suppressed_count += 1
                 except Exception as e:
                     failed_count += 1
                     logger.error(
@@ -215,6 +219,7 @@ async def send_invitations_to_unknown_participants(event_id: int, event_name: st
                 f"Invitation queueing complete for event {event_name}: "
                 f"{queued_count} new emails queued, "
                 f"{duplicate_count} duplicates skipped, "
+                f"{suppressed_count} on the do-not-invite list skipped, "
                 f"{failed_count} failed"
             )
 

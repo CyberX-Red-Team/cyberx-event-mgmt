@@ -747,6 +747,7 @@ async def resend_participant_invitation(
 
     # Queue invitation email with force=True to bypass 24-hour duplicate check
     from app.services.email_service import queue_invitation_email_for_user
+    from app.services.invite_suppression_service import InvitationSuppressed, SUPPRESSED_MESSAGE
     try:
         queue_entry = await queue_invitation_email_for_user(
             user=participant,
@@ -760,6 +761,8 @@ async def resend_participant_invitation(
             f"Resent invitation to participant {participant_id} ({participant.email}) "
             f"by user {current_user.id} ({current_user.email}) [queue_id: {queue_entry.id}]"
         )
+    except InvitationSuppressed:
+        raise conflict(SUPPRESSED_MESSAGE)
     except Exception as e:
         logger.error(f"Failed to queue resend invitation for participant {participant_id}: {str(e)}")
         raise server_error(f"Failed to queue invitation email: {str(e)}")
