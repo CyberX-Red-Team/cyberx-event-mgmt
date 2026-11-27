@@ -21,6 +21,7 @@ from app.models.tls_certificate import CAChain, CAChainStatus, TLSCertificate, T
 from app.models.agent_task import AgentTask
 from app.models.service_api_key import ServiceAPIKey
 from app.models.invite_suppression import InviteSuppression
+from app.models.guardian_consent import GuardianConsent, GuardianLinkStatus, GuardianRelationship
 from app.models.redirector import (  # noqa: F401
     Redirector, StreamConfig, RedirectorStatus, StreamProtocol,
 )
@@ -67,6 +68,9 @@ __all__ = [
     "AgentTask",
     "ServiceAPIKey",
     "InviteSuppression",
+    "GuardianConsent",
+    "GuardianLinkStatus",
+    "GuardianRelationship",
     "Redirector",
     "StreamConfig",
     "RedirectorStatus",

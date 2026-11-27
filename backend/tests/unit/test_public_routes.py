@@ -319,6 +319,8 @@ class TestConfirmParticipationRoute:
         mock_workflow = mocker.Mock()
         mock_workflow.trigger_workflow = mocker.AsyncMock()
         mocker.patch('app.api.routes.public.WorkflowService', return_value=mock_workflow)
+        # Activation (credentials email) lives in ParticipantService now
+        mocker.patch('app.services.workflow_service.WorkflowService', return_value=mock_workflow)
 
         # Mock username generation and encryption
         mocker.patch('app.api.routes.public.generate_username', return_value="tuser")
