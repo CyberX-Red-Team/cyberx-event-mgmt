@@ -143,6 +143,15 @@
                                 <input type="text" class="form-control" id="composeSubject" placeholder="Leave blank to use template default">
                             </div>
 
+                            <!-- Optional email (consent-based) -->
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="composeOptional">
+                                <label class="form-check-label" for="composeOptional">
+                                    Announcement or future-event invitation
+                                    <span class="d-block text-muted small">Sent only to people who asked for these (staff always included), with a link to stop them. Leave unticked for registration, account, logistics and certificate emails.</span>
+                                </label>
+                            </div>
+
                             <!-- Recipient Selection -->
                             <div class="mb-3">
                                 <label class="form-label">Recipients</label>
@@ -1503,7 +1512,8 @@ async function sendComposedEmail() {
                 participant_ids: Array.from(selectedRecipients.keys()),
                 template_id: parseInt(templateId),
                 custom_subject: customSubject,
-                custom_variables: {}
+                custom_variables: {},
+                optional_email: document.getElementById('composeOptional').checked
             }
         });
 
@@ -1514,6 +1524,7 @@ async function sendComposedEmail() {
             clearSelectedRecipients();
             document.getElementById('composeTemplate').value = '';
             document.getElementById('composeSubject').value = '';
+            document.getElementById('composeOptional').checked = false;
             document.getElementById('emailPreviewPanel').innerHTML = '<p class="text-muted text-center">Select a template to preview</p>';
         }
     } catch (error) {

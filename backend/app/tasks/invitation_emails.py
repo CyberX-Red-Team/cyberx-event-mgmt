@@ -102,6 +102,27 @@ async def send_invitations_to_unknown_participants(event_id: int, event_name: st
             result = await session.execute(query)
             participants = result.scalars().all()
 
+            # Future-contact consent: automatic invitations to a new event only
+            # go to people who asked for them (plus new referrals, staff, and,
+            # during the transition, records that predate consent collection).
+            from app.services.consent_service import auto_invite_allowed
+            prior_result = await session.execute(
+                select(EventParticipation.user_id)
+                .where(EventParticipation.event_id != event.id)
+                .distinct()
+            )
+            invited_elsewhere = set(prior_result.scalars().all())
+            allowed = [
+                p for p in participants
+                if auto_invite_allowed(p, p.id in invited_elsewhere)
+            ]
+            if len(allowed) != len(participants):
+                logger.info(
+                    "Skipped %d automatic invitation(s) without future-contact consent "
+                    "for event %s", len(participants) - len(allowed), event_name
+                )
+            participants = allowed
+
             if not participants:
                 logger.info(f"No unconfirmed participants found for event {event_name} ({role_desc})")
                 return

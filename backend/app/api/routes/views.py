@@ -102,6 +102,43 @@ async def confirmation_page(
     )
 
 
+@router.get("/future-contact/withdraw", response_class=HTMLResponse)
+async def withdraw_future_contact_page(
+    request: Request,
+    token: str = "",
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    One-click withdrawal of future-contact consent (link in announcements and
+    future-event invitations). A GET that changes state on purpose: an email
+    scanner following the link can only ever turn optional emails off.
+    """
+    from datetime import timezone
+    from app.services.consent_service import read_withdraw_token, set_future_contact_consent
+    from app.services.audit_service import AuditService
+
+    user_id = read_withdraw_token(token) if token else None
+    user = await db.get(User, user_id) if user_id else None
+    ok = user is not None
+    if ok and user.future_contact_consent is not False:
+        set_future_contact_consent(user, False, datetime.now(timezone.utc))
+        await db.commit()
+        await AuditService(db).log(
+            user_id=user.id,
+            action="PRIVACY_CHOICES_RECORDED",
+            resource_type="USER",
+            resource_id=user.id,
+            details={"source": "withdraw_link", "future_contact_consent": False},
+        )
+    return templates.TemplateResponse(
+        request,
+        "pages/public/future_contact_withdrawn.html",
+        {"request": request, "ok": ok, "privacy_url": _settings.PRIVACY_POLICY_URL,
+         "contact_email": _settings.PRIVACY_CONTACT_EMAIL},
+        status_code=200 if ok else 400,
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 async def home_page(
     request: Request,

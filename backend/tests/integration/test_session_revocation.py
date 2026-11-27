@@ -196,7 +196,7 @@ class TestPasswordChangesEndSessions:
         response = await client.post(
             "/api/public/confirm/accept",
             json={"confirmation_code": "confirm-code-123", "terms_accepted": True,
-                  "terms_version": "1.0"},
+                  "terms_version": "1.0", "age_attested": True},
         )
         assert response.status_code == 200, response.text
 

@@ -116,6 +116,11 @@ class BulkEmailRequest(BaseModel):
     template_id: int = Field(..., description="ID of the template to use")
     custom_subject: Optional[str] = Field(None, description="Override the template subject")
     custom_variables: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional template variables")
+    optional_email: bool = Field(
+        False,
+        description="Announcement / future-event email: sent only to people who asked for them "
+                    "(staff exempt), with a link to stop them",
+    )
 
 
 class BulkEmailResponse(BaseModel):
@@ -136,6 +141,11 @@ class SendCustomEmailRequest(BaseModel):
     subject: str = Field(..., min_length=1, max_length=500)
     html_body: str = Field(..., min_length=1)
     text_body: Optional[str] = None
+    optional_email: bool = Field(
+        False,
+        description="Announcement / future-event email: sent only to people who asked for them "
+                    "(staff exempt), with a link to stop them",
+    )
 
 
 class SendTestEmailRequest(BaseModel):

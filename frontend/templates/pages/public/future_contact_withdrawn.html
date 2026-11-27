@@ -1,0 +1,33 @@
+{% extends "layouts/auth.html" %}
+
+{% block title %}Future invitations{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card cyber-card border-0 mt-5">
+                <div class="card-body">
+                    <div class="text-center pt-3 pb-2">
+                        <img src="/static/img/cyberx-star-logo.svg" alt="CyberX" style="width: 48px; height: 48px;" class="mb-3 cyber-logo">
+                        <h3 class="cyber-title">Future invitations</h3>
+                    </div>
+                    {% if ok %}
+                    <div class="alert alert-success" role="alert">
+                        <strong>Done.</strong>
+                        <p class="mb-0 mt-2">We won't send you announcements or invitations to future events. A referrer can still invite you to a future event.</p>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-danger" role="alert">
+                        <p class="mb-0">This link isn't valid. Email <a href="mailto:{{ contact_email }}">{{ contact_email }}</a> and we'll update your choice.</p>
+                    </div>
+                    {% endif %}
+                    <p class="small text-muted text-center mt-3 mb-0">
+                        <a href="{{ privacy_url }}" target="_blank" rel="noopener">Privacy Policy</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

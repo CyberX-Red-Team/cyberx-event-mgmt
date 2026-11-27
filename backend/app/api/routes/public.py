@@ -195,9 +195,14 @@ async def confirm_participation(
     code = data.get("confirmation_code")
     terms_accepted = data.get("terms_accepted")
     terms_version = data.get("terms_version")
+    age_attested = data.get("age_attested") is True
+    future_contact = data.get("future_contact_consent") is True
 
     if not code or not terms_accepted:
         raise bad_request("Confirmation code and terms required")
+
+    if not age_attested:
+        raise bad_request("Please confirm the age statement to continue")
 
     result = await db.execute(
         select(User)
@@ -221,6 +226,12 @@ async def confirm_participation(
     user.terms_accepted = True
     user.terms_accepted_at = now
     user.terms_version = terms_version
+
+    # Privacy choices recorded with the registration
+    from app.services.consent_service import AGE_ATTESTATION_V1, set_future_contact_consent
+    user.age_attestation = AGE_ATTESTATION_V1
+    user.age_attested_at = now
+    set_future_contact_consent(user, future_contact, now)
 
     # Update EventParticipation status to confirmed
     from app.models.event import EventParticipation, ParticipationStatus
@@ -331,6 +342,19 @@ async def confirm_participation(
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
     )
+    await audit_service.log(
+        user_id=user.id,
+        action="PRIVACY_CHOICES_RECORDED",
+        resource_type="USER",
+        resource_id=user.id,
+        details={
+            "source": "accept",
+            "future_contact_consent": future_contact,
+            "age_attestation": user.age_attestation,
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
 
     # Trigger credentials email
     # Sponsors/admins already received credentials at account creation — skip resend.
@@ -369,8 +393,15 @@ async def decline_participation(
     db: AsyncSession = Depends(get_db)
 ):
     """Decline participation."""
+    from app.services.consent_service import DeclineChoice, set_future_contact_consent
+    from app.services.invite_suppression_service import InviteSuppressionService
+
     code = data.get("confirmation_code")
     reason = data.get("reason", "")
+    try:
+        choice = DeclineChoice(data.get("future_contact_choice") or DeclineChoice.NOT_THIS_TIME.value)
+    except ValueError:
+        raise bad_request("Invalid choice")
 
     if not code:
         raise bad_request("Confirmation code required")
@@ -393,6 +424,12 @@ async def decline_participation(
     user.confirmed = 'NO'
     user.confirmed_at = now
     user.decline_reason = reason if reason else None
+
+    # The decliner's choice about what happens next. Declining is not itself a
+    # do-not-contact request: only "don't invite me again" writes a suppression.
+    set_future_contact_consent(user, choice == DeclineChoice.FUTURE_EVENTS, now)
+    if choice == DeclineChoice.DO_NOT_INVITE:
+        await InviteSuppressionService(db).add(user.email)
 
     # Update EventParticipation record
     event_service = EventService(db)
@@ -427,7 +464,8 @@ async def decline_participation(
         details={
             "event_id": event.id if event else None,
             "event_name": event.name if event else None,
-            "reason": reason
+            "reason": reason,
+            "future_contact_choice": choice.value,
         },
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")

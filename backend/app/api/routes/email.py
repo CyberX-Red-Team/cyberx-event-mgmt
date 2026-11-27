@@ -13,7 +13,7 @@ from app.api.utils.dependencies import (
     get_vpn_service
 )
 from app.models.user import User
-from app.services.email_service import EmailService
+from app.services.email_service import EmailService, append_privacy_footer, optional_email_vars
 from app.services.participant_service import ParticipantService
 from app.services.vpn_service import VPNService
 from app.services.audit_service import AuditService
@@ -163,6 +163,19 @@ async def send_vpn_config_email(
     )
 
 
+def _filter_optional_recipients(users, optional_email: bool):
+    """Announcements / future-event emails only go to people who asked for them."""
+    if not optional_email:
+        return users, 0
+    from app.services.consent_service import may_receive_optional_email
+    kept = [u for u in users if may_receive_optional_email(u)]
+    return kept, len(users) - len(kept)
+
+
+def _skipped_note(skipped: int) -> str:
+    return f"; {skipped} skipped (no consent to announcements)" if skipped else ""
+
+
 @router.post("/bulk", response_model=BulkEmailResponse)
 async def send_bulk_emails(
     data: BulkEmailRequest,
@@ -197,12 +210,17 @@ async def send_bulk_emails(
     # Validate bulk email permissions (test mode, registration open, etc.)
     await validate_bulk_email_permissions(users, db, "bulk emails")
 
+    users, skipped = _filter_optional_recipients(users, data.optional_email)
+    if not users:
+        raise bad_request("None of the selected people asked for announcements or future invitations")
+
     # Send emails
     sent, failed, failed_ids, errors = await email_service.send_bulk_emails_with_template_id(
         users=users,
         template_id=data.template_id,
         custom_subject=data.custom_subject,
-        custom_vars=data.custom_variables
+        custom_vars=data.custom_variables,
+        optional_email=data.optional_email,
     )
 
     # Log email send to audit log
@@ -217,7 +235,7 @@ async def send_bulk_emails(
 
     return BulkEmailResponse(
         success=sent > 0,
-        message=f"Sent {sent} emails, {failed} failed",
+        message=f"Sent {sent} emails, {failed} failed" + _skipped_note(skipped),
         sent_count=sent,
         failed_count=failed,
         failed_ids=failed_ids,
@@ -249,6 +267,10 @@ async def send_custom_emails(
     # Validate bulk email permissions (test mode, registration open, etc.)
     await validate_bulk_email_permissions(users, db, "custom emails")
 
+    users, skipped = _filter_optional_recipients(users, data.optional_email)
+    if not users:
+        raise bad_request("None of the selected people asked for announcements or future invitations")
+
     # Send emails
     sent_count = 0
     failed_count = 0
@@ -256,11 +278,16 @@ async def send_custom_emails(
     errors = []
 
     for user in users:
+        html_body, text_body = data.html_body, data.text_body
+        if data.optional_email:
+            html_body, text_body = append_privacy_footer(
+                html_body, text_body or "", optional_email_vars(user)
+            )
         success, message, _ = await email_service.send_custom_email(
             user=user,
             subject=data.subject,
-            html_body=data.html_body,
-            text_body=data.text_body
+            html_body=html_body,
+            text_body=text_body
         )
 
         if success:
@@ -282,7 +309,7 @@ async def send_custom_emails(
 
     return BulkEmailResponse(
         success=sent_count > 0,
-        message=f"Sent {sent_count} emails, {failed_count} failed",
+        message=f"Sent {sent_count} emails, {failed_count} failed" + _skipped_note(skipped),
         sent_count=sent_count,
         failed_count=failed_count,
         failed_ids=failed_ids,

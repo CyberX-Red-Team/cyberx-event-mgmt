@@ -179,6 +179,29 @@
                 </div>
             </div>
 
+            <!-- Privacy Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i data-feather="shield" class="me-2"></i>
+                    Privacy
+                </div>
+                <div class="card-body">
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="futureContactConsent">
+                        <label class="form-check-label" for="futureContactConsent">
+                            Invite me to future CyberX events and send me announcements.
+                        </label>
+                    </div>
+                    <div id="privacyAlert" class="alert d-none small" role="alert"></div>
+                    <button type="button" class="btn btn-primary btn-sm" id="savePrivacyBtn">
+                        <i data-feather="save" class="me-1"></i> Save
+                    </button>
+                    <p class="small text-muted mt-3 mb-0">
+                        <a href="https://cyberxredteam.org/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+                    </p>
+                </div>
+            </div>
+
             <!-- Sample Timestamps Card -->
             <div class="card">
                 <div class="card-header">
@@ -354,6 +377,36 @@ document.getElementById('passwordChangeForm').addEventListener('submit', async f
         feather.replace();
     }
 });
+
+// Privacy: future-contact consent
+async function loadPrivacy() {
+    try {
+        const response = await fetch('/api/user/privacy', { credentials: 'include' });
+        if (!response.ok) return;
+        const data = await response.json();
+        document.getElementById('futureContactConsent').checked = data.future_contact_consent === true;
+    } catch (error) {
+        console.error('Error loading privacy settings:', error);
+    }
+}
+
+document.getElementById('savePrivacyBtn').addEventListener('click', async function() {
+    const alertDiv = document.getElementById('privacyAlert');
+    try {
+        const response = await csrfFetch('/api/user/privacy', {
+            method: 'PUT',
+            body: { future_contact_consent: document.getElementById('futureContactConsent').checked }
+        });
+        if (!response.ok) throw new Error('Failed to save');
+        alertDiv.className = 'alert alert-success small';
+        alertDiv.textContent = 'Saved.';
+    } catch (error) {
+        alertDiv.className = 'alert alert-danger small';
+        alertDiv.textContent = 'Could not save your choice. Please try again.';
+    }
+});
+
+document.addEventListener('DOMContentLoaded', loadPrivacy);
 
 })();
 </script>

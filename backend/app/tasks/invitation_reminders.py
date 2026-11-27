@@ -383,7 +383,7 @@ async def queue_reminders(
             confirmation_url = f"{settings.FRONTEND_URL}/confirm?code={confirmation_code}"
 
             # Build event variables
-            from app.services.email_service import build_event_template_vars
+            from app.services.email_service import build_event_template_vars, privacy_email_vars
             event_vars = build_event_template_vars(event)
 
             # Queue email (workflow_vars first so trigger-time vars override)
@@ -401,7 +401,8 @@ async def queue_reminders(
                     "confirmation_url": confirmation_url,
                     "is_final_reminder": (stage == 3),
                     "reminder_stage": stage,
-                    **event_vars
+                    **event_vars,
+                    **privacy_email_vars(user),
                 }
             )
 
