@@ -79,3 +79,44 @@ async def test_reset_workflow_does_not_reinvite(db_session, active_event):
     result = await ParticipantService(db_session).reset_workflow_state(user.id)
     assert result is not None  # the reset itself still happens
     assert await _queued(db_session, user.id) == 0
+
+
+# ------------------------------------------------ which addresses match
+
+@pytest.mark.parametrize("variant", [
+    "first.last@gmail.com",
+    "FirstLast@Gmail.com",
+    "  first.last@gmail.com ",
+    "first.last+cyberx@gmail.com",
+    "firstlast+a+b@gmail.com",
+    "first.last@googlemail.com",
+    "First.Last+x@GoogleMail.com",
+])
+def test_gmail_variants_share_one_entry(variant):
+    assert email_hmac(variant) == email_hmac("firstlast@gmail.com")
+
+
+@pytest.mark.parametrize("variant", [
+    "person+events@example.org",
+    "PERSON@example.org",
+])
+def test_plus_tags_and_case_match_on_any_domain(variant):
+    assert email_hmac(variant) == email_hmac("person@example.org")
+
+
+@pytest.mark.parametrize("a,b", [
+    ("first.last@example.org", "firstlast@example.org"),  # dots matter outside Gmail
+    ("person@example.org", "person@example.com"),
+    ("person@gmail.com", "person@outlook.com"),
+])
+def test_different_inboxes_stay_different(a, b):
+    assert email_hmac(a) != email_hmac(b)
+
+
+async def test_plus_tag_alias_blocked_at_creation(authenticated_admin_client, db_session):
+    db_session.add(InviteSuppression(email_hmac=email_hmac("someone@gmail.com")))
+    await db_session.commit()
+    resp = await authenticated_admin_client.post("/api/admin/participants", json={
+        "email": "some.one+cyberx@googlemail.com", "first_name": "S", "last_name": "O", "country": "USA",
+    })
+    assert resp.status_code == 409 and resp.json()["detail"] == SUPPRESSED_MESSAGE
