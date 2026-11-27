@@ -111,6 +111,43 @@ Multi-stage reminder system for participants who haven't confirmed. The backgrou
 
 ---
 
+## Data Retention
+
+A daily job (`app/tasks/data_retention.py`) applies the retention periods published in the [Privacy Policy](https://cyberxredteam.org/privacy). The defaults match the policy: change a period here only together with the policy.
+
+| Variable | Required | Web | Worker | Default | Description |
+|----------|----------|-----|--------|---------|-------------|
+| `RETENTION_ENABLED` | No | Yes | Yes | `false` | Master toggle. When `false` the job runs as a dry run: it records what it would delete (counts only) and changes nothing. |
+| `RETENTION_INVITEE_MONTHS` | No | Yes | Yes | `12` | Invitees who never registered are deleted this many months after their latest invitation, unless they asked to be invited to future events. |
+| `RETENTION_INACTIVE_ACCOUNT_MONTHS` | No | Yes | Yes | `24` | Accounts are deleted after this many months without taking part in an event. Admin and sponsor roles are exempt. Signing in or an admin retention hold also keeps the account. |
+| `RETENTION_INACTIVE_WARNING_DAYS` | No | Yes | Yes | `30` | Days between the deletion notice email and the inactive-account deletion. |
+| `RETENTION_LOG_DAYS` | No | Yes | Yes | `365` | Audit log entries, email delivery records, VPN requests, finished email queue rows and synced Keycloak sync rows older than this are deleted. |
+| `RETENTION_EVENT_CLOSEOUT_DAYS` | No | Yes | Yes | `30` | Admins get a weekly reminder (and a dashboard warning) for events that ended this many days ago and aren't archived yet. Events are never archived automatically. |
+| `RETENTION_JOB_HOUR_UTC` | No | Yes | Yes | `3` | Hour (UTC) the daily job runs, at minute 30. |
+| `RETENTION_BATCH_SIZE` | No | Yes | Yes | `5000` | Rows per `DELETE` statement when purging logs, to avoid long locks. |
+
+**Notes:**
+- Each run writes one `DATA_RETENTION_RUN` audit entry holding counts only. Admin > Settings > Privacy & Data Retention shows the latest run and has a "Dry run now" button (`POST /api/admin/retention/dry-run`).
+- Review a dry run against a copy of production data before setting `RETENTION_ENABLED=true`.
+- Participant deletion (manual, data-deletion request, or retention) always removes the person's email/name copies from other tables. CPE certificate records keep the printed name so certificates stay verifiable.
+
+---
+
+## Privacy & Consent
+
+| Variable | Required | Web | Worker | Default | Description |
+|----------|----------|-----|--------|---------|-------------|
+| `PRIVACY_POLICY_URL` | No | Yes | Yes | `https://cyberxredteam.org/privacy` | Linked from invitation and reminder emails (`{privacy_policy_url}` template variable; appended automatically to locally rendered templates). |
+| `PRIVACY_CONTACT_EMAIL` | No | Yes | Yes | `hello@cyberxredteam.org` | Contact address shown in deletion notices and on the consent-withdrawal page. |
+| `LEGACY_FUTURE_INVITES_ENABLED` | No | Yes | Yes | `true` | Transition toggle. When `true`, people with no recorded future-contact choice (records created before the choice was collected) still receive automatic next-event invitations. Set to `false` once they've had a chance to record a choice. People who chose "no" are never auto-invited, either way. |
+| `INVITE_SUPPRESSION_KEY` | No | Yes | Yes | `""` | Key for hashing do-not-invite list entries. Empty = derived from `SECRET_KEY`. Changing it (or `SECRET_KEY` while this is empty) makes existing entries unmatchable. |
+
+**Notes:**
+- SendGrid dynamic templates render on SendGrid's side, so add `{{privacy_policy_url}}` (and `{{future_contact_withdraw_url}}` for future-event invitations) to those templates in SendGrid.
+- Bulk/custom emails marked "Announcement or future-event invitation" go only to people who asked for them (admins and sponsors always included) and carry a one-click link to stop them.
+
+---
+
 ## VPN (WireGuard)
 
 | Variable | Required | Web | Worker | Default | Description |

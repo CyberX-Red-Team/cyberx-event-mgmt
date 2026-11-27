@@ -148,6 +148,13 @@ async def create_my_invitee(
         f"({data.email})"
     )
 
+    # Do-not-invite list first, so nothing else about the person is revealed
+    from app.services.invite_suppression_service import (
+        InviteSuppressionService, SUPPRESSED_MESSAGE,
+    )
+    if await InviteSuppressionService(db).is_suppressed(data.email):
+        raise conflict(SUPPRESSED_MESSAGE)
+
     # Check if user already exists
     from app.api.utils.validation import normalize_email
     normalized_email = normalize_email(data.email)
@@ -388,10 +395,6 @@ async def delete_my_invitee(
             "Please contact an administrator."
         )
 
-    # Store details before deletion
-    deleted_user_email = invitee.email
-    deleted_user_name = f"{invitee.first_name} {invitee.last_name}"
-
     success = await service.delete_participant(invitee_id)
     if not success:
         raise not_found("Invitee not found")
@@ -403,11 +406,8 @@ async def delete_my_invitee(
     await audit_service.log_user_delete(
         user_id=current_user.id,
         deleted_user_id=invitee_id,
-        details={
-            "email": deleted_user_email,
-            "name": deleted_user_name,
-            "sponsor_id": current_user.id
-        },
+        # IDs only, so the entry doesn't re-store the deleted person's identity
+        details={"sponsor_id": current_user.id},
         ip_address=ip_address,
         user_agent=user_agent
     )

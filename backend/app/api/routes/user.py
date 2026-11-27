@@ -1,6 +1,6 @@
 """User preference routes."""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,3 +73,51 @@ async def update_theme_preference(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update theme preference"
         )
+
+
+class PrivacyPreferences(BaseModel):
+    """The signed-in user's privacy choices."""
+    future_contact_consent: bool = Field(
+        ..., description="Invite me to future CyberX events and send me announcements"
+    )
+
+
+@router.get("/privacy")
+async def get_privacy_preferences(
+    current_user: User = Depends(get_current_active_user),
+):
+    return {
+        "future_contact_consent": current_user.future_contact_consent,
+        "future_contact_consent_at": (
+            current_user.future_contact_consent_at.isoformat()
+            if current_user.future_contact_consent_at else None
+        ),
+    }
+
+
+@router.put("/privacy")
+async def update_privacy_preferences(
+    data: PrivacyPreferences,
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Give or withdraw consent to future invitations and announcements."""
+    from app.services.audit_service import AuditService
+    from app.services.consent_service import set_future_contact_consent
+    from app.api.utils.request import extract_client_metadata
+
+    user = await db.get(User, current_user.id)
+    set_future_contact_consent(user, data.future_contact_consent)
+    await db.commit()
+    ip_address, user_agent = extract_client_metadata(request)
+    await AuditService(db).log(
+        user_id=user.id,
+        action="PRIVACY_CHOICES_RECORDED",
+        resource_type="USER",
+        resource_id=user.id,
+        details={"source": "profile", "future_contact_consent": data.future_contact_consent},
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    return {"future_contact_consent": user.future_contact_consent}

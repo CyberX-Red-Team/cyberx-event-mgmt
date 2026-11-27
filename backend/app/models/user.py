@@ -112,6 +112,17 @@ class User(Base):
     # In-Person Attendance
     confirmed_in_person = Column(Boolean, default=False)
 
+    # Privacy choices and retention
+    # future_contact_consent: None = never asked (record predates consent collection),
+    # True = asked to be invited to future events / receive announcements, False = chose not to.
+    future_contact_consent = Column(Boolean, nullable=True)
+    future_contact_consent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    age_attestation = Column(String(50), nullable=True)  # Version/kind of the age statement accepted
+    age_attested_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    last_login_at = Column(TIMESTAMP(timezone=True), nullable=True)  # Portal sign-in (inactivity rule)
+    retention_hold_until = Column(TIMESTAMP(timezone=True), nullable=True)  # Admin "keep" flag
+    deletion_warning_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)  # Inactive-account notice
+
     # System Fields
     is_admin = Column(Boolean, default=False)  # Legacy - use role instead
     is_active = Column(Boolean, default=True)

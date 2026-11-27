@@ -210,6 +210,13 @@ async def create_participant(
     - Admins can create participants with any role and sponsor
     - Sponsors can only create participants with themselves as sponsor
     """
+    # Do-not-invite list first, so nothing else about the person is revealed
+    from app.services.invite_suppression_service import (
+        InviteSuppressionService, SUPPRESSED_MESSAGE,
+    )
+    if await InviteSuppressionService(db).is_suppressed(data.email):
+        raise conflict(SUPPRESSED_MESSAGE)
+
     # Check if email already exists
     existing = await service.get_participant_by_email(data.email)
     if existing:
@@ -544,24 +551,16 @@ async def delete_participant(
     # Check permission to delete this participant
     permissions.can_delete_participant(current_user, participant)
 
-    # Store details before deletion
-    deleted_user_email = participant.email
-    deleted_user_name = f"{participant.first_name} {participant.last_name}"
-
     success = await service.delete_participant(participant_id)
     if not success:
         raise not_found("Participant")
 
-    # Audit log
+    # Audit log: IDs only, so the entry doesn't re-store the deleted person's identity
     ip_address, user_agent = extract_client_metadata(request)
     audit_service = AuditService(db)
     await audit_service.log_user_delete(
         user_id=current_user.id,
         deleted_user_id=participant_id,
-        details={
-            "email": deleted_user_email,
-            "name": deleted_user_name
-        },
         ip_address=ip_address,
         user_agent=user_agent
     )

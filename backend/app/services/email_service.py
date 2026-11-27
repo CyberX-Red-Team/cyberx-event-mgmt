@@ -85,6 +85,60 @@ def build_event_template_vars(event) -> Dict[str, str]:
     }
 
 
+# Reserved custom_vars key: append the privacy footer when rendering locally.
+# (SendGrid dynamic templates get {{privacy_policy_url}} and must link it themselves.)
+PRIVACY_FOOTER_FLAG = "__privacy_footer"
+
+
+def privacy_email_vars(user: User) -> Dict[str, Any]:
+    """Privacy link for invitations/reminders, plus the consent-withdrawal link for
+    people who asked for future invitations (GDPR Art. 14 notice at first contact)."""
+    from app.services.consent_service import withdraw_url
+    vars: Dict[str, Any] = {
+        "privacy_policy_url": settings.PRIVACY_POLICY_URL,
+        PRIVACY_FOOTER_FLAG: True,
+    }
+    if user.future_contact_consent is True:
+        vars["future_contact_withdraw_url"] = withdraw_url(user.id)
+    return vars
+
+
+def optional_email_vars(user: User) -> Dict[str, Any]:
+    """Announcements / future-event emails always carry the consent-withdrawal link."""
+    from app.services.consent_service import withdraw_url
+    return {
+        "privacy_policy_url": settings.PRIVACY_POLICY_URL,
+        "future_contact_withdraw_url": withdraw_url(user.id),
+        PRIVACY_FOOTER_FLAG: True,
+    }
+
+
+def append_privacy_footer(html: str, text: str, vars: Dict[str, Any]) -> Tuple[str, str]:
+    """Add the Privacy Policy (and consent-withdrawal) links unless the template has them."""
+    import html as html_lib
+    privacy_url = vars.get("privacy_policy_url") or settings.PRIVACY_POLICY_URL
+    withdraw = vars.get("future_contact_withdraw_url")
+    if privacy_url not in (html or ""):
+        links = (
+            f'<a href="{html_lib.escape(privacy_url, quote=True)}">Privacy Policy</a>'
+        )
+        if withdraw:
+            links += (
+                f' &middot; <a href="{html_lib.escape(withdraw, quote=True)}">'
+                "Stop future invitations and announcements</a>"
+            )
+        footer = (
+            '<p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 16px 0 0 0;">'
+            f"How we use your information: {links}</p>"
+        )
+        html = html.replace("</body>", footer + "</body>", 1) if "</body>" in (html or "") else (html or "") + footer
+    if text and privacy_url not in text:
+        text += f"\n\nHow we use your information: {privacy_url}"
+        if withdraw:
+            text += f"\nStop future invitations and announcements: {withdraw}"
+    return html, text
+
+
 async def queue_invitation_email_for_user(
     user: User,
     event,
@@ -241,6 +295,7 @@ async def queue_invitation_email_for_user(
             "confirmation_url": confirmation_url,
             **event_vars,
             **sponsor_vars,
+            **privacy_email_vars(user),
         }
     )
 
@@ -431,6 +486,7 @@ class EmailService:
             "announcement_body": "",
             "start_date": "TBD",
             "start_time": "TBD",
+            "privacy_policy_url": settings.PRIVACY_POLICY_URL,
         }
 
         # Merge custom variables (these will override defaults if provided)
@@ -515,6 +571,7 @@ class EmailService:
             "login_url": f"{settings.FRONTEND_URL}/login",
             "survey_url": f"{settings.FRONTEND_URL}/survey",
             "support_email": settings.SENDGRID_FROM_EMAIL or "",
+            "privacy_policy_url": settings.PRIVACY_POLICY_URL,
         }
 
         # Merge custom variables (override defaults with workflow/trigger vars)
@@ -683,6 +740,7 @@ class EmailService:
 
             override_from_email = send_vars.pop("__from_email", None)
             override_from_name = send_vars.pop("__from_name", None)
+            privacy_footer = bool(send_vars.pop(PRIVACY_FOOTER_FLAG, False))
             custom_vars = send_vars if send_vars else None
 
             # Resolve sender address (workflow override → env default)
@@ -726,6 +784,11 @@ class EmailService:
                 subject, html_content, text_content = self._render_template_content(
                     template, user, custom_vars
                 )
+
+                if privacy_footer:
+                    html_content, text_content = append_privacy_footer(
+                        html_content, text_content, custom_vars or {}
+                    )
 
                 # Use custom subject if provided
                 if custom_subject:
@@ -1028,10 +1091,14 @@ From: CyberX Red Team"""
         users: List[User],
         template_id: int,
         custom_subject: Optional[str] = None,
-        custom_vars: Optional[Dict[str, Any]] = None
+        custom_vars: Optional[Dict[str, Any]] = None,
+        optional_email: bool = False,
     ) -> Tuple[int, int, List[int], List[str]]:
         """
         Send emails to multiple users using template ID.
+
+        optional_email adds the Privacy Policy and consent-withdrawal links
+        (callers filter recipients to those with consent first).
 
         Returns:
             Tuple of (sent_count, failed_count, failed_ids, errors)
@@ -1046,11 +1113,14 @@ From: CyberX Red Team"""
         errors = []
 
         for user in users:
+            user_vars = custom_vars
+            if optional_email:
+                user_vars = {**(custom_vars or {}), **optional_email_vars(user)}
             success, message, _ = await self._send_email_with_template(
                 user=user,
                 template=template,
                 custom_subject=custom_subject,
-                custom_vars=custom_vars
+                custom_vars=user_vars
             )
 
             if success:

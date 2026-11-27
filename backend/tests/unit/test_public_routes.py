@@ -309,6 +309,7 @@ class TestConfirmParticipationRoute:
         # Mock services
         mock_audit = mocker.Mock()
         mock_audit.log_terms_acceptance = mocker.AsyncMock()
+        mock_audit.log = mocker.AsyncMock()
         mocker.patch('app.api.routes.public.AuditService', return_value=mock_audit)
 
         mock_event_service = mocker.Mock()
@@ -326,7 +327,8 @@ class TestConfirmParticipationRoute:
         data = {
             "confirmation_code": "code123",
             "terms_accepted": True,
-            "terms_version": "1.0"
+            "terms_version": "1.0",
+            "age_attested": True,
         }
 
         result = await confirm_participation(request=mock_request, data=data, db=mock_db)
@@ -369,6 +371,7 @@ class TestConfirmParticipationRoute:
         # Mock services
         mock_audit = mocker.Mock()
         mock_audit.log_terms_acceptance = mocker.AsyncMock()
+        mock_audit.log = mocker.AsyncMock()
         mocker.patch('app.api.routes.public.AuditService', return_value=mock_audit)
 
         mock_event_service = mocker.Mock()
@@ -382,7 +385,8 @@ class TestConfirmParticipationRoute:
         data = {
             "confirmation_code": "code123",
             "terms_accepted": True,
-            "terms_version": "1.0"
+            "terms_version": "1.0",
+            "age_attested": True,
         }
 
         result = await confirm_participation(request=mock_request, data=data, db=mock_db)

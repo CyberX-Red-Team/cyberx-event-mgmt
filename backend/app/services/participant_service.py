@@ -237,6 +237,14 @@ class ParticipantService:
         is_admin: bool = False
     ) -> User:
         """Create a new participant."""
+        # Backstop for the route-level check: never re-create someone on the
+        # do-not-invite list.
+        from app.services.invite_suppression_service import (
+            InviteSuppressionService, SUPPRESSED_MESSAGE,
+        )
+        if await InviteSuppressionService(self.session).is_suppressed(email):
+            raise HTTPException(status_code=409, detail=SUPPRESSED_MESSAGE)
+
         # Store original email for sending, calculate normalized for lookups
         email_original = email.strip()  # Remove leading/trailing whitespace only
         email_normalized = normalize_email(email)
@@ -590,8 +598,8 @@ class ParticipantService:
         # Sessions and event participations have CASCADE + NOT NULL on user_id,
         # so they must be removed explicitly (SQLAlchemy ORM tries SET NULL before
         # DB CASCADE fires). Other records (participant_actions, tls_certificates,
-        # cpe_certificates, password_sync_queue, email_queue, vpn_requests) use
-        # SET NULL and are preserved for audit trail.
+        # cpe_certificates, email_queue, vpn_requests) use SET NULL and are kept
+        # for the audit trail, minus the person's email/name copies (Step 4).
 
         # Delete sessions
         await self.session.execute(
@@ -628,17 +636,17 @@ class ParticipantService:
             .values(status=EmailQueueStatus.CANCELLED, custom_vars=None)
         )
 
-        # Step 4: Clean up Keycloak sync queue and queue deletion
+        # Step 4: Remove the person's identifying copies everywhere else
+        # (audit/email/VPN/instance/TLS/action snapshots, referrer-email copies,
+        # Keycloak sync rows). Driven by the personal-data registry so deletion
+        # and export cover the same tables. Must run before the user row goes,
+        # while SET NULL foreign keys still point at the person.
+        from app.services.personal_data_scrubber import PersonalDataScrubber
+        await PersonalDataScrubber(self.session).scrub_user(participant)
+
+        # Step 5: Queue Keycloak user deletion (the scrub above removed every
+        # earlier sync entry for this user, synced or not).
         from app.models.password_sync_queue import PasswordSyncQueue, SyncOperation
-        # Remove any pending (unsynced) sync entries — no point creating/updating
-        # a user in Keycloak if they're about to be deleted
-        await self.session.execute(
-            delete(PasswordSyncQueue).where(
-                PasswordSyncQueue.user_id == participant_id,
-                PasswordSyncQueue.synced == False
-            )
-        )
-        # Queue Keycloak user deletion (only if they have a Keycloak username)
         if participant.pandas_username:
             queue_entry = PasswordSyncQueue(
                 user_id=participant.id,
@@ -647,7 +655,7 @@ class ParticipantService:
             )
             self.session.add(queue_entry)
 
-        # Step 5: Delete the participant from database
+        # Step 6: Delete the participant from database
         await self.session.delete(participant)
         await self.session.commit()
 

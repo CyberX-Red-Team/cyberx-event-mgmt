@@ -22,6 +22,7 @@ from app.api.routes import bot as bot_routes, admin_api_keys
 from app.api.routes import redirectors as redirectors_routes
 from app.api.routes import redirectors_pages
 from app.api.routes import admin_pages
+from app.api.routes import admin_privacy
 from app.tasks import start_scheduler, stop_scheduler
 from app.utils.encryption import init_encryptor
 import base64
@@ -307,6 +308,7 @@ app.include_router(admin_api_keys.router)  # Admin API key management
 app.include_router(redirectors_routes.router)   # Redirector REST API
 app.include_router(redirectors_pages.router)    # Redirector web UI pages
 app.include_router(admin_pages.router)           # Admin pages (logs, etc.)
+app.include_router(admin_privacy.router)         # Admin privacy: retention, deletion requests, do-not-invite
 
 # Include view routes (HTML pages)
 app.include_router(views.router)
