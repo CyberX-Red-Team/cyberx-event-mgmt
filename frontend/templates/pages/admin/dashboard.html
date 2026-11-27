@@ -22,6 +22,15 @@
 
 <!-- Main Content -->
 <div class="container-xl px-4 mt-n10">
+    <!-- Event close-out reminder (data retention) -->
+    <div class="alert alert-warning d-none" id="closeoutWarning" role="alert">
+        <i data-feather="alert-triangle" class="me-2"></i>
+        <strong>Event close-out overdue:</strong>
+        <span id="closeoutWarningText"></span>
+        The Privacy Policy says event access is deleted when we close out the event, normally within 30 days of it ending.
+        <a href="/admin/events" class="alert-link">Go to Events</a>
+    </div>
+
     <!-- Event Status Card -->
     <div class="card mb-4" id="eventStatusCard">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -560,9 +569,25 @@ async function loadDashboardStats() {
 }
 
 // Load stats on page load
+async function loadCloseoutWarning() {
+    try {
+        const response = await fetch('/api/admin/retention/status', { credentials: 'include' });
+        if (!response.ok) return;  // not permitted / unavailable: no banner
+        const data = await response.json();
+        const overdue = data.overdue_events || [];
+        if (!overdue.length) return;
+        document.getElementById('closeoutWarningText').textContent = overdue
+            .map(e => `${e.name} ended ${e.days_since_end} days ago.`).join(' ');
+        document.getElementById('closeoutWarning').classList.remove('d-none');
+    } catch (error) {
+        console.error('Error loading close-out status:', error);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     loadEventStatus();
     loadDashboardStats();
+    loadCloseoutWarning();
     // Refresh icons after a short delay to ensure they render
     setTimeout(function() {
         if (typeof refreshFeatherIcons === 'function') {

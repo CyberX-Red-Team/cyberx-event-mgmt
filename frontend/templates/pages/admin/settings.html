@@ -154,6 +154,38 @@
             </div>
         </div>
     </div>
+
+    <!-- Privacy & Data Retention Card -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i data-feather="shield" class="me-2"></i>Privacy &amp; Data Retention</span>
+            <button class="btn btn-sm btn-outline-primary" id="retentionDryRunBtn" onclick="runRetentionDryRun()">
+                <i data-feather="play" class="me-1"></i> Dry run now
+            </button>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-3">
+                Retention periods from the Privacy Policy. The job runs daily; while it's disabled it only
+                counts what it would do. A dry run changes nothing.
+            </p>
+            <div id="retentionSettings" class="small mb-3">Loading&hellip;</div>
+            <h6 class="mb-2">Latest run</h6>
+            <pre id="retentionLastRun" class="small bg-light p-2 rounded mb-4" style="max-height: 260px; overflow: auto;">&mdash;</pre>
+
+            <h6 class="mb-2">Do-not-invite list</h6>
+            <p class="text-muted small mb-2">
+                For people who ask not to be invited again (or later ask to be invited after all).
+                Only a keyed hash of the address is stored.
+            </p>
+            <div class="input-group input-group-sm" style="max-width: 520px;">
+                <input type="email" class="form-control" id="suppressionEmail" placeholder="email@example.com" autocomplete="off">
+                <button class="btn btn-outline-secondary" onclick="suppressionAction('check')">Check</button>
+                <button class="btn btn-outline-danger" onclick="suppressionAction('add')">Add</button>
+                <button class="btn btn-outline-success" onclick="suppressionAction('remove')">Remove</button>
+            </div>
+            <div id="suppressionResult" class="small mt-2"></div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -420,9 +452,85 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadProviderLimits();
     await loadUsageStats();
     await loadApiKeys();
+    await loadRetentionStatus();
 
     feather.replace();
 });
+
+// ─── Privacy & retention ────────────────────────────────────────────
+async function loadRetentionStatus() {
+    try {
+        const response = await fetch('/api/admin/retention/status', { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to load retention status');
+        const data = await response.json();
+        const s = data.settings;
+        const el = document.getElementById('retentionSettings');
+        el.innerHTML = '';
+        const rows = [
+            ['Status', s.enabled ? 'Enabled (deletes data)' : 'Disabled (dry run only)'],
+            ['Never-registered invitees', `${s.invitee_months} months after latest invitation`],
+            ['Inactive accounts', `${s.inactive_account_months} months without taking part (notice ${s.inactive_warning_days} days before)`],
+            ['Security logs & email records', `${s.log_days} days`],
+            ['Event close-out reminder', `${s.event_closeout_days} days after the event ends`],
+            ['Automatic invites for records without a recorded choice', s.legacy_future_invites_enabled ? 'On (2027 transition)' : 'Off'],
+        ];
+        const table = document.createElement('table');
+        table.className = 'table table-sm mb-0';
+        rows.forEach(([k, v]) => {
+            const tr = table.insertRow();
+            tr.insertCell().textContent = k;
+            tr.insertCell().textContent = v;
+        });
+        el.appendChild(table);
+        document.getElementById('retentionLastRun').textContent = data.last_run
+            ? `${data.last_run.at}\n${JSON.stringify(data.last_run.results, null, 2)}`
+            : 'No runs yet';
+    } catch (error) {
+        console.error(error);
+        document.getElementById('retentionSettings').textContent = 'Could not load retention status.';
+    }
+}
+
+async function runRetentionDryRun() {
+    const btn = document.getElementById('retentionDryRunBtn');
+    btn.disabled = true;
+    try {
+        const response = await csrfFetch('/api/admin/retention/dry-run', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Dry run failed');
+        showSuccess('Dry run complete (nothing was changed)');
+        await loadRetentionStatus();
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function suppressionAction(action) {
+    const email = document.getElementById('suppressionEmail').value.trim();
+    const out = document.getElementById('suppressionResult');
+    if (!email) { out.textContent = 'Enter an email address.'; return; }
+    const url = {
+        check: '/api/admin/invite-suppressions/check',
+        add: '/api/admin/invite-suppressions',
+        remove: '/api/admin/invite-suppressions/remove',
+    }[action];
+    try {
+        const response = await csrfFetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Request failed');
+        if (action === 'check') out.textContent = data.suppressed ? 'On the do-not-invite list.' : 'Not on the list.';
+        if (action === 'add') out.textContent = data.added ? 'Added to the do-not-invite list.' : 'Already on the list.';
+        if (action === 'remove') out.textContent = data.removed ? 'Removed from the list.' : 'Was not on the list.';
+    } catch (error) {
+        out.textContent = error.message;
+    }
+}
 </script>
 
 <!-- Create API Key Modal -->

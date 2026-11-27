@@ -104,6 +104,15 @@ class AuthService:
         )
 
         self.session.add(session)
+        # Sign-in recency for the inactive-account retention rule; signing in
+        # also cancels a pending inactivity deletion notice.
+        from sqlalchemy import update
+        await self.session.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(last_login_at=datetime.now(timezone.utc), deletion_warning_sent_at=None)
+            .execution_options(synchronize_session=False)
+        )
         await self.session.commit()
 
         return session_token, expires_at

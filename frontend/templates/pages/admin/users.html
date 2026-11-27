@@ -623,6 +623,20 @@
                     <i data-feather="alert-circle" class="me-2"></i>
                     This action cannot be undone. All user data will be permanently removed.
                 </div>
+                <div id="dataDeletionSection" class="d-none">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="dataDeletionRequest" onchange="toggleDataDeletionRequest()">
+                        <label class="form-check-label small" for="dataDeletionRequest">
+                            This is a data-deletion request from the person (e.g. by email to the privacy contact)
+                        </label>
+                    </div>
+                    <div id="dataDeletionConfirm" class="d-none">
+                        <label class="form-label small" for="dataDeletionEmail">
+                            To confirm, type their email address: <code id="deleteUserEmail"></code>
+                        </label>
+                        <input type="text" class="form-control form-control-sm" id="dataDeletionEmail" autocomplete="off">
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1684,18 +1698,35 @@ window.saveRoleChange = async function() {
 window.openDeleteModal = function(userId, userName) {
     document.getElementById('deleteUserId').value = userId;
     document.getElementById('deleteUserName').textContent = userName;
+    const target = users.find(u => u.id === userId);
+    document.getElementById('deleteUserEmail').textContent = target ? target.email : '';
+    document.getElementById('dataDeletionRequest').checked = false;
+    document.getElementById('dataDeletionEmail').value = '';
+    document.getElementById('dataDeletionConfirm').classList.add('d-none');
+    document.getElementById('dataDeletionSection').classList.toggle('d-none', !isCurrentUserAdmin);
 
     new bootstrap.Modal(document.getElementById('deleteModal')).show();
     feather.replace();
 }
 
+window.toggleDataDeletionRequest = function() {
+    const on = document.getElementById('dataDeletionRequest').checked;
+    document.getElementById('dataDeletionConfirm').classList.toggle('d-none', !on);
+}
+
 window.confirmDelete = async function() {
     const userId = document.getElementById('deleteUserId').value;
+    const isDataRequest = document.getElementById('dataDeletionRequest').checked;
 
     try {
-        const response = await csrfFetch(`/api/admin/participants/${userId}`, {
-            method: 'DELETE'
-        });
+        const response = isDataRequest
+            ? await csrfFetch(`/api/admin/participants/${userId}/delete-data`, {
+                method: 'POST',
+                body: { confirm_email: document.getElementById('dataDeletionEmail').value }
+            })
+            : await csrfFetch(`/api/admin/participants/${userId}`, {
+                method: 'DELETE'
+            });
 
         if (!response.ok) {
             const error = await response.json();

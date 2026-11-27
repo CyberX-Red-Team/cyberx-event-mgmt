@@ -93,6 +93,74 @@ CyberX Red Team Collective""",
         ],
         "is_active": True,
     },
+    {
+        "name": "account_deletion_warning",
+        "display_name": "Account Deletion Notice (inactivity)",
+        "description": "Sent 30 days before an account is deleted for two years without taking part in an event (data retention).",
+        "subject": "Your CyberX Red Team account will be deleted on {deletion_date}",
+        "html_content": """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account deletion notice</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
+    <div style="border: 1px solid #e5e7eb; border-radius: 4px; padding: 30px;">
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Hi {first_name},</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">You haven't taken part in a CyberX Red Team event for two years, so we'll delete your account and contact details on <strong>{deletion_date}</strong>.</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">If you'd like to keep them, sign in to the <a href="{login_url}">participant portal</a> or email us at <a href="mailto:{contact_email}">{contact_email}</a> before then.</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">We keep CPE certificate records so certificates can still be reissued and verified.</p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+        <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
+            CyberX Red Team &mdash; <a href="{privacy_policy_url}" style="color: #94a3b8;">Privacy Policy</a>
+        </p>
+    </div>
+</body>
+</html>""",
+        "text_content": """Hi {first_name},
+
+You haven't taken part in a CyberX Red Team event for two years, so we'll delete your account and contact details on {deletion_date}.
+
+If you'd like to keep them, sign in to the participant portal ({login_url}) or email us at {contact_email} before then.
+
+We keep CPE certificate records so certificates can still be reissued and verified.
+
+---
+CyberX Red Team
+Privacy Policy: {privacy_policy_url}""",
+        "available_variables": [
+            "first_name", "deletion_date", "login_url", "contact_email", "privacy_policy_url",
+        ],
+        "is_active": True,
+    },
+    {
+        "name": "event_closeout_reminder",
+        "display_name": "Event Close-out Reminder (admins)",
+        "description": "Sent to admins when an event ended more than 30 days ago and hasn't been archived (data retention).",
+        "subject": "Close out {event_name}: ended {days_since_end} days ago",
+        "html_content": """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Event close-out reminder</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <p style="font-size: 14px;">Hi {first_name},</p>
+    <p style="font-size: 14px;"><strong>{event_name}</strong> ended on {event_end_date} ({days_since_end} days ago) and hasn't been archived yet.</p>
+    <p style="font-size: 14px;">The Privacy Policy says event access (network access, credentials and exercise systems) is deleted when we close out the event, normally within 30 days of it ending. Archive it from the <a href="{events_url}">Events page</a> (preview first: archiving tears down infrastructure).</p>
+    <p style="font-size: 12px; color: #64748b;">This reminder repeats weekly until the event is archived.</p>
+</body>
+</html>""",
+        "text_content": """Hi {first_name},
+
+{event_name} ended on {event_end_date} ({days_since_end} days ago) and hasn't been archived yet.
+
+The Privacy Policy says event access (network access, credentials and exercise systems) is deleted when we close out the event, normally within 30 days of it ending. Archive it from the Events page (preview first: archiving tears down infrastructure): {events_url}
+
+This reminder repeats weekly until the event is archived.""",
+        "available_variables": [
+            "first_name", "event_name", "event_end_date", "days_since_end", "events_url",
+        ],
+        "is_active": True,
+    },
 ]
 
 
