@@ -121,3 +121,32 @@ async def update_privacy_preferences(
         user_agent=user_agent,
     )
     return {"future_contact_consent": user.future_contact_consent}
+
+
+@router.post("/export")
+async def download_my_data(
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """'Download my data' on the profile page: a ZIP of everything we hold about
+    the signed-in person. One per DATA_EXPORT_SELF_SERVICE_HOURS."""
+    from app.api.utils.request import extract_client_metadata
+    from app.config import get_settings
+    from app.services.audit_service import AuditService
+    from app.services.data_export_service import DataExportService, recent_export_exists, zip_response
+
+    hours = get_settings().DATA_EXPORT_SELF_SERVICE_HOURS
+    if await recent_export_exists(db, current_user.id, hours):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"You can download your data once every {hours} hours. Please try again later.",
+        )
+    filename, blob = await DataExportService(db).export_user(current_user.id)
+    ip_address, user_agent = extract_client_metadata(request)
+    await AuditService(db).log(
+        action="DATA_EXPORT_CREATED", user_id=current_user.id, resource_type="USER",
+        resource_id=current_user.id, details={"target_user_id": current_user.id, "delivery": "self_service"},
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    return zip_response(filename, blob)

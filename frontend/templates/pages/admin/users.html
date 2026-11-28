@@ -648,6 +648,41 @@
     </div>
 </div>
 
+<!-- Export Personal Data Modal -->
+<div class="modal fade" id="exportModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i data-feather="download" class="me-2"></i>Export personal data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>A copy of everything we hold about <strong id="exportUserName"></strong>, for an access request.</p>
+                <input type="hidden" id="exportUserId">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="radio" name="exportDelivery" id="exportEmail" value="email" checked>
+                    <label class="form-check-label" for="exportEmail">
+                        <strong>Email them a download link</strong>
+                        <span class="d-block small text-muted">Sent only to the address on file (<span id="exportUserEmail"></span>), so it reaches the person who owns that address. The link works for 7 days.</span>
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="exportDelivery" id="exportDownload" value="download">
+                    <label class="form-check-label" for="exportDownload">
+                        <strong>Download it for me</strong>
+                        <span class="d-block small text-muted">Only after you've confirmed the person's identity another way.</span>
+                    </label>
+                </div>
+                <div id="exportResult" class="alert d-none mt-3 small"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="exportGoBtn" onclick="runExport()">Export</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Assign Action Modal -->
 <div class="modal fade" id="assignActionModal" tabindex="-1">
     <div class="modal-dialog">
@@ -1198,6 +1233,11 @@ function renderUsersTable() {
                     <button class="btn btn-outline-secondary" onclick="openRoleModal(${user.id}, '${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}', '${user.role}')" title="Change Role">
                         <i data-feather="shield"></i>
                     </button>
+                    ${isCurrentUserAdmin
+                        ? `<button class="btn btn-outline-secondary" onclick="openExportModal(${user.id})" title="Export personal data">
+                            <i data-feather="download"></i>
+                           </button>`
+                        : ''}
                     <button class="btn btn-outline-danger" onclick="openDeleteModal(${user.id}, '${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}')" title="Delete">
                         <i data-feather="trash-2"></i>
                     </button>
@@ -1710,6 +1750,56 @@ window.openDeleteModal = function(userId, userName) {
 
     new bootstrap.Modal(document.getElementById('deleteModal')).show();
     feather.replace();
+}
+
+window.openExportModal = function(userId) {
+    const target = users.find(u => u.id === userId);
+    document.getElementById('exportUserId').value = userId;
+    document.getElementById('exportUserName').textContent = target ? `${target.first_name} ${target.last_name}` : '';
+    document.getElementById('exportUserEmail').textContent = target ? target.email : '';
+    document.getElementById('exportEmail').checked = true;
+    document.getElementById('exportResult').className = 'alert d-none mt-3 small';
+    new bootstrap.Modal(document.getElementById('exportModal')).show();
+    feather.replace();
+}
+
+window.runExport = async function() {
+    const userId = document.getElementById('exportUserId').value;
+    const delivery = document.querySelector('input[name="exportDelivery"]:checked').value;
+    const out = document.getElementById('exportResult');
+    const btn = document.getElementById('exportGoBtn');
+    btn.disabled = true;
+    try {
+        const response = await csrfFetch(`/api/admin/participants/${userId}/export`, {
+            method: 'POST', body: { delivery }
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || 'Export failed');
+        }
+        if (delivery === 'download') {
+            const blob = await response.blob();
+            const match = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '');
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = match ? match[1] : 'cyberx-red-team-data.zip';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(link.href);
+            out.className = 'alert alert-success mt-3 small';
+            out.textContent = 'Downloaded.';
+        } else {
+            const data = await response.json();
+            out.className = 'alert alert-success mt-3 small';
+            out.textContent = data.message || 'Link emailed.';
+        }
+    } catch (error) {
+        out.className = 'alert alert-danger mt-3 small';
+        out.textContent = error.message;
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 window.toggleDataDeletionRequest = function() {

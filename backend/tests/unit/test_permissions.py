@@ -13,8 +13,8 @@ class TestPermissionConstants:
     """Test permission constant definitions."""
 
     def test_all_permissions_count(self):
-        """All 49 permission strings should be defined (includes redirector permissions)."""
-        assert len(ALL_PERMISSIONS) == 49
+        """All 50 permission strings should be defined (includes redirector permissions)."""
+        assert len(ALL_PERMISSIONS) == 50
 
     def test_admin_has_all_permissions(self):
         """Admin role should have all permissions."""

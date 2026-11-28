@@ -2,7 +2,7 @@
 from typing import Set
 
 
-# All permission strings defined in the system (49 total)
+# All permission strings defined in the system (50 total)
 ALL_PERMISSIONS: Set[str] = {
     # Events (4)
     "events.view",
@@ -10,13 +10,14 @@ ALL_PERMISSIONS: Set[str] = {
     "events.edit",
     "events.delete",
 
-    # Participants (6)
+    # Participants (7)
     "participants.view",
     "participants.view_all",
     "participants.create",
     "participants.edit",
     "participants.remove",
     "participants.invite",
+    "participants.export_data",  # personal-data export for access requests (admins)
 
     # Instances (6)
     "instances.view",

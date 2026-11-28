@@ -310,3 +310,60 @@ class DataExportService:
             parts.append("</table>")
         parts.append("</body></html>")
         return "".join(parts)
+
+
+# ------------------------------------------------------------------ delivery
+
+def email_delivery_available() -> bool:
+    """Emailed links store the ZIP in R2. Not on staging (its bucket is production's)."""
+    from app.utils.external_stubs import externals_stubbed
+    st = get_settings()
+    configured = all([st.R2_ACCOUNT_ID, st.R2_ACCESS_KEY_ID, st.R2_SECRET_ACCESS_KEY, st.R2_BUCKET])
+    return configured and not externals_stubbed()
+
+
+async def email_export_link(session: AsyncSession, user: User, filename: str, blob: bytes) -> None:
+    """Store the ZIP in R2 and email a time-limited link to the address on file only."""
+    import asyncio
+    from app.services.download_service import DownloadService
+    from app.services.email_queue_service import EmailQueueService
+    from app.utils.r2_client import R2Client
+    st = get_settings()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    key = f"{st.DATA_EXPORT_R2_PREFIX.rstrip('/')}/{user.id}/{stamp}-{filename}"
+    if not await asyncio.to_thread(R2Client.from_settings().put_object, key, blob, "application/zip"):
+        raise RuntimeError("could not store the export")
+    days = st.DATA_EXPORT_LINK_EXPIRY_DAYS
+    url = DownloadService().generate_link(key, expires_in=days * 86400)
+    await EmailQueueService(session).enqueue_email(
+        user_id=user.id, template_name="data_export_ready", priority=2, force=True,
+        allow_duplicates=True,
+        custom_vars={
+            "first_name": user.first_name, "download_url": url, "expiry_days": str(days),
+            "contact_email": st.PRIVACY_CONTACT_EMAIL, "privacy_policy_url": st.PRIVACY_POLICY_URL,
+        },
+    )
+
+
+async def recent_export_exists(session: AsyncSession, user_id: int, hours: int) -> bool:
+    """Was an export made for this person in the last `hours` (rate limit)?"""
+    from datetime import timedelta
+    from sqlalchemy import func
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    n = (await session.execute(
+        select(func.count()).select_from(AuditLog).where(
+            AuditLog.action == "DATA_EXPORT_CREATED",
+            AuditLog.resource_type == "USER",
+            AuditLog.resource_id == user_id,
+            AuditLog.created_at >= since,
+        )
+    )).scalar()
+    return bool(n)
+
+
+def zip_response(filename: str, blob: bytes):
+    from fastapi.responses import Response
+    return Response(
+        content=blob, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"},
+    )

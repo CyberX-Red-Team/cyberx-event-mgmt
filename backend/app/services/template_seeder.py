@@ -162,6 +162,40 @@ This reminder repeats weekly until the event is archived.""",
         "is_active": True,
     },
     {
+        "name": "data_export_ready",
+        "display_name": "Your Data Export Is Ready",
+        "description": "Sent to the address on file with a time-limited link to a copy of the person's data (access request).",
+        "subject": "Your CyberX Red Team data",
+        "html_content": """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Your data</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
+    <div style="border: 1px solid #e5e7eb; border-radius: 4px; padding: 30px;">
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Hi {first_name},</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">Here's the copy of the information we hold about you that you asked for.</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;"><a href="{download_url}">Download your data</a> (a ZIP file). The link stops working after {expiry_days} days.</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0;">If you didn't ask for this, email us at <a href="mailto:{contact_email}">{contact_email}</a>.</p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+        <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">CyberX Red Team &mdash; <a href="{privacy_policy_url}" style="color: #94a3b8;">Privacy Policy</a></p>
+    </div>
+</body>
+</html>""",
+        "text_content": """Hi {first_name},
+
+Here's the copy of the information we hold about you that you asked for.
+
+Download your data (a ZIP file): {download_url}
+The link stops working after {expiry_days} days.
+
+If you didn't ask for this, email us at {contact_email}.
+
+---
+CyberX Red Team
+Privacy Policy: {privacy_policy_url}""",
+        "available_variables": ["first_name", "download_url", "expiry_days", "contact_email", "privacy_policy_url"],
+        "is_active": True,
+    },
+    {
         "name": "guardian_consent_needed",
         "display_name": "Guardian Consent Needed",
         "description": "Sent to a parent/guardian when a participant under 18 names them.",

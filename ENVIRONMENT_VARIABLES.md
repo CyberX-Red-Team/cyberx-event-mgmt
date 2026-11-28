@@ -148,6 +148,24 @@ A daily job (`app/tasks/data_retention.py`) applies the retention periods publis
 
 ---
 
+## Personal-Data Export
+
+Access requests: admins export a person's data (Admin > Invitees > Export), people download their own from Profile > Privacy, and a parent/guardian downloads a linked minor's from the portal.
+
+| Variable | Required | Web | Worker | Default | Description |
+|----------|----------|-----|--------|---------|-------------|
+| `DATA_EXPORT_LINK_EXPIRY_DAYS` | No | Yes | Yes | `7` | Lifetime of the emailed download link. R2 presigned URLs can't exceed 7 days. |
+| `DATA_EXPORT_R2_PREFIX` | No | Yes | Yes | `exports/` | R2 prefix for emailed export ZIPs. |
+| `DATA_EXPORT_RETENTION_DAYS` | No | Yes | Yes | `30` | The daily retention job deletes stored export ZIPs older than this. |
+| `DATA_EXPORT_SELF_SERVICE_HOURS` | No | Yes | Yes | `24` | One self-service (or guardian) export per person per this many hours. |
+
+**Notes:**
+- The emailed link goes only to the address on file. It needs R2 configured and is refused when `STAGING_STUB_EXTERNALS` is set (staging shares production's bucket); "Download" still works there.
+- Export contents come from the personal-data registry's per-table allowlists (`app/services/personal_data_registry.py`); secrets and other people's data are never included.
+- Admin exports need the `participants.export_data` permission (system Admin role only by default).
+
+---
+
 ## VPN (WireGuard)
 
 | Variable | Required | Web | Worker | Default | Description |

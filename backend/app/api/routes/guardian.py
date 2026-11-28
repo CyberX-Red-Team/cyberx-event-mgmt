@@ -162,6 +162,35 @@ async def reject_link(
     return {"success": True}
 
 
+@router.post("/minors/{minor_id}/export")
+async def download_minor_data(
+    request: Request,
+    minor: User = Depends(require_guardian_of),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """A parent/guardian downloads their linked minor's data (relationship check only)."""
+    from fastapi import HTTPException, status
+    from app.config import get_settings
+    from app.services.audit_service import AuditService
+    from app.services.data_export_service import DataExportService, recent_export_exists, zip_response
+
+    hours = get_settings().DATA_EXPORT_SELF_SERVICE_HOURS
+    if await recent_export_exists(db, minor.id, hours):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"You can download this data once every {hours} hours. Please try again later.",
+        )
+    filename, blob = await DataExportService(db).export_user(minor.id)
+    ip_address, user_agent = extract_client_metadata(request)
+    await AuditService(db).log(
+        action="DATA_EXPORT_CREATED", user_id=current_user.id, resource_type="USER", resource_id=minor.id,
+        details={"target_user_id": minor.id, "delivery": "guardian"},
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    return zip_response(filename, blob)
+
+
 class AdminLinkRequest(BaseModel):
     guardian_user_id: Optional[int] = None
 
