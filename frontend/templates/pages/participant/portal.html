@@ -153,9 +153,6 @@
                 <strong>Consent needed:</strong> <span id="guardianConsentNames"></span>
                 <a href="/portal/minors" class="alert-link ms-1">Review and give consent</a>
             </div>
-            <div class="small mb-3 d-none" id="guardianMinorsLink">
-                <a href="/portal/minors">Your minors</a>
-            </div>
             <!-- Welcome Card -->
             <div class="card shadow-sm mb-4">
                 <div class="card-body text-center py-5">
@@ -164,6 +161,29 @@
                     </div>
                     <h2>Welcome to CyberX, {{ current_user.first_name }}!</h2>
                     <p class="text-muted mb-0">Your participant dashboard for the CyberX event</p>
+                </div>
+            </div>
+
+            <!-- Parent/Guardian Card (only when participants under 18 are linked to this account) -->
+            <div class="card shadow-sm mb-4 d-none" id="guardianMinorsCard">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="users" class="me-2"></i>Your Minors</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h6 class="mb-2" id="guardianMinorsSummary">Participants under 18 linked to you</h6>
+                            <p class="text-muted mb-0">
+                                See their onboarding status, give or withdraw your consent for this event, and manage what they receive from us.
+                            </p>
+                        </div>
+                        <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                            <a href="/portal/minors" class="btn btn-primary btn-lg">
+                                <i data-feather="arrow-right" class="me-2"></i>
+                                View
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2793,7 +2813,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!response.ok) return;
         const data = await response.json();
         if (!data.minors.length) return;
-        document.getElementById('guardianMinorsLink').classList.remove('d-none');
+        document.getElementById('guardianMinorsCard').classList.remove('d-none');
+        document.getElementById('guardianMinorsSummary').textContent = data.minors.map(m => m.name).join(', ');
+        if (typeof refreshFeatherIcons === 'function') refreshFeatherIcons();
         const needing = data.minors.filter(m => m.event && !m.consent.given);
         if (needing.length) {
             document.getElementById('guardianConsentNames').textContent = needing.map(m => m.name).join(', ');

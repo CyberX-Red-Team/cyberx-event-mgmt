@@ -691,6 +691,10 @@ class ParticipantService:
 
         db = self.session
         now = now or datetime.now(timezone.utc)
+        # The role decides the Discord invite below. Load it explicitly: callers
+        # (e.g. the guardian consent route) don't always eager-load it, and a lazy
+        # load in async SQLAlchemy raises MissingGreenlet.
+        await db.refresh(user, attribute_names=["role_obj"])
 
         # Generate credentials if not already set
         # Username: Only generate if missing (returning participants keep their existing username)
