@@ -481,8 +481,10 @@ async def notify_admins(db, reason: str, minor: User) -> None:
     queue = EmailQueueService(db)
     for admin_id, first_name in admins:
         try:
+            # Each alert is about a different participant or event: never merge them
             await queue.enqueue_email(
                 user_id=admin_id, template_name="admin_minor_alert", priority=4, force=True,
+                allow_duplicates=True,
                 custom_vars={
                     "first_name": first_name, "reason": reason.replace("_", " "),
                     "minor_user_id": str(minor.id),

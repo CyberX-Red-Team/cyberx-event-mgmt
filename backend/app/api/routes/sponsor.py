@@ -226,9 +226,16 @@ async def create_my_invitee(
     )
 
     if data.referrer_is_guardian:
+        # `invitee` belongs to the participant service's session, not `db`:
+        # write the link through `db` so the commit below saves it.
+        from sqlalchemy import update
         from app.models.guardian_consent import GuardianLinkStatus
-        invitee.guardian_user_id = current_user.id
-        invitee.guardian_link_status = GuardianLinkStatus.PENDING.value
+        await db.execute(
+            update(User).where(User.id == invitee.id).values(
+                guardian_user_id=current_user.id,
+                guardian_link_status=GuardianLinkStatus.PENDING.value,
+            )
+        )
         await db.commit()
 
     # Reload with relationships

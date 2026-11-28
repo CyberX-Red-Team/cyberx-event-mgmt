@@ -67,7 +67,8 @@ class EmailQueueService:
         priority: int = 5,
         custom_vars: Optional[Dict[str, Any]] = None,
         scheduled_for: Optional[datetime] = None,
-        force: bool = False
+        force: bool = False,
+        allow_duplicates: bool = False,
     ) -> EmailQueue:
         """
         Add an email to the queue for batched sending.
@@ -79,6 +80,8 @@ class EmailQueueService:
             custom_vars: Custom template variables
             scheduled_for: When to send the email (None = send ASAP)
             force: If True, bypass 24-hour duplicate check (but still check PENDING queue)
+            allow_duplicates: If True, skip both duplicate checks (for notices that differ
+                each time, e.g. admin alerts about different participants)
 
         Returns:
             Created EmailQueue entry
@@ -92,57 +95,58 @@ class EmailQueueService:
         if not user:
             raise ValueError(f"User {user_id} not found")
 
-        # Check if already queued (PENDING status)
-        existing = await self.session.execute(
-            select(EmailQueue).where(
-                and_(
-                    EmailQueue.user_id == user_id,
-                    EmailQueue.recipient_email == user.email,  # not a guardian copy
-                    EmailQueue.template_name == template_name,
-                    EmailQueue.status == EmailQueueStatus.PENDING
-                )
-            )
-        )
-        existing_email = existing.scalar_one_or_none()
-
-        if existing_email:
-            logger.info(
-                f"DUPLICATE PROTECTION: Email already queued (PENDING) for user {user_id} ({user.email}) "
-                f"with template '{template_name}' [queue_id: {existing_email.id}, created: {existing_email.created_at}]"
-            )
-            return existing_email
-
-        # Check if recently sent or processing (within last 24 hours)
-        # This prevents duplicate sends if workflow triggers multiple times
-        # Can be bypassed with force=True for manual resend actions
-        if not force:
-            recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-            recent = await self.session.execute(
+        if not allow_duplicates:
+            # Check if already queued (PENDING status)
+            existing = await self.session.execute(
                 select(EmailQueue).where(
                     and_(
                         EmailQueue.user_id == user_id,
                         EmailQueue.recipient_email == user.email,  # not a guardian copy
                         EmailQueue.template_name == template_name,
-                        EmailQueue.status.in_([EmailQueueStatus.SENT, EmailQueueStatus.PROCESSING]),
-                        EmailQueue.created_at >= recent_cutoff
+                        EmailQueue.status == EmailQueueStatus.PENDING
                     )
                 )
             )
-            recent_email = recent.scalar_one_or_none()
+            existing_email = existing.scalars().first()  # several can exist (allow_duplicates)
 
-            if recent_email:
-                time_since = (datetime.now(timezone.utc) - recent_email.created_at).total_seconds() / 3600
+            if existing_email:
                 logger.info(
-                    f"DUPLICATE PROTECTION: Email recently sent/processing for user {user_id} ({user.email}) "
-                    f"with template '{template_name}' [status: {recent_email.status}, "
-                    f"sent: {recent_email.sent_at}, created: {time_since:.1f}h ago]. Skipping duplicate."
+                    f"DUPLICATE PROTECTION: Email already queued (PENDING) for user {user_id} ({user.email}) "
+                    f"with template '{template_name}' [queue_id: {existing_email.id}, created: {existing_email.created_at}]"
                 )
-                return recent_email
-        else:
-            logger.info(
-                f"FORCE RESEND: Bypassing 24-hour duplicate check for user {user_id} ({user.email}) "
-                f"with template '{template_name}'"
-            )
+                return existing_email
+
+            # Check if recently sent or processing (within last 24 hours)
+            # This prevents duplicate sends if workflow triggers multiple times
+            # Can be bypassed with force=True for manual resend actions
+            if not force:
+                recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+                recent = await self.session.execute(
+                    select(EmailQueue).where(
+                        and_(
+                            EmailQueue.user_id == user_id,
+                            EmailQueue.recipient_email == user.email,  # not a guardian copy
+                            EmailQueue.template_name == template_name,
+                            EmailQueue.status.in_([EmailQueueStatus.SENT, EmailQueueStatus.PROCESSING]),
+                            EmailQueue.created_at >= recent_cutoff
+                        )
+                    )
+                )
+                recent_email = recent.scalars().first()  # several can exist after forced resends
+
+                if recent_email:
+                    time_since = (datetime.now(timezone.utc) - recent_email.created_at).total_seconds() / 3600
+                    logger.info(
+                        f"DUPLICATE PROTECTION: Email recently sent/processing for user {user_id} ({user.email}) "
+                        f"with template '{template_name}' [status: {recent_email.status}, "
+                        f"sent: {recent_email.sent_at}, created: {time_since:.1f}h ago]. Skipping duplicate."
+                    )
+                    return recent_email
+            else:
+                logger.info(
+                    f"FORCE RESEND: Bypassing 24-hour duplicate check for user {user_id} ({user.email}) "
+                    f"with template '{template_name}'"
+                )
 
         # Create queue entry
         email_queue = EmailQueue(
