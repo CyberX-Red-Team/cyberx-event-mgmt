@@ -67,6 +67,11 @@ class PersonalDataSource:
     # Columns that look identifying but aren't about a person (documented, so the
     # completeness test knows they were considered).
     not_personal_columns: tuple[str, ...] = ()
+    # Export (access requests): an explicit allowlist. Anything not listed is never
+    # exported (secrets, other people's data, internal fields). An empty tuple with
+    # export_note means the source is deliberately left out; the note says why.
+    export_columns: tuple[str, ...] = ()
+    export_note: str = ""
     notes: str = ""
 
     @property
@@ -95,6 +100,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="users",
         model=User,
         on_delete="delete",
+        export_columns=('email', 'first_name', 'last_name', 'country', 'confirmed', 'confirmed_at', 'decline_reason', 'email_status', 'terms_accepted', 'terms_accepted_at', 'terms_version', 'pandas_username', 'discord_username', 'snowflake_id', 'confirmed_in_person', 'is_active', 'future_contact_consent', 'future_contact_consent_at', 'age_attestation', 'age_attested_at', 'birth_year_month', 'adult_on', 'guardian_link_status', 'invite_sent', 'last_invite_sent', 'reminder_1_sent_at', 'reminder_2_sent_at', 'reminder_3_sent_at', 'password_email_sent', 'survey_email_sent', 'last_login_at', 'retention_hold_until', 'deletion_warning_sent_at', 'theme_preference', 'created_at', 'updated_at'),
         subject_columns=("id",),
         other_person_columns=("sponsor_id", "guardian_user_id", "guardian_link_status"),
         # Legacy copy of the referrer's email, and the guardian email a minor typed.
@@ -108,6 +114,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="event_participations",
         model=EventParticipation,
         on_delete="delete",
+        export_columns=('event_id', 'status', 'invited_at', 'responded_at', 'terms_accepted_at', 'terms_version_accepted', 'confirmed_at', 'declined_at', 'declined_reason', 'discord_invite_generated_at', 'discord_invite_used_at', 'discord_verified_at', 'activated_at', 'suspended_at', 'created_at'),
         subject_columns=("user_id",),
         other_person_columns=("invited_by_user_id",),
         notes="Invitation/registration per event, including any decline reason.",
@@ -116,12 +123,14 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="sessions",
         model=Session,
         on_delete="delete",
+        export_columns=('created_at', 'expires_at', 'ip_address', 'user_agent', 'is_active'),
         subject_columns=("user_id",),
     ),
     PersonalDataSource(
         key="password_sync_queue",
         model=PasswordSyncQueue,
         on_delete="delete",
+        export_note="Internal queue for syncing your event-service account; it holds encrypted credentials, so it isn't included.",
         subject_columns=("user_id",),
         notes=(
             "Event-service account sync. Synced/pending rows for the person are removed; "
@@ -133,6 +142,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="audit_logs",
         model=AuditLog,
         on_delete="scrub",
+        export_columns=('created_at', 'action', 'resource_type', 'details', 'ip_address', 'user_agent'),
         subject_columns=("user_id",),
         email_columns=("user_email",),
         name_columns=("user_name",),
@@ -147,6 +157,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="email_events",
         model=EmailEvent,
         on_delete="scrub",
+        export_columns=('created_at', 'event_type', 'template_name', 'email_to'),
         subject_columns=("user_id",),
         email_columns=("email_to",),
         extra_scrub={"payload": None},
@@ -156,6 +167,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="email_queue",
         model=EmailQueue,
         on_delete="scrub",
+        export_columns=('created_at', 'template_name', 'status', 'sent_at', 'recipient_email'),
         subject_columns=("user_id",),
         email_columns=("recipient_email",),
         name_columns=("recipient_name",),
@@ -165,6 +177,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="vpn_requests",
         model=VPNRequest,
         on_delete="scrub",
+        export_columns=('requested_at', 'processed_at', 'status', 'key_type', 'request_source'),
         subject_columns=("user_id",),
         email_columns=("user_email",),
         name_columns=("user_name",),
@@ -173,6 +186,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="vpn_credentials",
         model=VPNCredential,
         on_delete="scrub",
+        export_columns=('interface_ip', 'ipv4_address', 'ipv6_local', 'ipv6_global', 'endpoint', 'key_type', 'assignment_type', 'assigned_at', 'is_active', 'created_at'),
         subject_columns=("assigned_to_user_id",),
         email_columns=("assigned_to_email",),
         name_columns=("assigned_to_name",),
@@ -184,6 +198,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="instances",
         model=Instance,
         on_delete="scrub",
+        export_columns=('name', 'provider', 'provider_region', 'provider_size_slug', 'status', 'ip_address', 'vpn_ip', 'visibility', 'event_id', 'created_at', 'deleted_at'),
         subject_columns=("assigned_to_user_id",),
         email_columns=("assigned_to_email",),
         name_columns=("assigned_to_name",),
@@ -193,6 +208,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="tls_certificates",
         model=TLSCertificate,
         on_delete="scrub",
+        export_columns=('event_id', 'common_name', 'sans', 'is_wildcard', 'serial_number', 'fingerprint', 'status', 'issued_at', 'expires_at', 'revoked_at', 'revocation_reason'),
         subject_columns=("user_id",),
         email_columns=("user_email",),
         name_columns=("user_name",),
@@ -202,6 +218,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="participant_actions",
         model=ParticipantAction,
         on_delete="scrub",
+        export_columns=('event_id', 'action_type', 'title', 'description', 'status', 'deadline', 'responded_at', 'response_note', 'created_at'),
         subject_columns=("user_id",),
         email_columns=("user_email",),
         name_columns=("user_name",),
@@ -212,6 +229,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="cpe_certificates",
         model=CPECertificate,
         on_delete="scrub",
+        export_columns=('event_id', 'certificate_number', 'user_name', 'cpe_hours', 'status', 'has_nextcloud_login', 'has_powerdns_login', 'has_vpn_assigned', 'pdf_generated_at', 'created_at', 'revoked_at', 'revocation_reason'),
         subject_columns=("user_id",),
         # Only the email goes: the printed name stays so the certificate can still
         # be verified (Privacy Policy keeps CPE records for the life of the portal).
@@ -226,6 +244,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="guardian_consents",
         model=GuardianConsent,
         on_delete="scrub",
+        export_columns=('event_id', 'relationship', 'guardian_name_typed', 'consent_text_version', 'terms_version', 'optional_email_consent', 'consented_at', 'withdrawn_at', 'ip_address', 'user_agent'),
         # About both people: the minor (subject of the consent) and the guardian
         # (who signed it). Rows go with the minor's account (FK cascade); if the
         # guardian is deleted the consent is void and their signature details go.
@@ -238,6 +257,7 @@ REGISTRY: tuple[PersonalDataSource, ...] = (
         key="redirectors",
         model=Redirector,
         on_delete="keep",
+        export_columns=('name', 'current_ip', 'status', 'visibility', 'created_at', 'last_deployed_at'),
         subject_columns=("owner_id",),
         notes="Infrastructure the person owned; no identity copies on the row.",
     ),
