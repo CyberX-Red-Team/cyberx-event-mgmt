@@ -193,6 +193,12 @@ class Settings(BaseSettings):
     # Changing it (or SECRET_KEY when this is empty) makes existing entries unmatchable.
     INVITE_SUPPRESSION_KEY: str = ""
 
+    # Personal-data export (access requests)
+    DATA_EXPORT_LINK_EXPIRY_DAYS: int = 7  # Emailed download links (R2 presigned URLs max out at 7 days)
+    DATA_EXPORT_R2_PREFIX: str = "exports/"  # Where emailed export ZIPs are stored
+    DATA_EXPORT_RETENTION_DAYS: int = 30  # Stored export ZIPs are deleted after this
+    DATA_EXPORT_SELF_SERVICE_HOURS: int = 24  # One self-service (or guardian) export per this many hours
+
     class Config:
         env_file = ".env"
         case_sensitive = True

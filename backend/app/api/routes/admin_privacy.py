@@ -222,3 +222,52 @@ async def remove_suppression(
         user_agent=user_agent,
     )
     return {"suppressed": False, "removed": removed}
+
+
+class DataExportRequest(BaseModel):
+    delivery: str = Field("email", pattern="^(email|download)$",
+                          description="email: link to the address on file; download: ZIP to the admin")
+
+
+@router.post("/participants/{participant_id}/export")
+async def export_participant_data(
+    participant_id: int,
+    data: DataExportRequest,
+    request: Request,
+    current_user: User = Depends(require_permission("participants.export_data")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Export everything held about a person (access request). "email" sends a
+    time-limited link to the address on file only (never a typed-in address),
+    which doubles as identity verification; "download" returns the ZIP for
+    requests verified another way.
+    """
+    from app.services.data_export_service import (
+        DataExportService, email_delivery_available, email_export_link, zip_response,
+    )
+    target = await db.get(User, participant_id)
+    if target is None:
+        raise not_found("Participant")
+    if data.delivery == "email" and not email_delivery_available():
+        raise bad_request(
+            "Emailing a download link isn't available in this environment. Use Download instead."
+        )
+    days = get_settings().DATA_EXPORT_LINK_EXPIRY_DAYS if data.delivery == "email" else None
+    filename, blob = await DataExportService(db).export_user(participant_id, link_expiry_days=days)
+    if data.delivery == "email":
+        await email_export_link(db, target, filename, blob)
+
+    ip_address, user_agent = extract_client_metadata(request)
+    await AuditService(db).log(
+        action="DATA_EXPORT_CREATED",
+        user_id=current_user.id,
+        resource_type="USER",
+        resource_id=participant_id,
+        details={"target_user_id": participant_id, "delivery": data.delivery},
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    if data.delivery == "download":
+        return zip_response(filename, blob)
+    return {"message": "Download link emailed to the address on file", "expires_in_days": days}

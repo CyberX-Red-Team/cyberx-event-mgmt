@@ -418,6 +418,30 @@ class RetentionService:
             "consent_evidence_scrubbed": len(evidence_ids),
         }
 
+    # ------------------------------------------------- rule: export files
+
+    def _exports_storage_available(self) -> bool:
+        from app.utils.external_stubs import externals_stubbed
+        st = self.settings
+        configured = all([st.R2_ACCOUNT_ID, st.R2_ACCESS_KEY_ID, st.R2_SECRET_ACCESS_KEY, st.R2_BUCKET])
+        # Staging shares production's bucket: never touch it from there.
+        return configured and not externals_stubbed()
+
+    async def purge_old_exports(self, dry_run: bool) -> dict:
+        """Delete emailed personal-data export ZIPs after DATA_EXPORT_RETENTION_DAYS."""
+        if not self._exports_storage_available():
+            return {"skipped": True, "deleted": 0}
+        import asyncio
+        from app.utils.r2_client import R2Client
+        client = R2Client.from_settings()
+        cutoff = self.now - timedelta(days=self.settings.DATA_EXPORT_RETENTION_DAYS)
+        objects = await asyncio.to_thread(client.list_objects, self.settings.DATA_EXPORT_R2_PREFIX)
+        old = [key for key, modified in objects if _utc(modified) < cutoff]
+        if not dry_run:
+            for key in old:
+                await asyncio.to_thread(client.delete_object, key)
+        return {"deleted": len(old)}
+
     # --------------------------------------------------------------- all rules
 
     async def run_all(self, dry_run: bool) -> dict:
@@ -429,6 +453,7 @@ class RetentionService:
             ("logs", self.purge_old_logs),
             ("event_closeout", self.event_closeout_reminders),
             ("minors", self.minor_housekeeping),
+            ("exports", self.purge_old_exports),
         )
         for key, step in steps:
             try:

@@ -6,6 +6,7 @@ async code paths must offload these calls via ``asyncio.to_thread`` so the
 event loop is not blocked.
 """
 import logging
+from datetime import datetime
 from typing import Optional
 
 from app.config import get_settings
@@ -71,6 +72,15 @@ class R2Client:
         except Exception as e:
             logger.error("R2 get_object failed for %s: %s", key, e)
             return None
+
+    def list_objects(self, prefix: str) -> list[tuple[str, datetime]]:
+        """(key, last_modified) for every object under prefix."""
+        out = []
+        paginator = self._get_boto_client().get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                out.append((obj["Key"], obj["LastModified"]))
+        return out
 
     def delete_object(self, key: str) -> bool:
         """Delete an R2 object. Idempotent — missing keys count as success."""

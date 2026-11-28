@@ -196,6 +196,13 @@
                     <button type="button" class="btn btn-primary btn-sm" id="savePrivacyBtn">
                         <i data-feather="save" class="me-1"></i> Save
                     </button>
+                    <hr>
+                    <h6 class="mb-2">Your data</h6>
+                    <p class="small text-muted mb-2">Download a copy of the information we hold about you (a ZIP with a readable summary and a machine-readable file).</p>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="downloadMyDataBtn">
+                        <i data-feather="download" class="me-1"></i> Download my data
+                    </button>
+                    <div id="downloadMyDataAlert" class="alert d-none small mt-2" role="alert"></div>
                     <p class="small text-muted mt-3 mb-0">
                         <a href="https://cyberxredteam.org/privacy" target="_blank" rel="noopener">Privacy Policy</a>
                     </p>
@@ -403,6 +410,40 @@ document.getElementById('savePrivacyBtn').addEventListener('click', async functi
     } catch (error) {
         alertDiv.className = 'alert alert-danger small';
         alertDiv.textContent = 'Could not save your choice. Please try again.';
+    }
+});
+
+
+async function downloadZip(url, onMessage) {
+    const response = await csrfFetch(url, { method: 'POST' });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || 'Download failed');
+    }
+    const blob = await response.blob();
+    const match = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = match ? match[1] : 'cyberx-red-team-data.zip';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+}
+
+document.getElementById('downloadMyDataBtn').addEventListener('click', async function() {
+    const btn = this;
+    const alertDiv = document.getElementById('downloadMyDataAlert');
+    btn.disabled = true;
+    try {
+        await downloadZip('/api/user/export');
+        alertDiv.className = 'alert alert-success small mt-2';
+        alertDiv.textContent = 'Downloaded.';
+    } catch (error) {
+        alertDiv.className = 'alert alert-danger small mt-2';
+        alertDiv.textContent = error.message;
+    } finally {
+        btn.disabled = false;
     }
 });
 

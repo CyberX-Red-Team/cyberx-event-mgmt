@@ -21,8 +21,8 @@
     </div>
     <div id="minorsList"></div>
     <p class="small text-muted">
-        You can see and manage only the participants linked to you. To get a copy of a linked
-        participant's data, correct it, or delete it, email
+        You can see and manage only the participants linked to you. Use "Download their data" for a
+        copy of a linked participant's data; to correct or delete it, email
         <a href="mailto:hello@cyberxredteam.org">hello@cyberxredteam.org</a>.
         <a href="https://cyberxredteam.org/privacy" target="_blank" rel="noopener">Privacy Policy</a>
     </p>
@@ -69,6 +69,15 @@ function renderMinor(m) {
     statusRow(table, 'Attending in person', o.in_person ? 'Yes' : 'No');
     statusRow(table, 'Turns 18', m.adult_on || '—');
     body.appendChild(table);
+
+    const dl = el('button', { class: 'btn btn-outline-primary btn-sm mb-3' }, 'Download their data');
+    dl.addEventListener('click', async () => {
+        dl.disabled = true;
+        try { await downloadZip(`/api/guardian/minors/${m.id}/export`); }
+        catch (error) { showToast(error.message, 'danger'); }
+        finally { dl.disabled = false; }
+    });
+    body.appendChild(dl);
 
     if (!m.event) {
         body.appendChild(el('p', { class: 'text-muted' }, 'There is no active event.'));
@@ -127,6 +136,23 @@ function renderMinor(m) {
     form.querySelector('.reject').addEventListener('click', () => reject(m));
     body.appendChild(form);
     return card;
+}
+
+async function downloadZip(url, onMessage) {
+    const response = await csrfFetch(url, { method: 'POST' });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || 'Download failed');
+    }
+    const blob = await response.blob();
+    const match = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = match ? match[1] : 'cyberx-red-team-data.zip';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
 }
 
 async function submitConsent(m, form) {
