@@ -1,7 +1,7 @@
 """Participant routes for viewing and responding to actions."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -121,12 +121,17 @@ async def respond_to_action(
     action.responded_at = datetime.now(timezone.utc)
     action.response_note = data.response_note
 
-    # Update related fields based on action type
-    if action.action_type == "in_person_attendance":
-        if data.status == ActionStatus.CONFIRMED.value:
-            current_user.confirmed_in_person = True
-        elif data.status == ActionStatus.DECLINED.value:
-            current_user.confirmed_in_person = False
+    # Update related fields based on action type. current_user is loaded by
+    # get_current_user in a different session than `db`, so changing it and
+    # committing `db` didn't save anything: write the change through `db`.
+    if action.action_type == "in_person_attendance" and data.status in (
+        ActionStatus.CONFIRMED.value, ActionStatus.DECLINED.value
+    ):
+        await db.execute(
+            update(User)
+            .where(User.id == current_user.id)
+            .values(confirmed_in_person=data.status == ActionStatus.CONFIRMED.value)
+        )
 
     await db.commit()
 

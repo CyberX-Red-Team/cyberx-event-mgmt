@@ -469,3 +469,20 @@ def test_age_brackets_month_granularity():
     assert minor_service.age_bracket(bym, date(2026, 5, 31)) == "under_16"
     assert minor_service.age_bracket(bym, date(2026, 6, 1)) == "minor"
     assert minor_service.age_bracket(bym, date(2028, 6, 1)) == "adult"
+
+
+async def test_consent_activates_minor_who_has_a_role(client, db_session, active_event, invitee_role,
+                                                      workflow_calls):
+    """Activation reads the minor's role (Discord invite permission). The guardian
+    route loads the minor without it; a lazy load there raised MissingGreenlet (500)."""
+    guardian = await guardian_for(db_session, active_event)
+    minor = await make_user(db_session, "kid@example.org", "Kim", "Kid", confirmation_code="code-kid",
+                            role_id=invitee_role.id)
+    db_session.add(EventParticipation(user_id=minor.id, event_id=active_event.id, status="invited"))
+    await db_session.commit()
+    await accept_as_minor(client, minor)
+    await login(client, guardian.email)
+    resp = await consent(client, minor.id)
+    assert resp.status_code == 200, resp.text
+    m = await _reload(db_session, User, minor.id)
+    assert m.pandas_username and m.password_hash
